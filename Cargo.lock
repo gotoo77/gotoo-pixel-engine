@@ -520,6 +520,9 @@ name = "gotoo-pixel-engine"
 version = "0.1.0"
 dependencies = [
  "pollster",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-time",
  "wgpu",
  "winit",
 ]

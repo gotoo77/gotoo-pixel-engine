@@ -9,6 +9,18 @@ pollster = "1.0.1"
 wgpu = "30.0.0"
 winit = "0.30.13"
 
+[dev-dependencies]
+wasm-bindgen = "=0.2.127"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4.77"
+web-time = "1.1.0"
+
+[[example]]
+name = "web_demo"
+path = "examples/web_demo.rs"
+crate-type = ["cdylib"]
+
 [[bench]]
 name = "primitives"
 harness = false

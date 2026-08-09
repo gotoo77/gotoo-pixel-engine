@@ -1,6 +1,10 @@
 use std::fmt;
 use std::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 use crate::Framebuffer;
 use crate::input::{Input, Key, MouseButton};
@@ -8,6 +12,8 @@ use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
+#[cfg(target_arch = "wasm32")]
+use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -79,8 +85,14 @@ impl std::error::Error for EngineError {}
 pub fn run<G: Game + 'static>(config: EngineConfig, game: G) -> Result<(), EngineError> {
     validate_config(&config)?;
 
-    let event_loop = EventLoop::new().map_err(EngineError::event_loop)?;
+    let event_loop = EventLoop::<PlatformEvent>::with_user_event()
+        .build()
+        .map_err(EngineError::event_loop)?;
+    #[cfg(target_arch = "wasm32")]
+    let mut app = PlatformApp::new(config, game, event_loop.create_proxy());
+    #[cfg(not(target_arch = "wasm32"))]
     let mut app = PlatformApp::new(config, game);
+
     event_loop
         .run_app(&mut app)
         .map_err(EngineError::event_loop)?;
@@ -90,6 +102,11 @@ pub fn run<G: Game + 'static>(config: EngineConfig, game: G) -> Result<(), Engin
     } else {
         Ok(())
     }
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+enum PlatformEvent {
+    RendererReady(Result<Renderer, RendererInitError>),
 }
 
 struct PlatformApp<G> {
@@ -102,10 +119,14 @@ struct PlatformApp<G> {
     last_frame_at: Instant,
     fps_timer: Instant,
     fps_frames: u32,
+    last_non_zero_window_size: Option<PhysicalSize<u32>>,
     pending_error: Option<EngineError>,
+    #[cfg(target_arch = "wasm32")]
+    event_loop_proxy: EventLoopProxy<PlatformEvent>,
 }
 
 impl<G: Game> PlatformApp<G> {
+    #[cfg(not(target_arch = "wasm32"))]
     fn new(config: EngineConfig, game: G) -> Self {
         let now = Instant::now();
         let framebuffer = Framebuffer::new(config.framebuffer_width, config.framebuffer_height);
@@ -120,7 +141,29 @@ impl<G: Game> PlatformApp<G> {
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
+            last_non_zero_window_size: None,
             pending_error: None,
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn new(config: EngineConfig, game: G, event_loop_proxy: EventLoopProxy<PlatformEvent>) -> Self {
+        let now = Instant::now();
+        let framebuffer = Framebuffer::new(config.framebuffer_width, config.framebuffer_height);
+
+        Self {
+            config,
+            game,
+            window: None,
+            renderer: None,
+            framebuffer,
+            input: Input::default(),
+            last_frame_at: now,
+            fps_timer: now,
+            fps_frames: 0,
+            last_non_zero_window_size: None,
+            pending_error: None,
+            event_loop_proxy,
         }
     }
 
@@ -163,7 +206,11 @@ impl<G: Game> PlatformApp<G> {
                     self.fps_frames = 0;
                 }
             }
-            RenderOutcome::SurfaceChanged => renderer.resize(window.inner_size()),
+            RenderOutcome::SurfaceChanged => {
+                if let Some(renderer) = self.renderer.as_mut() {
+                    renderer.resize(window.inner_size());
+                }
+            }
             RenderOutcome::Skipped => {}
         }
 
@@ -193,6 +240,13 @@ impl<G: Game> PlatformApp<G> {
             ))
             .with_min_inner_size(LogicalSize::new(1.0, 1.0));
 
+        #[cfg(target_arch = "wasm32")]
+        let attributes = {
+            use winit::platform::web::WindowAttributesExtWebSys;
+
+            attributes.with_append(true)
+        };
+
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(err) => {
@@ -202,6 +256,25 @@ impl<G: Game> PlatformApp<G> {
             }
         };
 
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.last_frame_at = Instant::now();
+            self.fps_timer = self.last_frame_at;
+            self.window = Some(Arc::clone(&window));
+
+            let proxy = self.event_loop_proxy.clone();
+            let framebuffer_width = self.config.framebuffer_width;
+            let framebuffer_height = self.config.framebuffer_height;
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = Renderer::new(window, framebuffer_width, framebuffer_height).await;
+                let _ = proxy.send_event(PlatformEvent::RendererReady(result));
+            });
+
+            return;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
         let renderer = match pollster::block_on(Renderer::new(
             Arc::clone(&window),
             self.config.framebuffer_width,
@@ -215,20 +288,55 @@ impl<G: Game> PlatformApp<G> {
             }
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.last_frame_at = Instant::now();
+            self.fps_timer = self.last_frame_at;
+            self.window = Some(window);
+            self.renderer = Some(renderer);
+        }
+    }
+
+    fn finish_renderer_init(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        result: Result<Renderer, RendererInitError>,
+    ) {
+        let mut renderer = match result {
+            Ok(renderer) => renderer,
+            Err(err) => {
+                self.pending_error = Some(EngineError::renderer(err));
+                event_loop.exit();
+                return;
+            }
+        };
+
         self.last_frame_at = Instant::now();
         self.fps_timer = self.last_frame_at;
-        self.window = Some(window);
+        if let Some(size) = self.last_non_zero_window_size {
+            renderer.resize(size);
+        }
         self.renderer = Some(renderer);
+
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
+        }
     }
 }
 
-impl<G: Game> ApplicationHandler for PlatformApp<G> {
+impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
         }
 
         self.create_window_and_renderer(event_loop);
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: PlatformEvent) {
+        match event {
+            PlatformEvent::RendererReady(result) => self.finish_renderer_init(event_loop, result),
+        }
     }
 
     fn window_event(
@@ -248,6 +356,7 @@ impl<G: Game> ApplicationHandler for PlatformApp<G> {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
+                remember_non_zero_size(&mut self.last_non_zero_window_size, size);
                 if let Some(renderer) = self.renderer.as_mut() {
                     renderer.resize(size);
                 }
@@ -284,6 +393,12 @@ impl<G: Game> ApplicationHandler for PlatformApp<G> {
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
         }
+    }
+}
+
+fn remember_non_zero_size(last_size: &mut Option<PhysicalSize<u32>>, size: PhysicalSize<u32>) {
+    if size.width != 0 && size.height != 0 {
+        *last_size = Some(size);
     }
 }
 
@@ -357,8 +472,8 @@ fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        EngineConfig, Key, MouseButton, key_from_winit, mouse_button_from_winit, validate_config,
-        window_to_framebuffer_position,
+        EngineConfig, Key, MouseButton, key_from_winit, mouse_button_from_winit,
+        remember_non_zero_size, validate_config, window_to_framebuffer_position,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, PhysicalKey};
@@ -416,6 +531,27 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn remember_non_zero_size_keeps_latest_non_zero_size() {
+        let mut size = None;
+
+        remember_non_zero_size(&mut size, PhysicalSize::new(960, 540));
+        remember_non_zero_size(&mut size, PhysicalSize::new(1280, 720));
+
+        assert_eq!(size, Some(PhysicalSize::new(1280, 720)));
+    }
+
+    #[test]
+    fn remember_non_zero_size_ignores_zero_dimensions() {
+        let mut size = Some(PhysicalSize::new(960, 540));
+
+        remember_non_zero_size(&mut size, PhysicalSize::new(0, 540));
+        remember_non_zero_size(&mut size, PhysicalSize::new(960, 0));
+        remember_non_zero_size(&mut size, PhysicalSize::new(0, 0));
+
+        assert_eq!(size, Some(PhysicalSize::new(960, 540)));
     }
 
     #[test]

@@ -146,4 +146,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## M1.5 — Démo WebAssembly
+
+La démo Web réutilise le même `DemoGame` que le chemin natif et se lance dans un navigateur via WebAssembly/WebGPU.
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo build --target wasm32-unknown-unknown --example web_demo
+wasm-bindgen --target web \
+  --out-dir web/pkg \
+  target/wasm32-unknown-unknown/debug/examples/web_demo.wasm
+python3 -m http.server 8000 --directory web
+```
+
+Ouvrir ensuite <http://127.0.0.1:8000>.
+
+M1.5 a été validé manuellement sous Chromium et Firefox desktop : rendu framebuffer, clavier, souris, clic gauche et `Escape`.
+
 Voir [ROADMAP.md](ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) et [REFERENCES.md](REFERENCES.md).
