@@ -45,7 +45,9 @@ Livrable minimal :
 
 **Non-objectifs M0 :** sprites, audio, ECS, scène, UI, moteur de collision, asset manager, plugins, éditeur.
 
-## M1 — Pixel Engine minimal
+## M1 — Pixel Engine minimal ✅
+
+**Statut : terminé.** M1.1, M1.2 et M1.3 sont validés. Le moteur expose désormais une première API publique suffisante pour écrire une petite application interactive sans dépendre directement de `winit`, `wgpu` ou des détails du renderer.
 
 Transformer le spike en première petite API de moteur réellement utilisable. M1 est volontairement découpé en étapes bornées : une étape doit être validée avant de passer à la suivante.
 
@@ -82,25 +84,30 @@ Transformer le spike en première petite API de moteur réellement utilisable. M
 
 Les algorithmes doivent rester lisibles avant d'être micro-optimisés.
 
-### M1.3 — Input, timing et exemple public
+### M1.3 — Input, timing et exemple public ✅
+
+**Statut : terminé.** Validé avec le commit `54afd0c` (`Implement M1.3 input timing API`).
 
 **But :** permettre à un petit jeu de dépendre de l'API du moteur plutôt que de manipuler directement `winit` ou les détails du spike.
 
-- clavier minimal ;
-- souris minimale ;
-- delta-time accessible au jeu ;
-- distinction utile entre état maintenu et transitions (`pressed`/`released`) si elle reste simple ;
-- exemple interactif utilisant uniquement l'API publique prévue pour un jeu ;
-- documentation de la boucle minimale d'une application.
+- [x] clavier minimal ;
+- [x] souris minimale ;
+- [x] delta-time accessible au jeu ;
+- [x] distinction entre `pressed`, `held` et `released` ;
+- [x] exemple interactif utilisant l'API publique prévue pour un jeu ;
+- [x] documentation de la boucle minimale d'une application ;
+- [x] sortie explicitement contrôlée par le jeu via `GameResult` ;
+- [x] configuration invalide rejetée avant initialisation plateforme ;
+- [x] perte de focus réinitialisant l'état input maintenu.
 
 ### Critères de sortie M1
 
-- l'exemple ne dépend pas directement des détails internes du renderer ;
-- les primitives publiques nécessaires au milestone sont documentées et testées ;
-- les entrées et le timing sont exploitables depuis le code de jeu ;
-- les benchmarks CPU donnent une première baseline reproductible ;
-- `cargo fmt --check`, `cargo clippy -- -D warnings` et `cargo test` passent ;
-- aucune abstraction majeure non justifiée par M1 n'a été introduite.
+- [x] l'exemple ne dépend pas directement des détails internes du renderer ;
+- [x] les primitives publiques nécessaires au milestone sont documentées et testées ;
+- [x] les entrées et le timing sont exploitables depuis le code de jeu ;
+- [x] les benchmarks CPU donnent une première baseline reproductible ;
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` et `cargo test` passent ;
+- [x] aucune abstraction majeure non justifiée par M1 n'a été introduite.
 
 ## M1.5 — Spike de portabilité WebAssembly
 
