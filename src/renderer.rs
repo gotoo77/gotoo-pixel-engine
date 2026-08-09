@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::Framebuffer;
+use crate::{Framebuffer, Size, Viewport};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
@@ -88,7 +88,8 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    framebuffer_size: wgpu::Extent3d,
+    framebuffer_size: Size,
+    viewport: Viewport,
     framebuffer_texture: wgpu::Texture,
     framebuffer_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
@@ -167,15 +168,21 @@ impl Renderer {
         };
         surface.configure(&device, &config);
 
-        let framebuffer_size = wgpu::Extent3d {
+        let framebuffer_size = Size {
             width: framebuffer_width,
             height: framebuffer_height,
-            depth_or_array_layers: 1,
         };
+        let viewport = Viewport::new(
+            Size {
+                width: config.width,
+                height: config.height,
+            },
+            framebuffer_size,
+        );
 
         let framebuffer_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("cpu-framebuffer-texture"),
-            size: framebuffer_size,
+            size: wgpu_extent(framebuffer_size),
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -291,6 +298,7 @@ impl Renderer {
             queue,
             config,
             framebuffer_size,
+            viewport,
             framebuffer_texture,
             framebuffer_bind_group,
             render_pipeline,
@@ -304,7 +312,18 @@ impl Renderer {
 
         self.config.width = size.width;
         self.config.height = size.height;
+        self.viewport = Viewport::new(
+            Size {
+                width: size.width,
+                height: size.height,
+            },
+            self.framebuffer_size,
+        );
         self.surface.configure(&self.device, &self.config);
+    }
+
+    pub fn viewport(&self) -> Viewport {
+        self.viewport
     }
 
     pub fn render(&mut self, framebuffer: &Framebuffer) -> RenderOutcome {
@@ -324,7 +343,7 @@ impl Renderer {
                 bytes_per_row: Some(framebuffer.width() * 4),
                 rows_per_image: Some(framebuffer.height()),
             },
-            self.framebuffer_size,
+            wgpu_extent(self.framebuffer_size),
         );
 
         let frame = match self.surface.get_current_texture() {
@@ -367,6 +386,14 @@ impl Renderer {
             });
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.framebuffer_bind_group, &[]);
+            render_pass.set_viewport(
+                self.viewport.rect.x as f32,
+                self.viewport.rect.y as f32,
+                self.viewport.rect.width as f32,
+                self.viewport.rect.height as f32,
+                0.0,
+                1.0,
+            );
             render_pass.draw(0..3, 0..1);
         }
 
@@ -374,6 +401,14 @@ impl Renderer {
         self.queue.present(frame);
 
         RenderOutcome::Presented
+    }
+}
+
+fn wgpu_extent(size: Size) -> wgpu::Extent3d {
+    wgpu::Extent3d {
+        width: size.width,
+        height: size.height,
+        depth_or_array_layers: 1,
     }
 }
 

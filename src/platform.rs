@@ -10,6 +10,7 @@ use crate::Framebuffer;
 use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use crate::storage::{LocalStorage, platform_storage};
+use crate::{Size, Viewport};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
@@ -43,6 +44,8 @@ pub struct Frame<'a> {
     pub input: &'a Input,
     pub delta_time: Duration,
     pub storage: &'a mut dyn LocalStorage,
+    pub surface_size: Size,
+    pub viewport: Viewport,
 }
 
 #[derive(Debug)]
@@ -183,12 +186,16 @@ impl<G: Game> PlatformApp<G> {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame_at);
         self.last_frame_at = now;
+        let surface_size = size_from_physical(window.inner_size());
+        let viewport = renderer.viewport();
 
         let mut frame = Frame {
             framebuffer: &mut self.framebuffer,
             input: &self.input,
             delta_time: dt,
             storage: self.storage.as_mut(),
+            surface_size,
+            viewport,
         };
 
         if self.game.update(&mut frame) == GameResult::Exit {
@@ -237,20 +244,24 @@ impl<G: Game> PlatformApp<G> {
             touch.id,
             touch.phase,
             touch.location,
-            window.inner_size(),
-            self.config.framebuffer_width,
-            self.config.framebuffer_height,
+            current_viewport(
+                window.inner_size(),
+                self.config.framebuffer_width,
+                self.config.framebuffer_height,
+            ),
         ));
     }
 
     fn framebuffer_position(&self, position: PhysicalPosition<f64>) -> Option<(i32, i32)> {
         let window = self.window.as_ref()?;
 
-        window_to_framebuffer_position(
+        surface_to_framebuffer_position(
             position,
-            window.inner_size(),
-            self.config.framebuffer_width,
-            self.config.framebuffer_height,
+            current_viewport(
+                window.inner_size(),
+                self.config.framebuffer_width,
+                self.config.framebuffer_height,
+            ),
         )
     }
 
@@ -464,41 +475,41 @@ fn touch_from_winit(
     id: u64,
     phase: winit::event::TouchPhase,
     location: PhysicalPosition<f64>,
-    window_size: PhysicalSize<u32>,
-    framebuffer_width: u32,
-    framebuffer_height: u32,
+    viewport: Viewport,
 ) -> Touch {
     Touch {
         id,
         phase: touch_phase_from_winit(phase),
-        position: window_to_framebuffer_position(
-            location,
-            window_size,
-            framebuffer_width,
-            framebuffer_height,
-        ),
+        position: surface_to_framebuffer_position(location, viewport),
     }
 }
 
-fn window_to_framebuffer_position(
+fn surface_to_framebuffer_position(
     position: PhysicalPosition<f64>,
+    viewport: Viewport,
+) -> Option<(i32, i32)> {
+    viewport.map_surface_position(position.x, position.y)
+}
+
+fn current_viewport(
     window_size: PhysicalSize<u32>,
     framebuffer_width: u32,
     framebuffer_height: u32,
-) -> Option<(i32, i32)> {
-    if window_size.width == 0 || window_size.height == 0 {
-        return None;
+) -> Viewport {
+    Viewport::new(
+        size_from_physical(window_size),
+        Size {
+            width: framebuffer_width,
+            height: framebuffer_height,
+        },
+    )
+}
+
+fn size_from_physical(size: PhysicalSize<u32>) -> Size {
+    Size {
+        width: size.width,
+        height: size.height,
     }
-
-    let x = (position.x * f64::from(framebuffer_width) / f64::from(window_size.width)).floor();
-    let y = (position.y * f64::from(framebuffer_height) / f64::from(window_size.height)).floor();
-
-    if x < 0.0 || y < 0.0 || x >= f64::from(framebuffer_width) || y >= f64::from(framebuffer_height)
-    {
-        return None;
-    }
-
-    Some((x as i32, y as i32))
 }
 
 fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
@@ -525,9 +536,9 @@ fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        EngineConfig, Key, MouseButton, TouchPhase, key_from_winit, mouse_button_from_winit,
-        remember_non_zero_size, touch_from_winit, touch_phase_from_winit, validate_config,
-        window_to_framebuffer_position,
+        EngineConfig, Key, MouseButton, TouchPhase, current_viewport, key_from_winit,
+        mouse_button_from_winit, remember_non_zero_size, surface_to_framebuffer_position,
+        touch_from_winit, touch_phase_from_winit, validate_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, PhysicalKey};
@@ -582,43 +593,42 @@ mod tests {
     }
 
     #[test]
-    fn maps_window_position_to_framebuffer_position() {
+    fn maps_surface_position_to_framebuffer_position_through_viewport() {
+        let viewport = current_viewport(PhysicalSize::new(960, 408), 480, 204);
+
         assert_eq!(
-            window_to_framebuffer_position(
-                PhysicalPosition::new(480.0, 270.0),
-                PhysicalSize::new(960, 540),
-                320,
-                180,
-            ),
-            Some((160, 90))
+            surface_to_framebuffer_position(PhysicalPosition::new(480.0, 204.0), viewport,),
+            Some((240, 102))
         );
     }
 
     #[test]
-    fn maps_touch_position_to_framebuffer_position() {
+    fn maps_touch_position_with_same_viewport_transform() {
+        let viewport = current_viewport(PhysicalSize::new(1200, 408), 480, 204);
         let touch = touch_from_winit(
             42,
             winit::event::TouchPhase::Moved,
-            PhysicalPosition::new(480.0, 270.0),
-            PhysicalSize::new(960, 540),
-            320,
-            180,
+            PhysicalPosition::new(600.0, 204.0),
+            viewport,
         );
 
         assert_eq!(touch.id, 42);
         assert_eq!(touch.phase, TouchPhase::Moved);
-        assert_eq!(touch.position, Some((160, 90)));
+        assert_eq!(touch.position, Some((240, 102)));
+        assert_eq!(
+            surface_to_framebuffer_position(PhysicalPosition::new(600.0, 204.0), viewport),
+            touch.position
+        );
     }
 
     #[test]
-    fn preserves_touch_events_outside_framebuffer() {
+    fn preserves_touch_events_outside_viewport() {
+        let viewport = current_viewport(PhysicalSize::new(1200, 408), 480, 204);
         let touch = touch_from_winit(
             42,
             winit::event::TouchPhase::Ended,
-            PhysicalPosition::new(960.0, 10.0),
-            PhysicalSize::new(960, 540),
-            320,
-            180,
+            PhysicalPosition::new(119.0, 10.0),
+            viewport,
         );
 
         assert_eq!(touch.id, 42);
@@ -628,13 +638,12 @@ mod tests {
 
     #[test]
     fn preserves_touch_events_when_window_size_is_invalid() {
+        let viewport = current_viewport(PhysicalSize::new(0, 540), 480, 204);
         let touch = touch_from_winit(
             42,
             winit::event::TouchPhase::Cancelled,
             PhysicalPosition::new(10.0, 10.0),
-            PhysicalSize::new(0, 540),
-            320,
-            180,
+            viewport,
         );
 
         assert_eq!(touch.id, 42);
@@ -643,16 +652,22 @@ mod tests {
     }
 
     #[test]
-    fn rejects_mouse_position_outside_framebuffer() {
+    fn rejects_mouse_position_outside_viewport() {
+        let viewport = current_viewport(PhysicalSize::new(1200, 408), 480, 204);
+
         assert_eq!(
-            window_to_framebuffer_position(
-                PhysicalPosition::new(960.0, 10.0),
-                PhysicalSize::new(960, 540),
-                320,
-                180,
-            ),
+            surface_to_framebuffer_position(PhysicalPosition::new(1080.0, 10.0), viewport),
             None
         );
+    }
+
+    #[test]
+    fn current_viewport_recalculates_after_resize() {
+        let first = current_viewport(PhysicalSize::new(960, 408), 480, 204);
+        let second = current_viewport(PhysicalSize::new(1200, 408), 480, 204);
+
+        assert_ne!(first.rect, second.rect);
+        assert_eq!(second.rect.x, 120);
     }
 
     #[test]
