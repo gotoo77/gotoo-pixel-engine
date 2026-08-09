@@ -15,11 +15,58 @@ const INITIAL_SEED: u32 = 0x5EED_1234;
 const TURN_QUEUE_CAPACITY: usize = 2;
 const MAX_CATCH_UP: usize = 5;
 const TICK_PERIOD: Duration = Duration::from_millis(120);
-const SWIPE_THRESHOLD: i32 = 20;
 const EXIT_KEY: Key = Key::Escape;
 const RESTART_KEY: Key = Key::Space;
 const HUD_TEXT_SCALE: u32 = 1;
 const GAME_OVER_TEXT_SCALE: u32 = 2;
+const D_PAD_UP: Rect = Rect {
+    x: 232,
+    y: 56,
+    width: 40,
+    height: 40,
+};
+const D_PAD_LEFT: Rect = Rect {
+    x: 192,
+    y: 96,
+    width: 40,
+    height: 40,
+};
+const D_PAD_CENTER: Rect = Rect {
+    x: 232,
+    y: 96,
+    width: 40,
+    height: 40,
+};
+const D_PAD_RIGHT: Rect = Rect {
+    x: 272,
+    y: 96,
+    width: 40,
+    height: 40,
+};
+const D_PAD_DOWN: Rect = Rect {
+    x: 232,
+    y: 136,
+    width: 40,
+    height: 40,
+};
+const D_PAD_ZONES: [DirectionZone; 4] = [
+    DirectionZone {
+        rect: D_PAD_UP,
+        direction: Direction::Up,
+    },
+    DirectionZone {
+        rect: D_PAD_LEFT,
+        direction: Direction::Left,
+    },
+    DirectionZone {
+        rect: D_PAD_RIGHT,
+        direction: Direction::Right,
+    },
+    DirectionZone {
+        rect: D_PAD_DOWN,
+        direction: Direction::Down,
+    },
+];
 const REPLAY_BUTTON: Rect = Rect {
     x: 104,
     y: 110,
@@ -40,12 +87,16 @@ const PANEL_FILL: Pixel = Pixel::rgb(12, 16, 20);
 const BUTTON_FILL: Pixel = Pixel::rgb(28, 38, 46);
 const BUTTON_BORDER: Pixel = Pixel::rgb(154, 174, 186);
 const BUTTON_TEXT: Pixel = Pixel::rgb(240, 244, 230);
+const D_PAD_FILL: Pixel = Pixel::rgb(13, 20, 24);
+const D_PAD_CENTER_FILL: Pixel = Pixel::rgb(9, 13, 16);
+const D_PAD_BORDER: Pixel = Pixel::rgb(93, 116, 128);
+const D_PAD_ARROW: Pixel = Pixel::rgb(196, 216, 204);
 
 #[derive(Debug)]
 pub struct SnakeGame {
     world: SnakeWorld,
     accumulator: Duration,
-    swipe_tracker: SwipeTracker,
+    touch_controls: TouchControls,
 }
 
 impl SnakeGame {
@@ -53,7 +104,7 @@ impl SnakeGame {
         Self {
             world: SnakeWorld::new(INITIAL_SEED),
             accumulator: Duration::ZERO,
-            swipe_tracker: SwipeTracker::default(),
+            touch_controls: TouchControls::default(),
         }
     }
 
@@ -79,7 +130,7 @@ impl SnakeGame {
             ticks += 1;
 
             if self.world.phase() != Phase::Running {
-                self.swipe_tracker.reset();
+                self.touch_controls.reset_contact();
                 break;
             }
         }
@@ -88,7 +139,7 @@ impl SnakeGame {
     fn restart(&mut self) {
         self.world.restart();
         self.accumulator = Duration::ZERO;
-        self.swipe_tracker.reset();
+        self.touch_controls.reset_contact();
     }
 
     fn draw(&self, frame: &mut Frame<'_>) {
@@ -119,6 +170,8 @@ impl SnakeGame {
 
         if self.world.phase() == Phase::GameOver {
             draw_game_over(framebuffer, self.world.score());
+        } else if self.touch_controls.visible() {
+            draw_d_pad(framebuffer);
         }
     }
 }
@@ -130,7 +183,7 @@ impl Game for SnakeGame {
         }
 
         let controls =
-            SnakeControls::from_frame(frame, self.world.phase(), &mut self.swipe_tracker);
+            SnakeControls::from_frame(frame, self.world.phase(), &mut self.touch_controls);
         self.update_logic(frame.delta_time, controls);
         self.draw(frame);
 
@@ -208,6 +261,109 @@ fn draw_replay_button(framebuffer: &mut Framebuffer) {
     framebuffer.draw_text_scaled(text_x, text_y, text, GAME_OVER_TEXT_SCALE, BUTTON_TEXT);
 }
 
+fn draw_d_pad(framebuffer: &mut Framebuffer) {
+    for zone in D_PAD_ZONES {
+        draw_d_pad_button(framebuffer, zone.rect, zone.direction);
+    }
+
+    framebuffer.fill_rect(
+        D_PAD_CENTER.x,
+        D_PAD_CENTER.y,
+        D_PAD_CENTER.width,
+        D_PAD_CENTER.height,
+        D_PAD_CENTER_FILL,
+    );
+    framebuffer.draw_rect(
+        D_PAD_CENTER.x,
+        D_PAD_CENTER.y,
+        D_PAD_CENTER.width,
+        D_PAD_CENTER.height,
+        D_PAD_BORDER,
+    );
+}
+
+fn draw_d_pad_button(framebuffer: &mut Framebuffer, rect: Rect, direction: Direction) {
+    framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, D_PAD_FILL);
+    framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, D_PAD_BORDER);
+    draw_d_pad_arrow(framebuffer, rect, direction);
+}
+
+fn draw_d_pad_arrow(framebuffer: &mut Framebuffer, rect: Rect, direction: Direction) {
+    let center_x = rect.x + rect.width as i32 / 2;
+    let center_y = rect.y + rect.height as i32 / 2;
+
+    match direction {
+        Direction::Up => {
+            framebuffer.draw_line(
+                center_x,
+                center_y - 9,
+                center_x - 8,
+                center_y + 5,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(
+                center_x,
+                center_y - 9,
+                center_x + 8,
+                center_y + 5,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(center_x, center_y - 9, center_x, center_y + 10, D_PAD_ARROW);
+        }
+        Direction::Down => {
+            framebuffer.draw_line(
+                center_x,
+                center_y + 9,
+                center_x - 8,
+                center_y - 5,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(
+                center_x,
+                center_y + 9,
+                center_x + 8,
+                center_y - 5,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(center_x, center_y + 9, center_x, center_y - 10, D_PAD_ARROW);
+        }
+        Direction::Left => {
+            framebuffer.draw_line(
+                center_x - 9,
+                center_y,
+                center_x + 5,
+                center_y - 8,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(
+                center_x - 9,
+                center_y,
+                center_x + 5,
+                center_y + 8,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(center_x - 9, center_y, center_x + 10, center_y, D_PAD_ARROW);
+        }
+        Direction::Right => {
+            framebuffer.draw_line(
+                center_x + 9,
+                center_y,
+                center_x - 5,
+                center_y - 8,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(
+                center_x + 9,
+                center_y,
+                center_x - 5,
+                center_y + 8,
+                D_PAD_ARROW,
+            );
+            framebuffer.draw_line(center_x + 9, center_y, center_x - 10, center_y, D_PAD_ARROW);
+        }
+    }
+}
+
 fn draw_centered_text(framebuffer: &mut Framebuffer, y: i32, text: &str, scale: u32, pixel: Pixel) {
     let (width, _) = Framebuffer::text_size(text, scale);
     let x = centered_offset(FRAMEBUFFER_WIDTH, width);
@@ -232,20 +388,22 @@ impl SnakeControls {
         }
     }
 
-    fn from_frame(frame: &Frame<'_>, phase: Phase, swipe_tracker: &mut SwipeTracker) -> Self {
+    fn from_frame(frame: &Frame<'_>, phase: Phase, touch_controls: &mut TouchControls) -> Self {
+        touch_controls.observe_touches(frame.input.touches());
+
         match phase {
-            Phase::Running => Self::from_running_frame(frame, swipe_tracker),
+            Phase::Running => Self::from_running_frame(frame, touch_controls),
             Phase::GameOver => Self::from_game_over_inputs(
                 frame.input.key(RESTART_KEY).pressed(),
                 frame.input.mouse_button(MouseButton::Left).pressed(),
                 frame.input.mouse_position(),
                 frame.input.touches(),
-                swipe_tracker,
+                touch_controls,
             ),
         }
     }
 
-    fn from_running_frame(frame: &Frame<'_>, swipe_tracker: &mut SwipeTracker) -> Self {
+    fn from_running_frame(frame: &Frame<'_>, touch_controls: &mut TouchControls) -> Self {
         let mut controls = Self::none();
 
         for key in DIRECTION_KEYS {
@@ -258,7 +416,7 @@ impl SnakeControls {
 
         controls
             .directions
-            .extend(swipe_tracker.directions_from_touches(frame.input.touches()));
+            .extend(touch_controls.directions_from_touches(frame.input.touches()));
         controls.restart = frame.input.key(RESTART_KEY).pressed();
         controls
     }
@@ -268,9 +426,9 @@ impl SnakeControls {
         mouse_left_pressed: bool,
         mouse_position: Option<(i32, i32)>,
         touches: &[Touch],
-        swipe_tracker: &mut SwipeTracker,
+        touch_controls: &mut TouchControls,
     ) -> Self {
-        swipe_tracker.reset();
+        touch_controls.reset_contact();
 
         Self {
             directions: Vec::new(),
@@ -322,11 +480,37 @@ fn direction_for_key(key: Key) -> Option<Direction> {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct SwipeTracker {
-    active: Option<SwipeContact>,
+struct TouchControls {
+    visible: bool,
+    d_pad: DPadTracker,
 }
 
-impl SwipeTracker {
+impl TouchControls {
+    fn observe_touches(&mut self, touches: &[Touch]) {
+        if !touches.is_empty() {
+            self.visible = true;
+        }
+    }
+
+    fn visible(&self) -> bool {
+        self.visible
+    }
+
+    fn reset_contact(&mut self) {
+        self.d_pad.reset();
+    }
+
+    fn directions_from_touches(&mut self, touches: &[Touch]) -> Vec<Direction> {
+        self.d_pad.directions_from_touches(touches)
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct DPadTracker {
+    active: Option<DPadContact>,
+}
+
+impl DPadTracker {
     fn reset(&mut self) {
         self.active = None;
     }
@@ -336,17 +520,17 @@ impl SwipeTracker {
 
         for touch in touches {
             match touch.phase {
-                TouchPhase::Started => self.start(touch),
+                TouchPhase::Started => {
+                    if let Some(direction) = self.start(touch) {
+                        directions.push(direction);
+                    }
+                }
                 TouchPhase::Moved => {
                     if let Some(direction) = self.move_active(touch) {
                         directions.push(direction);
                     }
                 }
-                TouchPhase::Ended => {
-                    if let Some(direction) = self.end_active(touch) {
-                        directions.push(direction);
-                    }
-                }
+                TouchPhase::Ended => self.end_active(touch),
                 TouchPhase::Cancelled => self.cancel_active(touch),
             }
         }
@@ -354,21 +538,20 @@ impl SwipeTracker {
         directions
     }
 
-    fn start(&mut self, touch: &Touch) {
+    fn start(&mut self, touch: &Touch) -> Option<Direction> {
         if self.active.is_some() {
-            return;
+            return None;
         }
 
-        let Some(position) = touch.position else {
-            return;
-        };
+        let position = touch.position?;
+        let zone = d_pad_zone_at(position)?;
 
-        self.active = Some(SwipeContact {
+        self.active = Some(DPadContact {
             id: touch.id,
-            start: position,
-            last: position,
-            recognized: false,
+            last_direction: zone.direction,
         });
+
+        zone.direction
     }
 
     fn move_active(&mut self, touch: &Touch) -> Option<Direction> {
@@ -378,36 +561,18 @@ impl SwipeTracker {
         }
 
         let position = touch.position?;
-        contact.last = position;
+        let zone = d_pad_zone_at(position)?;
+        let direction = zone.direction?;
 
-        if contact.recognized {
+        if contact.last_direction == Some(direction) {
             return None;
         }
 
-        let direction = swipe_direction(contact.start, contact.last)?;
-        contact.recognized = true;
+        contact.last_direction = Some(direction);
         Some(direction)
     }
 
-    fn end_active(&mut self, touch: &Touch) -> Option<Direction> {
-        let mut contact = self.active.take()?;
-        if contact.id != touch.id {
-            self.active = Some(contact);
-            return None;
-        }
-
-        if let Some(position) = touch.position {
-            contact.last = position;
-        }
-
-        if contact.recognized {
-            return None;
-        }
-
-        swipe_direction(contact.start, contact.last)
-    }
-
-    fn cancel_active(&mut self, touch: &Touch) {
+    fn end_active(&mut self, touch: &Touch) {
         if self
             .active
             .as_ref()
@@ -415,6 +580,10 @@ impl SwipeTracker {
         {
             self.active = None;
         }
+    }
+
+    fn cancel_active(&mut self, touch: &Touch) {
+        self.end_active(touch);
     }
 }
 
@@ -443,6 +612,39 @@ impl Rect {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DirectionZone {
+    rect: Rect,
+    direction: Direction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DPadZone {
+    direction: Option<Direction>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DPadContact {
+    id: u64,
+    last_direction: Option<Direction>,
+}
+
+fn d_pad_zone_at(position: (i32, i32)) -> Option<DPadZone> {
+    for zone in D_PAD_ZONES {
+        if zone.rect.contains(position) {
+            return Some(DPadZone {
+                direction: Some(zone.direction),
+            });
+        }
+    }
+
+    if D_PAD_CENTER.contains(position) {
+        return Some(DPadZone { direction: None });
+    }
+
+    None
+}
+
 fn replay_requested(
     keyboard_restart_pressed: bool,
     mouse_left_pressed: bool,
@@ -458,37 +660,6 @@ fn replay_requested(
                     .position
                     .is_some_and(|position| REPLAY_BUTTON.contains(position))
         })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SwipeContact {
-    id: u64,
-    start: (i32, i32),
-    last: (i32, i32),
-    recognized: bool,
-}
-
-fn swipe_direction(start: (i32, i32), end: (i32, i32)) -> Option<Direction> {
-    let dx = end.0 - start.0;
-    let dy = end.1 - start.1;
-    let abs_dx = dx.abs();
-    let abs_dy = dy.abs();
-
-    if abs_dx.max(abs_dy) < SWIPE_THRESHOLD {
-        return None;
-    }
-
-    if abs_dx >= abs_dy {
-        if dx > 0 {
-            Some(Direction::Right)
-        } else {
-            Some(Direction::Left)
-        }
-    } else if dy > 0 {
-        Some(Direction::Down)
-    } else {
-        Some(Direction::Up)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -713,9 +884,11 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        BUTTON_BORDER, BUTTON_TEXT, Cell, Direction, EXIT_KEY, GAME_OVER, HUD_TEXT, Phase,
-        REPLAY_BUTTON, RESTART_KEY, SnakeControls, SnakeGame, SnakeWorld, SwipeTracker,
-        TICK_PERIOD, TURN_QUEUE_CAPACITY, direction_for_key, draw_game_over, draw_score_hud,
+        BUTTON_BORDER, BUTTON_TEXT, Cell, D_PAD_ARROW, D_PAD_CENTER, D_PAD_DOWN, D_PAD_LEFT,
+        D_PAD_RIGHT, D_PAD_UP, DPadTracker, Direction, EXIT_KEY, GAME_OVER, HUD_TEXT, Phase,
+        REPLAY_BUTTON, RESTART_KEY, SnakeControls, SnakeGame, SnakeWorld, TICK_PERIOD,
+        TURN_QUEUE_CAPACITY, TouchControls, d_pad_zone_at, direction_for_key, draw_d_pad,
+        draw_game_over, draw_score_hud,
     };
     use gotoo_pixel_engine::{Framebuffer, Key, Pixel, Touch, TouchPhase};
 
@@ -742,18 +915,26 @@ mod tests {
         }
     }
 
-    fn active_contact() -> super::SwipeContact {
-        super::SwipeContact {
+    fn rect_center(rect: super::Rect) -> (i32, i32) {
+        (
+            rect.x + rect.width as i32 / 2,
+            rect.y + rect.height as i32 / 2,
+        )
+    }
+
+    fn active_d_pad_contact() -> super::DPadContact {
+        super::DPadContact {
             id: 1,
-            start: (100, 80),
-            last: (100, 80),
-            recognized: false,
+            last_direction: Some(Direction::Right),
         }
     }
 
-    fn tracker_with_active_contact() -> SwipeTracker {
-        SwipeTracker {
-            active: Some(active_contact()),
+    fn touch_controls_with_active_contact() -> TouchControls {
+        TouchControls {
+            visible: true,
+            d_pad: DPadTracker {
+                active: Some(active_d_pad_contact()),
+            },
         }
     }
 
@@ -769,6 +950,10 @@ mod tests {
         }
 
         count
+    }
+
+    fn d_pad_direction_at(position: (i32, i32)) -> Option<Direction> {
+        d_pad_zone_at(position).and_then(|zone| zone.direction)
     }
 
     #[test]
@@ -811,177 +996,228 @@ mod tests {
     }
 
     #[test]
-    fn swipe_started_initializes_the_tracker() {
-        let mut tracker = SwipeTracker::default();
+    fn d_pad_draws_direction_arrows() {
+        let mut framebuffer = Framebuffer::new(super::FRAMEBUFFER_WIDTH, super::FRAMEBUFFER_HEIGHT);
+
+        draw_d_pad(&mut framebuffer);
+
+        assert!(count_pixels(&framebuffer, D_PAD_ARROW) > 0);
+    }
+
+    #[test]
+    fn d_pad_hit_tests_up() {
+        assert_eq!(
+            d_pad_direction_at(rect_center(D_PAD_UP)),
+            Some(Direction::Up)
+        );
+    }
+
+    #[test]
+    fn d_pad_hit_tests_down() {
+        assert_eq!(
+            d_pad_direction_at(rect_center(D_PAD_DOWN)),
+            Some(Direction::Down)
+        );
+    }
+
+    #[test]
+    fn d_pad_hit_tests_left() {
+        assert_eq!(
+            d_pad_direction_at(rect_center(D_PAD_LEFT)),
+            Some(Direction::Left)
+        );
+    }
+
+    #[test]
+    fn d_pad_hit_tests_right() {
+        assert_eq!(
+            d_pad_direction_at(rect_center(D_PAD_RIGHT)),
+            Some(Direction::Right)
+        );
+    }
+
+    #[test]
+    fn d_pad_center_is_neutral() {
+        let zone = d_pad_zone_at(rect_center(D_PAD_CENTER));
+
+        assert_eq!(zone.and_then(|zone| zone.direction), None);
+        assert!(d_pad_zone_at(rect_center(D_PAD_CENTER)).is_some());
+    }
+
+    #[test]
+    fn outside_d_pad_is_ignored() {
+        assert_eq!(d_pad_zone_at((0, 0)), None);
+    }
+
+    #[test]
+    fn d_pad_started_outside_control_is_ignored() {
+        let mut tracker = DPadTracker::default();
 
         let directions =
-            tracker.directions_from_touches(&[touch(1, TouchPhase::Started, Some((100, 80)))]);
-
-        assert!(directions.is_empty());
-        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
-    }
-
-    #[test]
-    fn tap_is_ignored() {
-        let mut tracker = SwipeTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Ended, Some((100, 80))),
-        ]);
+            tracker.directions_from_touches(&[touch(1, TouchPhase::Started, Some((0, 0)))]);
 
         assert!(directions.is_empty());
         assert!(tracker.active.is_none());
     }
 
     #[test]
-    fn movement_below_swipe_threshold_is_ignored() {
-        let mut tracker = SwipeTracker::default();
+    fn d_pad_rect_boundaries_are_inclusive_and_non_overlapping() {
+        assert_eq!(d_pad_direction_at((232, 56)), Some(Direction::Up));
+        assert_eq!(d_pad_direction_at((271, 95)), Some(Direction::Up));
+        assert_eq!(d_pad_direction_at((231, 95)), None);
+        assert_eq!(d_pad_direction_at((232, 96)), None);
 
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Moved, Some((119, 80))),
-        ]);
+        assert_eq!(d_pad_direction_at((192, 96)), Some(Direction::Left));
+        assert_eq!(d_pad_direction_at((231, 135)), Some(Direction::Left));
+        assert_eq!(d_pad_direction_at((232, 135)), None);
 
-        assert!(directions.is_empty());
-        assert!(tracker.active.is_some());
+        assert_eq!(d_pad_direction_at((272, 96)), Some(Direction::Right));
+        assert_eq!(d_pad_direction_at((311, 135)), Some(Direction::Right));
+        assert_eq!(d_pad_direction_at((312, 135)), None);
+
+        assert_eq!(d_pad_direction_at((232, 136)), Some(Direction::Down));
+        assert_eq!(d_pad_direction_at((271, 175)), Some(Direction::Down));
+        assert_eq!(d_pad_direction_at((272, 175)), None);
     }
 
     #[test]
-    fn moved_past_threshold_triggers_immediately() {
-        let mut tracker = SwipeTracker::default();
+    fn d_pad_started_produces_direction_immediately() {
+        let mut tracker = DPadTracker::default();
 
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Moved, Some((120, 80))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right]);
-    }
-
-    #[test]
-    fn only_one_direction_is_emitted_per_contact() {
-        let mut tracker = SwipeTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Moved, Some((120, 80))),
-            touch(1, TouchPhase::Moved, Some((140, 80))),
-            touch(1, TouchPhase::Ended, Some((160, 80))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right]);
-        assert!(tracker.active.is_none());
-    }
-
-    #[test]
-    fn swipe_directions_cover_all_axes() {
-        for (end, expected) in [
-            ((100, 60), Direction::Up),
-            ((100, 100), Direction::Down),
-            ((80, 80), Direction::Left),
-            ((120, 80), Direction::Right),
-        ] {
-            let mut tracker = SwipeTracker::default();
-            let directions = tracker.directions_from_touches(&[
-                touch(1, TouchPhase::Started, Some((100, 80))),
-                touch(1, TouchPhase::Moved, Some(end)),
-            ]);
-
-            assert_eq!(directions, [expected]);
-        }
-    }
-
-    #[test]
-    fn dominant_axis_selects_swipe_direction() {
-        let mut tracker = SwipeTracker::default();
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Moved, Some((110, 50))),
-        ]);
-        assert_eq!(directions, [Direction::Up]);
-
-        let mut tracker = SwipeTracker::default();
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Moved, Some((130, 90))),
-        ]);
-        assert_eq!(directions, [Direction::Right]);
-    }
-
-    #[test]
-    fn equal_axes_choose_horizontal_direction() {
-        let mut tracker = SwipeTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Moved, Some((120, 100))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right]);
-    }
-
-    #[test]
-    fn second_contact_is_ignored_while_first_contact_is_active() {
-        let mut tracker = SwipeTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(2, TouchPhase::Started, Some((50, 50))),
-            touch(2, TouchPhase::Moved, Some((80, 50))),
-            touch(1, TouchPhase::Moved, Some((120, 80))),
-        ]);
+        let directions = tracker.directions_from_touches(&[touch(
+            1,
+            TouchPhase::Started,
+            Some(rect_center(D_PAD_RIGHT)),
+        )]);
 
         assert_eq!(directions, [Direction::Right]);
         assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
     }
 
     #[test]
-    fn cancelled_touch_cleans_the_tracker_without_direction() {
-        let mut tracker = SwipeTracker::default();
+    fn d_pad_started_in_center_tracks_without_direction() {
+        let mut tracker = DPadTracker::default();
 
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Cancelled, Some((140, 80))),
-        ]);
+        let directions = tracker.directions_from_touches(&[touch(
+            1,
+            TouchPhase::Started,
+            Some(rect_center(D_PAD_CENTER)),
+        )]);
 
         assert!(directions.is_empty());
-        assert!(tracker.active.is_none());
+        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
+    }
+
+    #[test]
+    fn d_pad_moved_in_same_zone_does_not_repeat() {
+        let mut tracker = DPadTracker::default();
 
         let directions = tracker.directions_from_touches(&[
-            touch(2, TouchPhase::Started, Some((100, 80))),
-            touch(2, TouchPhase::Moved, Some((120, 80))),
+            touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
+            touch(1, TouchPhase::Moved, Some((300, 110))),
         ]);
 
         assert_eq!(directions, [Direction::Right]);
     }
 
     #[test]
-    fn ended_touch_can_recognize_swipe_as_fallback() {
-        let mut tracker = SwipeTracker::default();
+    fn d_pad_moved_to_another_zone_produces_new_direction() {
+        let mut tracker = DPadTracker::default();
 
         let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Ended, Some((100, 60))),
-        ]);
-
-        assert_eq!(directions, [Direction::Up]);
-        assert!(tracker.active.is_none());
-    }
-
-    #[test]
-    fn new_gesture_is_possible_after_previous_contact_ends() {
-        let mut tracker = SwipeTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some((100, 80))),
-            touch(1, TouchPhase::Moved, Some((120, 80))),
-            touch(1, TouchPhase::Ended, Some((120, 80))),
-            touch(2, TouchPhase::Started, Some((100, 80))),
-            touch(2, TouchPhase::Moved, Some((100, 60))),
+            touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
+            touch(1, TouchPhase::Moved, Some(rect_center(D_PAD_UP))),
         ]);
 
         assert_eq!(directions, [Direction::Right, Direction::Up]);
+    }
+
+    #[test]
+    fn d_pad_supports_fast_direction_sequences() {
+        let mut tracker = DPadTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
+            touch(1, TouchPhase::Moved, Some(rect_center(D_PAD_UP))),
+            touch(1, TouchPhase::Moved, Some(rect_center(D_PAD_LEFT))),
+        ]);
+
+        assert_eq!(
+            directions,
+            [Direction::Right, Direction::Up, Direction::Left]
+        );
+    }
+
+    #[test]
+    fn d_pad_second_contact_is_ignored_while_first_contact_is_active() {
+        let mut tracker = DPadTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
+            touch(2, TouchPhase::Started, Some(rect_center(D_PAD_UP))),
+            touch(2, TouchPhase::Moved, Some(rect_center(D_PAD_LEFT))),
+            touch(1, TouchPhase::Moved, Some(rect_center(D_PAD_DOWN))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right, Direction::Down]);
+        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
+    }
+
+    #[test]
+    fn d_pad_ended_touch_releases_contact() {
+        let mut tracker = DPadTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
+            touch(1, TouchPhase::Ended, Some(rect_center(D_PAD_RIGHT))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right]);
+        assert!(tracker.active.is_none());
+    }
+
+    #[test]
+    fn d_pad_cancelled_touch_releases_contact() {
+        let mut tracker = DPadTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
+            touch(1, TouchPhase::Cancelled, Some(rect_center(D_PAD_RIGHT))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right]);
+        assert!(tracker.active.is_none());
+    }
+
+    #[test]
+    fn d_pad_accepts_new_contact_after_previous_contact_ends() {
+        let mut tracker = DPadTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
+            touch(1, TouchPhase::Ended, Some(rect_center(D_PAD_RIGHT))),
+            touch(2, TouchPhase::Started, Some(rect_center(D_PAD_UP))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right, Direction::Up]);
+        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(2));
+    }
+
+    #[test]
+    fn touch_controls_visibility_is_activated_by_touch_events() {
+        let mut touch_controls = TouchControls::default();
+
+        assert!(!touch_controls.visible());
+        touch_controls.observe_touches(&[touch(1, TouchPhase::Started, None)]);
+
+        assert!(touch_controls.visible());
+    }
+
+    #[test]
+    fn new_game_starts_with_hidden_touch_controls() {
+        let game = SnakeGame::new();
+
+        assert!(!game.touch_controls.visible());
     }
 
     #[test]
@@ -1096,7 +1332,7 @@ mod tests {
     }
 
     #[test]
-    fn game_over_transition_cleans_active_swipe_tracker() {
+    fn game_over_transition_cleans_active_d_pad_contact() {
         let mut game = SnakeGame::new();
         game.world.snake = VecDeque::from([
             Cell { x: 31, y: 9 },
@@ -1104,12 +1340,12 @@ mod tests {
             Cell { x: 29, y: 9 },
         ]);
         game.world.direction = Direction::Right;
-        game.swipe_tracker.active = Some(active_contact());
+        game.touch_controls.d_pad.active = Some(active_d_pad_contact());
 
         tick(&mut game);
 
         assert_eq!(game.world.phase, Phase::GameOver);
-        assert!(game.swipe_tracker.active.is_none());
+        assert!(game.touch_controls.d_pad.active.is_none());
     }
 
     #[test]
@@ -1168,7 +1404,7 @@ mod tests {
         game.world.turn_queue = VecDeque::from([Direction::Left]);
         game.world.score = 4;
         game.accumulator = TICK_PERIOD;
-        game.swipe_tracker.active = Some(active_contact());
+        game.touch_controls.d_pad.active = Some(active_d_pad_contact());
 
         game.update_logic(Duration::ZERO, SnakeControls::restart());
 
@@ -1178,15 +1414,16 @@ mod tests {
         assert!(game.world.turn_queue.is_empty());
         assert_eq!(game.world.score(), 0);
         assert_eq!(game.accumulator, Duration::ZERO);
-        assert!(game.swipe_tracker.active.is_none());
+        assert!(game.touch_controls.d_pad.active.is_none());
         assert!(game.world.food.is_some());
     }
 
     #[test]
     fn game_over_keyboard_space_requests_restart_without_direction() {
-        let mut tracker = SwipeTracker::default();
+        let mut touch_controls = TouchControls::default();
 
-        let controls = SnakeControls::from_game_over_inputs(true, false, None, &[], &mut tracker);
+        let controls =
+            SnakeControls::from_game_over_inputs(true, false, None, &[], &mut touch_controls);
 
         assert!(controls.restart);
         assert!(controls.directions.is_empty());
@@ -1194,14 +1431,14 @@ mod tests {
 
     #[test]
     fn game_over_mouse_replay_rect_requests_restart() {
-        let mut tracker = SwipeTracker::default();
+        let mut touch_controls = TouchControls::default();
 
         let controls = SnakeControls::from_game_over_inputs(
             false,
             true,
             Some(replay_button_center()),
             &[],
-            &mut tracker,
+            &mut touch_controls,
         );
 
         assert!(controls.restart);
@@ -1210,10 +1447,15 @@ mod tests {
 
     #[test]
     fn game_over_mouse_outside_replay_rect_is_ignored() {
-        let mut tracker = SwipeTracker::default();
+        let mut touch_controls = TouchControls::default();
 
-        let controls =
-            SnakeControls::from_game_over_inputs(false, true, Some((0, 0)), &[], &mut tracker);
+        let controls = SnakeControls::from_game_over_inputs(
+            false,
+            true,
+            Some((0, 0)),
+            &[],
+            &mut touch_controls,
+        );
 
         assert!(!controls.restart);
         assert!(controls.directions.is_empty());
@@ -1221,14 +1463,14 @@ mod tests {
 
     #[test]
     fn game_over_touch_started_in_replay_rect_requests_restart() {
-        let mut tracker = SwipeTracker::default();
+        let mut touch_controls = TouchControls::default();
 
         let controls = SnakeControls::from_game_over_inputs(
             false,
             false,
             None,
             &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
-            &mut tracker,
+            &mut touch_controls,
         );
 
         assert!(controls.restart);
@@ -1237,14 +1479,14 @@ mod tests {
 
     #[test]
     fn game_over_touch_outside_replay_rect_is_ignored() {
-        let mut tracker = SwipeTracker::default();
+        let mut touch_controls = TouchControls::default();
 
         let controls = SnakeControls::from_game_over_inputs(
             false,
             false,
             None,
             &[touch(1, TouchPhase::Started, Some((0, 0)))],
-            &mut tracker,
+            &mut touch_controls,
         );
 
         assert!(!controls.restart);
@@ -1252,20 +1494,41 @@ mod tests {
     }
 
     #[test]
-    fn game_over_touch_replay_does_not_feed_swipe_tracker() {
-        let mut tracker = tracker_with_active_contact();
+    fn game_over_touch_in_d_pad_is_ignored() {
+        let mut touch_controls = TouchControls::default();
+
+        let controls = SnakeControls::from_game_over_inputs(
+            false,
+            false,
+            None,
+            &[touch(
+                1,
+                TouchPhase::Started,
+                Some(rect_center(D_PAD_RIGHT)),
+            )],
+            &mut touch_controls,
+        );
+
+        assert!(!controls.restart);
+        assert!(controls.directions.is_empty());
+        assert!(touch_controls.d_pad.active.is_none());
+    }
+
+    #[test]
+    fn game_over_touch_replay_does_not_feed_d_pad_tracker() {
+        let mut touch_controls = touch_controls_with_active_contact();
 
         let controls = SnakeControls::from_game_over_inputs(
             false,
             false,
             None,
             &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
-            &mut tracker,
+            &mut touch_controls,
         );
 
         assert!(controls.restart);
         assert!(controls.directions.is_empty());
-        assert!(tracker.active.is_none());
+        assert!(touch_controls.d_pad.active.is_none());
     }
 
     #[test]
@@ -1279,7 +1542,7 @@ mod tests {
             false,
             None,
             &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
-            &mut game.swipe_tracker,
+            &mut game.touch_controls,
         );
         game.update_logic(Duration::ZERO, controls);
 
