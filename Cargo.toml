@@ -1,0 +1,10 @@
+[package]
+name = "gotoo-pixel-engine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+
+[dependencies]
+pollster = "1.0.1"
+wgpu = "30.0.0"
+winit = "0.30.13"

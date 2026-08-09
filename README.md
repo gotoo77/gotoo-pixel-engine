@@ -40,4 +40,21 @@ Pas d'ECS, de scene graph, de système de plugins, de scripting ou d'éditeur ta
 
 Le projet démarre par un **spike technique minimal (M0)** : ouvrir une fenêtre, maintenir un framebuffer CPU, l'envoyer au GPU et gérer une boucle interactive avec clavier et delta-time.
 
+## M0 — Lancer le spike plateforme
+
+```bash
+cargo run
+```
+
+La démonstration ouvre une fenêtre `960x540` qui affiche un framebuffer CPU `320x180` uploadé vers une texture GPU. La touche `Espace` bascule la palette de la démo, `Echap` ou la fermeture de fenêtre quitte l'application. Le titre de la fenêtre affiche une mesure simple du temps de frame et du FPS pour établir une première baseline.
+
+## Versions M0
+
+- Rust : `1.97.1`, pinné dans `rust-toolchain.toml`.
+- `winit` : `0.30.13`.
+- `wgpu` : `30.0.0`.
+- `pollster` : `1.0.1`, utilisé uniquement pour initialiser `wgpu` depuis la boucle synchrone `winit`.
+
+Le chemin CPU framebuffer vers GPU vers écran se lit directement dans `src/demo.rs`, `src/framebuffer.rs` et `src/renderer.rs`.
+
 Voir [ROADMAP.md](ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) et [REFERENCES.md](REFERENCES.md).
