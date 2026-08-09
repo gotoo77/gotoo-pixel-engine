@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use web_time::{Duration, Instant};
 
 use crate::Framebuffer;
-use crate::input::{Input, Key, MouseButton};
+use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
@@ -218,17 +218,34 @@ impl<G: Game> PlatformApp<G> {
     }
 
     fn update_mouse_position(&mut self, position: PhysicalPosition<f64>) {
+        let position = self.framebuffer_position(position);
+        self.input.set_mouse_position(position);
+    }
+
+    fn update_touch(&mut self, touch: winit::event::Touch) {
         let Some(window) = self.window.as_ref() else {
             return;
         };
 
-        self.input
-            .set_mouse_position(window_to_framebuffer_position(
-                position,
-                window.inner_size(),
-                self.config.framebuffer_width,
-                self.config.framebuffer_height,
-            ));
+        self.input.push_touch(touch_from_winit(
+            touch.id,
+            touch.phase,
+            touch.location,
+            window.inner_size(),
+            self.config.framebuffer_width,
+            self.config.framebuffer_height,
+        ));
+    }
+
+    fn framebuffer_position(&self, position: PhysicalPosition<f64>) -> Option<(i32, i32)> {
+        let window = self.window.as_ref()?;
+
+        window_to_framebuffer_position(
+            position,
+            window.inner_size(),
+            self.config.framebuffer_width,
+            self.config.framebuffer_height,
+        )
     }
 
     fn create_window_and_renderer(&mut self, event_loop: &ActiveEventLoop) {
@@ -383,6 +400,7 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             }
             WindowEvent::CursorMoved { position, .. } => self.update_mouse_position(position),
             WindowEvent::CursorLeft { .. } => self.input.set_mouse_position(None),
+            WindowEvent::Touch(touch) => self.update_touch(touch),
             WindowEvent::Focused(false) => self.input.reset(),
             WindowEvent::RedrawRequested => self.render_frame(event_loop),
             _ => {}
@@ -424,6 +442,35 @@ fn mouse_button_from_winit(button: winit::event::MouseButton) -> Option<MouseBut
         winit::event::MouseButton::Right => Some(MouseButton::Right),
         winit::event::MouseButton::Middle => Some(MouseButton::Middle),
         _ => None,
+    }
+}
+
+fn touch_phase_from_winit(phase: winit::event::TouchPhase) -> TouchPhase {
+    match phase {
+        winit::event::TouchPhase::Started => TouchPhase::Started,
+        winit::event::TouchPhase::Moved => TouchPhase::Moved,
+        winit::event::TouchPhase::Ended => TouchPhase::Ended,
+        winit::event::TouchPhase::Cancelled => TouchPhase::Cancelled,
+    }
+}
+
+fn touch_from_winit(
+    id: u64,
+    phase: winit::event::TouchPhase,
+    location: PhysicalPosition<f64>,
+    window_size: PhysicalSize<u32>,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+) -> Touch {
+    Touch {
+        id,
+        phase: touch_phase_from_winit(phase),
+        position: window_to_framebuffer_position(
+            location,
+            window_size,
+            framebuffer_width,
+            framebuffer_height,
+        ),
     }
 }
 
@@ -472,8 +519,9 @@ fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        EngineConfig, Key, MouseButton, key_from_winit, mouse_button_from_winit,
-        remember_non_zero_size, validate_config, window_to_framebuffer_position,
+        EngineConfig, Key, MouseButton, TouchPhase, key_from_winit, mouse_button_from_winit,
+        remember_non_zero_size, touch_from_winit, touch_phase_from_winit, validate_config,
+        window_to_framebuffer_position,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, PhysicalKey};
@@ -508,6 +556,26 @@ mod tests {
     }
 
     #[test]
+    fn maps_touch_phases() {
+        assert_eq!(
+            touch_phase_from_winit(winit::event::TouchPhase::Started),
+            TouchPhase::Started
+        );
+        assert_eq!(
+            touch_phase_from_winit(winit::event::TouchPhase::Moved),
+            TouchPhase::Moved
+        );
+        assert_eq!(
+            touch_phase_from_winit(winit::event::TouchPhase::Ended),
+            TouchPhase::Ended
+        );
+        assert_eq!(
+            touch_phase_from_winit(winit::event::TouchPhase::Cancelled),
+            TouchPhase::Cancelled
+        );
+    }
+
+    #[test]
     fn maps_window_position_to_framebuffer_position() {
         assert_eq!(
             window_to_framebuffer_position(
@@ -518,6 +586,54 @@ mod tests {
             ),
             Some((160, 90))
         );
+    }
+
+    #[test]
+    fn maps_touch_position_to_framebuffer_position() {
+        let touch = touch_from_winit(
+            42,
+            winit::event::TouchPhase::Moved,
+            PhysicalPosition::new(480.0, 270.0),
+            PhysicalSize::new(960, 540),
+            320,
+            180,
+        );
+
+        assert_eq!(touch.id, 42);
+        assert_eq!(touch.phase, TouchPhase::Moved);
+        assert_eq!(touch.position, Some((160, 90)));
+    }
+
+    #[test]
+    fn preserves_touch_events_outside_framebuffer() {
+        let touch = touch_from_winit(
+            42,
+            winit::event::TouchPhase::Ended,
+            PhysicalPosition::new(960.0, 10.0),
+            PhysicalSize::new(960, 540),
+            320,
+            180,
+        );
+
+        assert_eq!(touch.id, 42);
+        assert_eq!(touch.phase, TouchPhase::Ended);
+        assert_eq!(touch.position, None);
+    }
+
+    #[test]
+    fn preserves_touch_events_when_window_size_is_invalid() {
+        let touch = touch_from_winit(
+            42,
+            winit::event::TouchPhase::Cancelled,
+            PhysicalPosition::new(10.0, 10.0),
+            PhysicalSize::new(0, 540),
+            320,
+            180,
+        );
+
+        assert_eq!(touch.id, 42);
+        assert_eq!(touch.phase, TouchPhase::Cancelled);
+        assert_eq!(touch.position, None);
     }
 
     #[test]

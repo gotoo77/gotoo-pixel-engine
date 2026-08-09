@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use gotoo_pixel_engine::{Frame, Game, GameResult, Key, Pixel};
+use gotoo_pixel_engine::{Frame, Game, GameResult, Key, Pixel, Touch, TouchPhase};
 
 pub const FRAMEBUFFER_WIDTH: u32 = 320;
 pub const FRAMEBUFFER_HEIGHT: u32 = 180;
@@ -13,6 +13,9 @@ const INITIAL_SEED: u32 = 0x5EED_1234;
 const TURN_QUEUE_CAPACITY: usize = 2;
 const MAX_CATCH_UP: usize = 5;
 const TICK_PERIOD: Duration = Duration::from_millis(120);
+const SWIPE_THRESHOLD: i32 = 20;
+const EXIT_KEY: Key = Key::Escape;
+const RESTART_KEY: Key = Key::Space;
 
 const BACKGROUND: Pixel = Pixel::rgb(10, 14, 18);
 const GRID_LINE: Pixel = Pixel::rgb(20, 28, 34);
@@ -26,6 +29,7 @@ const GAME_OVER: Pixel = Pixel::rgb(245, 66, 66);
 pub struct SnakeGame {
     world: SnakeWorld,
     accumulator: Duration,
+    swipe_tracker: SwipeTracker,
 }
 
 impl SnakeGame {
@@ -33,6 +37,7 @@ impl SnakeGame {
         Self {
             world: SnakeWorld::new(INITIAL_SEED),
             accumulator: Duration::ZERO,
+            swipe_tracker: SwipeTracker::default(),
         }
     }
 
@@ -109,11 +114,12 @@ impl SnakeGame {
 
 impl Game for SnakeGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        if frame.input.key(Key::Escape).pressed() {
+        if frame.input.key(EXIT_KEY).pressed() {
             return GameResult::Exit;
         }
 
-        self.update_logic(frame.delta_time, SnakeControls::from_frame(frame));
+        let controls = SnakeControls::from_frame(frame, &mut self.swipe_tracker);
+        self.update_logic(frame.delta_time, controls);
         self.draw(frame);
 
         GameResult::Continue
@@ -151,25 +157,21 @@ impl SnakeControls {
         }
     }
 
-    fn from_frame(frame: &Frame<'_>) -> Self {
+    fn from_frame(frame: &Frame<'_>, swipe_tracker: &mut SwipeTracker) -> Self {
         let mut controls = Self::none();
 
-        for (key, direction) in [
-            (Key::Up, Direction::Up),
-            (Key::W, Direction::Up),
-            (Key::Right, Direction::Right),
-            (Key::D, Direction::Right),
-            (Key::Down, Direction::Down),
-            (Key::S, Direction::Down),
-            (Key::Left, Direction::Left),
-            (Key::A, Direction::Left),
-        ] {
-            if frame.input.key(key).pressed() {
+        for key in DIRECTION_KEYS {
+            if frame.input.key(key).pressed()
+                && let Some(direction) = direction_for_key(key)
+            {
                 controls.directions.push(direction);
             }
         }
 
-        controls.restart = frame.input.key(Key::Space).pressed();
+        controls
+            .directions
+            .extend(swipe_tracker.directions_from_touches(frame.input.touches()));
+        controls.restart = frame.input.key(RESTART_KEY).pressed();
         controls
     }
 
@@ -187,6 +189,151 @@ impl SnakeControls {
             directions: Vec::new(),
             restart: true,
         }
+    }
+}
+
+const DIRECTION_KEYS: [Key; 8] = [
+    Key::Up,
+    Key::W,
+    Key::Right,
+    Key::D,
+    Key::Down,
+    Key::S,
+    Key::Left,
+    Key::A,
+];
+
+fn direction_for_key(key: Key) -> Option<Direction> {
+    match key {
+        Key::Up | Key::W => Some(Direction::Up),
+        Key::Right | Key::D => Some(Direction::Right),
+        Key::Down | Key::S => Some(Direction::Down),
+        Key::Left | Key::A => Some(Direction::Left),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct SwipeTracker {
+    active: Option<SwipeContact>,
+}
+
+impl SwipeTracker {
+    fn directions_from_touches(&mut self, touches: &[Touch]) -> Vec<Direction> {
+        let mut directions = Vec::new();
+
+        for touch in touches {
+            match touch.phase {
+                TouchPhase::Started => self.start(touch),
+                TouchPhase::Moved => {
+                    if let Some(direction) = self.move_active(touch) {
+                        directions.push(direction);
+                    }
+                }
+                TouchPhase::Ended => {
+                    if let Some(direction) = self.end_active(touch) {
+                        directions.push(direction);
+                    }
+                }
+                TouchPhase::Cancelled => self.cancel_active(touch),
+            }
+        }
+
+        directions
+    }
+
+    fn start(&mut self, touch: &Touch) {
+        if self.active.is_some() {
+            return;
+        }
+
+        let Some(position) = touch.position else {
+            return;
+        };
+
+        self.active = Some(SwipeContact {
+            id: touch.id,
+            start: position,
+            last: position,
+            recognized: false,
+        });
+    }
+
+    fn move_active(&mut self, touch: &Touch) -> Option<Direction> {
+        let contact = self.active.as_mut()?;
+        if contact.id != touch.id {
+            return None;
+        }
+
+        let position = touch.position?;
+        contact.last = position;
+
+        if contact.recognized {
+            return None;
+        }
+
+        let direction = swipe_direction(contact.start, contact.last)?;
+        contact.recognized = true;
+        Some(direction)
+    }
+
+    fn end_active(&mut self, touch: &Touch) -> Option<Direction> {
+        let mut contact = self.active.take()?;
+        if contact.id != touch.id {
+            self.active = Some(contact);
+            return None;
+        }
+
+        if let Some(position) = touch.position {
+            contact.last = position;
+        }
+
+        if contact.recognized {
+            return None;
+        }
+
+        swipe_direction(contact.start, contact.last)
+    }
+
+    fn cancel_active(&mut self, touch: &Touch) {
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|contact| contact.id == touch.id)
+        {
+            self.active = None;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SwipeContact {
+    id: u64,
+    start: (i32, i32),
+    last: (i32, i32),
+    recognized: bool,
+}
+
+fn swipe_direction(start: (i32, i32), end: (i32, i32)) -> Option<Direction> {
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let abs_dx = dx.abs();
+    let abs_dy = dy.abs();
+
+    if abs_dx.max(abs_dy) < SWIPE_THRESHOLD {
+        return None;
+    }
+
+    if abs_dx >= abs_dy {
+        if dx > 0 {
+            Some(Direction::Right)
+        } else {
+            Some(Direction::Left)
+        }
+    } else if dy > 0 {
+        Some(Direction::Down)
+    } else {
+        Some(Direction::Up)
     }
 }
 
@@ -404,9 +551,10 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        Cell, Direction, Phase, SnakeControls, SnakeGame, SnakeWorld, TICK_PERIOD,
-        TURN_QUEUE_CAPACITY,
+        Cell, Direction, EXIT_KEY, Phase, RESTART_KEY, SnakeControls, SnakeGame, SnakeWorld,
+        SwipeTracker, TICK_PERIOD, TURN_QUEUE_CAPACITY, direction_for_key,
     };
+    use gotoo_pixel_engine::{Key, Touch, TouchPhase};
 
     fn head(game: &SnakeGame) -> Cell {
         game.world.snake[0]
@@ -414,6 +562,203 @@ mod tests {
 
     fn tick(game: &mut SnakeGame) {
         game.update_logic(TICK_PERIOD, SnakeControls::none());
+    }
+
+    fn touch(id: u64, phase: TouchPhase, position: Option<(i32, i32)>) -> Touch {
+        Touch {
+            id,
+            phase,
+            position,
+        }
+    }
+
+    #[test]
+    fn keyboard_direction_mapping_stays_unchanged() {
+        assert_eq!(direction_for_key(Key::Up), Some(Direction::Up));
+        assert_eq!(direction_for_key(Key::W), Some(Direction::Up));
+        assert_eq!(direction_for_key(Key::Right), Some(Direction::Right));
+        assert_eq!(direction_for_key(Key::D), Some(Direction::Right));
+        assert_eq!(direction_for_key(Key::Down), Some(Direction::Down));
+        assert_eq!(direction_for_key(Key::S), Some(Direction::Down));
+        assert_eq!(direction_for_key(Key::Left), Some(Direction::Left));
+        assert_eq!(direction_for_key(Key::A), Some(Direction::Left));
+        assert_eq!(direction_for_key(Key::Space), None);
+        assert_eq!(RESTART_KEY, Key::Space);
+        assert_eq!(EXIT_KEY, Key::Escape);
+    }
+
+    #[test]
+    fn swipe_started_initializes_the_tracker() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions =
+            tracker.directions_from_touches(&[touch(1, TouchPhase::Started, Some((100, 80)))]);
+
+        assert!(directions.is_empty());
+        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
+    }
+
+    #[test]
+    fn tap_is_ignored() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Ended, Some((100, 80))),
+        ]);
+
+        assert!(directions.is_empty());
+        assert!(tracker.active.is_none());
+    }
+
+    #[test]
+    fn movement_below_swipe_threshold_is_ignored() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Moved, Some((119, 80))),
+        ]);
+
+        assert!(directions.is_empty());
+        assert!(tracker.active.is_some());
+    }
+
+    #[test]
+    fn moved_past_threshold_triggers_immediately() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Moved, Some((120, 80))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right]);
+    }
+
+    #[test]
+    fn only_one_direction_is_emitted_per_contact() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Moved, Some((120, 80))),
+            touch(1, TouchPhase::Moved, Some((140, 80))),
+            touch(1, TouchPhase::Ended, Some((160, 80))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right]);
+        assert!(tracker.active.is_none());
+    }
+
+    #[test]
+    fn swipe_directions_cover_all_axes() {
+        for (end, expected) in [
+            ((100, 60), Direction::Up),
+            ((100, 100), Direction::Down),
+            ((80, 80), Direction::Left),
+            ((120, 80), Direction::Right),
+        ] {
+            let mut tracker = SwipeTracker::default();
+            let directions = tracker.directions_from_touches(&[
+                touch(1, TouchPhase::Started, Some((100, 80))),
+                touch(1, TouchPhase::Moved, Some(end)),
+            ]);
+
+            assert_eq!(directions, [expected]);
+        }
+    }
+
+    #[test]
+    fn dominant_axis_selects_swipe_direction() {
+        let mut tracker = SwipeTracker::default();
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Moved, Some((110, 50))),
+        ]);
+        assert_eq!(directions, [Direction::Up]);
+
+        let mut tracker = SwipeTracker::default();
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Moved, Some((130, 90))),
+        ]);
+        assert_eq!(directions, [Direction::Right]);
+    }
+
+    #[test]
+    fn equal_axes_choose_horizontal_direction() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Moved, Some((120, 100))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right]);
+    }
+
+    #[test]
+    fn second_contact_is_ignored_while_first_contact_is_active() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(2, TouchPhase::Started, Some((50, 50))),
+            touch(2, TouchPhase::Moved, Some((80, 50))),
+            touch(1, TouchPhase::Moved, Some((120, 80))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right]);
+        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
+    }
+
+    #[test]
+    fn cancelled_touch_cleans_the_tracker_without_direction() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Cancelled, Some((140, 80))),
+        ]);
+
+        assert!(directions.is_empty());
+        assert!(tracker.active.is_none());
+
+        let directions = tracker.directions_from_touches(&[
+            touch(2, TouchPhase::Started, Some((100, 80))),
+            touch(2, TouchPhase::Moved, Some((120, 80))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right]);
+    }
+
+    #[test]
+    fn ended_touch_can_recognize_swipe_as_fallback() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Ended, Some((100, 60))),
+        ]);
+
+        assert_eq!(directions, [Direction::Up]);
+        assert!(tracker.active.is_none());
+    }
+
+    #[test]
+    fn new_gesture_is_possible_after_previous_contact_ends() {
+        let mut tracker = SwipeTracker::default();
+
+        let directions = tracker.directions_from_touches(&[
+            touch(1, TouchPhase::Started, Some((100, 80))),
+            touch(1, TouchPhase::Moved, Some((120, 80))),
+            touch(1, TouchPhase::Ended, Some((120, 80))),
+            touch(2, TouchPhase::Started, Some((100, 80))),
+            touch(2, TouchPhase::Moved, Some((100, 60))),
+        ]);
+
+        assert_eq!(directions, [Direction::Right, Direction::Up]);
     }
 
     #[test]

@@ -19,6 +19,21 @@ pub enum MouseButton {
     Middle,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TouchPhase {
+    Started,
+    Moved,
+    Ended,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Touch {
+    pub id: u64,
+    pub phase: TouchPhase,
+    pub position: Option<(i32, i32)>,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ButtonState {
     bits: u8,
@@ -66,6 +81,7 @@ pub struct Input {
     keys: [ButtonState; KEY_COUNT],
     mouse_buttons: [ButtonState; MOUSE_BUTTON_COUNT],
     mouse_position: Option<(i32, i32)>,
+    touches: Vec<Touch>,
 }
 
 impl Input {
@@ -79,6 +95,10 @@ impl Input {
 
     pub fn mouse_position(&self) -> Option<(i32, i32)> {
         self.mouse_position
+    }
+
+    pub fn touches(&self) -> &[Touch] {
+        &self.touches
     }
 
     pub(crate) fn press_key(&mut self, key: Key) {
@@ -101,6 +121,10 @@ impl Input {
         self.mouse_position = position;
     }
 
+    pub(crate) fn push_touch(&mut self, touch: Touch) {
+        self.touches.push(touch);
+    }
+
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
     }
@@ -112,6 +136,7 @@ impl Input {
         for button in &mut self.mouse_buttons {
             button.advance_frame();
         }
+        self.touches.clear();
     }
 }
 
@@ -121,6 +146,7 @@ impl Default for Input {
             keys: [ButtonState::default(); KEY_COUNT],
             mouse_buttons: [ButtonState::default(); MOUSE_BUTTON_COUNT],
             mouse_position: None,
+            touches: Vec::new(),
         }
     }
 }
@@ -153,7 +179,7 @@ fn mouse_button_index(button: MouseButton) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{Input, Key, MouseButton};
+    use super::{Input, Key, MouseButton, Touch, TouchPhase};
 
     #[test]
     fn key_transitions_pressed_held_released() {
@@ -225,12 +251,84 @@ mod tests {
     }
 
     #[test]
+    fn touch_events_preserve_phase_order_and_ids() {
+        let mut input = Input::default();
+
+        input.push_touch(Touch {
+            id: 7,
+            phase: TouchPhase::Started,
+            position: Some((10, 20)),
+        });
+        input.push_touch(Touch {
+            id: 9,
+            phase: TouchPhase::Moved,
+            position: Some((12, 24)),
+        });
+        input.push_touch(Touch {
+            id: 7,
+            phase: TouchPhase::Ended,
+            position: None,
+        });
+        input.push_touch(Touch {
+            id: 9,
+            phase: TouchPhase::Cancelled,
+            position: Some((14, 28)),
+        });
+
+        assert_eq!(
+            input.touches(),
+            &[
+                Touch {
+                    id: 7,
+                    phase: TouchPhase::Started,
+                    position: Some((10, 20)),
+                },
+                Touch {
+                    id: 9,
+                    phase: TouchPhase::Moved,
+                    position: Some((12, 24)),
+                },
+                Touch {
+                    id: 7,
+                    phase: TouchPhase::Ended,
+                    position: None,
+                },
+                Touch {
+                    id: 9,
+                    phase: TouchPhase::Cancelled,
+                    position: Some((14, 28)),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn advance_frame_clears_touch_events() {
+        let mut input = Input::default();
+
+        input.push_touch(Touch {
+            id: 1,
+            phase: TouchPhase::Started,
+            position: Some((4, 5)),
+        });
+
+        input.advance_frame();
+
+        assert!(input.touches().is_empty());
+    }
+
+    #[test]
     fn reset_clears_buttons_and_mouse_position() {
         let mut input = Input::default();
 
         input.press_key(Key::Space);
         input.press_mouse_button(MouseButton::Left);
         input.set_mouse_position(Some((12, 34)));
+        input.push_touch(Touch {
+            id: 1,
+            phase: TouchPhase::Started,
+            position: Some((4, 5)),
+        });
         input.reset();
 
         for key in [
@@ -259,5 +357,6 @@ mod tests {
         }
 
         assert_eq!(input.mouse_position(), None);
+        assert!(input.touches().is_empty());
     }
 }

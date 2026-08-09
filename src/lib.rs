@@ -5,6 +5,6 @@ mod platform;
 mod renderer;
 
 pub use framebuffer::Framebuffer;
-pub use input::{ButtonState, Input, Key, MouseButton};
+pub use input::{ButtonState, Input, Key, MouseButton, Touch, TouchPhase};
 pub use pixel::Pixel;
 pub use platform::{EngineConfig, EngineError, Frame, Game, GameResult, run};
