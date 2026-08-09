@@ -6,6 +6,8 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 const SHADER: &str = r#"
+override encode_surface_srgb: f32 = 0.0;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
@@ -29,9 +31,36 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @group(0) @binding(0) var framebuffer_texture: texture_2d<f32>;
 @group(0) @binding(1) var framebuffer_sampler: sampler;
 
+fn linear_to_srgb_channel(channel: f32) -> f32 {
+    let clamped = clamp(channel, 0.0, 1.0);
+    if clamped <= 0.0031308 {
+        return clamped * 12.92;
+    }
+
+    return 1.055 * pow(clamped, 1.0 / 2.4) - 0.055;
+}
+
+fn linear_to_srgb(color: vec4<f32>) -> vec4<f32> {
+    return vec4<f32>(
+        linear_to_srgb_channel(color.r),
+        linear_to_srgb_channel(color.g),
+        linear_to_srgb_channel(color.b),
+        color.a,
+    );
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(framebuffer_texture, framebuffer_sampler, input.tex_coords);
+    let color = textureSample(framebuffer_texture, framebuffer_sampler, input.tex_coords);
+
+    // Some surfaces, including browser WebGPU surfaces on common platforms,
+    // expose only non-sRGB formats. Encode explicitly there so Pixel's sRGB
+    // bytes keep the same perceptual meaning across presentation targets.
+    if encode_surface_srgb > 0.5 {
+        return linear_to_srgb(color);
+    }
+
+    return color;
 }
 "#;
 
@@ -113,6 +142,7 @@ impl Renderer {
             .copied()
             .find(|format| format.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+        let encode_surface_srgb = surface_needs_shader_srgb_encode(surface_format);
 
         let present_mode = if surface_caps
             .present_modes
@@ -232,7 +262,13 @@ impl Renderer {
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[(
+                        "encode_surface_srgb",
+                        if encode_surface_srgb { 1.0 } else { 0.0 },
+                    )],
+                    ..Default::default()
+                },
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -338,5 +374,37 @@ impl Renderer {
         self.queue.present(frame);
 
         RenderOutcome::Presented
+    }
+}
+
+fn surface_needs_shader_srgb_encode(surface_format: wgpu::TextureFormat) -> bool {
+    !surface_format.is_srgb()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::surface_needs_shader_srgb_encode;
+
+    #[test]
+    fn srgb_surface_formats_use_hardware_encoding() {
+        assert!(!surface_needs_shader_srgb_encode(
+            wgpu::TextureFormat::Bgra8UnormSrgb
+        ));
+        assert!(!surface_needs_shader_srgb_encode(
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        ));
+    }
+
+    #[test]
+    fn non_srgb_surface_formats_need_shader_encoding() {
+        assert!(surface_needs_shader_srgb_encode(
+            wgpu::TextureFormat::Bgra8Unorm
+        ));
+        assert!(surface_needs_shader_srgb_encode(
+            wgpu::TextureFormat::Rgba8Unorm
+        ));
+        assert!(surface_needs_shader_srgb_encode(
+            wgpu::TextureFormat::Rgba16Float
+        ));
     }
 }
