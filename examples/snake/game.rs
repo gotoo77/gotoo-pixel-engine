@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use gotoo_pixel_engine::{Frame, Game, GameResult, Key, Pixel, Touch, TouchPhase};
+use gotoo_pixel_engine::{
+    Frame, Framebuffer, Game, GameResult, Key, MouseButton, Pixel, Touch, TouchPhase,
+};
 
 pub const FRAMEBUFFER_WIDTH: u32 = 320;
 pub const FRAMEBUFFER_HEIGHT: u32 = 180;
@@ -16,6 +18,14 @@ const TICK_PERIOD: Duration = Duration::from_millis(120);
 const SWIPE_THRESHOLD: i32 = 20;
 const EXIT_KEY: Key = Key::Escape;
 const RESTART_KEY: Key = Key::Space;
+const HUD_TEXT_SCALE: u32 = 1;
+const GAME_OVER_TEXT_SCALE: u32 = 2;
+const REPLAY_BUTTON: Rect = Rect {
+    x: 104,
+    y: 110,
+    width: 112,
+    height: 28,
+};
 
 const BACKGROUND: Pixel = Pixel::rgb(10, 14, 18);
 const GRID_LINE: Pixel = Pixel::rgb(20, 28, 34);
@@ -24,6 +34,12 @@ const SNAKE_HEAD: Pixel = Pixel::rgb(214, 246, 128);
 const SNAKE_BODY: Pixel = Pixel::rgb(82, 190, 118);
 const FOOD: Pixel = Pixel::rgb(235, 74, 74);
 const GAME_OVER: Pixel = Pixel::rgb(245, 66, 66);
+const HUD_BACKDROP: Pixel = Pixel::rgb(7, 10, 13);
+const HUD_TEXT: Pixel = Pixel::rgb(224, 232, 210);
+const PANEL_FILL: Pixel = Pixel::rgb(12, 16, 20);
+const BUTTON_FILL: Pixel = Pixel::rgb(28, 38, 46);
+const BUTTON_BORDER: Pixel = Pixel::rgb(154, 174, 186);
+const BUTTON_TEXT: Pixel = Pixel::rgb(240, 244, 230);
 
 #[derive(Debug)]
 pub struct SnakeGame {
@@ -63,6 +79,7 @@ impl SnakeGame {
             ticks += 1;
 
             if self.world.phase() != Phase::Running {
+                self.swipe_tracker.reset();
                 break;
             }
         }
@@ -71,6 +88,7 @@ impl SnakeGame {
     fn restart(&mut self) {
         self.world.restart();
         self.accumulator = Duration::ZERO;
+        self.swipe_tracker.reset();
     }
 
     fn draw(&self, frame: &mut Frame<'_>) {
@@ -97,17 +115,10 @@ impl SnakeGame {
         }
 
         framebuffer.draw_rect(0, 0, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, BORDER);
+        draw_score_hud(framebuffer, self.world.score());
 
         if self.world.phase() == Phase::GameOver {
-            framebuffer.draw_line(96, 42, 224, 138, GAME_OVER);
-            framebuffer.draw_line(224, 42, 96, 138, GAME_OVER);
-            framebuffer.draw_rect(
-                2,
-                2,
-                FRAMEBUFFER_WIDTH - 4,
-                FRAMEBUFFER_HEIGHT - 4,
-                GAME_OVER,
-            );
+            draw_game_over(framebuffer, self.world.score());
         }
     }
 }
@@ -118,7 +129,8 @@ impl Game for SnakeGame {
             return GameResult::Exit;
         }
 
-        let controls = SnakeControls::from_frame(frame, &mut self.swipe_tracker);
+        let controls =
+            SnakeControls::from_frame(frame, self.world.phase(), &mut self.swipe_tracker);
         self.update_logic(frame.delta_time, controls);
         self.draw(frame);
 
@@ -126,7 +138,7 @@ impl Game for SnakeGame {
     }
 }
 
-fn draw_grid(framebuffer: &mut gotoo_pixel_engine::Framebuffer) {
+fn draw_grid(framebuffer: &mut Framebuffer) {
     for x in 1..GRID_WIDTH {
         let pixel_x = x * CELL_SIZE;
         framebuffer.draw_line(
@@ -143,6 +155,69 @@ fn draw_grid(framebuffer: &mut gotoo_pixel_engine::Framebuffer) {
     }
 }
 
+fn draw_score_hud(framebuffer: &mut Framebuffer, score: u32) {
+    let text = format!("SCORE {score}");
+    let (width, height) = Framebuffer::text_size(&text, HUD_TEXT_SCALE);
+
+    framebuffer.fill_rect(2, 2, width + 4, height + 4, HUD_BACKDROP);
+    framebuffer.draw_rect(2, 2, width + 4, height + 4, BORDER);
+    framebuffer.draw_text_scaled(4, 4, &text, HUD_TEXT_SCALE, HUD_TEXT);
+}
+
+fn draw_game_over(framebuffer: &mut Framebuffer, score: u32) {
+    framebuffer.fill_rect(64, 38, 192, 108, PANEL_FILL);
+    framebuffer.draw_rect(64, 38, 192, 108, GAME_OVER);
+
+    draw_centered_text(
+        framebuffer,
+        52,
+        "GAME OVER",
+        GAME_OVER_TEXT_SCALE,
+        GAME_OVER,
+    );
+    draw_centered_text(
+        framebuffer,
+        78,
+        &format!("SCORE {score}"),
+        GAME_OVER_TEXT_SCALE,
+        HUD_TEXT,
+    );
+    draw_replay_button(framebuffer);
+}
+
+fn draw_replay_button(framebuffer: &mut Framebuffer) {
+    framebuffer.fill_rect(
+        REPLAY_BUTTON.x,
+        REPLAY_BUTTON.y,
+        REPLAY_BUTTON.width,
+        REPLAY_BUTTON.height,
+        BUTTON_FILL,
+    );
+    framebuffer.draw_rect(
+        REPLAY_BUTTON.x,
+        REPLAY_BUTTON.y,
+        REPLAY_BUTTON.width,
+        REPLAY_BUTTON.height,
+        BUTTON_BORDER,
+    );
+
+    let text = "REJOUER";
+    let (text_width, text_height) = Framebuffer::text_size(text, GAME_OVER_TEXT_SCALE);
+    let text_x = REPLAY_BUTTON.x + centered_offset(REPLAY_BUTTON.width, text_width);
+    let text_y = REPLAY_BUTTON.y + centered_offset(REPLAY_BUTTON.height, text_height);
+    framebuffer.draw_text_scaled(text_x, text_y, text, GAME_OVER_TEXT_SCALE, BUTTON_TEXT);
+}
+
+fn draw_centered_text(framebuffer: &mut Framebuffer, y: i32, text: &str, scale: u32, pixel: Pixel) {
+    let (width, _) = Framebuffer::text_size(text, scale);
+    let x = centered_offset(FRAMEBUFFER_WIDTH, width);
+    framebuffer.draw_text_scaled(x, y, text, scale, pixel);
+}
+
+fn centered_offset(container_width: u32, content_width: u32) -> i32 {
+    container_width.saturating_sub(content_width) as i32 / 2
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SnakeControls {
     directions: Vec<Direction>,
@@ -157,7 +232,20 @@ impl SnakeControls {
         }
     }
 
-    fn from_frame(frame: &Frame<'_>, swipe_tracker: &mut SwipeTracker) -> Self {
+    fn from_frame(frame: &Frame<'_>, phase: Phase, swipe_tracker: &mut SwipeTracker) -> Self {
+        match phase {
+            Phase::Running => Self::from_running_frame(frame, swipe_tracker),
+            Phase::GameOver => Self::from_game_over_inputs(
+                frame.input.key(RESTART_KEY).pressed(),
+                frame.input.mouse_button(MouseButton::Left).pressed(),
+                frame.input.mouse_position(),
+                frame.input.touches(),
+                swipe_tracker,
+            ),
+        }
+    }
+
+    fn from_running_frame(frame: &Frame<'_>, swipe_tracker: &mut SwipeTracker) -> Self {
         let mut controls = Self::none();
 
         for key in DIRECTION_KEYS {
@@ -173,6 +261,26 @@ impl SnakeControls {
             .extend(swipe_tracker.directions_from_touches(frame.input.touches()));
         controls.restart = frame.input.key(RESTART_KEY).pressed();
         controls
+    }
+
+    fn from_game_over_inputs(
+        keyboard_restart_pressed: bool,
+        mouse_left_pressed: bool,
+        mouse_position: Option<(i32, i32)>,
+        touches: &[Touch],
+        swipe_tracker: &mut SwipeTracker,
+    ) -> Self {
+        swipe_tracker.reset();
+
+        Self {
+            directions: Vec::new(),
+            restart: replay_requested(
+                keyboard_restart_pressed,
+                mouse_left_pressed,
+                mouse_position,
+                touches,
+            ),
+        }
     }
 
     #[cfg(test)]
@@ -219,6 +327,10 @@ struct SwipeTracker {
 }
 
 impl SwipeTracker {
+    fn reset(&mut self) {
+        self.active = None;
+    }
+
     fn directions_from_touches(&mut self, touches: &[Touch]) -> Vec<Direction> {
         let mut directions = Vec::new();
 
@@ -307,6 +419,48 @@ impl SwipeTracker {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+impl Rect {
+    fn contains(self, position: (i32, i32)) -> bool {
+        if self.width == 0 || self.height == 0 {
+            return false;
+        }
+
+        let min_x = i64::from(self.x);
+        let min_y = i64::from(self.y);
+        let max_x = min_x + i64::from(self.width) - 1;
+        let max_y = min_y + i64::from(self.height) - 1;
+        let x = i64::from(position.0);
+        let y = i64::from(position.1);
+
+        x >= min_x && x <= max_x && y >= min_y && y <= max_y
+    }
+}
+
+fn replay_requested(
+    keyboard_restart_pressed: bool,
+    mouse_left_pressed: bool,
+    mouse_position: Option<(i32, i32)>,
+    touches: &[Touch],
+) -> bool {
+    keyboard_restart_pressed
+        || (mouse_left_pressed
+            && mouse_position.is_some_and(|position| REPLAY_BUTTON.contains(position)))
+        || touches.iter().any(|touch| {
+            touch.phase == TouchPhase::Started
+                && touch
+                    .position
+                    .is_some_and(|position| REPLAY_BUTTON.contains(position))
+        })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SwipeContact {
     id: u64,
     start: (i32, i32),
@@ -344,6 +498,7 @@ struct SnakeWorld {
     direction: Direction,
     turn_queue: VecDeque<Direction>,
     food: Option<Cell>,
+    score: u32,
     rng: FoodRng,
 }
 
@@ -355,6 +510,7 @@ impl SnakeWorld {
             direction: Direction::Right,
             turn_queue: VecDeque::new(),
             food: None,
+            score: 0,
             rng: FoodRng::new(seed),
         };
         world.restart();
@@ -366,6 +522,7 @@ impl SnakeWorld {
         self.snake = initial_snake();
         self.direction = Direction::Right;
         self.turn_queue.clear();
+        self.score = 0;
         self.food = self.place_food();
     }
 
@@ -379,6 +536,10 @@ impl SnakeWorld {
 
     fn food(&self) -> Option<Cell> {
         self.food
+    }
+
+    fn score(&self) -> u32 {
+        self.score
     }
 
     fn queue_direction(&mut self, direction: Direction) {
@@ -413,6 +574,7 @@ impl SnakeWorld {
         self.snake.push_front(next_head);
 
         if will_grow {
+            self.score += 1;
             self.food = self.place_food();
         } else {
             self.snake.pop_back();
@@ -551,10 +713,11 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        Cell, Direction, EXIT_KEY, Phase, RESTART_KEY, SnakeControls, SnakeGame, SnakeWorld,
-        SwipeTracker, TICK_PERIOD, TURN_QUEUE_CAPACITY, direction_for_key,
+        BUTTON_BORDER, BUTTON_TEXT, Cell, Direction, EXIT_KEY, GAME_OVER, HUD_TEXT, Phase,
+        REPLAY_BUTTON, RESTART_KEY, SnakeControls, SnakeGame, SnakeWorld, SwipeTracker,
+        TICK_PERIOD, TURN_QUEUE_CAPACITY, direction_for_key, draw_game_over, draw_score_hud,
     };
-    use gotoo_pixel_engine::{Key, Touch, TouchPhase};
+    use gotoo_pixel_engine::{Framebuffer, Key, Pixel, Touch, TouchPhase};
 
     fn head(game: &SnakeGame) -> Cell {
         game.world.snake[0]
@@ -564,12 +727,48 @@ mod tests {
         game.update_logic(TICK_PERIOD, SnakeControls::none());
     }
 
+    fn replay_button_center() -> (i32, i32) {
+        (
+            REPLAY_BUTTON.x + REPLAY_BUTTON.width as i32 / 2,
+            REPLAY_BUTTON.y + REPLAY_BUTTON.height as i32 / 2,
+        )
+    }
+
     fn touch(id: u64, phase: TouchPhase, position: Option<(i32, i32)>) -> Touch {
         Touch {
             id,
             phase,
             position,
         }
+    }
+
+    fn active_contact() -> super::SwipeContact {
+        super::SwipeContact {
+            id: 1,
+            start: (100, 80),
+            last: (100, 80),
+            recognized: false,
+        }
+    }
+
+    fn tracker_with_active_contact() -> SwipeTracker {
+        SwipeTracker {
+            active: Some(active_contact()),
+        }
+    }
+
+    fn count_pixels(framebuffer: &Framebuffer, pixel: Pixel) -> usize {
+        let mut count = 0;
+
+        for y in 0..framebuffer.height() as i32 {
+            for x in 0..framebuffer.width() as i32 {
+                if framebuffer.pixel(x, y) == Some(pixel) {
+                    count += 1;
+                }
+            }
+        }
+
+        count
     }
 
     #[test]
@@ -585,6 +784,30 @@ mod tests {
         assert_eq!(direction_for_key(Key::Space), None);
         assert_eq!(RESTART_KEY, Key::Space);
         assert_eq!(EXIT_KEY, Key::Escape);
+    }
+
+    #[test]
+    fn running_hud_draws_score_text() {
+        let mut framebuffer = Framebuffer::new(super::FRAMEBUFFER_WIDTH, super::FRAMEBUFFER_HEIGHT);
+
+        draw_score_hud(&mut framebuffer, 12);
+
+        assert!(count_pixels(&framebuffer, HUD_TEXT) > 0);
+    }
+
+    #[test]
+    fn game_over_panel_draws_score_and_replay_button() {
+        let mut framebuffer = Framebuffer::new(super::FRAMEBUFFER_WIDTH, super::FRAMEBUFFER_HEIGHT);
+
+        draw_game_over(&mut framebuffer, 7);
+
+        assert!(count_pixels(&framebuffer, GAME_OVER) > 0);
+        assert!(count_pixels(&framebuffer, HUD_TEXT) > 0);
+        assert!(count_pixels(&framebuffer, BUTTON_TEXT) > 0);
+        assert_eq!(
+            framebuffer.pixel(REPLAY_BUTTON.x, REPLAY_BUTTON.y),
+            Some(BUTTON_BORDER)
+        );
     }
 
     #[test]
@@ -804,6 +1027,43 @@ mod tests {
 
         assert_eq!(game.world.snake.len(), initial_len + 1);
         assert_eq!(head(&game), Cell { x: 17, y: 9 });
+        assert_eq!(game.world.score(), 1);
+    }
+
+    #[test]
+    fn new_game_starts_with_zero_score() {
+        let game = SnakeGame::new();
+
+        assert_eq!(game.world.score(), 0);
+    }
+
+    #[test]
+    fn score_increments_once_per_food_eaten() {
+        let mut game = SnakeGame::new();
+
+        game.world.food = Some(Cell { x: 17, y: 9 });
+        tick(&mut game);
+        game.world.food = Some(Cell { x: 18, y: 9 });
+        tick(&mut game);
+
+        assert_eq!(game.world.score(), 2);
+    }
+
+    #[test]
+    fn game_over_preserves_score() {
+        let mut world = SnakeWorld::new(123);
+        world.score = 3;
+        world.snake = VecDeque::from([
+            Cell { x: 31, y: 9 },
+            Cell { x: 30, y: 9 },
+            Cell { x: 29, y: 9 },
+        ]);
+        world.direction = Direction::Right;
+
+        world.tick();
+
+        assert_eq!(world.phase, Phase::GameOver);
+        assert_eq!(world.score(), 3);
     }
 
     #[test]
@@ -833,6 +1093,23 @@ mod tests {
         world.tick();
 
         assert_eq!(world.phase, Phase::GameOver);
+    }
+
+    #[test]
+    fn game_over_transition_cleans_active_swipe_tracker() {
+        let mut game = SnakeGame::new();
+        game.world.snake = VecDeque::from([
+            Cell { x: 31, y: 9 },
+            Cell { x: 30, y: 9 },
+            Cell { x: 29, y: 9 },
+        ]);
+        game.world.direction = Direction::Right;
+        game.swipe_tracker.active = Some(active_contact());
+
+        tick(&mut game);
+
+        assert_eq!(game.world.phase, Phase::GameOver);
+        assert!(game.swipe_tracker.active.is_none());
     }
 
     #[test]
@@ -889,7 +1166,9 @@ mod tests {
         game.world.snake = VecDeque::from([Cell { x: 1, y: 1 }]);
         game.world.direction = Direction::Down;
         game.world.turn_queue = VecDeque::from([Direction::Left]);
+        game.world.score = 4;
         game.accumulator = TICK_PERIOD;
+        game.swipe_tracker.active = Some(active_contact());
 
         game.update_logic(Duration::ZERO, SnakeControls::restart());
 
@@ -897,8 +1176,116 @@ mod tests {
         assert_eq!(game.world.snake, super::initial_snake());
         assert_eq!(game.world.direction, Direction::Right);
         assert!(game.world.turn_queue.is_empty());
+        assert_eq!(game.world.score(), 0);
         assert_eq!(game.accumulator, Duration::ZERO);
+        assert!(game.swipe_tracker.active.is_none());
         assert!(game.world.food.is_some());
+    }
+
+    #[test]
+    fn game_over_keyboard_space_requests_restart_without_direction() {
+        let mut tracker = SwipeTracker::default();
+
+        let controls = SnakeControls::from_game_over_inputs(true, false, None, &[], &mut tracker);
+
+        assert!(controls.restart);
+        assert!(controls.directions.is_empty());
+    }
+
+    #[test]
+    fn game_over_mouse_replay_rect_requests_restart() {
+        let mut tracker = SwipeTracker::default();
+
+        let controls = SnakeControls::from_game_over_inputs(
+            false,
+            true,
+            Some(replay_button_center()),
+            &[],
+            &mut tracker,
+        );
+
+        assert!(controls.restart);
+        assert!(controls.directions.is_empty());
+    }
+
+    #[test]
+    fn game_over_mouse_outside_replay_rect_is_ignored() {
+        let mut tracker = SwipeTracker::default();
+
+        let controls =
+            SnakeControls::from_game_over_inputs(false, true, Some((0, 0)), &[], &mut tracker);
+
+        assert!(!controls.restart);
+        assert!(controls.directions.is_empty());
+    }
+
+    #[test]
+    fn game_over_touch_started_in_replay_rect_requests_restart() {
+        let mut tracker = SwipeTracker::default();
+
+        let controls = SnakeControls::from_game_over_inputs(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
+            &mut tracker,
+        );
+
+        assert!(controls.restart);
+        assert!(controls.directions.is_empty());
+    }
+
+    #[test]
+    fn game_over_touch_outside_replay_rect_is_ignored() {
+        let mut tracker = SwipeTracker::default();
+
+        let controls = SnakeControls::from_game_over_inputs(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Started, Some((0, 0)))],
+            &mut tracker,
+        );
+
+        assert!(!controls.restart);
+        assert!(controls.directions.is_empty());
+    }
+
+    #[test]
+    fn game_over_touch_replay_does_not_feed_swipe_tracker() {
+        let mut tracker = tracker_with_active_contact();
+
+        let controls = SnakeControls::from_game_over_inputs(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
+            &mut tracker,
+        );
+
+        assert!(controls.restart);
+        assert!(controls.directions.is_empty());
+        assert!(tracker.active.is_none());
+    }
+
+    #[test]
+    fn replay_touch_restarts_from_game_over() {
+        let mut game = SnakeGame::new();
+        game.world.phase = Phase::GameOver;
+        game.world.score = 2;
+
+        let controls = SnakeControls::from_game_over_inputs(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
+            &mut game.swipe_tracker,
+        );
+        game.update_logic(Duration::ZERO, controls);
+
+        assert_eq!(game.world.phase, Phase::Running);
+        assert_eq!(game.world.score(), 0);
+        assert_eq!(game.world.snake, super::initial_snake());
     }
 
     #[test]

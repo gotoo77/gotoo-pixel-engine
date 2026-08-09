@@ -187,6 +187,40 @@ impl Framebuffer {
         }
     }
 
+    pub fn draw_text(&mut self, x: i32, y: i32, text: &str, pixel: Pixel) {
+        self.draw_text_scaled(x, y, text, 1, pixel);
+    }
+
+    pub fn draw_text_scaled(&mut self, x: i32, y: i32, text: &str, scale: u32, pixel: Pixel) {
+        let scale = scale.max(1);
+        let mut cursor_x = i64::from(x);
+        let y = i64::from(y);
+        let advance = i64::from((FONT_GLYPH_WIDTH + FONT_GLYPH_SPACING).saturating_mul(scale));
+
+        for character in text.chars() {
+            self.draw_glyph_scaled(cursor_x, y, glyph_for(character), scale, pixel);
+            cursor_x += advance;
+        }
+    }
+
+    pub fn text_size(text: &str, scale: u32) -> (u32, u32) {
+        let scale = scale.max(1);
+        let character_count = u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
+
+        if character_count == 0 {
+            return (0, 0);
+        }
+
+        let glyph_width = FONT_GLYPH_WIDTH.saturating_mul(scale);
+        let glyph_height = FONT_GLYPH_HEIGHT.saturating_mul(scale);
+        let spacing = FONT_GLYPH_SPACING.saturating_mul(scale);
+        let text_width = glyph_width
+            .saturating_mul(character_count)
+            .saturating_add(spacing.saturating_mul(character_count.saturating_sub(1)));
+
+        (text_width, glyph_height)
+    }
+
     pub fn pixel(&self, x: i32, y: i32) -> Option<Pixel> {
         let index = self.pixel_index(x, y)?;
         let rgba = &self.pixels[index..index + 4];
@@ -200,6 +234,28 @@ impl Framebuffer {
 
         let index = ((y * self.width + x) * 4) as usize;
         self.pixels[index..index + 4].copy_from_slice(&pixel.to_rgba8());
+    }
+
+    fn draw_glyph_scaled(&mut self, x: i64, y: i64, glyph: Glyph, scale: u32, pixel: Pixel) {
+        for (row_index, row) in glyph.iter().copied().enumerate() {
+            for column in 0..FONT_GLYPH_WIDTH {
+                let mask = 1 << (FONT_GLYPH_WIDTH - 1 - column);
+                if row & mask == 0 {
+                    continue;
+                }
+
+                let pixel_x = x + i64::from(column * scale);
+                let pixel_y = y + row_index as i64 * i64::from(scale);
+                let Ok(pixel_x) = i32::try_from(pixel_x) else {
+                    continue;
+                };
+                let Ok(pixel_y) = i32::try_from(pixel_y) else {
+                    continue;
+                };
+
+                self.fill_rect(pixel_x, pixel_y, scale, scale, pixel);
+            }
+        }
     }
 
     fn pixel_index(&self, x: i32, y: i32) -> Option<usize> {
@@ -384,6 +440,129 @@ fn rect_bounds(x: i32, y: i32, width: u32, height: u32) -> Option<(i64, i64, i64
         min_x + i64::from(width) - 1,
         min_y + i64::from(height) - 1,
     ))
+}
+
+const FONT_GLYPH_WIDTH: u32 = 5;
+const FONT_GLYPH_HEIGHT: u32 = 7;
+const FONT_GLYPH_SPACING: u32 = 1;
+
+type Glyph = [u8; FONT_GLYPH_HEIGHT as usize];
+
+fn glyph_for(character: char) -> Glyph {
+    match character {
+        'A' => [
+            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'C' => [
+            0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111,
+        ],
+        'D' => [
+            0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110,
+        ],
+        'E' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+        ],
+        'F' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'G' => [
+            0b01111, 0b10000, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111,
+        ],
+        'H' => [
+            0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'I' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111,
+        ],
+        'J' => [
+            0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b10010, 0b01100,
+        ],
+        'K' => [
+            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
+        ],
+        'L' => [
+            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'M' => [
+            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+        ],
+        'N' => [
+            0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
+        ],
+        'O' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'P' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'Q' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101,
+        ],
+        'R' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+        ],
+        'S' => [
+            0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        'T' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'U' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'V' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+        ],
+        'W' => [
+            0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010,
+        ],
+        'X' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
+        ],
+        'Y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'Z' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111,
+        ],
+        '0' => [
+            0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
+        ],
+        '1' => [
+            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        '2' => [
+            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111,
+        ],
+        '3' => [
+            0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        '4' => [
+            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
+        ],
+        '5' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110,
+        ],
+        '6' => [
+            0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        '7' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        '8' => [
+            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+        ],
+        '9' => [
+            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+        ],
+        ' ' => [0; FONT_GLYPH_HEIGHT as usize],
+        _ => [
+            0b11111, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
+        ],
+    }
 }
 
 #[cfg(test)]
@@ -709,5 +888,176 @@ mod tests {
                 (2, 2)
             ]
         );
+    }
+
+    #[test]
+    fn draw_text_draws_letters() {
+        let mut framebuffer = Framebuffer::new(5, 7);
+
+        framebuffer.draw_text(0, 0, "A", Pixel::WHITE);
+
+        assert_eq!(
+            drawn_pixels(&framebuffer, Pixel::WHITE),
+            &[
+                (1, 0),
+                (2, 0),
+                (3, 0),
+                (0, 1),
+                (4, 1),
+                (0, 2),
+                (4, 2),
+                (0, 3),
+                (1, 3),
+                (2, 3),
+                (3, 3),
+                (4, 3),
+                (0, 4),
+                (4, 4),
+                (0, 5),
+                (4, 5),
+                (0, 6),
+                (4, 6)
+            ]
+        );
+    }
+
+    #[test]
+    fn draw_text_draws_digits() {
+        let mut framebuffer = Framebuffer::new(5, 7);
+
+        framebuffer.draw_text(0, 0, "2", Pixel::WHITE);
+
+        assert_eq!(
+            drawn_pixels(&framebuffer, Pixel::WHITE),
+            &[
+                (1, 0),
+                (2, 0),
+                (3, 0),
+                (0, 1),
+                (4, 1),
+                (4, 2),
+                (3, 3),
+                (2, 4),
+                (1, 5),
+                (0, 6),
+                (1, 6),
+                (2, 6),
+                (3, 6),
+                (4, 6)
+            ]
+        );
+    }
+
+    #[test]
+    fn draw_text_space_advances_without_drawing_pixels() {
+        let mut framebuffer = Framebuffer::new(17, 7);
+
+        framebuffer.draw_text(0, 0, "A A", Pixel::WHITE);
+
+        assert_eq!(framebuffer.pixel(6, 0), Some(Pixel::TRANSPARENT));
+        assert_eq!(framebuffer.pixel(13, 0), Some(Pixel::WHITE));
+    }
+
+    #[test]
+    fn draw_text_empty_string_is_noop() {
+        let mut framebuffer = Framebuffer::new(5, 7);
+
+        framebuffer.draw_text(0, 0, "", Pixel::WHITE);
+
+        assert!(drawn_pixels(&framebuffer, Pixel::WHITE).is_empty());
+        assert_eq!(Framebuffer::text_size("", 1), (0, 0));
+    }
+
+    #[test]
+    fn draw_text_unknown_character_uses_deterministic_placeholder() {
+        let mut framebuffer = Framebuffer::new(5, 7);
+
+        framebuffer.draw_text(0, 0, "?", Pixel::WHITE);
+
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(4, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(2, 6), Some(Pixel::WHITE));
+    }
+
+    #[test]
+    fn draw_text_scaled_draws_scaled_pixels() {
+        let mut framebuffer = Framebuffer::new(10, 14);
+
+        framebuffer.draw_text_scaled(0, 0, "A", 2, Pixel::WHITE);
+
+        assert_eq!(framebuffer.pixel(2, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(3, 1), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(0, 2), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(9, 3), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(2, 2), Some(Pixel::TRANSPARENT));
+    }
+
+    #[test]
+    fn text_size_reports_scaled_metrics() {
+        assert_eq!(Framebuffer::text_size("A", 1), (5, 7));
+        assert_eq!(Framebuffer::text_size("A A", 2), (34, 14));
+        assert_eq!(Framebuffer::text_size("A", 0), (5, 7));
+    }
+
+    #[test]
+    fn draw_text_clips_left_and_negative_coordinates() {
+        let mut framebuffer = Framebuffer::new(5, 7);
+
+        framebuffer.draw_text(-2, 0, "A", Pixel::WHITE);
+
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(2, 1), Some(Pixel::WHITE));
+    }
+
+    #[test]
+    fn draw_text_clips_right() {
+        let mut framebuffer = Framebuffer::new(3, 7);
+
+        framebuffer.draw_text(0, 0, "A", Pixel::WHITE);
+
+        assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(2, 0), Some(Pixel::WHITE));
+        assert!(drawn_pixels(&framebuffer, Pixel::WHITE).contains(&(0, 3)));
+    }
+
+    #[test]
+    fn draw_text_clips_top() {
+        let mut framebuffer = Framebuffer::new(5, 5);
+
+        framebuffer.draw_text(0, -2, "A", Pixel::WHITE);
+
+        assert_eq!(framebuffer.pixel(0, 1), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(4, 1), Some(Pixel::WHITE));
+    }
+
+    #[test]
+    fn draw_text_clips_bottom() {
+        let mut framebuffer = Framebuffer::new(5, 3);
+
+        framebuffer.draw_text(0, 0, "A", Pixel::WHITE);
+
+        assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(0, 2), Some(Pixel::WHITE));
+    }
+
+    #[test]
+    fn draw_text_totally_outside_framebuffer_is_noop() {
+        let mut framebuffer = Framebuffer::new(5, 7);
+
+        framebuffer.draw_text(20, 20, "A", Pixel::WHITE);
+        framebuffer.draw_text(-20, -20, "A", Pixel::WHITE);
+
+        assert!(drawn_pixels(&framebuffer, Pixel::WHITE).is_empty());
+    }
+
+    #[test]
+    fn draw_text_outside_framebuffer_does_not_panic() {
+        let mut framebuffer = Framebuffer::new(5, 7);
+
+        framebuffer.draw_text(i32::MAX, i32::MAX, "SCORE 1", Pixel::WHITE);
+        framebuffer.draw_text_scaled(i32::MIN, i32::MIN, "GAME OVER", 2, Pixel::WHITE);
+
+        assert!(drawn_pixels(&framebuffer, Pixel::WHITE).is_empty());
     }
 }
