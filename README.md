@@ -89,4 +89,61 @@ Baseline reproductible :
 cargo bench --bench primitives
 ```
 
+## M1.3 — Input, timing et exemple public
+
+Un jeu implémente `Game::update` et retourne `GameResult::Continue` ou `GameResult::Exit`. Le moteur fournit à chaque frame un `Frame` contenant le framebuffer, l'état d'entrée et `delta_time`. `Escape` n'a pas de sémantique moteur spéciale : un jeu choisit lui-même d'en faire une sortie ou non.
+
+```rust
+use gotoo_pixel_engine::{
+    run, EngineConfig, Frame, Game, GameResult, Key, MouseButton, Pixel,
+};
+
+struct MiniGame {
+    x: f32,
+    y: f32,
+}
+
+impl Game for MiniGame {
+    fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        if frame.input.key(Key::Escape).pressed() {
+            return GameResult::Exit;
+        }
+
+        let speed = 120.0 * frame.delta_time.as_secs_f32();
+        if frame.input.key(Key::Left).held() {
+            self.x -= speed;
+        }
+        if frame.input.key(Key::Right).held() {
+            self.x += speed;
+        }
+
+        let color = if frame.input.mouse_button(MouseButton::Left).held() {
+            Pixel::RED
+        } else {
+            Pixel::WHITE
+        };
+
+        frame.framebuffer.clear(Pixel::BLACK);
+        frame.framebuffer.fill_circle(self.x.round() as i32, self.y.round() as i32, 8, color);
+
+        GameResult::Continue
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    run(
+        EngineConfig {
+            title: "mini game".into(),
+            framebuffer_width: 320,
+            framebuffer_height: 180,
+            window_width: 960,
+            window_height: 540,
+        },
+        MiniGame { x: 160.0, y: 90.0 },
+    )?;
+
+    Ok(())
+}
+```
+
 Voir [ROADMAP.md](ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) et [REFERENCES.md](REFERENCES.md).

@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use gotoo_pixel_engine::Framebuffer;
+use crate::Framebuffer;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
