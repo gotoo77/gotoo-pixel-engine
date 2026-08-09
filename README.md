@@ -71,4 +71,22 @@ L'API publique actuelle expose :
 - `Framebuffer::pixel(x, y)`, borné, qui retourne `None` hors framebuffer ;
 - `Framebuffer::as_rgba8()` pour le chemin d'upload GPU.
 
+## M1.2 — Primitives de dessin CPU
+
+Les primitives CPU disponibles sur `Framebuffer` ignorent les pixels hors framebuffer :
+
+- `draw_line(x0, y0, x1, y1, pixel)` ;
+- `draw_rect(x, y, width, height, pixel)` ;
+- `fill_rect(x, y, width, height, pixel)` ;
+- `draw_circle(center_x, center_y, radius, pixel)` ;
+- `fill_circle(center_x, center_y, radius, pixel)`.
+
+Politique de clipping M1.2 : il n'y a pas de système général de clipping. Les primitives restent locales à `Framebuffer`, calculent leurs bornes en entier large, rejettent les formes dont la boîte englobante ne croise pas le framebuffer et clampent les spans/remplissages à la zone visible. Un cercle plein qui couvre tout le framebuffer remplit directement la zone visible. Un contour de cercle n'est rejeté comme invisible que lorsque son rayon est très au-delà de toute coordonnée visible selon un test conservateur.
+
+Baseline reproductible :
+
+```bash
+cargo bench --bench primitives
+```
+
 Voir [ROADMAP.md](ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) et [REFERENCES.md](REFERENCES.md).
