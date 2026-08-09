@@ -128,17 +128,19 @@ mod tests {
     use std::time::Duration;
 
     use super::DemoGame;
-    use gotoo_pixel_engine::{Frame, Framebuffer, Game, GameResult, Input};
+    use gotoo_pixel_engine::{Frame, Framebuffer, Game, GameResult, Input, NoopStorage};
 
     #[test]
     fn update_changes_cpu_framebuffer() {
         let mut demo = DemoGame::new(2.0, 2.0);
         let mut framebuffer = Framebuffer::new(4, 4);
         let input = Input::default();
+        let mut storage = NoopStorage;
         let mut frame = Frame {
             framebuffer: &mut framebuffer,
             input: &input,
             delta_time: Duration::from_millis(16),
+            storage: &mut storage,
         };
 
         assert_eq!(demo.update(&mut frame), GameResult::Continue);
@@ -158,12 +160,14 @@ mod tests {
         let mut first = Framebuffer::new(20, 20);
         let mut second = Framebuffer::new(20, 20);
         let input = Input::default();
+        let mut storage = NoopStorage;
 
         {
             let mut frame = Frame {
                 framebuffer: &mut first,
                 input: &input,
                 delta_time: Duration::ZERO,
+                storage: &mut storage,
             };
             demo.update(&mut frame);
         }
@@ -174,6 +178,7 @@ mod tests {
                 framebuffer: &mut second,
                 input: &input,
                 delta_time: Duration::ZERO,
+                storage: &mut storage,
             };
             demo.update(&mut frame);
         }

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use gotoo_pixel_engine::{
-    Frame, Framebuffer, Game, GameResult, Key, MouseButton, Pixel, Touch, TouchPhase,
+    Frame, Framebuffer, Game, GameResult, Key, LocalStorage, MouseButton, Pixel, Touch, TouchPhase,
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 480;
@@ -19,6 +19,7 @@ const MAX_CATCH_UP: usize = 5;
 const TICK_PERIOD: Duration = Duration::from_millis(120);
 const EXIT_KEY: Key = Key::Escape;
 const RESTART_KEY: Key = Key::Space;
+const BEST_SCORE_KEY: &str = "gotoo-pixel-engine.snake.best_score.v1";
 const HUD_TEXT_SCALE: u32 = 1;
 const GAME_OVER_TEXT_SCALE: u32 = 2;
 const HUD_RECT: Rect = Rect {
@@ -123,6 +124,8 @@ pub struct SnakeGame {
     world: SnakeWorld,
     accumulator: Duration,
     touch_controls: TouchControls,
+    best_score: u32,
+    best_score_loaded: bool,
 }
 
 impl SnakeGame {
@@ -131,6 +134,8 @@ impl SnakeGame {
             world: SnakeWorld::new(INITIAL_SEED),
             accumulator: Duration::ZERO,
             touch_controls: TouchControls::default(),
+            best_score: 0,
+            best_score_loaded: false,
         }
     }
 
@@ -168,6 +173,25 @@ impl SnakeGame {
         self.touch_controls.reset_contact();
     }
 
+    fn load_best_score_once(&mut self, storage: &mut dyn LocalStorage) {
+        if self.best_score_loaded {
+            return;
+        }
+
+        self.best_score = read_best_score(storage);
+        self.best_score_loaded = true;
+    }
+
+    fn persist_best_score_if_needed(&mut self, storage: &mut dyn LocalStorage) {
+        let score = self.world.score();
+        if score <= self.best_score {
+            return;
+        }
+
+        self.best_score = score;
+        let _ = storage.set(BEST_SCORE_KEY, &score.to_string());
+    }
+
     fn draw(&self, frame: &mut Frame<'_>) {
         let framebuffer = &mut frame.framebuffer;
 
@@ -200,7 +224,7 @@ impl SnakeGame {
             PLAYFIELD_RECT.height,
             BORDER,
         );
-        draw_score_hud(framebuffer, self.world.score());
+        draw_score_hud(framebuffer, self.world.score(), self.best_score);
 
         if self.world.phase() == Phase::GameOver {
             draw_game_over(framebuffer, self.world.score());
@@ -212,6 +236,8 @@ impl SnakeGame {
 
 impl Game for SnakeGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        self.load_best_score_once(frame.storage);
+
         if frame.input.key(EXIT_KEY).pressed() {
             return GameResult::Exit;
         }
@@ -219,6 +245,7 @@ impl Game for SnakeGame {
         let controls =
             SnakeControls::from_frame(frame, self.world.phase(), &mut self.touch_controls);
         self.update_logic(frame.delta_time, controls);
+        self.persist_best_score_if_needed(frame.storage);
         self.draw(frame);
 
         GameResult::Continue
@@ -255,8 +282,17 @@ fn cell_origin(cell: Cell) -> (i32, i32) {
     )
 }
 
-fn draw_score_hud(framebuffer: &mut Framebuffer, score: u32) {
-    let text = format!("SCORE {score}");
+fn read_best_score(storage: &mut dyn LocalStorage) -> u32 {
+    storage
+        .get(BEST_SCORE_KEY)
+        .ok()
+        .flatten()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .unwrap_or(0)
+}
+
+fn draw_score_hud(framebuffer: &mut Framebuffer, score: u32, best_score: u32) {
+    let text = format!("SCORE {score}    BEST {best_score}");
     let (_, height) = Framebuffer::text_size(&text, HUD_TEXT_SCALE);
     let text_y = HUD_RECT.y + centered_offset(HUD_RECT.height, height);
 
@@ -983,19 +1019,71 @@ impl FoodRng {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::collections::VecDeque;
     use std::time::Duration;
 
     use super::{
-        BUTTON_BORDER, BUTTON_TEXT, CELL_SIZE, CONTROLS_RECT, Cell, D_PAD_ARROW, D_PAD_CENTER,
-        D_PAD_CENTER_FILL, D_PAD_DOWN, D_PAD_FILL, D_PAD_LEFT, D_PAD_RIGHT, D_PAD_UP, DPadTracker,
-        Direction, EXIT_KEY, FOOD, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, GAME_OVER,
+        BEST_SCORE_KEY, BUTTON_BORDER, BUTTON_TEXT, CELL_SIZE, CONTROLS_RECT, Cell, D_PAD_ARROW,
+        D_PAD_CENTER, D_PAD_CENTER_FILL, D_PAD_DOWN, D_PAD_FILL, D_PAD_LEFT, D_PAD_RIGHT, D_PAD_UP,
+        DPadTracker, Direction, EXIT_KEY, FOOD, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, GAME_OVER,
         GAME_OVER_PANEL, GRID_LINE, HUD_BACKDROP, HUD_RECT, HUD_TEXT, PANEL_FILL, PLAYFIELD_RECT,
         Phase, REPLAY_BUTTON, RESTART_KEY, SNAKE_BODY, SNAKE_HEAD, SnakeControls, SnakeGame,
         SnakeWorld, TICK_PERIOD, TURN_QUEUE_CAPACITY, TouchControls, cell_origin, d_pad_zone_at,
         direction_for_key, draw_d_pad, draw_game_over, draw_grid, draw_score_hud,
     };
-    use gotoo_pixel_engine::{Framebuffer, Key, Pixel, Touch, TouchPhase};
+    use gotoo_pixel_engine::{
+        Frame, Framebuffer, Game, GameResult, Input, Key, LocalStorage, Pixel, StorageError, Touch,
+        TouchPhase,
+    };
+
+    #[derive(Debug, Default, Clone, PartialEq, Eq)]
+    struct TestStorage {
+        entries: HashMap<String, String>,
+        fail_reads: bool,
+        fail_writes: bool,
+    }
+
+    impl TestStorage {
+        fn with_entry(key: &str, value: &str) -> Self {
+            let mut storage = Self::default();
+            storage.entries.insert(key.into(), value.into());
+            storage
+        }
+
+        fn failing_reads() -> Self {
+            Self {
+                fail_reads: true,
+                ..Self::default()
+            }
+        }
+
+        fn failing_writes() -> Self {
+            Self {
+                fail_writes: true,
+                ..Self::default()
+            }
+        }
+    }
+
+    impl LocalStorage for TestStorage {
+        fn get(&mut self, key: &str) -> Result<Option<String>, StorageError> {
+            if self.fail_reads {
+                return Err(StorageError::new("read failed"));
+            }
+
+            Ok(self.entries.get(key).cloned())
+        }
+
+        fn set(&mut self, key: &str, value: &str) -> Result<(), StorageError> {
+            if self.fail_writes {
+                return Err(StorageError::new("write failed"));
+            }
+
+            self.entries.insert(key.into(), value.into());
+            Ok(())
+        }
+    }
 
     fn head(game: &SnakeGame) -> Cell {
         game.world.snake[0]
@@ -1003,6 +1091,23 @@ mod tests {
 
     fn tick(game: &mut SnakeGame) {
         game.update_logic(TICK_PERIOD, SnakeControls::none());
+    }
+
+    fn update_with_storage(
+        game: &mut SnakeGame,
+        storage: &mut dyn LocalStorage,
+        delta_time: Duration,
+    ) -> GameResult {
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+        let input = Input::default();
+        let mut frame = Frame {
+            framebuffer: &mut framebuffer,
+            input: &input,
+            delta_time,
+            storage,
+        };
+
+        game.update(&mut frame)
     }
 
     fn replay_button_center() -> (i32, i32) {
@@ -1185,11 +1290,13 @@ mod tests {
         let mut game = SnakeGame::new();
         game.world.food = Some(Cell { x: 4, y: 5 });
         let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+        let mut storage = TestStorage::default();
 
         game.draw(&mut gotoo_pixel_engine::Frame {
             framebuffer: &mut framebuffer,
             input: &gotoo_pixel_engine::Input::default(),
             delta_time: Duration::ZERO,
+            storage: &mut storage,
         });
 
         assert_color_only_inside(&framebuffer, FOOD, PLAYFIELD_RECT);
@@ -1201,7 +1308,7 @@ mod tests {
     fn hud_is_drawn_only_inside_hud_rect() {
         let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
 
-        draw_score_hud(&mut framebuffer, 12);
+        draw_score_hud(&mut framebuffer, 12, 37);
 
         assert_color_only_inside(&framebuffer, HUD_BACKDROP, HUD_RECT);
         assert_color_only_inside(&framebuffer, HUD_TEXT, HUD_RECT);
@@ -1270,7 +1377,7 @@ mod tests {
     fn running_hud_draws_score_text() {
         let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
 
-        draw_score_hud(&mut framebuffer, 12);
+        draw_score_hud(&mut framebuffer, 12, 37);
 
         assert!(count_pixels(&framebuffer, HUD_TEXT) > 0);
     }
@@ -1568,6 +1675,8 @@ mod tests {
         let game = SnakeGame::new();
 
         assert_eq!(game.world.score(), 0);
+        assert_eq!(game.best_score, 0);
+        assert!(!game.best_score_loaded);
     }
 
     #[test]
@@ -1580,6 +1689,129 @@ mod tests {
         tick(&mut game);
 
         assert_eq!(game.world.score(), 2);
+    }
+
+    #[test]
+    fn best_score_defaults_to_zero_when_storage_is_absent() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::default();
+
+        assert_eq!(
+            update_with_storage(&mut game, &mut storage, Duration::ZERO),
+            GameResult::Continue
+        );
+
+        assert_eq!(game.best_score, 0);
+        assert!(game.best_score_loaded);
+    }
+
+    #[test]
+    fn best_score_loads_persisted_value_once() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "37");
+
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 37);
+
+        storage.entries.insert(BEST_SCORE_KEY.into(), "99".into());
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 37);
+    }
+
+    #[test]
+    fn corrupt_best_score_storage_falls_back_to_zero() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "not a number");
+
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 0);
+        assert!(game.best_score_loaded);
+    }
+
+    #[test]
+    fn best_score_read_error_falls_back_to_zero() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::failing_reads();
+
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 0);
+        assert!(game.best_score_loaded);
+    }
+
+    #[test]
+    fn new_record_updates_best_score_and_persists_immediately() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::default();
+        game.world.food = Some(Cell { x: 17, y: 9 });
+
+        update_with_storage(&mut game, &mut storage, TICK_PERIOD);
+
+        assert_eq!(game.world.score(), 1);
+        assert_eq!(game.best_score, 1);
+        assert_eq!(
+            storage.entries.get(BEST_SCORE_KEY).map(String::as_str),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn score_below_best_does_not_overwrite_storage() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "10");
+        game.world.score = 4;
+
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 10);
+        assert_eq!(
+            storage.entries.get(BEST_SCORE_KEY).map(String::as_str),
+            Some("10")
+        );
+    }
+
+    #[test]
+    fn best_score_write_error_keeps_record_in_memory() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::failing_writes();
+        game.world.score = 5;
+
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 5);
+        assert!(!storage.entries.contains_key(BEST_SCORE_KEY));
+    }
+
+    #[test]
+    fn restart_keeps_best_score() {
+        let mut game = SnakeGame::new();
+        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "8");
+
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+        game.world.score = 3;
+        game.restart();
+
+        assert_eq!(game.world.score(), 0);
+        assert_eq!(game.best_score, 8);
+        assert!(game.best_score_loaded);
+    }
+
+    #[test]
+    fn best_score_persists_between_snake_instances_with_memory_storage() {
+        let mut storage = TestStorage::default();
+
+        let mut first = SnakeGame::new();
+        first.world.score = 6;
+        update_with_storage(&mut first, &mut storage, Duration::ZERO);
+
+        let mut second = SnakeGame::new();
+        update_with_storage(&mut second, &mut storage, Duration::ZERO);
+
+        assert_eq!(second.best_score, 6);
+        assert_eq!(second.world.score(), 0);
     }
 
     #[test]

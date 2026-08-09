@@ -9,6 +9,7 @@ use web_time::{Duration, Instant};
 use crate::Framebuffer;
 use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
+use crate::storage::{LocalStorage, platform_storage};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
@@ -41,6 +42,7 @@ pub struct Frame<'a> {
     pub framebuffer: &'a mut Framebuffer,
     pub input: &'a Input,
     pub delta_time: Duration,
+    pub storage: &'a mut dyn LocalStorage,
 }
 
 #[derive(Debug)]
@@ -116,6 +118,7 @@ struct PlatformApp<G> {
     renderer: Option<Renderer>,
     framebuffer: Framebuffer,
     input: Input,
+    storage: Box<dyn LocalStorage>,
     last_frame_at: Instant,
     fps_timer: Instant,
     fps_frames: u32,
@@ -138,6 +141,7 @@ impl<G: Game> PlatformApp<G> {
             renderer: None,
             framebuffer,
             input: Input::default(),
+            storage: platform_storage(),
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
@@ -158,6 +162,7 @@ impl<G: Game> PlatformApp<G> {
             renderer: None,
             framebuffer,
             input: Input::default(),
+            storage: platform_storage(),
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
@@ -183,6 +188,7 @@ impl<G: Game> PlatformApp<G> {
             framebuffer: &mut self.framebuffer,
             input: &self.input,
             delta_time: dt,
+            storage: self.storage.as_mut(),
         };
 
         if self.game.update(&mut frame) == GameResult::Exit {
