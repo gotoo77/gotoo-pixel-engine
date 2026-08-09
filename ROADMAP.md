@@ -65,18 +65,20 @@ Transformer le spike en première petite API de moteur réellement utilisable. M
 
 **Non-objectifs M1.1 :** lignes, rectangles, cercles, sprites, API GPU publique, ECS ou refonte générale de l'architecture.
 
-### M1.2 — Primitives de dessin CPU
+### M1.2 — Primitives de dessin CPU ✅
+
+**Statut : terminé.** Validé avec le commit `5524ec5` (`Add CPU drawing primitives`).
 
 **But :** obtenir les primitives pixel-first nécessaires aux premiers prototypes.
 
-- lignes ;
-- rectangles ;
-- rectangles pleins ;
-- cercles ;
-- cercles pleins ;
-- clipping/comportement hors framebuffer explicitement défini ;
-- tests sur les cas nominaux, limites et formes partiellement hors écran ;
-- premiers benchmarks reproductibles des primitives CPU.
+- [x] lignes ;
+- [x] rectangles ;
+- [x] rectangles pleins ;
+- [x] cercles ;
+- [x] cercles pleins ;
+- [x] clipping/comportement hors framebuffer explicitement défini ;
+- [x] tests sur les cas nominaux, limites et formes partiellement hors écran ;
+- [x] premiers benchmarks reproductibles des primitives CPU.
 
 Les algorithmes doivent rester lisibles avant d'être micro-optimisés.
 
