@@ -5,12 +5,14 @@ use gotoo_pixel_engine::{
     Frame, Framebuffer, Game, GameResult, Key, MouseButton, Pixel, Touch, TouchPhase,
 };
 
-pub const FRAMEBUFFER_WIDTH: u32 = 320;
-pub const FRAMEBUFFER_HEIGHT: u32 = 180;
+pub const FRAMEBUFFER_WIDTH: u32 = 480;
+pub const FRAMEBUFFER_HEIGHT: u32 = 204;
 
 const GRID_WIDTH: i32 = 32;
 const GRID_HEIGHT: i32 = 18;
 const CELL_SIZE: i32 = 10;
+const PLAYFIELD_WIDTH: u32 = GRID_WIDTH as u32 * CELL_SIZE as u32;
+const PLAYFIELD_HEIGHT: u32 = GRID_HEIGHT as u32 * CELL_SIZE as u32;
 const INITIAL_SEED: u32 = 0x5EED_1234;
 const TURN_QUEUE_CAPACITY: usize = 2;
 const MAX_CATCH_UP: usize = 5;
@@ -19,35 +21,53 @@ const EXIT_KEY: Key = Key::Escape;
 const RESTART_KEY: Key = Key::Space;
 const HUD_TEXT_SCALE: u32 = 1;
 const GAME_OVER_TEXT_SCALE: u32 = 2;
+const HUD_RECT: Rect = Rect {
+    x: 0,
+    y: 0,
+    width: 480,
+    height: 24,
+};
+const PLAYFIELD_RECT: Rect = Rect {
+    x: 0,
+    y: 24,
+    width: PLAYFIELD_WIDTH,
+    height: PLAYFIELD_HEIGHT,
+};
+const CONTROLS_RECT: Rect = Rect {
+    x: 320,
+    y: 24,
+    width: 160,
+    height: 180,
+};
 const D_PAD_UP: Rect = Rect {
-    x: 232,
-    y: 56,
-    width: 40,
-    height: 40,
+    x: 374,
+    y: 36,
+    width: 52,
+    height: 52,
 };
 const D_PAD_LEFT: Rect = Rect {
-    x: 192,
-    y: 96,
-    width: 40,
-    height: 40,
+    x: 322,
+    y: 88,
+    width: 52,
+    height: 52,
 };
 const D_PAD_CENTER: Rect = Rect {
-    x: 232,
-    y: 96,
-    width: 40,
-    height: 40,
+    x: 374,
+    y: 88,
+    width: 52,
+    height: 52,
 };
 const D_PAD_RIGHT: Rect = Rect {
-    x: 272,
-    y: 96,
-    width: 40,
-    height: 40,
+    x: 426,
+    y: 88,
+    width: 52,
+    height: 52,
 };
 const D_PAD_DOWN: Rect = Rect {
-    x: 232,
-    y: 136,
-    width: 40,
-    height: 40,
+    x: 374,
+    y: 140,
+    width: 52,
+    height: 52,
 };
 const D_PAD_ZONES: [DirectionZone; 4] = [
     DirectionZone {
@@ -69,9 +89,15 @@ const D_PAD_ZONES: [DirectionZone; 4] = [
 ];
 const REPLAY_BUTTON: Rect = Rect {
     x: 104,
-    y: 110,
+    y: 132,
     width: 112,
     height: 28,
+};
+const GAME_OVER_PANEL: Rect = Rect {
+    x: 64,
+    y: 60,
+    width: 192,
+    height: 108,
 };
 
 const BACKGROUND: Pixel = Pixel::rgb(10, 14, 18);
@@ -149,23 +175,31 @@ impl SnakeGame {
         draw_grid(framebuffer);
 
         if let Some(food) = self.world.food() {
-            let center_x = food.x * CELL_SIZE + CELL_SIZE / 2;
-            let center_y = food.y * CELL_SIZE + CELL_SIZE / 2;
+            let (cell_x, cell_y) = cell_origin(food);
+            let center_x = cell_x + CELL_SIZE / 2;
+            let center_y = cell_y + CELL_SIZE / 2;
             framebuffer.fill_circle(center_x, center_y, 4, FOOD);
         }
 
         for (index, cell) in self.world.snake().iter().enumerate().rev() {
             let color = if index == 0 { SNAKE_HEAD } else { SNAKE_BODY };
+            let (cell_x, cell_y) = cell_origin(*cell);
             framebuffer.fill_rect(
-                cell.x * CELL_SIZE + 1,
-                cell.y * CELL_SIZE + 1,
+                cell_x + 1,
+                cell_y + 1,
                 (CELL_SIZE - 2) as u32,
                 (CELL_SIZE - 2) as u32,
                 color,
             );
         }
 
-        framebuffer.draw_rect(0, 0, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT, BORDER);
+        framebuffer.draw_rect(
+            PLAYFIELD_RECT.x,
+            PLAYFIELD_RECT.y,
+            PLAYFIELD_RECT.width,
+            PLAYFIELD_RECT.height,
+            BORDER,
+        );
         draw_score_hud(framebuffer, self.world.score());
 
         if self.world.phase() == Phase::GameOver {
@@ -193,44 +227,84 @@ impl Game for SnakeGame {
 
 fn draw_grid(framebuffer: &mut Framebuffer) {
     for x in 1..GRID_WIDTH {
-        let pixel_x = x * CELL_SIZE;
+        let pixel_x = PLAYFIELD_RECT.x + x * CELL_SIZE;
         framebuffer.draw_line(
             pixel_x,
-            0,
+            PLAYFIELD_RECT.y,
             pixel_x,
-            FRAMEBUFFER_HEIGHT as i32 - 1,
+            PLAYFIELD_RECT.y + PLAYFIELD_RECT.height as i32 - 1,
             GRID_LINE,
         );
     }
     for y in 1..GRID_HEIGHT {
-        let pixel_y = y * CELL_SIZE;
-        framebuffer.draw_line(0, pixel_y, FRAMEBUFFER_WIDTH as i32 - 1, pixel_y, GRID_LINE);
+        let pixel_y = PLAYFIELD_RECT.y + y * CELL_SIZE;
+        framebuffer.draw_line(
+            PLAYFIELD_RECT.x,
+            pixel_y,
+            PLAYFIELD_RECT.x + PLAYFIELD_RECT.width as i32 - 1,
+            pixel_y,
+            GRID_LINE,
+        );
     }
+}
+
+fn cell_origin(cell: Cell) -> (i32, i32) {
+    (
+        PLAYFIELD_RECT.x + cell.x * CELL_SIZE,
+        PLAYFIELD_RECT.y + cell.y * CELL_SIZE,
+    )
 }
 
 fn draw_score_hud(framebuffer: &mut Framebuffer, score: u32) {
     let text = format!("SCORE {score}");
-    let (width, height) = Framebuffer::text_size(&text, HUD_TEXT_SCALE);
+    let (_, height) = Framebuffer::text_size(&text, HUD_TEXT_SCALE);
+    let text_y = HUD_RECT.y + centered_offset(HUD_RECT.height, height);
 
-    framebuffer.fill_rect(2, 2, width + 4, height + 4, HUD_BACKDROP);
-    framebuffer.draw_rect(2, 2, width + 4, height + 4, BORDER);
-    framebuffer.draw_text_scaled(4, 4, &text, HUD_TEXT_SCALE, HUD_TEXT);
+    framebuffer.fill_rect(
+        HUD_RECT.x,
+        HUD_RECT.y,
+        HUD_RECT.width,
+        HUD_RECT.height,
+        HUD_BACKDROP,
+    );
+    framebuffer.draw_rect(
+        HUD_RECT.x,
+        HUD_RECT.y,
+        HUD_RECT.width,
+        HUD_RECT.height,
+        BORDER,
+    );
+    framebuffer.draw_text_scaled(4, text_y, &text, HUD_TEXT_SCALE, HUD_TEXT);
 }
 
 fn draw_game_over(framebuffer: &mut Framebuffer, score: u32) {
-    framebuffer.fill_rect(64, 38, 192, 108, PANEL_FILL);
-    framebuffer.draw_rect(64, 38, 192, 108, GAME_OVER);
+    framebuffer.fill_rect(
+        GAME_OVER_PANEL.x,
+        GAME_OVER_PANEL.y,
+        GAME_OVER_PANEL.width,
+        GAME_OVER_PANEL.height,
+        PANEL_FILL,
+    );
+    framebuffer.draw_rect(
+        GAME_OVER_PANEL.x,
+        GAME_OVER_PANEL.y,
+        GAME_OVER_PANEL.width,
+        GAME_OVER_PANEL.height,
+        GAME_OVER,
+    );
 
-    draw_centered_text(
+    draw_centered_text_in_rect(
         framebuffer,
-        52,
+        PLAYFIELD_RECT,
+        GAME_OVER_PANEL.y + 14,
         "GAME OVER",
         GAME_OVER_TEXT_SCALE,
         GAME_OVER,
     );
-    draw_centered_text(
+    draw_centered_text_in_rect(
         framebuffer,
-        78,
+        PLAYFIELD_RECT,
+        GAME_OVER_PANEL.y + 40,
         &format!("SCORE {score}"),
         GAME_OVER_TEXT_SCALE,
         HUD_TEXT,
@@ -262,6 +336,14 @@ fn draw_replay_button(framebuffer: &mut Framebuffer) {
 }
 
 fn draw_d_pad(framebuffer: &mut Framebuffer) {
+    framebuffer.draw_rect(
+        CONTROLS_RECT.x,
+        CONTROLS_RECT.y,
+        CONTROLS_RECT.width,
+        CONTROLS_RECT.height,
+        BORDER,
+    );
+
     for zone in D_PAD_ZONES {
         draw_d_pad_button(framebuffer, zone.rect, zone.direction);
     }
@@ -364,9 +446,16 @@ fn draw_d_pad_arrow(framebuffer: &mut Framebuffer, rect: Rect, direction: Direct
     }
 }
 
-fn draw_centered_text(framebuffer: &mut Framebuffer, y: i32, text: &str, scale: u32, pixel: Pixel) {
+fn draw_centered_text_in_rect(
+    framebuffer: &mut Framebuffer,
+    rect: Rect,
+    y: i32,
+    text: &str,
+    scale: u32,
+    pixel: Pixel,
+) {
     let (width, _) = Framebuffer::text_size(text, scale);
-    let x = centered_offset(FRAMEBUFFER_WIDTH, width);
+    let x = rect.x + centered_offset(rect.width, width);
     framebuffer.draw_text_scaled(x, y, text, scale, pixel);
 }
 
@@ -609,6 +698,20 @@ impl Rect {
         let y = i64::from(position.1);
 
         x >= min_x && x <= max_x && y >= min_y && y <= max_y
+    }
+
+    #[cfg(test)]
+    fn intersects(self, other: Self) -> bool {
+        if self.width == 0 || self.height == 0 || other.width == 0 || other.height == 0 {
+            return false;
+        }
+
+        let self_max_x = self.x + self.width as i32;
+        let self_max_y = self.y + self.height as i32;
+        let other_max_x = other.x + other.width as i32;
+        let other_max_y = other.y + other.height as i32;
+
+        self.x < other_max_x && self_max_x > other.x && self.y < other_max_y && self_max_y > other.y
     }
 }
 
@@ -884,11 +987,13 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        BUTTON_BORDER, BUTTON_TEXT, Cell, D_PAD_ARROW, D_PAD_CENTER, D_PAD_DOWN, D_PAD_LEFT,
-        D_PAD_RIGHT, D_PAD_UP, DPadTracker, Direction, EXIT_KEY, GAME_OVER, HUD_TEXT, Phase,
-        REPLAY_BUTTON, RESTART_KEY, SnakeControls, SnakeGame, SnakeWorld, TICK_PERIOD,
-        TURN_QUEUE_CAPACITY, TouchControls, d_pad_zone_at, direction_for_key, draw_d_pad,
-        draw_game_over, draw_score_hud,
+        BUTTON_BORDER, BUTTON_TEXT, CELL_SIZE, CONTROLS_RECT, Cell, D_PAD_ARROW, D_PAD_CENTER,
+        D_PAD_CENTER_FILL, D_PAD_DOWN, D_PAD_FILL, D_PAD_LEFT, D_PAD_RIGHT, D_PAD_UP, DPadTracker,
+        Direction, EXIT_KEY, FOOD, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, GAME_OVER,
+        GAME_OVER_PANEL, GRID_LINE, HUD_BACKDROP, HUD_RECT, HUD_TEXT, PANEL_FILL, PLAYFIELD_RECT,
+        Phase, REPLAY_BUTTON, RESTART_KEY, SNAKE_BODY, SNAKE_HEAD, SnakeControls, SnakeGame,
+        SnakeWorld, TICK_PERIOD, TURN_QUEUE_CAPACITY, TouchControls, cell_origin, d_pad_zone_at,
+        direction_for_key, draw_d_pad, draw_game_over, draw_grid, draw_score_hud,
     };
     use gotoo_pixel_engine::{Framebuffer, Key, Pixel, Touch, TouchPhase};
 
@@ -952,8 +1057,198 @@ mod tests {
         count
     }
 
+    fn count_pixels_in_rect(framebuffer: &Framebuffer, pixel: Pixel, rect: super::Rect) -> usize {
+        let mut count = 0;
+
+        for y in rect.y..rect.y + rect.height as i32 {
+            for x in rect.x..rect.x + rect.width as i32 {
+                if framebuffer.pixel(x, y) == Some(pixel) {
+                    count += 1;
+                }
+            }
+        }
+
+        count
+    }
+
+    fn count_pixels_outside_rect(
+        framebuffer: &Framebuffer,
+        pixel: Pixel,
+        rect: super::Rect,
+    ) -> usize {
+        let mut count = 0;
+
+        for y in 0..framebuffer.height() as i32 {
+            for x in 0..framebuffer.width() as i32 {
+                if !rect.contains((x, y)) && framebuffer.pixel(x, y) == Some(pixel) {
+                    count += 1;
+                }
+            }
+        }
+
+        count
+    }
+
+    fn assert_color_only_inside(framebuffer: &Framebuffer, pixel: Pixel, rect: super::Rect) {
+        assert!(count_pixels_in_rect(framebuffer, pixel, rect) > 0);
+        assert_eq!(count_pixels_outside_rect(framebuffer, pixel, rect), 0);
+    }
+
     fn d_pad_direction_at(position: (i32, i32)) -> Option<Direction> {
         d_pad_zone_at(position).and_then(|zone| zone.direction)
+    }
+
+    #[test]
+    fn layout_uses_expected_framebuffer_and_zones() {
+        assert_eq!(FRAMEBUFFER_WIDTH, 480);
+        assert_eq!(FRAMEBUFFER_HEIGHT, 204);
+        assert_eq!(
+            HUD_RECT,
+            super::Rect {
+                x: 0,
+                y: 0,
+                width: 480,
+                height: 24
+            }
+        );
+        assert_eq!(
+            PLAYFIELD_RECT,
+            super::Rect {
+                x: 0,
+                y: 24,
+                width: 320,
+                height: 180
+            }
+        );
+        assert_eq!(
+            CONTROLS_RECT,
+            super::Rect {
+                x: 320,
+                y: 24,
+                width: 160,
+                height: 180
+            }
+        );
+    }
+
+    #[test]
+    fn layout_zones_do_not_overlap_the_playfield() {
+        assert!(!HUD_RECT.intersects(PLAYFIELD_RECT));
+        assert!(!CONTROLS_RECT.intersects(PLAYFIELD_RECT));
+        for rect in [D_PAD_UP, D_PAD_LEFT, D_PAD_CENTER, D_PAD_RIGHT, D_PAD_DOWN] {
+            assert!(CONTROLS_RECT.contains((rect.x, rect.y)));
+            assert!(CONTROLS_RECT.contains((
+                rect.x + rect.width as i32 - 1,
+                rect.y + rect.height as i32 - 1,
+            )));
+        }
+        assert!(!D_PAD_UP.intersects(PLAYFIELD_RECT));
+        assert!(!D_PAD_LEFT.intersects(PLAYFIELD_RECT));
+        assert!(!D_PAD_CENTER.intersects(PLAYFIELD_RECT));
+        assert!(!D_PAD_RIGHT.intersects(PLAYFIELD_RECT));
+        assert!(!D_PAD_DOWN.intersects(PLAYFIELD_RECT));
+    }
+
+    #[test]
+    fn cell_origin_includes_playfield_offset() {
+        assert_eq!(cell_origin(Cell { x: 0, y: 0 }), (0, 24));
+        assert_eq!(cell_origin(Cell { x: 1, y: 0 }), (CELL_SIZE, 24));
+        assert_eq!(cell_origin(Cell { x: 0, y: 1 }), (0, 24 + CELL_SIZE));
+        assert_eq!(
+            cell_origin(Cell { x: 31, y: 17 }),
+            (
+                PLAYFIELD_RECT.x + 31 * CELL_SIZE,
+                PLAYFIELD_RECT.y + 17 * CELL_SIZE
+            )
+        );
+    }
+
+    #[test]
+    fn grid_is_drawn_only_inside_playfield() {
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+
+        draw_grid(&mut framebuffer);
+
+        assert_color_only_inside(&framebuffer, GRID_LINE, PLAYFIELD_RECT);
+        assert_eq!(
+            framebuffer.pixel(PLAYFIELD_RECT.x + CELL_SIZE, PLAYFIELD_RECT.y),
+            Some(GRID_LINE)
+        );
+        assert_eq!(
+            framebuffer.pixel(PLAYFIELD_RECT.x, PLAYFIELD_RECT.y + CELL_SIZE),
+            Some(GRID_LINE)
+        );
+    }
+
+    #[test]
+    fn snake_and_food_are_rendered_only_inside_playfield() {
+        let mut game = SnakeGame::new();
+        game.world.food = Some(Cell { x: 4, y: 5 });
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+
+        game.draw(&mut gotoo_pixel_engine::Frame {
+            framebuffer: &mut framebuffer,
+            input: &gotoo_pixel_engine::Input::default(),
+            delta_time: Duration::ZERO,
+        });
+
+        assert_color_only_inside(&framebuffer, FOOD, PLAYFIELD_RECT);
+        assert_color_only_inside(&framebuffer, SNAKE_HEAD, PLAYFIELD_RECT);
+        assert_color_only_inside(&framebuffer, SNAKE_BODY, PLAYFIELD_RECT);
+    }
+
+    #[test]
+    fn hud_is_drawn_only_inside_hud_rect() {
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+
+        draw_score_hud(&mut framebuffer, 12);
+
+        assert_color_only_inside(&framebuffer, HUD_BACKDROP, HUD_RECT);
+        assert_color_only_inside(&framebuffer, HUD_TEXT, HUD_RECT);
+        assert_eq!(
+            count_pixels_in_rect(&framebuffer, HUD_TEXT, PLAYFIELD_RECT),
+            0
+        );
+    }
+
+    #[test]
+    fn hud_has_room_for_future_best_score_text() {
+        let (width, height) = Framebuffer::text_size("SCORE 12    BEST 37", super::HUD_TEXT_SCALE);
+
+        assert!(width + 8 <= HUD_RECT.width);
+        assert!(height <= HUD_RECT.height);
+    }
+
+    #[test]
+    fn d_pad_is_drawn_only_inside_controls_rect() {
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+
+        draw_d_pad(&mut framebuffer);
+
+        assert_color_only_inside(&framebuffer, D_PAD_FILL, CONTROLS_RECT);
+        assert_color_only_inside(&framebuffer, D_PAD_CENTER_FILL, CONTROLS_RECT);
+        assert_color_only_inside(&framebuffer, D_PAD_ARROW, CONTROLS_RECT);
+        assert_eq!(
+            count_pixels_in_rect(&framebuffer, D_PAD_ARROW, PLAYFIELD_RECT),
+            0
+        );
+    }
+
+    #[test]
+    fn game_over_panel_and_replay_are_centered_in_playfield() {
+        assert_eq!(
+            GAME_OVER_PANEL.x,
+            PLAYFIELD_RECT.x + (PLAYFIELD_RECT.width - GAME_OVER_PANEL.width) as i32 / 2
+        );
+        assert_eq!(
+            GAME_OVER_PANEL.y,
+            PLAYFIELD_RECT.y + (PLAYFIELD_RECT.height - GAME_OVER_PANEL.height) as i32 / 2
+        );
+        assert!(PLAYFIELD_RECT.contains((REPLAY_BUTTON.x, REPLAY_BUTTON.y)));
+        assert!(PLAYFIELD_RECT.contains((
+            REPLAY_BUTTON.x + REPLAY_BUTTON.width as i32 - 1,
+            REPLAY_BUTTON.y + REPLAY_BUTTON.height as i32 - 1,
+        )));
     }
 
     #[test]
@@ -973,7 +1268,7 @@ mod tests {
 
     #[test]
     fn running_hud_draws_score_text() {
-        let mut framebuffer = Framebuffer::new(super::FRAMEBUFFER_WIDTH, super::FRAMEBUFFER_HEIGHT);
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
 
         draw_score_hud(&mut framebuffer, 12);
 
@@ -982,7 +1277,7 @@ mod tests {
 
     #[test]
     fn game_over_panel_draws_score_and_replay_button() {
-        let mut framebuffer = Framebuffer::new(super::FRAMEBUFFER_WIDTH, super::FRAMEBUFFER_HEIGHT);
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
 
         draw_game_over(&mut framebuffer, 7);
 
@@ -993,11 +1288,13 @@ mod tests {
             framebuffer.pixel(REPLAY_BUTTON.x, REPLAY_BUTTON.y),
             Some(BUTTON_BORDER)
         );
+        assert_color_only_inside(&framebuffer, PANEL_FILL, PLAYFIELD_RECT);
+        assert_color_only_inside(&framebuffer, BUTTON_TEXT, PLAYFIELD_RECT);
     }
 
     #[test]
     fn d_pad_draws_direction_arrows() {
-        let mut framebuffer = Framebuffer::new(super::FRAMEBUFFER_WIDTH, super::FRAMEBUFFER_HEIGHT);
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
 
         draw_d_pad(&mut framebuffer);
 
@@ -1062,22 +1359,22 @@ mod tests {
 
     #[test]
     fn d_pad_rect_boundaries_are_inclusive_and_non_overlapping() {
-        assert_eq!(d_pad_direction_at((232, 56)), Some(Direction::Up));
-        assert_eq!(d_pad_direction_at((271, 95)), Some(Direction::Up));
-        assert_eq!(d_pad_direction_at((231, 95)), None);
-        assert_eq!(d_pad_direction_at((232, 96)), None);
+        assert_eq!(d_pad_direction_at((374, 36)), Some(Direction::Up));
+        assert_eq!(d_pad_direction_at((425, 87)), Some(Direction::Up));
+        assert_eq!(d_pad_direction_at((373, 87)), None);
+        assert_eq!(d_pad_direction_at((374, 88)), None);
 
-        assert_eq!(d_pad_direction_at((192, 96)), Some(Direction::Left));
-        assert_eq!(d_pad_direction_at((231, 135)), Some(Direction::Left));
-        assert_eq!(d_pad_direction_at((232, 135)), None);
+        assert_eq!(d_pad_direction_at((322, 88)), Some(Direction::Left));
+        assert_eq!(d_pad_direction_at((373, 139)), Some(Direction::Left));
+        assert_eq!(d_pad_direction_at((374, 139)), None);
 
-        assert_eq!(d_pad_direction_at((272, 96)), Some(Direction::Right));
-        assert_eq!(d_pad_direction_at((311, 135)), Some(Direction::Right));
-        assert_eq!(d_pad_direction_at((312, 135)), None);
+        assert_eq!(d_pad_direction_at((426, 88)), Some(Direction::Right));
+        assert_eq!(d_pad_direction_at((477, 139)), Some(Direction::Right));
+        assert_eq!(d_pad_direction_at((478, 139)), None);
 
-        assert_eq!(d_pad_direction_at((232, 136)), Some(Direction::Down));
-        assert_eq!(d_pad_direction_at((271, 175)), Some(Direction::Down));
-        assert_eq!(d_pad_direction_at((272, 175)), None);
+        assert_eq!(d_pad_direction_at((374, 140)), Some(Direction::Down));
+        assert_eq!(d_pad_direction_at((425, 191)), Some(Direction::Down));
+        assert_eq!(d_pad_direction_at((426, 191)), None);
     }
 
     #[test]
@@ -1114,7 +1411,7 @@ mod tests {
 
         let directions = tracker.directions_from_touches(&[
             touch(1, TouchPhase::Started, Some(rect_center(D_PAD_RIGHT))),
-            touch(1, TouchPhase::Moved, Some((300, 110))),
+            touch(1, TouchPhase::Moved, Some((450, 110))),
         ]);
 
         assert_eq!(directions, [Direction::Right]);
