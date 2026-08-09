@@ -49,17 +49,19 @@ Livrable minimal :
 
 Transformer le spike en première petite API de moteur réellement utilisable. M1 est volontairement découpé en étapes bornées : une étape doit être validée avant de passer à la suivante.
 
-### M1.1 — Pixel et framebuffer public
+### M1.1 — Pixel et framebuffer public ✅
+
+**Statut : terminé.** Validé avec le commit `f79d512` (`Add public pixel framebuffer API`).
 
 **But :** définir la primitive fondamentale du moteur et une API CPU sûre et testable.
 
-- type `Pixel` RGBA explicite ;
-- constantes/couleurs de base utiles ;
-- `clear(Pixel)` ;
-- `draw(x, y, Pixel)` avec comportement borné défini ;
-- conserver un chemin interne simple pour les écritures dont les coordonnées sont déjà garanties ;
-- adapter la démo pour utiliser cette API lorsque pertinent ;
-- tests unitaires des couleurs, de `clear` et des limites de `draw`.
+- [x] type `Pixel` RGBA explicite ;
+- [x] constantes/couleurs de base utiles ;
+- [x] `clear(Pixel)` ;
+- [x] `draw(x, y, Pixel)` avec comportement borné défini ;
+- [x] conserver un chemin simple pour les écritures dont les coordonnées sont déjà garanties ;
+- [x] adapter la démo pour utiliser cette API lorsque pertinent ;
+- [x] tests unitaires des couleurs, de `clear` et des limites de `draw`.
 
 **Non-objectifs M1.1 :** lignes, rectangles, cercles, sprites, API GPU publique, ECS ou refonte générale de l'architecture.
 
@@ -98,6 +100,29 @@ Les algorithmes doivent rester lisibles avant d'être micro-optimisés.
 - `cargo fmt --check`, `cargo clippy -- -D warnings` et `cargo test` passent ;
 - aucune abstraction majeure non justifiée par M1 n'a été introduite.
 
+## M1.5 — Spike de portabilité WebAssembly
+
+**But :** vérifier tôt que l'architecture du moteur reste compatible avec un navigateur et qu'un même code de démonstration peut cibler desktop et WebAssembly.
+
+Ce milestone est un spike de portabilité, pas la construction d'une plateforme web complète.
+
+- compiler le moteur pour une cible WebAssembly adaptée au navigateur ;
+- ouvrir une surface de rendu web et afficher le framebuffer via le chemin `wgpu`/web disponible ;
+- conserver le même code métier de démonstration entre desktop et navigateur autant que raisonnablement possible ;
+- documenter la commande de build et de lancement local ;
+- identifier explicitement les divergences plateforme nécessaires ;
+- vérifier qu'aucune dépendance introduite jusqu'à M1 ne bloque inutilement la cible web.
+
+### Critères de sortie M1.5
+
+- une démonstration s'exécute nativement et dans un navigateur à partir du même dépôt ;
+- le code métier de la démonstration n'est pas dupliqué par plateforme ;
+- les adaptations web restent confinées à la frontière plateforme ;
+- le chemin framebuffer CPU → GPU → écran reste fonctionnel ;
+- les limitations connues sont documentées.
+
+**Non-objectifs M1.5 :** audio web, asset pipeline web complet, hébergement public, PWA, réseau, optimisation spécifique navigateur.
+
 ## M2 — Sprites et images
 
 - chargement d'image ;
@@ -134,18 +159,23 @@ L'API doit être pensée en Rust plutôt que traduite mécaniquement du C++.
 
 Déterminer les besoins à partir d'un jeu réel puis sélectionner une brique Rust existante ou implémenter la couche minimale nécessaire. Ne pas porter `olcSoundWaveEngine` par principe.
 
-## M6 — Premier jeu réel
+## M6 — Premier jeu réel : Snake
 
-Construire un petit jeu complet avec le moteur. Ce milestone sert de test architectural : toute friction récurrente devient un candidat d'évolution du moteur.
+Construire un Snake petit mais complet avec le moteur. Ce milestone sert de test d'acceptation architectural : le jeu doit pouvoir être écrit comme consommateur normal de `gotoo-pixel-engine`, sans contourner l'API ni manipuler les entrailles du renderer.
 
 Le jeu doit notamment tester :
 
 - boucle complète ;
 - inputs ;
-- rendu ;
-- assets si disponibles ;
-- géométrie/collisions si nécessaires ;
-- packaging minimal.
+- rendu pixel-first ;
+- déplacement à cadence contrôlée ;
+- nourriture et croissance ;
+- collisions avec le corps et les limites ;
+- score et redémarrage minimal ;
+- packaging/exécution minimal ;
+- cible navigateur également lorsque M1.5 et les dépendances introduites depuis restent compatibles.
+
+Toute friction récurrente rencontrée pendant Snake devient un candidat d'évolution du moteur, pas une raison de contourner son API.
 
 ## M7 — Grimoire Javidx9
 
@@ -162,7 +192,6 @@ Chaque port doit indiquer clairement sa provenance.
 
 ## Plus tard, seulement si justifié
 
-- WebAssembly ;
 - gamepads ;
 - resource packs ;
 - tooling/éditeur ;
