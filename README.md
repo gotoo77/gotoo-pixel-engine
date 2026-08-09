@@ -38,7 +38,9 @@ Pas d'ECS, de scene graph, de système de plugins, de scripting ou d'éditeur ta
 
 ## État
 
-Le projet démarre par un **spike technique minimal (M0)** : ouvrir une fenêtre, maintenir un framebuffer CPU, l'envoyer au GPU et gérer une boucle interactive avec clavier et delta-time.
+Le **spike technique minimal (M0)** est terminé : ouvrir une fenêtre, maintenir un framebuffer CPU, l'envoyer au GPU et gérer une boucle interactive avec clavier et delta-time.
+
+Le travail en cours transforme progressivement ce spike en petite API publique, en commençant par **M1.1 — Pixel et framebuffer public**.
 
 ## M0 — Lancer le spike plateforme
 
@@ -56,5 +58,17 @@ La démonstration ouvre une fenêtre `960x540` qui affiche un framebuffer CPU `3
 - `pollster` : `1.0.1`, utilisé uniquement pour initialiser `wgpu` depuis la boucle synchrone `winit`.
 
 Le chemin CPU framebuffer vers GPU vers écran se lit directement dans `src/demo.rs`, `src/framebuffer.rs` et `src/renderer.rs`.
+
+## M1.1 — Pixel et framebuffer public
+
+L'API publique actuelle expose :
+
+- `Pixel::rgb(r, g, b)` et `Pixel::rgba(r, g, b, a)` ;
+- quelques couleurs constantes : `BLACK`, `WHITE`, `RED`, `GREEN`, `BLUE`, `TRANSPARENT` ;
+- `Framebuffer::new(width, height)` ;
+- `Framebuffer::clear(pixel)` ;
+- `Framebuffer::draw(x, y, pixel)`, borné, qui retourne `false` hors framebuffer ;
+- `Framebuffer::pixel(x, y)`, borné, qui retourne `None` hors framebuffer ;
+- `Framebuffer::as_rgba8()` pour le chemin d'upload GPU.
 
 Voir [ROADMAP.md](ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) et [REFERENCES.md](REFERENCES.md).

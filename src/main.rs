@@ -1,12 +1,11 @@
 mod demo;
-mod framebuffer;
 mod renderer;
 
 use std::sync::Arc;
 use std::time::Instant;
 
 use demo::Demo;
-use framebuffer::Framebuffer;
+use gotoo_pixel_engine::Framebuffer;
 use renderer::{RenderOutcome, Renderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;

@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::framebuffer::Framebuffer;
+use gotoo_pixel_engine::Framebuffer;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
@@ -282,7 +282,7 @@ impl Renderer {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            framebuffer.pixels(),
+            framebuffer.as_rgba8(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(framebuffer.width() * 4),
