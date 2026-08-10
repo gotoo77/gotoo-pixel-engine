@@ -9,9 +9,11 @@ fn main() -> Result<(), EngineError> {
         EngineConfig {
             title: "Tetris - Gotoo Pixel Engine".into(),
             framebuffer_width: FRAMEBUFFER_WIDTH,
-            framebuffer_height: FRAMEBUFFER_HEIGHT,
-            window_width: FRAMEBUFFER_WIDTH * 3,
-            window_height: FRAMEBUFFER_HEIGHT * 3,
+            framebuffer_height: FRAMEBUFFER_HEIGHT, 
+            // Temporary WSLg workaround: this surface size is known to be stable.
+            // Some larger/taller sizes currently stall during presentation.
+            window_width: 960,
+            window_height: 612,
         },
         TetrisGame::new(),
     )

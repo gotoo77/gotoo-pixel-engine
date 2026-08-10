@@ -92,7 +92,7 @@ struct TetrisWorld {
 
 impl TetrisWorld {
     fn new() -> Self {
-        let mut bag = Bag::new(0x7E71_15);
+        let mut bag = Bag::new(0x007E_7115);
         let first = bag.next();
         let next = bag.next();
         Self {
