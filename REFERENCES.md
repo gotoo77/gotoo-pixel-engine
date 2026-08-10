@@ -49,7 +49,12 @@ Objectif : concevoir une API Rust idiomatique plutôt que traduire mécaniquemen
 
 https://github.com/OneLoneCoder/olcSoundWaveEngine
 
-Référence conceptuelle pour l'audio et la synthèse. Aucun port n'est décidé : l'écosystème Rust existant sera évalué avant toute implémentation.
+Référence conceptuelle pour l'audio et la synthèse.
+
+L'audio actuellement présent dans `gotoo-pixel-engine` n'est pas un port de
+`olcSoundWaveEngine`. Il s'agit d'une API minimale propre au moteur, limitée aux
+sons one-shot WAV embarqués, avec backend natif `rodio`/`cpal` et backend Web
+WebAudio.
 
 ## OneLoneCoder/olcEditor
 

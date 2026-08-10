@@ -1,209 +1,271 @@
 # Roadmap — gotoo-pixel-engine
 
-Cette roadmap est volontairement pilotée par des capacités observables. Chaque milestone doit produire quelque chose d'exécutable, testable ou mesurable.
+Cette roadmap est pilotee par des capacites observables. Chaque milestone doit
+produire quelque chose d'executable, testable ou mesurable.
 
-## Règle de gouvernance
+## Gouvernance
 
-> Une abstraction entre dans le moteur parce qu'un jeu en a besoin, pas parce qu'elle pourrait être utile un jour.
+> Une abstraction entre dans le moteur parce qu'un jeu en a besoin, pas parce
+> qu'elle pourrait etre utile plus tard.
 
 Corollaires :
 
 - pas d'ECS par anticipation ;
 - pas de scene graph par anticipation ;
-- pas de système de plugins par anticipation ;
-- pas d'éditeur avant qu'un jeu démontre son besoin ;
+- pas de framework UI par anticipation ;
+- pas d'asset manager par anticipation ;
 - pas d'optimisation sans mesure ;
-- préférer une petite API explicite à une architecture générique prématurée.
+- preferer une petite API explicite a une architecture generique prematuree.
 
-## M0 — Spike plateforme ✅
+## Phase Historique
 
-**Statut : terminé.** Validé avec le commit `38fd55f` (`Implement M0 platform spike`) et un test interactif humain de la fenêtre et du framebuffer.
+### M0 — Spike plateforme ✅
 
-**But :** valider le socle technique Rust + `winit` + `wgpu`.
+**Statut : termine.** Valide avec le commit `38fd55f`
+(`Implement M0 platform spike`).
 
-Livrable minimal :
+But : valider le socle Rust + `winit` + `wgpu`.
 
-1. ouvrir une fenêtre ;
-2. créer un framebuffer CPU possédé par le programme ;
-3. modifier ses pixels côté CPU ;
-4. transférer le framebuffer vers une texture GPU ;
-5. afficher cette texture dans la fenêtre ;
-6. gérer au minimum fermeture + une entrée clavier ;
-7. calculer un delta-time exploitable ;
-8. redimensionner ou gérer explicitement le redimensionnement sans crash ;
-9. disposer d'une commande documentée pour lancer le spike.
+Acquis :
 
-### Critères de sortie M0
-
-- [x] `cargo run` produit une démonstration interactive reproductible ;
-- [x] aucun C/C++ ou binding vers olcPixelGameEngine n'est requis ;
-- [x] le chemin CPU framebuffer → GPU → écran est identifiable dans le code ;
-- [x] les responsabilités plateforme, rendu et démonstration ne sont pas inutilement entremêlées ;
-- [x] `cargo fmt --check`, `cargo clippy` et `cargo test` passent ;
-- [x] les versions Rust et dépendances principales sont documentées ;
-- [x] une mesure simple du temps de frame/FPS est disponible pour établir une baseline.
-
-**Non-objectifs M0 :** sprites, audio, ECS, scène, UI, moteur de collision, asset manager, plugins, éditeur.
-
-## M1 — Pixel Engine minimal ✅
-
-**Statut : terminé.** M1.1, M1.2 et M1.3 sont validés. Le moteur expose désormais une première API publique suffisante pour écrire une petite application interactive sans dépendre directement de `winit`, `wgpu` ou des détails du renderer.
-
-Transformer le spike en première petite API de moteur réellement utilisable. M1 est volontairement découpé en étapes bornées : une étape doit être validée avant de passer à la suivante.
+- ouverture de fenetre ;
+- framebuffer CPU ;
+- upload du framebuffer vers une texture GPU ;
+- presentation via `wgpu` ;
+- fermeture et input clavier minimal ;
+- delta-time ;
+- gestion du resize sans crash ;
+- premiere baseline FPS/frame time.
 
 ### M1.1 — Pixel et framebuffer public ✅
 
-**Statut : terminé.** Validé avec le commit `f79d512` (`Add public pixel framebuffer API`).
+**Statut : termine.** Valide avec le commit `f79d512`
+(`Add public pixel framebuffer API`).
 
-**But :** définir la primitive fondamentale du moteur et une API CPU sûre et testable.
+Acquis :
 
-- [x] type `Pixel` RGBA explicite ;
-- [x] constantes/couleurs de base utiles ;
-- [x] `clear(Pixel)` ;
-- [x] `draw(x, y, Pixel)` avec comportement borné défini ;
-- [x] conserver un chemin simple pour les écritures dont les coordonnées sont déjà garanties ;
-- [x] adapter la démo pour utiliser cette API lorsque pertinent ;
-- [x] tests unitaires des couleurs, de `clear` et des limites de `draw`.
-
-**Non-objectifs M1.1 :** lignes, rectangles, cercles, sprites, API GPU publique, ECS ou refonte générale de l'architecture.
+- `Pixel` RGBA ;
+- couleurs constantes de base ;
+- `Framebuffer::new`, `clear`, `draw`, `pixel`, `as_rgba8` ;
+- tests unitaires sur les couleurs, l'ecriture et les limites.
 
 ### M1.2 — Primitives de dessin CPU ✅
 
-**Statut : terminé.** Validé avec le commit `5524ec5` (`Add CPU drawing primitives`).
+**Statut : termine.** Valide avec le commit `5524ec5`
+(`Add CPU drawing primitives`).
 
-**But :** obtenir les primitives pixel-first nécessaires aux premiers prototypes.
+Acquis :
 
-- [x] lignes ;
-- [x] rectangles ;
-- [x] rectangles pleins ;
-- [x] cercles ;
-- [x] cercles pleins ;
-- [x] clipping/comportement hors framebuffer explicitement défini ;
-- [x] tests sur les cas nominaux, limites et formes partiellement hors écran ;
-- [x] premiers benchmarks reproductibles des primitives CPU.
-
-Les algorithmes doivent rester lisibles avant d'être micro-optimisés.
+- lignes ;
+- rectangles et rectangles pleins ;
+- cercles et cercles pleins ;
+- clipping local au framebuffer ;
+- benchmarks CPU reproductibles.
 
 ### M1.3 — Input, timing et exemple public ✅
 
-**Statut : terminé.** Validé avec le commit `54afd0c` (`Implement M1.3 input timing API`).
+**Statut : termine.** Valide avec le commit `54afd0c`
+(`Implement M1.3 input timing API`).
 
-**But :** permettre à un petit jeu de dépendre de l'API du moteur plutôt que de manipuler directement `winit` ou les détails du spike.
+Acquis :
 
-- [x] clavier minimal ;
-- [x] souris minimale ;
-- [x] delta-time accessible au jeu ;
-- [x] distinction entre `pressed`, `held` et `released` ;
-- [x] exemple interactif utilisant l'API publique prévue pour un jeu ;
-- [x] documentation de la boucle minimale d'une application ;
-- [x] sortie explicitement contrôlée par le jeu via `GameResult` ;
-- [x] configuration invalide rejetée avant initialisation plateforme ;
-- [x] perte de focus réinitialisant l'état input maintenu.
+- trait `Game` ;
+- `Frame` ;
+- `GameResult` ;
+- clavier et souris ;
+- etats `pressed`, `held`, `released` ;
+- `delta_time` ;
+- sortie controlee par le jeu ;
+- validation de configuration ;
+- reset input a la perte de focus.
 
-### Critères de sortie M1
+### M1.5 — Portabilite WebAssembly ✅
 
-- [x] l'exemple ne dépend pas directement des détails internes du renderer ;
-- [x] les primitives publiques nécessaires au milestone sont documentées et testées ;
-- [x] les entrées et le timing sont exploitables depuis le code de jeu ;
-- [x] les benchmarks CPU donnent une première baseline reproductible ;
-- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` et `cargo test` passent ;
-- [x] aucune abstraction majeure non justifiée par M1 n'a été introduite.
+**Statut : termine.** Valide avec le commit `9a2cb20`
+(`Add WebAssembly browser support`).
 
-## M1.5 — Spike de portabilité WebAssembly
+Acquis :
 
-**But :** vérifier tôt que l'architecture du moteur reste compatible avec un navigateur et qu'un même code de démonstration peut cibler desktop et WebAssembly.
+- build `wasm32-unknown-unknown` ;
+- surface WebGPU via le meme chemin `wgpu` ;
+- exemple Web partageant le code metier de demo ;
+- divergence Web confinee a la frontiere plateforme et au point d'entree WASM.
 
-Ce milestone est un spike de portabilité, pas la construction d'une plateforme web complète.
+## Phase De Validation Par Snake
 
-- compiler le moteur pour une cible WebAssembly adaptée au navigateur ;
-- ouvrir une surface de rendu web et afficher le framebuffer via le chemin `wgpu`/web disponible ;
-- conserver le même code métier de démonstration entre desktop et navigateur autant que raisonnablement possible ;
-- documenter la commande de build et de lancement local ;
-- identifier explicitement les divergences plateforme nécessaires ;
-- vérifier qu'aucune dépendance introduite jusqu'à M1 ne bloque inutilement la cible web.
+Snake a remplace le role anciennement prevu pour un lointain M6 : il est devenu
+le premier jeu reel de validation directement dans la serie M1.x. Les anciennes
+intentions sont conservees, mais l'histoire reelle est celle-ci.
 
-### Critères de sortie M1.5
+### Snake natif et Web ✅
 
-- une démonstration s'exécute nativement et dans un navigateur à partir du même dépôt ;
-- le code métier de la démonstration n'est pas dupliqué par plateforme ;
-- les adaptations web restent confinées à la frontière plateforme ;
-- le chemin framebuffer CPU → GPU → écran reste fonctionnel ;
-- les limitations connues sont documentées.
+- `485506a` — `Add native Snake example`
+- `b56f957` — `Add Web Snake and preserve sRGB rendering`
+- `cca3ba6` — `Deploy Web Snake with GitHub Pages`
 
-**Non-objectifs M1.5 :** audio web, asset pipeline web complet, hébergement public, PWA, réseau, optimisation spécifique navigateur.
+Acquis :
 
-## M2 — Sprites et images
+- Snake comme consommateur normal de l'API moteur ;
+- version native ;
+- version Web/WASM ;
+- preservation du rendu sRGB ;
+- workflow GitHub Pages.
 
-- chargement d'image ;
-- représentation `Sprite` ;
-- dessin complet et partiel ;
-- transparence ;
-- transformations nécessaires aux premiers jeux ;
-- stratégie d'ownership Rust claire.
+### Input tactile et controles Snake ✅
 
-## M3 — Rendu GPU / decals
+- `dfbc075` — `Add touch input and Snake swipe controls`
+- `da4f29e` — `Replace Snake swipe with touch D-pad`
 
-Explorer un chemin GPU complémentaire au framebuffer CPU :
+Acquis :
 
-- textures GPU ;
-- decals/quads ;
-- batching lorsque justifié par les mesures ;
-- transformations ;
-- transparence/blending ;
-- benchmarks CPU vs GPU sur des scénarios documentés.
+- `TouchPhase`, `Touch`, `Input::touches()` ;
+- mapping tactile vers coordonnees framebuffer ;
+- convergence clavier/tactile vers les directions metier Snake ;
+- D-pad tactile prive a Snake.
 
-## M4 — Geometry2D
+### Texte bitmap, score, HUD et layout Snake ✅
 
-Créer une crate géométrique Rust indépendante, inspirée de `olcUTIL_Geometry2D` :
+- `8a478ea` — `Add Snake score and bitmap text UI`
+- `cce1e13` — `Separate Snake playfield HUD and touch controls`
+- `a93a790` — `Add Snake interaction layout modes`
 
-- points, segments, rectangles, cercles, triangles, rays ;
-- `contains` ;
-- `overlaps` ;
-- `intersects` ;
-- puis projection/collision/réflexion selon les besoins réels.
+Acquis :
 
-L'API doit être pensée en Rust plutôt que traduite mécaniquement du C++.
+- texte bitmap dans `Framebuffer` ;
+- score courant ;
+- HUD ;
+- separation playfield / HUD / controles ;
+- layout clavier sans zone tactile ;
+- layout tactile avec D-pad.
 
-## M5 — Audio
+### Viewport moteur ✅
 
-Déterminer les besoins à partir d'un jeu réel puis sélectionner une brique Rust existante ou implémenter la couche minimale nécessaire. Ne pas porter `olcSoundWaveEngine` par principe.
+- `4039478` — `Add viewport-aware rendering and input`
 
-## M6 — Premier jeu réel : Snake
+Acquis :
 
-Construire un Snake petit mais complet avec le moteur. Ce milestone sert de test d'acceptation architectural : le jeu doit pouvoir être écrit comme consommateur normal de `gotoo-pixel-engine`, sans contourner l'API ni manipuler les entrailles du renderer.
+- `Size`, `Rect`, `Viewport` publics ;
+- conservation du ratio framebuffer ;
+- letterbox/pillarbox ;
+- rendu et input utilisant la meme transformation ;
+- input hors viewport -> `None` ;
+- resize/rotation sans recreation du monde de jeu.
 
-Le jeu doit notamment tester :
+### Stockage local persistant ✅
 
-- boucle complète ;
-- inputs ;
-- rendu pixel-first ;
-- déplacement à cadence contrôlée ;
-- nourriture et croissance ;
-- collisions avec le corps et les limites ;
-- score et redémarrage minimal ;
-- packaging/exécution minimal ;
-- cible navigateur également lorsque M1.5 et les dépendances introduites depuis restent compatibles.
+- `7fe947d` — `Add persistent Snake high score`
 
-Toute friction récurrente rencontrée pendant Snake devient un candidat d'évolution du moteur, pas une raison de contourner son API.
+Acquis :
 
-## M7 — Grimoire Javidx9
+- trait `LocalStorage` ;
+- backend natif fichier local via `directories` ;
+- backend Web via `localStorage` ;
+- `NoopStorage` pour tests ;
+- BEST Snake persistant ;
+- erreurs de stockage non bloquantes.
 
-Porter sélectivement des expériences et algorithmes de `OneLoneCoder/Javidx9`, en privilégiant la compréhension et une réécriture Rust idiomatique :
+### Audio one-shot natif/Web ✅
 
-- tilemaps ;
-- pathfinding ;
-- génération procédurale ;
-- raycasting ;
-- rendu logiciel 3D ;
-- autres expériences selon leur intérêt.
+- `c60602a` — `Add cross-platform audio support to Snake`
 
-Chaque port doit indiquer clairement sa provenance.
+Acquis :
 
-## Plus tard, seulement si justifié
+- trait `Audio` ;
+- `SoundId` ;
+- decode WAV PCM 16-bit mono/stereo 44100/48000 Hz ;
+- backend natif via `rodio`/`cpal` ;
+- backend Web via WebAudio ;
+- `NoopAudio` pour tests ;
+- sons Snake `snake.eat` et `snake.death` ;
+- erreurs audio non bloquantes.
 
-- gamepads ;
-- resource packs ;
-- tooling/éditeur ;
-- réseau ;
-- compute shaders ;
-- ECS ou scene graph si un besoin concret les rend réellement pertinents.
+## Etat Actuel
+
+Le moteur possede maintenant :
+
+- framebuffer CPU pixel-first ;
+- primitives de dessin et texte bitmap ;
+- clavier, souris, tactile ;
+- timing ;
+- viewport et mapping surface -> framebuffer ;
+- stockage local natif/Web ;
+- audio one-shot natif/Web ;
+- cible native ;
+- cible WebAssembly/WebGPU ;
+- premier jeu reel complet : Snake.
+
+Snake est considere comme validation architecturale de la separation :
+
+```text
+SnakeWorld
+    metier pur du jeu
+
+SnakeGame
+    adaptation input, layout, HUD, replay, storage, audio
+
+gotoo-pixel-engine
+    plateforme, rendu, input, viewport, storage, audio
+```
+
+## Prochaine Phase : Multi-Jeux
+
+### Candidat suivant : Tetris
+
+Tetris est le candidat naturel pour valider le moteur avec un deuxieme jeu sans
+generaliser trop tot.
+
+Il peut reutiliser immediatement :
+
+- framebuffer et primitives ;
+- texte bitmap ;
+- input ;
+- timing ;
+- viewport ;
+- storage pour un score local ;
+- audio one-shot ;
+- cible Web.
+
+Il doit surtout reveler les prochains besoins reels du moteur : grille
+differente, pieces, rotation, gravity, lock delay eventuel, preview, lignes,
+pause ou etats de jeu. Ces besoins doivent d'abord rester prives a Tetris tant
+qu'une duplication entre plusieurs jeux n'est pas observee.
+
+## Backlog Futur Non Engage
+
+### Sprites et images
+
+Toujours futur. Besoin attendu : chargement d'image, representation `Sprite`,
+dessin complet/partiel, transparence et ownership Rust clair.
+
+### Rendu GPU / decals
+
+Toujours futur. Explorer seulement lorsque des mesures ou un jeu reel montrent
+que le chemin framebuffer CPU ne suffit plus.
+
+### Geometry2D
+
+Toujours futur. Possible crate independante inspiree de `olcUTIL_Geometry2D`,
+mais aucun besoin actuel ne la force.
+
+### Grimoire Javidx9
+
+Toujours futur. Ports selectifs seulement, avec provenance claire, lorsque le
+projet en a l'usage pedagogique ou ludique.
+
+### Audio
+
+L'audio minimal necessaire a Snake est realise. Un systeme audio plus large,
+un mixer expose, du streaming ou un asset pipeline restent non engages.
+
+### Snake
+
+Le premier Snake complet est realise. Les evolutions futures de Snake ne doivent
+pas etre confondues avec des besoins moteur generiques.
+
+## ECS
+
+Pas d'ECS actuellement.
+
+Snake ne le justifie pas. Tetris ne le justifie pas a priori. Space Invaders ne
+le justifiera pas automatiquement. Une decision ECS ne serait defendable qu'a
+partir d'une duplication ou friction observee sur plusieurs jeux.
