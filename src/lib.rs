@@ -1,3 +1,4 @@
+mod audio;
 pub mod framebuffer;
 mod input;
 mod pixel;
@@ -6,6 +7,7 @@ mod renderer;
 mod storage;
 mod viewport;
 
+pub use audio::{Audio, AudioError, NoopAudio, SoundId};
 pub use framebuffer::Framebuffer;
 pub use input::{ButtonState, Input, Key, MouseButton, Touch, TouchPhase};
 pub use pixel::Pixel;

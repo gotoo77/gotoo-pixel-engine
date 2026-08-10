@@ -129,7 +129,7 @@ mod tests {
 
     use super::DemoGame;
     use gotoo_pixel_engine::{
-        Frame, Framebuffer, Game, GameResult, Input, NoopStorage, Size, Viewport,
+        Frame, Framebuffer, Game, GameResult, Input, NoopAudio, NoopStorage, Size, Viewport,
     };
 
     #[test]
@@ -138,6 +138,7 @@ mod tests {
         let mut framebuffer = Framebuffer::new(4, 4);
         let input = Input::default();
         let mut storage = NoopStorage;
+        let mut audio = NoopAudio::default();
         let surface_size = Size {
             width: 4,
             height: 4,
@@ -147,6 +148,7 @@ mod tests {
             input: &input,
             delta_time: Duration::from_millis(16),
             storage: &mut storage,
+            audio: &mut audio,
             surface_size,
             viewport: Viewport::new(surface_size, surface_size),
         };
@@ -169,6 +171,7 @@ mod tests {
         let mut second = Framebuffer::new(20, 20);
         let input = Input::default();
         let mut storage = NoopStorage;
+        let mut audio = NoopAudio::default();
         let surface_size = Size {
             width: 20,
             height: 20,
@@ -180,6 +183,7 @@ mod tests {
                 input: &input,
                 delta_time: Duration::ZERO,
                 storage: &mut storage,
+                audio: &mut audio,
                 surface_size,
                 viewport: Viewport::new(surface_size, surface_size),
             };
@@ -193,6 +197,7 @@ mod tests {
                 input: &input,
                 delta_time: Duration::ZERO,
                 storage: &mut storage,
+                audio: &mut audio,
                 surface_size,
                 viewport: Viewport::new(surface_size, surface_size),
             };

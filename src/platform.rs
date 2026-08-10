@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use web_time::{Duration, Instant};
 
 use crate::Framebuffer;
+use crate::audio::{Audio, PlatformAudio, platform_audio};
 use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use crate::storage::{LocalStorage, platform_storage};
@@ -44,6 +45,7 @@ pub struct Frame<'a> {
     pub input: &'a Input,
     pub delta_time: Duration,
     pub storage: &'a mut dyn LocalStorage,
+    pub audio: &'a mut dyn Audio,
     pub surface_size: Size,
     pub viewport: Viewport,
 }
@@ -122,6 +124,7 @@ struct PlatformApp<G> {
     framebuffer: Framebuffer,
     input: Input,
     storage: Box<dyn LocalStorage>,
+    audio: Box<dyn PlatformAudio>,
     last_frame_at: Instant,
     fps_timer: Instant,
     fps_frames: u32,
@@ -145,6 +148,7 @@ impl<G: Game> PlatformApp<G> {
             framebuffer,
             input: Input::default(),
             storage: platform_storage(),
+            audio: platform_audio(),
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
@@ -166,6 +170,7 @@ impl<G: Game> PlatformApp<G> {
             framebuffer,
             input: Input::default(),
             storage: platform_storage(),
+            audio: platform_audio(),
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
@@ -194,6 +199,7 @@ impl<G: Game> PlatformApp<G> {
             input: &self.input,
             delta_time: dt,
             storage: self.storage.as_mut(),
+            audio: self.audio.as_mut(),
             surface_size,
             viewport,
         };
@@ -239,6 +245,10 @@ impl<G: Game> PlatformApp<G> {
         let Some(window) = self.window.as_ref() else {
             return;
         };
+
+        if touch.phase == winit::event::TouchPhase::Started {
+            self.audio.activate();
+        }
 
         self.input.push_touch(touch_from_winit(
             touch.id,
@@ -400,6 +410,10 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                     return;
                 };
 
+                if event.state == ElementState::Pressed {
+                    self.audio.activate();
+                }
+
                 match event.state {
                     ElementState::Pressed => self.input.press_key(key),
                     ElementState::Released => self.input.release_key(key),
@@ -409,6 +423,10 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                 let Some(button) = mouse_button_from_winit(button) else {
                     return;
                 };
+
+                if state == ElementState::Pressed {
+                    self.audio.activate();
+                }
 
                 match state {
                     ElementState::Pressed => self.input.press_mouse_button(button),

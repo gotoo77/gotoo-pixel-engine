@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use gotoo_pixel_engine::{
-    Frame, Framebuffer, Game, GameResult, Key, LocalStorage, MouseButton, Pixel, Rect, Size, Touch,
-    TouchPhase,
+    Audio, Frame, Framebuffer, Game, GameResult, Key, LocalStorage, MouseButton, Pixel, Rect, Size,
+    SoundId, Touch, TouchPhase,
 };
 
 pub const KEYBOARD_FRAMEBUFFER_WIDTH: u32 = 320;
@@ -22,6 +22,12 @@ const TICK_PERIOD: Duration = Duration::from_millis(120);
 const EXIT_KEY: Key = Key::Escape;
 const RESTART_KEY: Key = Key::Space;
 const BEST_SCORE_KEY: &str = "gotoo-pixel-engine.snake.best_score.v1";
+const EAT_SOUND: SoundId = SoundId::new("snake.eat");
+const DEATH_SOUND: SoundId = SoundId::new("snake.death");
+const SNAKE_SOUNDS: [(SoundId, &[u8]); 2] = [
+    (EAT_SOUND, include_bytes!("assets/eat.wav")),
+    (DEATH_SOUND, include_bytes!("assets/death.wav")),
+];
 const HUD_TEXT_SCALE: u32 = 1;
 const GAME_OVER_TEXT_SCALE: u32 = 2;
 const HUD_HEIGHT: u32 = 24;
@@ -232,6 +238,7 @@ pub struct SnakeGame {
     touch_controls: TouchControls,
     best_score: u32,
     best_score_loaded: bool,
+    sounds_registered: bool,
 }
 
 impl SnakeGame {
@@ -243,6 +250,7 @@ impl SnakeGame {
             touch_controls: TouchControls::default(),
             best_score: 0,
             best_score_loaded: false,
+            sounds_registered: false,
         }
     }
 
@@ -250,7 +258,9 @@ impl SnakeGame {
         SnakeLayout::for_mode(self.interaction_mode)
     }
 
-    fn update_logic(&mut self, delta_time: Duration, controls: SnakeControls) {
+    fn update_logic(&mut self, delta_time: Duration, controls: SnakeControls) -> SnakeEvents {
+        let mut events = SnakeEvents::default();
+
         if controls.restart && self.world.phase() == Phase::GameOver {
             self.restart();
         }
@@ -260,14 +270,20 @@ impl SnakeGame {
         }
 
         if self.world.phase() != Phase::Running {
-            return;
+            return events;
         }
 
         self.accumulator += delta_time;
 
         let mut ticks = 0;
         while self.accumulator >= TICK_PERIOD && ticks < MAX_CATCH_UP {
-            self.world.tick();
+            let result = self.world.tick();
+            if result.ate_food {
+                events.food_eaten += 1;
+            }
+            if result.game_over {
+                events.game_over = true;
+            }
             self.accumulator -= TICK_PERIOD;
             ticks += 1;
 
@@ -276,6 +292,8 @@ impl SnakeGame {
                 break;
             }
         }
+
+        events
     }
 
     fn restart(&mut self) {
@@ -301,6 +319,26 @@ impl SnakeGame {
 
         self.best_score = score;
         let _ = storage.set(BEST_SCORE_KEY, &score.to_string());
+    }
+
+    fn register_sounds_once(&mut self, audio: &mut dyn Audio) {
+        if self.sounds_registered {
+            return;
+        }
+
+        for (id, bytes) in SNAKE_SOUNDS {
+            let _ = audio.register_wav(id, bytes);
+        }
+        self.sounds_registered = true;
+    }
+
+    fn play_sounds(&self, audio: &mut dyn Audio, events: SnakeEvents) {
+        for _ in 0..events.food_eaten {
+            let _ = audio.play(EAT_SOUND);
+        }
+        if events.game_over {
+            let _ = audio.play(DEATH_SOUND);
+        }
     }
 
     fn draw(&self, frame: &mut Frame<'_>) {
@@ -349,6 +387,7 @@ impl SnakeGame {
 impl Game for SnakeGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.load_best_score_once(frame.storage);
+        self.register_sounds_once(frame.audio);
 
         if frame.input.key(EXIT_KEY).pressed() {
             return GameResult::Exit;
@@ -357,12 +396,19 @@ impl Game for SnakeGame {
         let layout = self.layout();
         let controls =
             SnakeControls::from_frame(frame, self.world.phase(), &mut self.touch_controls, layout);
-        self.update_logic(frame.delta_time, controls);
+        let events = self.update_logic(frame.delta_time, controls);
+        self.play_sounds(frame.audio, events);
         self.persist_best_score_if_needed(frame.storage);
         self.draw(frame);
 
         GameResult::Continue
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct SnakeEvents {
+    food_eaten: u32,
+    game_over: bool,
 }
 
 fn draw_grid(framebuffer: &mut Framebuffer, layout: SnakeLayout) {
@@ -990,9 +1036,9 @@ impl SnakeWorld {
         self.turn_queue.push_back(direction);
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self) -> TickResult {
         if self.phase != Phase::Running {
-            return;
+            return TickResult::default();
         }
 
         if let Some(direction) = self.turn_queue.pop_front() {
@@ -1004,7 +1050,10 @@ impl SnakeWorld {
 
         if !next_head.is_inside_grid() || self.collides_with_body(next_head, will_grow) {
             self.phase = Phase::GameOver;
-            return;
+            return TickResult {
+                ate_food: false,
+                game_over: true,
+            };
         }
 
         self.snake.push_front(next_head);
@@ -1014,6 +1063,11 @@ impl SnakeWorld {
             self.food = self.place_food();
         } else {
             self.snake.pop_back();
+        }
+
+        TickResult {
+            ate_food: will_grow,
+            game_over: false,
         }
     }
 
@@ -1054,6 +1108,12 @@ impl SnakeWorld {
 
         cells
     }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct TickResult {
+    ate_food: bool,
+    game_over: bool,
 }
 
 fn initial_snake() -> VecDeque<Cell> {
@@ -1151,16 +1211,17 @@ mod tests {
 
     use super::{
         BEST_SCORE_KEY, BUTTON_BORDER, BUTTON_TEXT, CELL_SIZE, Cell, D_PAD_ARROW,
-        D_PAD_CENTER_FILL, D_PAD_FILL, DPadTracker, Direction, EXIT_KEY, FOOD, FRAMEBUFFER_HEIGHT,
-        GAME_OVER, GRID_LINE, HUD_BACKDROP, HUD_TEXT, KEYBOARD_FRAMEBUFFER_WIDTH, PANEL_FILL,
-        Phase, RESTART_KEY, SNAKE_BODY, SNAKE_HEAD, SnakeControls, SnakeGame, SnakeInteractionMode,
-        SnakeLayout, SnakeWorld, TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY,
-        TouchControls, d_pad_zone_at, d_pad_zone_at_in_layout, direction_for_key, draw_d_pad,
-        draw_game_over, draw_grid, draw_score_hud,
+        D_PAD_CENTER_FILL, D_PAD_FILL, DEATH_SOUND, DPadTracker, Direction, EAT_SOUND, EXIT_KEY,
+        FOOD, FRAMEBUFFER_HEIGHT, GAME_OVER, GRID_LINE, HUD_BACKDROP, HUD_TEXT,
+        KEYBOARD_FRAMEBUFFER_WIDTH, PANEL_FILL, Phase, RESTART_KEY, SNAKE_BODY, SNAKE_HEAD,
+        SNAKE_SOUNDS, SnakeControls, SnakeGame, SnakeInteractionMode, SnakeLayout, SnakeWorld,
+        TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY, TouchControls, d_pad_zone_at,
+        d_pad_zone_at_in_layout, direction_for_key, draw_d_pad, draw_game_over, draw_grid,
+        draw_score_hud,
     };
     use gotoo_pixel_engine::{
-        Frame, Framebuffer, Game, GameResult, Input, Key, LocalStorage, Pixel, Rect, Size,
-        StorageError, Touch, TouchPhase, Viewport,
+        Audio, AudioError, Frame, Framebuffer, Game, GameResult, Input, Key, LocalStorage,
+        NoopAudio, Pixel, Rect, Size, SoundId, StorageError, Touch, TouchPhase, Viewport,
     };
 
     #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1168,6 +1229,12 @@ mod tests {
         entries: HashMap<String, String>,
         fail_reads: bool,
         fail_writes: bool,
+    }
+
+    #[derive(Default)]
+    struct TestAudio {
+        plays: Vec<SoundId>,
+        fail_play: bool,
     }
 
     impl TestStorage {
@@ -1211,6 +1278,34 @@ mod tests {
         }
     }
 
+    impl TestAudio {
+        fn failing_play() -> Self {
+            Self {
+                fail_play: true,
+                ..Self::default()
+            }
+        }
+
+        fn count(&self, id: SoundId) -> usize {
+            self.plays.iter().filter(|sound| **sound == id).count()
+        }
+    }
+
+    impl Audio for TestAudio {
+        fn register_wav(&mut self, _id: SoundId, _bytes: &'static [u8]) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        fn play(&mut self, id: SoundId) -> Result<(), AudioError> {
+            if self.fail_play {
+                return Err(AudioError::new("play failed"));
+            }
+
+            self.plays.push(id);
+            Ok(())
+        }
+    }
+
     fn head(game: &SnakeGame) -> Cell {
         game.world.snake[0]
     }
@@ -1233,12 +1328,40 @@ mod tests {
         delta_time: Duration,
     ) -> GameResult {
         let framebuffer_size = game.layout().framebuffer_size;
-        update_with_storage_and_surface(game, storage, delta_time, framebuffer_size)
+        let mut audio = TestAudio::default();
+        update_with_storage_audio_and_surface(
+            game,
+            storage,
+            &mut audio,
+            delta_time,
+            framebuffer_size,
+        )
+    }
+
+    fn update_with_storage_and_audio(
+        game: &mut SnakeGame,
+        storage: &mut dyn LocalStorage,
+        audio: &mut dyn Audio,
+        delta_time: Duration,
+    ) -> GameResult {
+        let framebuffer_size = game.layout().framebuffer_size;
+        update_with_storage_audio_and_surface(game, storage, audio, delta_time, framebuffer_size)
     }
 
     fn update_with_storage_and_surface(
         game: &mut SnakeGame,
         storage: &mut dyn LocalStorage,
+        delta_time: Duration,
+        surface_size: Size,
+    ) -> GameResult {
+        let mut audio = TestAudio::default();
+        update_with_storage_audio_and_surface(game, storage, &mut audio, delta_time, surface_size)
+    }
+
+    fn update_with_storage_audio_and_surface(
+        game: &mut SnakeGame,
+        storage: &mut dyn LocalStorage,
+        audio: &mut dyn Audio,
         delta_time: Duration,
         surface_size: Size,
     ) -> GameResult {
@@ -1252,6 +1375,7 @@ mod tests {
             surface_size,
             viewport: Viewport::new(surface_size, framebuffer_size),
             storage,
+            audio,
         };
 
         game.update(&mut frame)
@@ -1604,6 +1728,7 @@ mod tests {
             height: FRAMEBUFFER_HEIGHT,
         };
         let layout = touch_layout();
+        let mut audio = TestAudio::default();
 
         game.draw(&mut gotoo_pixel_engine::Frame {
             framebuffer: &mut framebuffer,
@@ -1612,6 +1737,7 @@ mod tests {
             surface_size,
             viewport: Viewport::new(surface_size, surface_size),
             storage: &mut storage,
+            audio: &mut audio,
         });
 
         assert_color_only_inside(&framebuffer, FOOD, layout.playfield);
@@ -1666,6 +1792,7 @@ mod tests {
         game.touch_controls.visible = true;
         let mut framebuffer = Framebuffer::new(KEYBOARD_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
         let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
         let surface_size = SnakeInteractionMode::Keyboard.framebuffer_size();
 
         game.draw(&mut gotoo_pixel_engine::Frame {
@@ -1675,6 +1802,7 @@ mod tests {
             surface_size,
             viewport: Viewport::new(surface_size, surface_size),
             storage: &mut storage,
+            audio: &mut audio,
         });
 
         assert_eq!(count_pixels(&framebuffer, D_PAD_FILL), 0);
@@ -2234,6 +2362,126 @@ mod tests {
 
         assert_eq!(game.world, world_before);
         assert_eq!(game.best_score, best_before);
+    }
+
+    #[test]
+    fn normal_tick_requests_no_audio() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
+        game.world.food = None;
+
+        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
+
+        assert!(audio.plays.is_empty());
+        assert_eq!(game.world.score(), 0);
+    }
+
+    #[test]
+    fn food_eaten_requests_exactly_one_eat_sound() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
+        game.world.food = Some(Cell { x: 17, y: 9 });
+
+        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
+
+        assert_eq!(audio.count(EAT_SOUND), 1);
+        assert_eq!(audio.count(DEATH_SOUND), 0);
+        assert_eq!(game.world.score(), 1);
+    }
+
+    #[test]
+    fn game_over_requests_exactly_one_death_sound() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
+        game.world.snake = VecDeque::from([
+            Cell { x: 31, y: 9 },
+            Cell { x: 30, y: 9 },
+            Cell { x: 29, y: 9 },
+        ]);
+        game.world.direction = Direction::Right;
+
+        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
+
+        assert_eq!(audio.count(DEATH_SOUND), 1);
+        assert_eq!(audio.count(EAT_SOUND), 0);
+        assert_eq!(game.world.phase(), Phase::GameOver);
+    }
+
+    #[test]
+    fn game_over_audio_does_not_repeat_on_later_frames() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
+        game.world.snake = VecDeque::from([
+            Cell { x: 31, y: 9 },
+            Cell { x: 30, y: 9 },
+            Cell { x: 29, y: 9 },
+        ]);
+        game.world.direction = Direction::Right;
+
+        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
+        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
+
+        assert_eq!(audio.count(DEATH_SOUND), 1);
+    }
+
+    #[test]
+    fn several_food_events_request_one_eat_each() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
+        game.world.food = Some(Cell { x: 17, y: 9 });
+
+        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
+        game.world.food = Some(Cell { x: 18, y: 9 });
+        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
+
+        assert_eq!(audio.count(EAT_SOUND), 2);
+        assert_eq!(game.world.score(), 2);
+    }
+
+    #[test]
+    fn restart_requests_no_extra_audio() {
+        let mut game = touch_game();
+        game.world.phase = Phase::GameOver;
+
+        let events = game.update_logic(TICK_PERIOD, SnakeControls::restart());
+
+        assert_eq!(events, super::SnakeEvents::default());
+        assert_eq!(game.world.phase(), Phase::Running);
+    }
+
+    #[test]
+    fn audio_play_error_does_not_stop_gameplay() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::failing_play();
+        game.world.food = Some(Cell { x: 17, y: 9 });
+
+        assert_eq!(
+            update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD),
+            GameResult::Continue
+        );
+
+        assert_eq!(game.world.score(), 1);
+        assert_eq!(game.world.phase(), Phase::Running);
+    }
+
+    #[test]
+    fn snake_audio_assets_are_valid_wav_files() {
+        let mut audio = NoopAudio::default();
+
+        for (id, bytes) in SNAKE_SOUNDS {
+            audio
+                .register_wav(id, bytes)
+                .expect("snake audio asset should be a supported WAV");
+            audio
+                .play(id)
+                .expect("registered snake audio asset should be playable");
+        }
     }
 
     #[test]
