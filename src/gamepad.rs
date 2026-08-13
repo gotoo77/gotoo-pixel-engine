@@ -64,12 +64,24 @@ impl GamepadInputBackend {
                 }
                 gilrs::EventType::ButtonPressed(button, _) => {
                     if let Some(button) = button_from_gilrs(button) {
-                        input.set_gamepad_button(id, button, true);
+                        update_button_edge(
+                            input,
+                            &self.centered_dpad_axes,
+                            id,
+                            button,
+                            true,
+                        );
                     }
                 }
                 gilrs::EventType::ButtonReleased(button, _) => {
                     if let Some(button) = button_from_gilrs(button) {
-                        input.set_gamepad_button(id, button, false);
+                        update_button_edge(
+                            input,
+                            &self.centered_dpad_axes,
+                            id,
+                            button,
+                            false,
+                        );
                     }
                 }
                 gilrs::EventType::ButtonChanged(button, value, _) => {
@@ -118,6 +130,23 @@ fn button_from_gilrs(button: gilrs::Button) -> Option<GamepadButton> {
         gilrs::Button::DPadRight => Some(GamepadButton::DPadRight),
         _ => None,
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn update_button_edge(
+    input: &mut Input,
+    centered_dpad_axes: &HashMap<(GamepadId, DPadAxis), f32>,
+    id: GamepadId,
+    button: GamepadButton,
+    held: bool,
+) {
+    if let Some(axis) = dpad_axis(button) {
+        if centered_dpad_axes.contains_key(&(id, axis)) {
+            return;
+        }
+    }
+
+    input.set_gamepad_button(id, button, held);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -268,7 +297,7 @@ mod tests {
 
     use super::{
         DPadAxis, button_from_gilrs, centered_dpad_calibration, set_axis_buttons,
-        update_button_value,
+        update_button_edge, update_button_value,
     };
     use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
 
@@ -398,6 +427,42 @@ mod tests {
         );
         assert!(!input.gamepad_button(id, GamepadButton::DPadUp).held());
         assert!(input.gamepad_button(id, GamepadButton::DPadDown).held());
+    }
+
+    #[test]
+    fn centered_dpad_ignores_gilrs_digital_edge_before_axis_value() {
+        let id = GamepadId::new(0);
+        let mut input = Input::default();
+        let mut centered = HashMap::new();
+        let profile = GamepadProfile::default();
+
+        update_button_value(
+            &mut input,
+            &mut centered,
+            id,
+            GamepadButton::DPadUp,
+            0.431,
+            profile,
+        );
+
+        update_button_edge(
+            &mut input,
+            &centered,
+            id,
+            GamepadButton::DPadUp,
+            true,
+        );
+        update_button_value(
+            &mut input,
+            &mut centered,
+            id,
+            GamepadButton::DPadUp,
+            1.0,
+            profile,
+        );
+
+        assert!(!input.gamepad_button(id, GamepadButton::DPadUp).pressed());
+        assert!(input.gamepad_button(id, GamepadButton::DPadDown).pressed());
     }
 
     #[test]
