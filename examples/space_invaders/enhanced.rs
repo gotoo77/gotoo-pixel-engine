@@ -259,7 +259,7 @@ fn draw_burst(fb: &mut Framebuffer, x: i32, y: i32, radius: i32, color: Pixel) {
 }
 
 fn synthesize_sound(kind: FeedbackKind) -> Vec<u8> {
-    let (duration, mut seed) = match kind {
+    let (duration, mut seed): (f32, u32) = match kind {
         FeedbackKind::Alien { .. } => (0.16, 0xA11E_0001),
         FeedbackKind::Player => (0.38, 0xC0DE_0002),
         FeedbackKind::Bunker => (0.075, 0xB00B_0003),
