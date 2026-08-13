@@ -85,8 +85,7 @@ impl MenuState {
 }
 
 fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
-    let coordinate =
-        i64::from(origin) + (i64::from(extent) - i64::from(content_extent)) / 2;
+    let coordinate = i64::from(origin) + (i64::from(extent) - i64::from(content_extent)) / 2;
     coordinate.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 

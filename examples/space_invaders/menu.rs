@@ -383,11 +383,29 @@ impl SpaceInvadersMenu {
         draw_gamepad_status(framebuffer, 132, 112, "NORTH", self.gamepad.north);
         draw_gamepad_status(framebuffer, 18, 126, "DPAD RIGHT", self.gamepad.dpad_right);
         draw_gamepad_status(framebuffer, 132, 126, "WEST", self.gamepad.west);
-        draw_gamepad_status(framebuffer, 18, 146, "L SHOULDER", self.gamepad.left_shoulder);
-        draw_gamepad_status(framebuffer, 132, 146, "R SHOULDER", self.gamepad.right_shoulder);
+        draw_gamepad_status(
+            framebuffer,
+            18,
+            146,
+            "L SHOULDER",
+            self.gamepad.left_shoulder,
+        );
+        draw_gamepad_status(
+            framebuffer,
+            132,
+            146,
+            "R SHOULDER",
+            self.gamepad.right_shoulder,
+        );
         draw_gamepad_status(framebuffer, 18, 160, "START", self.gamepad.start);
         draw_gamepad_status(framebuffer, 18, 174, "STICK LEFT", self.gamepad.stick_left);
-        draw_gamepad_status(framebuffer, 132, 174, "STICK RIGHT", self.gamepad.stick_right);
+        draw_gamepad_status(
+            framebuffer,
+            132,
+            174,
+            "STICK RIGHT",
+            self.gamepad.stick_right,
+        );
 
         draw_text_centered(
             framebuffer,
@@ -409,13 +427,7 @@ fn draw_control_row(framebuffer: &mut Framebuffer, y: i32, label: &str, value: &
     framebuffer.draw_text(104, y, value, FOREGROUND);
 }
 
-fn draw_gamepad_status(
-    framebuffer: &mut Framebuffer,
-    x: i32,
-    y: i32,
-    label: &str,
-    held: bool,
-) {
+fn draw_gamepad_status(framebuffer: &mut Framebuffer, x: i32, y: i32, label: &str, held: bool) {
     framebuffer.draw_text(x, y, label, FOREGROUND);
     framebuffer.draw_text(
         x + 72,
@@ -444,14 +456,18 @@ fn menu_up_pressed(input: &Input) -> bool {
     input.key(Key::Up).pressed()
         || input.key(Key::W).pressed()
         || input.gamepad_button_any(GamepadButton::DPadUp).pressed()
-        || input.gamepad_button_any(GamepadButton::LeftStickUp).pressed()
+        || input
+            .gamepad_button_any(GamepadButton::LeftStickUp)
+            .pressed()
 }
 
 fn menu_down_pressed(input: &Input) -> bool {
     input.key(Key::Down).pressed()
         || input.key(Key::S).pressed()
         || input.gamepad_button_any(GamepadButton::DPadDown).pressed()
-        || input.gamepad_button_any(GamepadButton::LeftStickDown).pressed()
+        || input
+            .gamepad_button_any(GamepadButton::LeftStickDown)
+            .pressed()
 }
 
 fn confirm_pressed(input: &Input) -> bool {

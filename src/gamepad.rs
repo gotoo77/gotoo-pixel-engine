@@ -64,24 +64,12 @@ impl GamepadInputBackend {
                 }
                 gilrs::EventType::ButtonPressed(button, _) => {
                     if let Some(button) = button_from_gilrs(button) {
-                        update_button_edge(
-                            input,
-                            &self.centered_dpad_axes,
-                            id,
-                            button,
-                            true,
-                        );
+                        update_button_edge(input, &self.centered_dpad_axes, id, button, true);
                     }
                 }
                 gilrs::EventType::ButtonReleased(button, _) => {
                     if let Some(button) = button_from_gilrs(button) {
-                        update_button_edge(
-                            input,
-                            &self.centered_dpad_axes,
-                            id,
-                            button,
-                            false,
-                        );
+                        update_button_edge(input, &self.centered_dpad_axes, id, button, false);
                     }
                 }
                 gilrs::EventType::ButtonChanged(button, value, _) => {
@@ -140,10 +128,10 @@ fn update_button_edge(
     button: GamepadButton,
     held: bool,
 ) {
-    if let Some(axis) = dpad_axis(button) {
-        if centered_dpad_axes.contains_key(&(id, axis)) {
-            return;
-        }
+    if let Some(axis) = dpad_axis(button)
+        && centered_dpad_axes.contains_key(&(id, axis))
+    {
+        return;
     }
 
     input.set_gamepad_button(id, button, held);
@@ -445,13 +433,7 @@ mod tests {
             profile,
         );
 
-        update_button_edge(
-            &mut input,
-            &centered,
-            id,
-            GamepadButton::DPadUp,
-            true,
-        );
+        update_button_edge(&mut input, &centered, id, GamepadButton::DPadUp, true);
         update_button_value(
             &mut input,
             &mut centered,
