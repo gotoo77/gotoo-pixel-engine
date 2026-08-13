@@ -150,9 +150,9 @@ struct Bunker {
 impl Bunker {
     fn new(x: i32) -> Self {
         let mut cells = [[false; BUNKER_COLS]; BUNKER_ROWS];
-        for y in 0..BUNKER_ROWS {
-            for x in 0..BUNKER_COLS {
-                cells[y][x] = BUNKER_MASK[y] & (1u16 << x) != 0;
+        for (y, row) in cells.iter_mut().enumerate() {
+            for (x, cell) in row.iter_mut().enumerate() {
+                *cell = BUNKER_MASK[y] & (1u16 << x) != 0;
             }
         }
         Self { x, cells }
