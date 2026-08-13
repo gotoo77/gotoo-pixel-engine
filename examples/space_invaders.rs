@@ -1,8 +1,8 @@
-#[path = "space_invaders/game.rs"]
+#[path = "space_invaders/enhanced.rs"]
 mod game;
 
-use game::{FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, SpaceInvadersGame};
-use gotoo_pixel_engine::{EngineConfig, EngineError, run};
+use game::{EnhancedSpaceInvadersGame, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH};
+use gotoo_pixel_engine::{run, EngineConfig, EngineError};
 
 fn main() -> Result<(), EngineError> {
     run(
@@ -13,6 +13,6 @@ fn main() -> Result<(), EngineError> {
             window_width: 768,
             window_height: 672,
         },
-        SpaceInvadersGame::new(),
+        EnhancedSpaceInvadersGame::new(),
     )
 }
