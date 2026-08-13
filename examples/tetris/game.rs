@@ -1,9 +1,18 @@
 use std::time::Duration;
 
-use gotoo_pixel_engine::{Frame, Game, GameResult, Key, Pixel};
+use gotoo_pixel_engine::{
+    ActionId, ControlMap, Frame, Game, GameResult, GamepadButton, Key, Pixel,
+};
 
 pub const FRAMEBUFFER_WIDTH: u32 = 220;
 pub const FRAMEBUFFER_HEIGHT: u32 = 224;
+
+const CONTROL_LEFT: ActionId = ActionId::new("tetris.left");
+const CONTROL_RIGHT: ActionId = ActionId::new("tetris.right");
+const CONTROL_ROTATE: ActionId = ActionId::new("tetris.rotate");
+const CONTROL_SOFT_DROP: ActionId = ActionId::new("tetris.soft_drop");
+const CONTROL_HARD_DROP: ActionId = ActionId::new("tetris.hard_drop");
+const CONTROL_EXIT: ActionId = ActionId::new("tetris.exit");
 
 const BOARD_WIDTH: i32 = 10;
 const BOARD_HEIGHT: i32 = 20;
@@ -261,6 +270,7 @@ impl TetrisWorld {
 pub struct TetrisGame {
     world: TetrisWorld,
     accumulator: Duration,
+    controls: ControlMap,
 }
 
 impl TetrisGame {
@@ -268,30 +278,33 @@ impl TetrisGame {
         Self {
             world: TetrisWorld::new(),
             accumulator: Duration::ZERO,
+            controls: default_controls(),
         }
     }
 
     fn input(&mut self, frame: &Frame<'_>) -> GameResult {
-        if frame.input.key(Key::Escape).pressed() {
+        self.controls.update(frame.input);
+
+        if self.controls.action(CONTROL_EXIT).pressed() {
             return GameResult::Exit;
         }
         if self.world.game_over {
-            if frame.input.key(Key::Space).pressed() {
+            if self.controls.action(CONTROL_HARD_DROP).pressed() {
                 self.world.restart();
                 self.accumulator = Duration::ZERO;
             }
             return GameResult::Continue;
         }
-        if frame.input.key(Key::Left).pressed() || frame.input.key(Key::A).pressed() {
+        if self.controls.action(CONTROL_LEFT).pressed() {
             self.world.translate(-1, 0);
         }
-        if frame.input.key(Key::Right).pressed() || frame.input.key(Key::D).pressed() {
+        if self.controls.action(CONTROL_RIGHT).pressed() {
             self.world.translate(1, 0);
         }
-        if frame.input.key(Key::Up).pressed() || frame.input.key(Key::W).pressed() {
+        if self.controls.action(CONTROL_ROTATE).pressed() {
             self.world.rotate();
         }
-        if frame.input.key(Key::Space).pressed() {
+        if self.controls.action(CONTROL_HARD_DROP).pressed() {
             self.world.hard_drop();
             self.accumulator = Duration::ZERO;
         }
@@ -334,15 +347,15 @@ impl TetrisGame {
         for (x, y) in base_cells(self.world.next) {
             draw_preview_block(fb, 126 + x * 8, 100 + y * 8, self.world.next);
         }
-        fb.draw_text(120, 145, "ARROWS", TEXT);
+        fb.draw_text(120, 145, "ARROWS/PAD", TEXT);
         fb.draw_text(120, 155, "MOVE", TEXT);
-        fb.draw_text(120, 170, "UP ROTATE", TEXT);
-        fb.draw_text(120, 185, "SPACE DROP", TEXT);
+        fb.draw_text(120, 170, "UP/EAST ROTATE", TEXT);
+        fb.draw_text(120, 185, "SPACE/SOUTH DROP", TEXT);
         if self.world.game_over {
             fb.fill_rect(18, 92, 80, 42, BG);
             fb.draw_rect(18, 92, 80, 42, GAME_OVER);
             fb.draw_text(25, 101, "GAME OVER", GAME_OVER);
-            fb.draw_text(24, 117, "SPACE REPLAY", TEXT);
+            fb.draw_text(24, 117, "DROP TO REPLAY", TEXT);
         }
     }
 }
@@ -355,7 +368,7 @@ impl Game for TetrisGame {
         }
         if !self.world.game_over {
             self.accumulator = self.accumulator.saturating_add(frame.delta_time);
-            let period = if frame.input.key(Key::Down).held() || frame.input.key(Key::S).held() {
+            let period = if self.controls.action(CONTROL_SOFT_DROP).held() {
                 SOFT_DROP
             } else {
                 GRAVITY
@@ -368,6 +381,31 @@ impl Game for TetrisGame {
         self.render(frame);
         GameResult::Continue
     }
+}
+
+fn default_controls() -> ControlMap {
+    let mut controls = ControlMap::new();
+    controls
+        .bind_key(CONTROL_LEFT, Key::Left)
+        .bind_key(CONTROL_LEFT, Key::A)
+        .bind_gamepad(CONTROL_LEFT, GamepadButton::DPadLeft)
+        .bind_gamepad(CONTROL_LEFT, GamepadButton::LeftStickLeft)
+        .bind_key(CONTROL_RIGHT, Key::Right)
+        .bind_key(CONTROL_RIGHT, Key::D)
+        .bind_gamepad(CONTROL_RIGHT, GamepadButton::DPadRight)
+        .bind_gamepad(CONTROL_RIGHT, GamepadButton::LeftStickRight)
+        .bind_key(CONTROL_ROTATE, Key::Up)
+        .bind_key(CONTROL_ROTATE, Key::W)
+        .bind_gamepad(CONTROL_ROTATE, GamepadButton::DPadUp)
+        .bind_gamepad(CONTROL_ROTATE, GamepadButton::East)
+        .bind_key(CONTROL_SOFT_DROP, Key::Down)
+        .bind_key(CONTROL_SOFT_DROP, Key::S)
+        .bind_gamepad(CONTROL_SOFT_DROP, GamepadButton::DPadDown)
+        .bind_gamepad(CONTROL_SOFT_DROP, GamepadButton::LeftStickDown)
+        .bind_key(CONTROL_HARD_DROP, Key::Space)
+        .bind_gamepad(CONTROL_HARD_DROP, GamepadButton::South)
+        .bind_key(CONTROL_EXIT, Key::Escape);
+    controls
 }
 
 fn spawn(kind: Kind) -> Piece {
