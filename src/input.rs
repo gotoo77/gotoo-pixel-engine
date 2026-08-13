@@ -268,9 +268,9 @@ impl Input {
     }
 
     pub(crate) fn set_gamepad_button(&mut self, id: GamepadId, button: GamepadButton, held: bool) {
-        if !self.gamepads.contains_key(&id) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.gamepads.entry(id) {
             let info = GamepadDeviceInfo::unknown(id);
-            self.gamepads.insert(id, GamepadState::new(info.clone()));
+            entry.insert(GamepadState::new(info.clone()));
             self.gamepad_connection_events
                 .push(GamepadConnectionEvent::Connected(info));
         }
@@ -478,7 +478,10 @@ mod tests {
         input.connect_gamepad(id, "Test Pad");
 
         assert!(input.gamepad_connected(id));
-        assert_eq!(input.gamepad_info(id).map(|info| info.name.as_str()), Some("Test Pad"));
+        assert_eq!(
+            input.gamepad_info(id).map(|info| info.name.as_str()),
+            Some("Test Pad")
+        );
         assert_eq!(
             input.gamepad_connection_events(),
             &[GamepadConnectionEvent::Connected(
