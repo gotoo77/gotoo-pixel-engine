@@ -8,6 +8,7 @@ use web_time::{Duration, Instant};
 
 use crate::Framebuffer;
 use crate::audio::{Audio, PlatformAudio, platform_audio};
+use crate::gamepad::GamepadInputBackend;
 use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use crate::storage::{LocalStorage, platform_storage};
@@ -123,6 +124,7 @@ struct PlatformApp<G> {
     renderer: Option<Renderer>,
     framebuffer: Framebuffer,
     input: Input,
+    gamepads: GamepadInputBackend,
     storage: Box<dyn LocalStorage>,
     audio: Box<dyn PlatformAudio>,
     last_frame_at: Instant,
@@ -147,6 +149,7 @@ impl<G: Game> PlatformApp<G> {
             renderer: None,
             framebuffer,
             input: Input::default(),
+            gamepads: GamepadInputBackend::default(),
             storage: platform_storage(),
             audio: platform_audio(),
             last_frame_at: now,
@@ -169,6 +172,7 @@ impl<G: Game> PlatformApp<G> {
             renderer: None,
             framebuffer,
             input: Input::default(),
+            gamepads: GamepadInputBackend::default(),
             storage: platform_storage(),
             audio: platform_audio(),
             last_frame_at: now,
@@ -187,6 +191,8 @@ impl<G: Game> PlatformApp<G> {
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
+
+        self.gamepads.poll(&mut self.input);
 
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame_at);
@@ -436,7 +442,7 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             WindowEvent::CursorMoved { position, .. } => self.update_mouse_position(position),
             WindowEvent::CursorLeft { .. } => self.input.set_mouse_position(None),
             WindowEvent::Touch(touch) => self.update_touch(touch),
-            WindowEvent::Focused(false) => self.input.reset(),
+            WindowEvent::Focused(false) => self.input.reset_window_devices(),
             WindowEvent::RedrawRequested => self.render_frame(event_loop),
             _ => {}
         }
