@@ -1,6 +1,6 @@
 include!("game.rs");
 
-use gotoo_pixel_engine::SoundBank;
+use gotoo_pixel_engine::{SoundBank, pcm16_mono_wav};
 
 const ALIEN_DESTROYED_SOUND: gotoo_pixel_engine::SoundId =
     gotoo_pixel_engine::SoundId::new("space_invaders.alien_destroyed");
@@ -234,28 +234,8 @@ fn synthesize_sound(kind: FeedbackKind) -> Vec<u8> {
         samples.push((sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
     }
 
-    pcm16_mono_wav(&samples)
-}
-
-fn pcm16_mono_wav(samples: &[i16]) -> Vec<u8> {
-    let data_len = (samples.len() * 2) as u32;
-    let mut wav = Vec::with_capacity(44 + data_len as usize);
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16_u32.to_le_bytes());
-    wav.extend_from_slice(&1_u16.to_le_bytes());
-    wav.extend_from_slice(&1_u16.to_le_bytes());
-    wav.extend_from_slice(&AUDIO_SAMPLE_RATE.to_le_bytes());
-    wav.extend_from_slice(&(AUDIO_SAMPLE_RATE * 2).to_le_bytes());
-    wav.extend_from_slice(&2_u16.to_le_bytes());
-    wav.extend_from_slice(&16_u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_len.to_le_bytes());
-    for sample in samples {
-        wav.extend_from_slice(&sample.to_le_bytes());
-    }
-    wav
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Space Invaders procedural audio should use a supported PCM format")
 }
 
 #[cfg(test)]
