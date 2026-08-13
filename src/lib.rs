@@ -1,4 +1,5 @@
 mod audio;
+mod audio_wav;
 mod control;
 pub mod framebuffer;
 mod gamepad;
@@ -10,6 +11,7 @@ mod storage;
 mod viewport;
 
 pub use audio::{Audio, AudioError, NoopAudio, SoundBank, SoundId};
+pub use audio_wav::pcm16_mono_wav;
 pub use control::{ActionId, ControlBinding, ControlMap};
 pub use framebuffer::Framebuffer;
 pub use input::{
