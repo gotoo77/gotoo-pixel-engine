@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use gotoo_pixel_engine::{
-    Audio, Frame, Framebuffer, Game, GameResult, Key, LocalStorage, MouseButton, Pixel, Rect, Size,
-    SoundId, Touch, TouchPhase,
+    ActionId, Audio, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key,
+    LocalStorage, MouseButton, Pixel, Rect, Size, SoundBank, SoundId, Touch, TouchPhase,
 };
 
 pub const KEYBOARD_FRAMEBUFFER_WIDTH: u32 = 320;
@@ -22,6 +22,14 @@ const TICK_PERIOD: Duration = Duration::from_millis(120);
 const EXIT_KEY: Key = Key::Escape;
 const RESTART_KEY: Key = Key::Space;
 const BEST_SCORE_KEY: &str = "gotoo-pixel-engine.snake.best_score.v1";
+
+const CONTROL_UP: ActionId = ActionId::new("snake.up");
+const CONTROL_RIGHT: ActionId = ActionId::new("snake.right");
+const CONTROL_DOWN: ActionId = ActionId::new("snake.down");
+const CONTROL_LEFT: ActionId = ActionId::new("snake.left");
+const CONTROL_RESTART: ActionId = ActionId::new("snake.restart");
+const CONTROL_EXIT: ActionId = ActionId::new("snake.exit");
+
 const EAT_SOUND: SoundId = SoundId::new("snake.eat");
 const DEATH_SOUND: SoundId = SoundId::new("snake.death");
 const SNAKE_SOUNDS: [(SoundId, &[u8]); 2] = [
@@ -236,9 +244,10 @@ pub struct SnakeGame {
     accumulator: Duration,
     interaction_mode: SnakeInteractionMode,
     touch_controls: TouchControls,
+    controls: ControlMap,
+    sounds: SoundBank,
     best_score: u32,
     best_score_loaded: bool,
-    sounds_registered: bool,
 }
 
 impl SnakeGame {
@@ -248,9 +257,10 @@ impl SnakeGame {
             accumulator: Duration::ZERO,
             interaction_mode,
             touch_controls: TouchControls::default(),
+            controls: default_controls(),
+            sounds: snake_sound_bank(),
             best_score: 0,
             best_score_loaded: false,
-            sounds_registered: false,
         }
     }
 
@@ -321,23 +331,12 @@ impl SnakeGame {
         let _ = storage.set(BEST_SCORE_KEY, &score.to_string());
     }
 
-    fn register_sounds_once(&mut self, audio: &mut dyn Audio) {
-        if self.sounds_registered {
-            return;
-        }
-
-        for (id, bytes) in SNAKE_SOUNDS {
-            let _ = audio.register_wav(id, bytes);
-        }
-        self.sounds_registered = true;
-    }
-
-    fn play_sounds(&self, audio: &mut dyn Audio, events: SnakeEvents) {
+    fn play_sounds(&mut self, audio: &mut dyn Audio, events: SnakeEvents) {
         for _ in 0..events.food_eaten {
-            let _ = audio.play(EAT_SOUND);
+            let _ = self.sounds.play(audio, EAT_SOUND);
         }
         if events.game_over {
-            let _ = audio.play(DEATH_SOUND);
+            let _ = self.sounds.play(audio, DEATH_SOUND);
         }
     }
 
@@ -387,15 +386,20 @@ impl SnakeGame {
 impl Game for SnakeGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.load_best_score_once(frame.storage);
-        self.register_sounds_once(frame.audio);
+        self.controls.update(frame.input);
 
-        if frame.input.key(EXIT_KEY).pressed() {
+        if self.controls.action(CONTROL_EXIT).pressed() {
             return GameResult::Exit;
         }
 
         let layout = self.layout();
-        let controls =
-            SnakeControls::from_frame(frame, self.world.phase(), &mut self.touch_controls, layout);
+        let controls = SnakeControls::from_frame(
+            frame,
+            self.world.phase(),
+            &mut self.touch_controls,
+            layout,
+            &self.controls,
+        );
         let events = self.update_logic(frame.delta_time, controls);
         self.play_sounds(frame.audio, events);
         self.persist_best_score_if_needed(frame.storage);
@@ -409,6 +413,42 @@ impl Game for SnakeGame {
 struct SnakeEvents {
     food_eaten: u32,
     game_over: bool,
+}
+
+fn default_controls() -> ControlMap {
+    let mut controls = ControlMap::new();
+    controls
+        .bind_key(CONTROL_UP, Key::Up)
+        .bind_key(CONTROL_UP, Key::W)
+        .bind_gamepad(CONTROL_UP, GamepadButton::DPadUp)
+        .bind_gamepad(CONTROL_UP, GamepadButton::LeftStickUp)
+        .bind_key(CONTROL_RIGHT, Key::Right)
+        .bind_key(CONTROL_RIGHT, Key::D)
+        .bind_gamepad(CONTROL_RIGHT, GamepadButton::DPadRight)
+        .bind_gamepad(CONTROL_RIGHT, GamepadButton::LeftStickRight)
+        .bind_key(CONTROL_DOWN, Key::Down)
+        .bind_key(CONTROL_DOWN, Key::S)
+        .bind_gamepad(CONTROL_DOWN, GamepadButton::DPadDown)
+        .bind_gamepad(CONTROL_DOWN, GamepadButton::LeftStickDown)
+        .bind_key(CONTROL_LEFT, Key::Left)
+        .bind_key(CONTROL_LEFT, Key::A)
+        .bind_gamepad(CONTROL_LEFT, GamepadButton::DPadLeft)
+        .bind_gamepad(CONTROL_LEFT, GamepadButton::LeftStickLeft)
+        .bind_key(CONTROL_RESTART, RESTART_KEY)
+        .bind_gamepad(CONTROL_RESTART, GamepadButton::South)
+        .bind_gamepad(CONTROL_RESTART, GamepadButton::Start)
+        .bind_key(CONTROL_EXIT, EXIT_KEY);
+    controls
+}
+
+fn snake_sound_bank() -> SoundBank {
+    let mut sounds = SoundBank::new();
+    for (id, bytes) in SNAKE_SOUNDS {
+        sounds
+            .insert_wav(id, bytes.to_vec())
+            .expect("Snake sound ids should be unique");
+    }
+    sounds
 }
 
 fn draw_grid(framebuffer: &mut Framebuffer, layout: SnakeLayout) {
@@ -677,13 +717,14 @@ impl SnakeControls {
         phase: Phase,
         touch_controls: &mut TouchControls,
         layout: SnakeLayout,
+        controls: &ControlMap,
     ) -> Self {
         touch_controls.observe_touches(frame.input.touches());
 
         match phase {
-            Phase::Running => Self::from_running_frame(frame, touch_controls, layout),
+            Phase::Running => Self::from_running_frame(frame, touch_controls, layout, controls),
             Phase::GameOver => Self::from_game_over_inputs_in_layout(
-                frame.input.key(RESTART_KEY).pressed(),
+                controls.action(CONTROL_RESTART).pressed(),
                 frame.input.mouse_button(MouseButton::Left).pressed(),
                 frame.input.mouse_position(),
                 frame.input.touches(),
@@ -697,22 +738,26 @@ impl SnakeControls {
         frame: &Frame<'_>,
         touch_controls: &mut TouchControls,
         layout: SnakeLayout,
+        controls: &ControlMap,
     ) -> Self {
-        let mut controls = Self::none();
+        let mut result = Self::none();
 
-        for key in DIRECTION_KEYS {
-            if frame.input.key(key).pressed()
-                && let Some(direction) = direction_for_key(key)
-            {
-                controls.directions.push(direction);
+        for (action, direction) in [
+            (CONTROL_UP, Direction::Up),
+            (CONTROL_RIGHT, Direction::Right),
+            (CONTROL_DOWN, Direction::Down),
+            (CONTROL_LEFT, Direction::Left),
+        ] {
+            if controls.action(action).pressed() {
+                result.directions.push(direction);
             }
         }
 
-        controls
+        result
             .directions
             .extend(touch_controls.directions_from_touches(frame.input.touches(), layout));
-        controls.restart = frame.input.key(RESTART_KEY).pressed();
-        controls
+        result.restart = controls.action(CONTROL_RESTART).pressed();
+        result
     }
 
     #[cfg(test)]
@@ -772,17 +817,7 @@ impl SnakeControls {
     }
 }
 
-const DIRECTION_KEYS: [Key; 8] = [
-    Key::Up,
-    Key::W,
-    Key::Right,
-    Key::D,
-    Key::Down,
-    Key::S,
-    Key::Left,
-    Key::A,
-];
-
+#[cfg(test)]
 fn direction_for_key(key: Key) -> Option<Direction> {
     match key {
         Key::Up | Key::W => Some(Direction::Up),
@@ -1292,7 +1327,7 @@ mod tests {
     }
 
     impl Audio for TestAudio {
-        fn register_wav(&mut self, _id: SoundId, _bytes: &'static [u8]) -> Result<(), AudioError> {
+        fn register_wav(&mut self, _id: SoundId, _bytes: &[u8]) -> Result<(), AudioError> {
             Ok(())
         }
 
@@ -2482,6 +2517,13 @@ mod tests {
                 .play(id)
                 .expect("registered snake audio asset should be playable");
         }
+    }
+
+    #[test]
+    fn sound_bank_owns_snake_audio_assets() {
+        let game = touch_game();
+        assert!(game.sounds.contains(EAT_SOUND));
+        assert!(game.sounds.contains(DEATH_SOUND));
     }
 
     #[test]

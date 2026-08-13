@@ -558,6 +558,15 @@ fn glyph_for(character: char) -> Glyph {
         '9' => [
             0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
         ],
+        '>' => [
+            0b10000, 0b01000, 0b00100, 0b00010, 0b00100, 0b01000, 0b10000,
+        ],
+        '/' => [
+            0b00001, 0b00010, 0b00010, 0b00100, 0b01000, 0b01000, 0b10000,
+        ],
+        '+' => [
+            0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000,
+        ],
         ' ' => [0; FONT_GLYPH_HEIGHT as usize],
         _ => [
             0b11111, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
@@ -567,7 +576,7 @@ fn glyph_for(character: char) -> Glyph {
 
 #[cfg(test)]
 mod tests {
-    use super::{Framebuffer, Pixel};
+    use super::{Framebuffer, Pixel, glyph_for};
 
     fn drawn_pixels(framebuffer: &Framebuffer, pixel: Pixel) -> Vec<(i32, i32)> {
         let mut pixels = Vec::new();
@@ -977,6 +986,13 @@ mod tests {
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::WHITE));
         assert_eq!(framebuffer.pixel(4, 0), Some(Pixel::WHITE));
         assert_eq!(framebuffer.pixel(2, 6), Some(Pixel::WHITE));
+    }
+
+    #[test]
+    fn menu_punctuation_has_explicit_glyphs() {
+        assert_ne!(glyph_for('>'), glyph_for('?'));
+        assert_ne!(glyph_for('/'), glyph_for('?'));
+        assert_ne!(glyph_for('+'), glyph_for('?'));
     }
 
     #[test]

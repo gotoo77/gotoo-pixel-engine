@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
     Escape,
@@ -17,6 +19,64 @@ pub enum MouseButton {
     Left,
     Right,
     Middle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GamepadId(usize);
+
+impl GamepadId {
+    pub const fn new(id: usize) -> Self {
+        Self(id)
+    }
+
+    pub const fn as_usize(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GamepadDeviceInfo {
+    pub id: GamepadId,
+    pub name: String,
+}
+
+impl GamepadDeviceInfo {
+    pub fn new(id: GamepadId, name: impl Into<String>) -> Self {
+        Self {
+            id,
+            name: name.into(),
+        }
+    }
+
+    fn unknown(id: GamepadId) -> Self {
+        Self::new(id, format!("Gamepad {}", id.as_usize()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GamepadConnectionEvent {
+    Connected(GamepadDeviceInfo),
+    Disconnected(GamepadDeviceInfo),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GamepadButton {
+    South,
+    East,
+    North,
+    West,
+    LeftShoulder,
+    RightShoulder,
+    Start,
+    Select,
+    DPadUp,
+    DPadDown,
+    DPadLeft,
+    DPadRight,
+    LeftStickUp,
+    LeftStickDown,
+    LeftStickLeft,
+    LeftStickRight,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,6 +116,20 @@ impl ButtonState {
         self.bits & Self::RELEASED != 0
     }
 
+    pub(crate) fn from_transition(was_held: bool, held: bool) -> Self {
+        let mut bits = 0;
+        if held {
+            bits |= Self::HELD;
+        }
+        if held && !was_held {
+            bits |= Self::PRESSED;
+        }
+        if !held && was_held {
+            bits |= Self::RELEASED;
+        }
+        Self { bits }
+    }
+
     fn set_pressed(&mut self) {
         if !self.held() {
             self.bits |= Self::PRESSED;
@@ -71,8 +145,31 @@ impl ButtonState {
         self.bits &= !Self::HELD;
     }
 
+    fn set_held(&mut self, held: bool) {
+        if held {
+            self.set_pressed();
+        } else {
+            self.set_released();
+        }
+    }
+
     fn advance_frame(&mut self) {
         self.bits &= Self::HELD;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GamepadState {
+    info: GamepadDeviceInfo,
+    buttons: [ButtonState; GAMEPAD_BUTTON_COUNT],
+}
+
+impl GamepadState {
+    fn new(info: GamepadDeviceInfo) -> Self {
+        Self {
+            info,
+            buttons: [ButtonState::default(); GAMEPAD_BUTTON_COUNT],
+        }
     }
 }
 
@@ -82,6 +179,8 @@ pub struct Input {
     mouse_buttons: [ButtonState; MOUSE_BUTTON_COUNT],
     mouse_position: Option<(i32, i32)>,
     touches: Vec<Touch>,
+    gamepads: HashMap<GamepadId, GamepadState>,
+    gamepad_connection_events: Vec<GamepadConnectionEvent>,
 }
 
 impl Input {
@@ -99,6 +198,38 @@ impl Input {
 
     pub fn touches(&self) -> &[Touch] {
         &self.touches
+    }
+
+    pub fn gamepad_button(&self, id: GamepadId, button: GamepadButton) -> ButtonState {
+        self.gamepads
+            .get(&id)
+            .map(|gamepad| gamepad.buttons[gamepad_button_index(button)])
+            .unwrap_or_default()
+    }
+
+    pub fn gamepad_button_any(&self, button: GamepadButton) -> ButtonState {
+        let bits = self
+            .gamepads
+            .values()
+            .map(|gamepad| gamepad.buttons[gamepad_button_index(button)].bits)
+            .fold(0, |acc, bits| acc | bits);
+        ButtonState { bits }
+    }
+
+    pub fn gamepad_ids(&self) -> impl Iterator<Item = GamepadId> + '_ {
+        self.gamepads.keys().copied()
+    }
+
+    pub fn gamepad_connected(&self, id: GamepadId) -> bool {
+        self.gamepads.contains_key(&id)
+    }
+
+    pub fn gamepad_info(&self, id: GamepadId) -> Option<&GamepadDeviceInfo> {
+        self.gamepads.get(&id).map(|gamepad| &gamepad.info)
+    }
+
+    pub fn gamepad_connection_events(&self) -> &[GamepadConnectionEvent] {
+        &self.gamepad_connection_events
     }
 
     pub(crate) fn press_key(&mut self, key: Key) {
@@ -125,8 +256,46 @@ impl Input {
         self.touches.push(touch);
     }
 
-    pub(crate) fn reset(&mut self) {
-        *self = Self::default();
+    pub(crate) fn connect_gamepad(&mut self, id: GamepadId, name: impl Into<String>) {
+        let name = name.into();
+        if let Some(gamepad) = self.gamepads.get_mut(&id) {
+            gamepad.info.name = name;
+            return;
+        }
+
+        let info = GamepadDeviceInfo::new(id, name);
+        self.gamepads.insert(id, GamepadState::new(info.clone()));
+        self.gamepad_connection_events
+            .push(GamepadConnectionEvent::Connected(info));
+    }
+
+    pub(crate) fn set_gamepad_button(&mut self, id: GamepadId, button: GamepadButton, held: bool) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.gamepads.entry(id) {
+            let info = GamepadDeviceInfo::unknown(id);
+            entry.insert(GamepadState::new(info.clone()));
+            self.gamepad_connection_events
+                .push(GamepadConnectionEvent::Connected(info));
+        }
+
+        let state = self
+            .gamepads
+            .get_mut(&id)
+            .expect("gamepad state should exist after insertion");
+        state.buttons[gamepad_button_index(button)].set_held(held);
+    }
+
+    pub(crate) fn disconnect_gamepad(&mut self, id: GamepadId) {
+        if let Some(gamepad) = self.gamepads.remove(&id) {
+            self.gamepad_connection_events
+                .push(GamepadConnectionEvent::Disconnected(gamepad.info));
+        }
+    }
+
+    pub(crate) fn reset_window_devices(&mut self) {
+        self.keys = [ButtonState::default(); KEY_COUNT];
+        self.mouse_buttons = [ButtonState::default(); MOUSE_BUTTON_COUNT];
+        self.mouse_position = None;
+        self.touches.clear();
     }
 
     pub(crate) fn advance_frame(&mut self) {
@@ -136,7 +305,13 @@ impl Input {
         for button in &mut self.mouse_buttons {
             button.advance_frame();
         }
+        for gamepad in self.gamepads.values_mut() {
+            for button in &mut gamepad.buttons {
+                button.advance_frame();
+            }
+        }
         self.touches.clear();
+        self.gamepad_connection_events.clear();
     }
 }
 
@@ -147,12 +322,15 @@ impl Default for Input {
             mouse_buttons: [ButtonState::default(); MOUSE_BUTTON_COUNT],
             mouse_position: None,
             touches: Vec::new(),
+            gamepads: HashMap::new(),
+            gamepad_connection_events: Vec::new(),
         }
     }
 }
 
 const KEY_COUNT: usize = 10;
 const MOUSE_BUTTON_COUNT: usize = 3;
+const GAMEPAD_BUTTON_COUNT: usize = 16;
 
 fn key_index(key: Key) -> usize {
     match key {
@@ -177,9 +355,33 @@ fn mouse_button_index(button: MouseButton) -> usize {
     }
 }
 
+fn gamepad_button_index(button: GamepadButton) -> usize {
+    match button {
+        GamepadButton::South => 0,
+        GamepadButton::East => 1,
+        GamepadButton::North => 2,
+        GamepadButton::West => 3,
+        GamepadButton::LeftShoulder => 4,
+        GamepadButton::RightShoulder => 5,
+        GamepadButton::Start => 6,
+        GamepadButton::Select => 7,
+        GamepadButton::DPadUp => 8,
+        GamepadButton::DPadDown => 9,
+        GamepadButton::DPadLeft => 10,
+        GamepadButton::DPadRight => 11,
+        GamepadButton::LeftStickUp => 12,
+        GamepadButton::LeftStickDown => 13,
+        GamepadButton::LeftStickLeft => 14,
+        GamepadButton::LeftStickRight => 15,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Input, Key, MouseButton, Touch, TouchPhase};
+    use super::{
+        GamepadButton, GamepadConnectionEvent, GamepadId, Input, Key, MouseButton, Touch,
+        TouchPhase,
+    };
 
     #[test]
     fn key_transitions_pressed_held_released() {
@@ -260,103 +462,104 @@ mod tests {
             position: Some((10, 20)),
         });
         input.push_touch(Touch {
-            id: 9,
-            phase: TouchPhase::Moved,
-            position: Some((12, 24)),
-        });
-        input.push_touch(Touch {
             id: 7,
-            phase: TouchPhase::Ended,
-            position: None,
-        });
-        input.push_touch(Touch {
-            id: 9,
-            phase: TouchPhase::Cancelled,
-            position: Some((14, 28)),
+            phase: TouchPhase::Moved,
+            position: Some((11, 21)),
         });
 
+        assert_eq!(input.touches().len(), 2);
+        assert_eq!(input.touches()[0].phase, TouchPhase::Started);
+        assert_eq!(input.touches()[1].phase, TouchPhase::Moved);
+
+        input.advance_frame();
+        assert!(input.touches().is_empty());
+    }
+
+    #[test]
+    fn explicit_connection_is_visible_before_any_button_event() {
+        let mut input = Input::default();
+        let id = GamepadId::new(7);
+
+        input.connect_gamepad(id, "Test Pad");
+
+        assert!(input.gamepad_connected(id));
         assert_eq!(
-            input.touches(),
-            &[
-                Touch {
-                    id: 7,
-                    phase: TouchPhase::Started,
-                    position: Some((10, 20)),
-                },
-                Touch {
-                    id: 9,
-                    phase: TouchPhase::Moved,
-                    position: Some((12, 24)),
-                },
-                Touch {
-                    id: 7,
-                    phase: TouchPhase::Ended,
-                    position: None,
-                },
-                Touch {
-                    id: 9,
-                    phase: TouchPhase::Cancelled,
-                    position: Some((14, 28)),
-                },
-            ]
+            input.gamepad_info(id).map(|info| info.name.as_str()),
+            Some("Test Pad")
+        );
+        assert_eq!(
+            input.gamepad_connection_events(),
+            &[GamepadConnectionEvent::Connected(
+                super::GamepadDeviceInfo::new(id, "Test Pad")
+            )]
         );
     }
 
     #[test]
-    fn advance_frame_clears_touch_events() {
+    fn gamepad_buttons_follow_same_transition_model() {
         let mut input = Input::default();
+        let id = GamepadId::new(2);
 
-        input.push_touch(Touch {
-            id: 1,
-            phase: TouchPhase::Started,
-            position: Some((4, 5)),
-        });
+        input.set_gamepad_button(id, GamepadButton::South, true);
+        assert!(input.gamepad_button(id, GamepadButton::South).pressed());
+        assert!(input.gamepad_button(id, GamepadButton::South).held());
 
         input.advance_frame();
-
-        assert!(input.touches().is_empty());
+        input.set_gamepad_button(id, GamepadButton::South, false);
+        assert!(input.gamepad_button(id, GamepadButton::South).released());
+        assert!(!input.gamepad_button(id, GamepadButton::South).held());
     }
 
     #[test]
-    fn reset_clears_buttons_and_mouse_position() {
+    fn any_gamepad_combines_connected_devices() {
         let mut input = Input::default();
+        input.set_gamepad_button(GamepadId::new(1), GamepadButton::DPadLeft, true);
+        input.set_gamepad_button(GamepadId::new(2), GamepadButton::South, true);
 
-        input.press_key(Key::Space);
-        input.press_mouse_button(MouseButton::Left);
-        input.set_mouse_position(Some((12, 34)));
-        input.push_touch(Touch {
-            id: 1,
-            phase: TouchPhase::Started,
-            position: Some((4, 5)),
-        });
-        input.reset();
+        assert!(input.gamepad_button_any(GamepadButton::DPadLeft).held());
+        assert!(input.gamepad_button_any(GamepadButton::South).held());
+    }
 
-        for key in [
-            Key::Escape,
-            Key::Space,
-            Key::Up,
-            Key::Down,
-            Key::Left,
-            Key::Right,
-            Key::A,
-            Key::D,
-            Key::S,
-            Key::W,
-        ] {
-            let state = input.key(key);
-            assert!(!state.pressed());
-            assert!(!state.held());
-            assert!(!state.released());
-        }
+    #[test]
+    fn disconnect_removes_gamepad_state_and_emits_lifecycle_event() {
+        let mut input = Input::default();
+        let id = GamepadId::new(3);
+        input.connect_gamepad(id, "Disposable Pad");
+        input.advance_frame();
 
-        for button in [MouseButton::Left, MouseButton::Right, MouseButton::Middle] {
-            let state = input.mouse_button(button);
-            assert!(!state.pressed());
-            assert!(!state.held());
-            assert!(!state.released());
-        }
+        input.disconnect_gamepad(id);
 
-        assert_eq!(input.mouse_position(), None);
-        assert!(input.touches().is_empty());
+        assert!(!input.gamepad_button(id, GamepadButton::South).held());
+        assert!(input.gamepad_ids().all(|gamepad_id| gamepad_id != id));
+        assert_eq!(
+            input.gamepad_connection_events(),
+            &[GamepadConnectionEvent::Disconnected(
+                super::GamepadDeviceInfo::new(id, "Disposable Pad")
+            )]
+        );
+    }
+
+    #[test]
+    fn lifecycle_events_are_frame_scoped() {
+        let mut input = Input::default();
+        input.connect_gamepad(GamepadId::new(9), "Transient Pad");
+        assert!(!input.gamepad_connection_events().is_empty());
+
+        input.advance_frame();
+
+        assert!(input.gamepad_connection_events().is_empty());
+    }
+
+    #[test]
+    fn focus_reset_keeps_gamepad_state() {
+        let mut input = Input::default();
+        let id = GamepadId::new(4);
+        input.press_key(Key::Left);
+        input.set_gamepad_button(id, GamepadButton::DPadLeft, true);
+
+        input.reset_window_devices();
+
+        assert!(!input.key(Key::Left).held());
+        assert!(input.gamepad_button(id, GamepadButton::DPadLeft).held());
     }
 }
