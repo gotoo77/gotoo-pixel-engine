@@ -15,11 +15,14 @@ pub fn pcm16_mono_wav(sample_rate: u32, samples: &[i16]) -> Result<Vec<u8>, Audi
     }
 
     let data_len = (samples.len() * 2) as u32;
+    let riff_len = 36_u32
+        .checked_add(data_len)
+        .ok_or_else(|| AudioError::new("PCM sound is too large to encode as WAV"))?;
     let byte_rate = sample_rate * 2;
     let mut wav = Vec::with_capacity(44 + data_len as usize);
 
     wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(&riff_len.to_le_bytes());
     wav.extend_from_slice(b"WAVEfmt ");
     wav.extend_from_slice(&16_u32.to_le_bytes());
     wav.extend_from_slice(&1_u16.to_le_bytes());
