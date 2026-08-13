@@ -9,6 +9,7 @@ mod pixel;
 mod platform;
 mod renderer;
 mod storage;
+pub mod ui;
 mod viewport;
 
 pub use audio::{Audio, AudioError, NoopAudio, SoundBank, SoundId};
