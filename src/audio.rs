@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Cursor;
 use std::num::NonZero;
@@ -39,8 +39,71 @@ impl fmt::Display for AudioError {
 impl std::error::Error for AudioError {}
 
 pub trait Audio {
-    fn register_wav(&mut self, id: SoundId, bytes: &'static [u8]) -> Result<(), AudioError>;
+    fn register_wav(&mut self, id: SoundId, bytes: &[u8]) -> Result<(), AudioError>;
     fn play(&mut self, id: SoundId) -> Result<(), AudioError>;
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct SoundBank {
+    assets: HashMap<SoundId, Vec<u8>>,
+    registered: HashSet<SoundId>,
+}
+
+impl SoundBank {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert_wav(
+        &mut self,
+        id: SoundId,
+        bytes: impl Into<Vec<u8>>,
+    ) -> Result<(), AudioError> {
+        if self.assets.contains_key(&id) {
+            return Err(AudioError::new(format!(
+                "sound '{}' is already present in the bank",
+                id.as_str()
+            )));
+        }
+        self.assets.insert(id, bytes.into());
+        Ok(())
+    }
+
+    pub fn contains(&self, id: SoundId) -> bool {
+        self.assets.contains_key(&id)
+    }
+
+    pub fn preload(&mut self, audio: &mut dyn Audio) -> Result<(), AudioError> {
+        let ids = self.assets.keys().copied().collect::<Vec<_>>();
+        for id in ids {
+            self.ensure_registered(audio, id)?;
+        }
+        Ok(())
+    }
+
+    pub fn play(&mut self, audio: &mut dyn Audio, id: SoundId) -> Result<(), AudioError> {
+        self.ensure_registered(audio, id)?;
+        audio.play(id)
+    }
+
+    fn ensure_registered(
+        &mut self,
+        audio: &mut dyn Audio,
+        id: SoundId,
+    ) -> Result<(), AudioError> {
+        if self.registered.contains(&id) {
+            return Ok(());
+        }
+        let Some(bytes) = self.assets.get(&id) else {
+            return Err(AudioError::new(format!(
+                "sound '{}' is not present in the bank",
+                id.as_str()
+            )));
+        };
+        audio.register_wav(id, bytes)?;
+        self.registered.insert(id);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -49,7 +112,7 @@ pub struct NoopAudio {
 }
 
 impl Audio for NoopAudio {
-    fn register_wav(&mut self, id: SoundId, bytes: &'static [u8]) -> Result<(), AudioError> {
+    fn register_wav(&mut self, id: SoundId, bytes: &[u8]) -> Result<(), AudioError> {
         register_decoded_wav(&mut self.sounds, id, bytes)
     }
 
@@ -93,7 +156,7 @@ struct DecodedSound {
 fn register_decoded_wav(
     sounds: &mut HashMap<SoundId, DecodedSound>,
     id: SoundId,
-    bytes: &'static [u8],
+    bytes: &[u8],
 ) -> Result<(), AudioError> {
     if sounds.contains_key(&id) {
         return Ok(());
@@ -104,7 +167,7 @@ fn register_decoded_wav(
     Ok(())
 }
 
-fn decode_wav(bytes: &'static [u8]) -> Result<DecodedSound, AudioError> {
+fn decode_wav(bytes: &[u8]) -> Result<DecodedSound, AudioError> {
     let mut reader = hound::WavReader::new(Cursor::new(bytes))
         .map_err(|err| AudioError::new(format!("failed to read WAV: {err}")))?;
     let spec = reader.spec();
@@ -178,7 +241,7 @@ mod native {
     }
 
     impl Audio for NativeAudio {
-        fn register_wav(&mut self, id: SoundId, bytes: &'static [u8]) -> Result<(), AudioError> {
+        fn register_wav(&mut self, id: SoundId, bytes: &[u8]) -> Result<(), AudioError> {
             register_decoded_wav(&mut self.sounds, id, bytes)
         }
 
@@ -276,7 +339,7 @@ mod web {
     }
 
     impl Audio for WebAudio {
-        fn register_wav(&mut self, id: SoundId, bytes: &'static [u8]) -> Result<(), AudioError> {
+        fn register_wav(&mut self, id: SoundId, bytes: &[u8]) -> Result<(), AudioError> {
             if self.sounds.contains_key(&id) {
                 return Ok(());
             }
@@ -343,7 +406,7 @@ mod web {
 
 #[cfg(test)]
 mod tests {
-    use super::{Audio, NoopAudio, SoundId, decode_wav};
+    use super::{Audio, NoopAudio, SoundBank, SoundId, decode_wav};
 
     const TEST_SOUND: SoundId = SoundId::new("test.sound");
     const OTHER_SOUND: SoundId = SoundId::new("test.other");
@@ -424,5 +487,24 @@ mod tests {
             .expect("register should succeed");
 
         assert!(audio.play(OTHER_SOUND).is_err());
+    }
+
+    #[test]
+    fn sound_bank_registers_lazily_and_replays() {
+        let mut audio = NoopAudio::default();
+        let mut bank = SoundBank::new();
+        bank.insert_wav(TEST_SOUND, VALID_WAV.to_vec())
+            .expect("asset should be inserted");
+
+        assert!(bank.play(&mut audio, TEST_SOUND).is_ok());
+        assert!(bank.play(&mut audio, TEST_SOUND).is_ok());
+    }
+
+    #[test]
+    fn sound_bank_reports_unknown_asset() {
+        let mut audio = NoopAudio::default();
+        let mut bank = SoundBank::new();
+
+        assert!(bank.play(&mut audio, TEST_SOUND).is_err());
     }
 }
