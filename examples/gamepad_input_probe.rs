@@ -26,15 +26,22 @@ impl Game for GamepadInputProbe {
 
         for id in frame.input.gamepad_ids() {
             for (button, label) in [
-                (GamepadButton::DPadUp, "UP"),
-                (GamepadButton::DPadDown, "DOWN"),
-                (GamepadButton::DPadLeft, "LEFT"),
-                (GamepadButton::DPadRight, "RIGHT"),
+                (GamepadButton::South, "SOUTH"),
+                (GamepadButton::East, "EAST"),
+                (GamepadButton::North, "NORTH"),
+                (GamepadButton::West, "WEST"),
+                (GamepadButton::LeftShoulder, "LEFT SHOULDER"),
+                (GamepadButton::RightShoulder, "RIGHT SHOULDER"),
+                (GamepadButton::Start, "START"),
+                (GamepadButton::Select, "SELECT"),
+                (GamepadButton::DPadUp, "DPAD UP"),
+                (GamepadButton::DPadDown, "DPAD DOWN"),
+                (GamepadButton::DPadLeft, "DPAD LEFT"),
+                (GamepadButton::DPadRight, "DPAD RIGHT"),
                 (GamepadButton::LeftStickUp, "STICK UP"),
                 (GamepadButton::LeftStickDown, "STICK DOWN"),
                 (GamepadButton::LeftStickLeft, "STICK LEFT"),
                 (GamepadButton::LeftStickRight, "STICK RIGHT"),
-                (GamepadButton::South, "SOUTH"),
             ] {
                 let state = frame.input.gamepad_button(id, button);
                 if state.pressed() {

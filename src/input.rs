@@ -65,6 +65,8 @@ pub enum GamepadButton {
     East,
     North,
     West,
+    LeftShoulder,
+    RightShoulder,
     Start,
     Select,
     DPadUp,
@@ -328,7 +330,7 @@ impl Default for Input {
 
 const KEY_COUNT: usize = 10;
 const MOUSE_BUTTON_COUNT: usize = 3;
-const GAMEPAD_BUTTON_COUNT: usize = 14;
+const GAMEPAD_BUTTON_COUNT: usize = 16;
 
 fn key_index(key: Key) -> usize {
     match key {
@@ -359,23 +361,26 @@ fn gamepad_button_index(button: GamepadButton) -> usize {
         GamepadButton::East => 1,
         GamepadButton::North => 2,
         GamepadButton::West => 3,
-        GamepadButton::Start => 4,
-        GamepadButton::Select => 5,
-        GamepadButton::DPadUp => 6,
-        GamepadButton::DPadDown => 7,
-        GamepadButton::DPadLeft => 8,
-        GamepadButton::DPadRight => 9,
-        GamepadButton::LeftStickUp => 10,
-        GamepadButton::LeftStickDown => 11,
-        GamepadButton::LeftStickLeft => 12,
-        GamepadButton::LeftStickRight => 13,
+        GamepadButton::LeftShoulder => 4,
+        GamepadButton::RightShoulder => 5,
+        GamepadButton::Start => 6,
+        GamepadButton::Select => 7,
+        GamepadButton::DPadUp => 8,
+        GamepadButton::DPadDown => 9,
+        GamepadButton::DPadLeft => 10,
+        GamepadButton::DPadRight => 11,
+        GamepadButton::LeftStickUp => 12,
+        GamepadButton::LeftStickDown => 13,
+        GamepadButton::LeftStickLeft => 14,
+        GamepadButton::LeftStickRight => 15,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        GamepadButton, GamepadConnectionEvent, GamepadId, Input, Key, MouseButton, Touch, TouchPhase,
+        GamepadButton, GamepadConnectionEvent, GamepadId, Input, Key, MouseButton, Touch,
+        TouchPhase,
     };
 
     #[test]

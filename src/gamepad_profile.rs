@@ -47,15 +47,15 @@ impl AxisCalibration {
         let negative_span = self.raw_negative - center;
         let delta = raw - center;
 
-        let normalized = if same_direction(delta, positive_span) && positive_span.abs() > f32::EPSILON
-        {
-            delta / positive_span
-        } else if same_direction(delta, negative_span) && negative_span.abs() > f32::EPSILON {
-            -(delta / negative_span)
-        } else {
-            0.0
-        }
-        .clamp(-1.0, 1.0);
+        let normalized =
+            if same_direction(delta, positive_span) && positive_span.abs() > f32::EPSILON {
+                delta / positive_span
+            } else if same_direction(delta, negative_span) && negative_span.abs() > f32::EPSILON {
+                -(delta / negative_span)
+            } else {
+                0.0
+            }
+            .clamp(-1.0, 1.0);
 
         if normalized.abs() <= self.dead_zone.clamp(0.0, 0.95) {
             0.0

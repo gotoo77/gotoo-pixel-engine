@@ -47,12 +47,7 @@ impl GamepadInputBackend {
 
         let connected = gilrs
             .gamepads()
-            .map(|(id, gamepad)| {
-                (
-                    GamepadId::new(usize::from(id)),
-                    gamepad.name().to_owned(),
-                )
-            })
+            .map(|(id, gamepad)| (GamepadId::new(usize::from(id)), gamepad.name().to_owned()))
             .collect::<Vec<_>>();
         for (id, name) in connected {
             input.connect_gamepad(id, name);
@@ -113,6 +108,8 @@ fn button_from_gilrs(button: gilrs::Button) -> Option<GamepadButton> {
         gilrs::Button::East => Some(GamepadButton::East),
         gilrs::Button::North => Some(GamepadButton::North),
         gilrs::Button::West => Some(GamepadButton::West),
+        gilrs::Button::LeftTrigger => Some(GamepadButton::LeftShoulder),
+        gilrs::Button::RightTrigger => Some(GamepadButton::RightShoulder),
         gilrs::Button::Start => Some(GamepadButton::Start),
         gilrs::Button::Select => Some(GamepadButton::Select),
         gilrs::Button::DPadUp => Some(GamepadButton::DPadUp),
@@ -186,13 +183,7 @@ fn centered_dpad_calibration(axis: DPadAxis, center: f32, dead_zone: f32) -> Axi
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn set_dpad_axis(
-    input: &mut Input,
-    id: GamepadId,
-    axis: DPadAxis,
-    value: f32,
-    threshold: f32,
-) {
+fn set_dpad_axis(input: &mut Input, id: GamepadId, axis: DPadAxis, value: f32, threshold: f32) {
     match axis {
         DPadAxis::Horizontal => set_axis_buttons(
             input,
@@ -275,8 +266,23 @@ fn set_axis_buttons(
 mod tests {
     use std::collections::HashMap;
 
-    use super::{DPadAxis, centered_dpad_calibration, set_axis_buttons, update_button_value};
+    use super::{
+        DPadAxis, button_from_gilrs, centered_dpad_calibration, set_axis_buttons,
+        update_button_value,
+    };
     use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
+
+    #[test]
+    fn trigger_buttons_map_to_shoulders() {
+        assert_eq!(
+            button_from_gilrs(gilrs::Button::LeftTrigger),
+            Some(GamepadButton::LeftShoulder)
+        );
+        assert_eq!(
+            button_from_gilrs(gilrs::Button::RightTrigger),
+            Some(GamepadButton::RightShoulder)
+        );
+    }
 
     #[test]
     fn digital_dpad_release_does_not_invent_opposite_direction() {
@@ -422,7 +428,11 @@ mod tests {
             0.5,
         );
 
-        assert!(input.gamepad_button(id, GamepadButton::LeftStickDown).held());
+        assert!(
+            input
+                .gamepad_button(id, GamepadButton::LeftStickDown)
+                .held()
+        );
         assert!(!input.gamepad_button(id, GamepadButton::LeftStickUp).held());
     }
 }

@@ -486,7 +486,10 @@ fn tetris_sound_bank() -> SoundBank {
     }
     for (index, id) in LINE_CLEAR_SOUNDS.into_iter().enumerate() {
         sounds
-            .insert_wav(id, synthesize_sound(TetrisSound::LineClear(index as u32 + 1)))
+            .insert_wav(
+                id,
+                synthesize_sound(TetrisSound::LineClear(index as u32 + 1)),
+            )
             .expect("Tetris line clear sound ids should be unique");
     }
     sounds
@@ -524,9 +527,7 @@ fn synthesize_sound(kind: TetrisSound) -> Vec<u8> {
             TetrisSound::Move => (210.0, 0.18),
             TetrisSound::Rotate => (300.0 + 320.0 * progress, 0.25),
             TetrisSound::Lock => (125.0 - 35.0 * progress, 0.30),
-            TetrisSound::LineClear(lines) => {
-                (390.0 + lines as f32 * 70.0 + 460.0 * progress, 0.30)
-            }
+            TetrisSound::LineClear(lines) => (390.0 + lines as f32 * 70.0 + 460.0 * progress, 0.30),
             TetrisSound::GameOver => (260.0 - 185.0 * progress, 0.34),
         };
         phase += frequency / AUDIO_SAMPLE_RATE as f32;
@@ -661,7 +662,13 @@ mod tests {
         let mut bank = tetris_sound_bank();
         let mut audio = NoopAudio::default();
 
-        for id in [MOVE_SOUND, ROTATE_SOUND, LOCK_SOUND, LINE_CLEAR_SOUNDS[3], GAME_OVER_SOUND] {
+        for id in [
+            MOVE_SOUND,
+            ROTATE_SOUND,
+            LOCK_SOUND,
+            LINE_CLEAR_SOUNDS[3],
+            GAME_OVER_SOUND,
+        ] {
             bank.play(&mut audio, id)
                 .expect("generated Tetris sound should be accepted and playable");
         }
