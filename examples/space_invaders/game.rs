@@ -25,6 +25,7 @@ const BUNKER_COLS: usize = 14;
 const BUNKER_ROWS: usize = 8;
 const BUNKER_CELL: i32 = 2;
 const BUNKER_Y: i32 = 166;
+const BUNKER_X: [i32; BUNKER_COUNT] = [24, 82, 140, 198];
 const BUNKER_MASK: [u16; BUNKER_ROWS] = [
     0b00111111111100,
     0b01111111111110,
@@ -41,6 +42,11 @@ const FOREGROUND: Pixel = Pixel::rgb(120, 255, 120);
 const TEXT: Pixel = Pixel::rgb(220, 240, 220);
 const SHOT: Pixel = Pixel::rgb(245, 245, 230);
 const DANGER: Pixel = Pixel::rgb(255, 95, 80);
+const PLAYER_COLOR: Pixel = Pixel::rgb(80, 180, 255);
+const BUNKER_COLOR: Pixel = Pixel::rgb(145, 155, 165);
+const ALIEN_TOP_COLOR: Pixel = Pixel::rgb(255, 100, 110);
+const ALIEN_MIDDLE_COLOR: Pixel = Pixel::rgb(255, 190, 90);
+const ALIEN_BOTTOM_COLOR: Pixel = Pixel::rgb(120, 255, 120);
 
 const PLAYER_MASK: [u16; 7] = [
     0b0000001000000,
@@ -215,8 +221,7 @@ impl SpaceInvadersWorld {
             }
         }
 
-        let bunker_x = [24, 82, 140, 198];
-        let bunkers = bunker_x.into_iter().map(Bunker::new).collect();
+        let bunkers = BUNKER_X.into_iter().map(Bunker::new).collect();
 
         Self {
             aliens,
@@ -490,10 +495,10 @@ impl SpaceInvadersGame {
 
         for alien in self.world.aliens.iter().copied().filter(|alien| alien.alive) {
             let (x, y) = self.world.alien_position(alien);
-            let kind = match alien.row {
-                0 => 0,
-                1 | 2 => 1,
-                _ => 2,
+            let (kind, color) = match alien.row {
+                0 => (0, ALIEN_TOP_COLOR),
+                1 | 2 => (1, ALIEN_MIDDLE_COLOR),
+                _ => (2, ALIEN_BOTTOM_COLOR),
             };
             draw_mask(
                 fb,
@@ -501,7 +506,7 @@ impl SpaceInvadersGame {
                 y,
                 &ALIEN_MASKS[kind][self.world.animation_frame],
                 10,
-                FOREGROUND,
+                color,
             );
         }
 
@@ -514,7 +519,7 @@ impl SpaceInvadersGame {
                             BUNKER_Y + y as i32 * BUNKER_CELL,
                             BUNKER_CELL as u32,
                             BUNKER_CELL as u32,
-                            FOREGROUND,
+                            BUNKER_COLOR,
                         );
                     }
                 }
@@ -528,7 +533,7 @@ impl SpaceInvadersGame {
                 PLAYER_Y,
                 &PLAYER_MASK,
                 PLAYER_W as usize,
-                FOREGROUND,
+                PLAYER_COLOR,
             );
         }
 
