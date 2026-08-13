@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Game, GameResult, GamepadButton, Key, Pixel,
+    ActionId, ControlMap, Frame, Game, GameResult, GamepadButton, Key, Pixel, SoundBank, SoundId,
+    pcm16_mono_wav,
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 220;
@@ -13,6 +14,18 @@ const CONTROL_ROTATE: ActionId = ActionId::new("tetris.rotate");
 const CONTROL_SOFT_DROP: ActionId = ActionId::new("tetris.soft_drop");
 const CONTROL_HARD_DROP: ActionId = ActionId::new("tetris.hard_drop");
 const CONTROL_EXIT: ActionId = ActionId::new("tetris.exit");
+
+const MOVE_SOUND: SoundId = SoundId::new("tetris.move");
+const ROTATE_SOUND: SoundId = SoundId::new("tetris.rotate");
+const LOCK_SOUND: SoundId = SoundId::new("tetris.lock");
+const GAME_OVER_SOUND: SoundId = SoundId::new("tetris.game_over");
+const LINE_CLEAR_SOUNDS: [SoundId; 4] = [
+    SoundId::new("tetris.line_clear.1"),
+    SoundId::new("tetris.line_clear.2"),
+    SoundId::new("tetris.line_clear.3"),
+    SoundId::new("tetris.line_clear.4"),
+];
+const AUDIO_SAMPLE_RATE: u32 = 44_100;
 
 const BOARD_WIDTH: i32 = 10;
 const BOARD_HEIGHT: i32 = 20;
@@ -58,6 +71,7 @@ impl Kind {
         Self::T,
         Self::Z,
     ];
+
     fn index(self) -> usize {
         self as usize
     }
@@ -126,6 +140,16 @@ impl Bag {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TetrisEvent {
+    Moved,
+    Rotated,
+    Locked,
+    LinesCleared(u32),
+    GameOver,
+    Restarted,
+}
+
 #[derive(Debug, Clone)]
 struct TetrisWorld {
     board: [[Option<Kind>; BOARD_WIDTH as usize]; BOARD_HEIGHT as usize],
@@ -135,6 +159,7 @@ struct TetrisWorld {
     score: u32,
     lines: u32,
     game_over: bool,
+    events: Vec<TetrisEvent>,
 }
 
 impl TetrisWorld {
@@ -150,11 +175,17 @@ impl TetrisWorld {
             score: 0,
             lines: 0,
             game_over: false,
+            events: Vec::new(),
         }
     }
 
     fn restart(&mut self) {
         *self = Self::new();
+        self.events.push(TetrisEvent::Restarted);
+    }
+
+    fn take_events(&mut self) -> Vec<TetrisEvent> {
+        std::mem::take(&mut self.events)
     }
 
     fn valid(&self, piece: Piece) -> bool {
@@ -182,9 +213,9 @@ impl TetrisWorld {
         }
     }
 
-    fn rotate(&mut self) {
+    fn rotate(&mut self) -> bool {
         if self.game_over || self.active.kind == Kind::O {
-            return;
+            return false;
         }
         let rotated = Piece {
             rotation: (self.active.rotation + 1) % 4,
@@ -197,9 +228,10 @@ impl TetrisWorld {
             };
             if self.valid(candidate) {
                 self.active = candidate;
-                return;
+                return true;
             }
         }
+        false
     }
 
     fn hard_drop(&mut self) {
@@ -224,11 +256,15 @@ impl TetrisWorld {
         let cells = self.active.cells();
         if cells.iter().any(|&(_, y)| y < 0) {
             self.game_over = true;
+            self.events.push(TetrisEvent::GameOver);
             return;
         }
+
         for (x, y) in cells {
             self.board[y as usize][x as usize] = Some(self.active.kind);
         }
+        self.events.push(TetrisEvent::Locked);
+
         let cleared = self.clear_lines();
         self.lines += cleared;
         self.score = self.score.saturating_add(match cleared {
@@ -238,10 +274,15 @@ impl TetrisWorld {
             4 => 800,
             _ => 0,
         });
+        if cleared > 0 {
+            self.events.push(TetrisEvent::LinesCleared(cleared));
+        }
+
         self.active = spawn(self.next);
         self.next = self.bag.next();
         if !self.valid(self.active) {
             self.game_over = true;
+            self.events.push(TetrisEvent::GameOver);
         }
     }
 
@@ -271,6 +312,7 @@ pub struct TetrisGame {
     world: TetrisWorld,
     accumulator: Duration,
     controls: ControlMap,
+    sounds: SoundBank,
 }
 
 impl TetrisGame {
@@ -279,6 +321,7 @@ impl TetrisGame {
             world: TetrisWorld::new(),
             accumulator: Duration::ZERO,
             controls: default_controls(),
+            sounds: tetris_sound_bank(),
         }
     }
 
@@ -295,20 +338,40 @@ impl TetrisGame {
             }
             return GameResult::Continue;
         }
-        if self.controls.action(CONTROL_LEFT).pressed() {
-            self.world.translate(-1, 0);
+        if self.controls.action(CONTROL_LEFT).pressed() && self.world.translate(-1, 0) {
+            self.world.events.push(TetrisEvent::Moved);
         }
-        if self.controls.action(CONTROL_RIGHT).pressed() {
-            self.world.translate(1, 0);
+        if self.controls.action(CONTROL_RIGHT).pressed() && self.world.translate(1, 0) {
+            self.world.events.push(TetrisEvent::Moved);
         }
-        if self.controls.action(CONTROL_ROTATE).pressed() {
-            self.world.rotate();
+        if self.controls.action(CONTROL_ROTATE).pressed() && self.world.rotate() {
+            self.world.events.push(TetrisEvent::Rotated);
         }
         if self.controls.action(CONTROL_HARD_DROP).pressed() {
             self.world.hard_drop();
             self.accumulator = Duration::ZERO;
         }
         GameResult::Continue
+    }
+
+    fn consume_events(&mut self, frame: &mut Frame<'_>) {
+        for event in self.world.take_events() {
+            let sound = match event {
+                TetrisEvent::Moved => Some(MOVE_SOUND),
+                TetrisEvent::Rotated => Some(ROTATE_SOUND),
+                TetrisEvent::Locked => Some(LOCK_SOUND),
+                TetrisEvent::LinesCleared(lines) => {
+                    let index = lines.clamp(1, 4) as usize - 1;
+                    Some(LINE_CLEAR_SOUNDS[index])
+                }
+                TetrisEvent::GameOver => Some(GAME_OVER_SOUND),
+                TetrisEvent::Restarted => None,
+            };
+
+            if let Some(sound) = sound {
+                let _ = self.sounds.play(frame.audio, sound);
+            }
+        }
     }
 
     fn render(&self, frame: &mut Frame<'_>) {
@@ -378,6 +441,7 @@ impl Game for TetrisGame {
                 self.world.gravity_step();
             }
         }
+        self.consume_events(frame);
         self.render(frame);
         GameResult::Continue
     }
@@ -408,6 +472,81 @@ fn default_controls() -> ControlMap {
     controls
 }
 
+fn tetris_sound_bank() -> SoundBank {
+    let mut sounds = SoundBank::new();
+    for (id, kind) in [
+        (MOVE_SOUND, TetrisSound::Move),
+        (ROTATE_SOUND, TetrisSound::Rotate),
+        (LOCK_SOUND, TetrisSound::Lock),
+        (GAME_OVER_SOUND, TetrisSound::GameOver),
+    ] {
+        sounds
+            .insert_wav(id, synthesize_sound(kind))
+            .expect("Tetris sound ids should be unique");
+    }
+    for (index, id) in LINE_CLEAR_SOUNDS.into_iter().enumerate() {
+        sounds
+            .insert_wav(id, synthesize_sound(TetrisSound::LineClear(index as u32 + 1)))
+            .expect("Tetris line clear sound ids should be unique");
+    }
+    sounds
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TetrisSound {
+    Move,
+    Rotate,
+    Lock,
+    LineClear(u32),
+    GameOver,
+}
+
+fn synthesize_sound(kind: TetrisSound) -> Vec<u8> {
+    let (duration, mut seed): (f32, u32) = match kind {
+        TetrisSound::Move => (0.035, 0x7100_0001),
+        TetrisSound::Rotate => (0.07, 0x7100_0002),
+        TetrisSound::Lock => (0.09, 0x7100_0003),
+        TetrisSound::LineClear(lines) => (0.14 + lines as f32 * 0.025, 0x7100_1000 + lines),
+        TetrisSound::GameOver => (0.42, 0x7100_0005),
+    };
+    let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
+    let mut samples = Vec::with_capacity(sample_count);
+    let mut phase = 0.0_f32;
+
+    for index in 0..sample_count {
+        let t = index as f32 / AUDIO_SAMPLE_RATE as f32;
+        let progress = t / duration;
+        let envelope = (1.0 - progress).max(0.0);
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let noise = ((seed >> 8) as f32 / 16_777_215.0) * 2.0 - 1.0;
+
+        let (frequency, sample) = match kind {
+            TetrisSound::Move => (210.0, 0.18),
+            TetrisSound::Rotate => (300.0 + 320.0 * progress, 0.25),
+            TetrisSound::Lock => (125.0 - 35.0 * progress, 0.30),
+            TetrisSound::LineClear(lines) => {
+                (390.0 + lines as f32 * 70.0 + 460.0 * progress, 0.30)
+            }
+            TetrisSound::GameOver => (260.0 - 185.0 * progress, 0.34),
+        };
+        phase += frequency / AUDIO_SAMPLE_RATE as f32;
+        let square = if phase.fract() < 0.5 { 1.0 } else { -1.0 };
+        let mixed = match kind {
+            TetrisSound::Lock => (0.72 * square + 0.28 * noise) * sample,
+            TetrisSound::GameOver => (0.78 * square + 0.22 * noise) * sample,
+            _ => square * sample,
+        };
+        let shaped = match kind {
+            TetrisSound::Move | TetrisSound::Lock => mixed * envelope * envelope,
+            _ => mixed * envelope,
+        };
+        samples.push((shaped.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
+    }
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Tetris procedural audio should use a supported PCM format")
+}
+
 fn spawn(kind: Kind) -> Piece {
     Piece {
         kind,
@@ -416,6 +555,7 @@ fn spawn(kind: Kind) -> Piece {
         y: -1,
     }
 }
+
 fn base_cells(kind: Kind) -> [(i32, i32); 4] {
     match kind {
         Kind::I => [(0, 1), (1, 1), (2, 1), (3, 1)],
@@ -427,6 +567,7 @@ fn base_cells(kind: Kind) -> [(i32, i32); 4] {
         Kind::Z => [(0, 0), (1, 0), (1, 1), (2, 1)],
     }
 }
+
 fn draw_block(fb: &mut gotoo_pixel_engine::Framebuffer, x: i32, y: i32, kind: Kind) {
     let px = BOARD_X + x * CELL_SIZE;
     let py = BOARD_Y + y * CELL_SIZE;
@@ -438,6 +579,7 @@ fn draw_block(fb: &mut gotoo_pixel_engine::Framebuffer, x: i32, y: i32, kind: Ki
         COLORS[kind.index()],
     );
 }
+
 fn draw_preview_block(fb: &mut gotoo_pixel_engine::Framebuffer, x: i32, y: i32, kind: Kind) {
     fb.fill_rect(x, y, 7, 7, COLORS[kind.index()]);
 }
@@ -445,6 +587,7 @@ fn draw_preview_block(fb: &mut gotoo_pixel_engine::Framebuffer, x: i32, y: i32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gotoo_pixel_engine::NoopAudio;
 
     #[test]
     fn bag_contains_every_piece_once() {
@@ -475,6 +618,7 @@ mod tests {
                 .flatten()
                 .any(|&cell| cell == Some(before))
         );
+        assert!(world.take_events().contains(&TetrisEvent::Locked));
     }
 
     #[test]
@@ -497,5 +641,29 @@ mod tests {
         world.restart();
         assert_eq!(world.score, 0);
         assert!(!world.game_over);
+        assert_eq!(world.take_events(), vec![TetrisEvent::Restarted]);
+    }
+
+    #[test]
+    fn tetris_sound_bank_owns_all_feedback_assets() {
+        let bank = tetris_sound_bank();
+        assert!(bank.contains(MOVE_SOUND));
+        assert!(bank.contains(ROTATE_SOUND));
+        assert!(bank.contains(LOCK_SOUND));
+        assert!(bank.contains(GAME_OVER_SOUND));
+        for id in LINE_CLEAR_SOUNDS {
+            assert!(bank.contains(id));
+        }
+    }
+
+    #[test]
+    fn synthesized_tetris_sounds_are_playable_wav_assets() {
+        let mut bank = tetris_sound_bank();
+        let mut audio = NoopAudio::default();
+
+        for id in [MOVE_SOUND, ROTATE_SOUND, LOCK_SOUND, LINE_CLEAR_SOUNDS[3], GAME_OVER_SOUND] {
+            bank.play(&mut audio, id)
+                .expect("generated Tetris sound should be accepted and playable");
+        }
     }
 }
