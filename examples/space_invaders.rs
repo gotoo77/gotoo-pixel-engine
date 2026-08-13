@@ -2,7 +2,7 @@
 mod game;
 
 use game::{EnhancedSpaceInvadersGame, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH};
-use gotoo_pixel_engine::{run, EngineConfig, EngineError};
+use gotoo_pixel_engine::{EngineConfig, EngineError, run};
 
 fn main() -> Result<(), EngineError> {
     run(

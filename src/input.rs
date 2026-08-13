@@ -214,12 +214,7 @@ impl Input {
         self.touches.push(touch);
     }
 
-    pub(crate) fn set_gamepad_button(
-        &mut self,
-        id: GamepadId,
-        button: GamepadButton,
-        held: bool,
-    ) {
+    pub(crate) fn set_gamepad_button(&mut self, id: GamepadId, button: GamepadButton, held: bool) {
         let state = self.gamepads.entry(id).or_default();
         state.buttons[gamepad_button_index(button)].set_held(held);
     }

@@ -118,15 +118,13 @@ impl EnhancedSpaceInvadersGame {
             match effect.kind {
                 FeedbackKind::Alien { row } => {
                     let progress = 1.0
-                        - effect.remaining.as_secs_f32()
-                            / ALIEN_EXPLOSION_DURATION.as_secs_f32();
+                        - effect.remaining.as_secs_f32() / ALIEN_EXPLOSION_DURATION.as_secs_f32();
                     let radius = if progress < 0.5 { 2 } else { 5 };
                     draw_burst(fb, effect.x, effect.y, radius, alien_feedback_color(row));
                 }
                 FeedbackKind::Player => {
                     let progress = 1.0
-                        - effect.remaining.as_secs_f32()
-                            / PLAYER_EXPLOSION_DURATION.as_secs_f32();
+                        - effect.remaining.as_secs_f32() / PLAYER_EXPLOSION_DURATION.as_secs_f32();
                     let radius = if progress < 0.34 {
                         3
                     } else if progress < 0.68 {
@@ -140,9 +138,8 @@ impl EnhancedSpaceInvadersGame {
                     }
                 }
                 FeedbackKind::Bunker => {
-                    let progress = 1.0
-                        - effect.remaining.as_secs_f32()
-                            / BUNKER_IMPACT_DURATION.as_secs_f32();
+                    let progress =
+                        1.0 - effect.remaining.as_secs_f32() / BUNKER_IMPACT_DURATION.as_secs_f32();
                     draw_burst(
                         fb,
                         effect.x,

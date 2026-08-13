@@ -54,11 +54,7 @@ impl SoundBank {
         Self::default()
     }
 
-    pub fn insert_wav(
-        &mut self,
-        id: SoundId,
-        bytes: impl Into<Vec<u8>>,
-    ) -> Result<(), AudioError> {
+    pub fn insert_wav(&mut self, id: SoundId, bytes: impl Into<Vec<u8>>) -> Result<(), AudioError> {
         if self.assets.contains_key(&id) {
             return Err(AudioError::new(format!(
                 "sound '{}' is already present in the bank",
@@ -86,11 +82,7 @@ impl SoundBank {
         audio.play(id)
     }
 
-    fn ensure_registered(
-        &mut self,
-        audio: &mut dyn Audio,
-        id: SoundId,
-    ) -> Result<(), AudioError> {
+    fn ensure_registered(&mut self, audio: &mut dyn Audio, id: SoundId) -> Result<(), AudioError> {
         if self.registered.contains(&id) {
             return Ok(());
         }

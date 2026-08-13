@@ -1292,7 +1292,7 @@ mod tests {
     }
 
     impl Audio for TestAudio {
-        fn register_wav(&mut self, _id: SoundId, _bytes: &'static [u8]) -> Result<(), AudioError> {
+        fn register_wav(&mut self, _id: SoundId, _bytes: &[u8]) -> Result<(), AudioError> {
             Ok(())
         }
 

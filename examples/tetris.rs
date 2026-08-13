@@ -9,7 +9,7 @@ fn main() -> Result<(), EngineError> {
         EngineConfig {
             title: "Tetris - Gotoo Pixel Engine".into(),
             framebuffer_width: FRAMEBUFFER_WIDTH,
-            framebuffer_height: FRAMEBUFFER_HEIGHT, 
+            framebuffer_height: FRAMEBUFFER_HEIGHT,
             // Temporary WSLg workaround: this surface size is known to be stable.
             // Some larger/taller sizes currently stall during presentation.
             window_width: 960,
