@@ -1,5 +1,7 @@
 include!("game.rs");
 
+use gotoo_pixel_engine::SoundBank;
+
 const ALIEN_DESTROYED_SOUND: gotoo_pixel_engine::SoundId =
     gotoo_pixel_engine::SoundId::new("space_invaders.alien_destroyed");
 const PLAYER_DESTROYED_SOUND: gotoo_pixel_engine::SoundId =
@@ -44,56 +46,41 @@ impl FeedbackEffect {
     }
 }
 
-struct FeedbackSnapshot {
-    state: RoundState,
-    aliens_alive: Vec<bool>,
-    player_x: f32,
-    lives: u32,
-    bunkers: Vec<[[bool; BUNKER_COLS]; BUNKER_ROWS]>,
-}
-
-impl FeedbackSnapshot {
-    fn capture(world: &SpaceInvadersWorld) -> Self {
-        Self {
-            state: world.state,
-            aliens_alive: world.aliens.iter().map(|alien| alien.alive).collect(),
-            player_x: world.player_x,
-            lives: world.lives,
-            bunkers: world.bunkers.iter().map(|bunker| bunker.cells).collect(),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct EnhancedSpaceInvadersGame {
     core: SpaceInvadersGame,
     effects: Vec<FeedbackEffect>,
-    audio_initialized: bool,
+    sounds: SoundBank,
 }
 
 impl EnhancedSpaceInvadersGame {
     pub fn new() -> Self {
+        let mut sounds = SoundBank::new();
+        sounds
+            .insert_wav(
+                ALIEN_DESTROYED_SOUND,
+                synthesize_sound(FeedbackKind::Alien { row: 0 }),
+            )
+            .expect("alien destruction sound id should be unique");
+        sounds
+            .insert_wav(
+                PLAYER_DESTROYED_SOUND,
+                synthesize_sound(FeedbackKind::Player),
+            )
+            .expect("player destruction sound id should be unique");
+        sounds
+            .insert_wav(BUNKER_HIT_SOUND, synthesize_sound(FeedbackKind::Bunker))
+            .expect("bunker hit sound id should be unique");
+
         Self {
             core: SpaceInvadersGame::new(),
             effects: Vec::new(),
-            audio_initialized: false,
+            sounds,
         }
     }
 
-    fn ensure_audio(&mut self, frame: &mut Frame<'_>) {
-        if self.audio_initialized {
-            return;
-        }
-
-        for (id, sound) in [
-            (ALIEN_DESTROYED_SOUND, FeedbackKind::Alien { row: 0 }),
-            (PLAYER_DESTROYED_SOUND, FeedbackKind::Player),
-            (BUNKER_HIT_SOUND, FeedbackKind::Bunker),
-        ] {
-            let wav: &'static [u8] = Box::leak(synthesize_sound(sound).into_boxed_slice());
-            let _ = frame.audio.register_wav(id, wav);
-        }
-        self.audio_initialized = true;
+    pub fn controls_mut(&mut self) -> &mut ControlMap {
+        self.core.controls_mut()
     }
 
     fn update_effects(&mut self, dt: Duration) {
@@ -103,72 +90,26 @@ impl EnhancedSpaceInvadersGame {
         self.effects.retain(|effect| !effect.remaining.is_zero());
     }
 
-    fn collect_feedback(
-        &mut self,
-        before: FeedbackSnapshot,
-        frame: &mut Frame<'_>,
-    ) {
-        let world = &self.core.world;
-
-        if before.state != RoundState::Playing && world.state == RoundState::Playing {
-            self.effects.clear();
-            return;
-        }
-
-        let mut new_effects = Vec::new();
-        let mut sounds = Vec::new();
-
-        for (index, was_alive) in before.aliens_alive.into_iter().enumerate() {
-            let alien = world.aliens[index];
-            if was_alive && !alien.alive {
-                let (x, y) = world.alien_position(alien);
-                new_effects.push(FeedbackEffect::new(
-                    FeedbackKind::Alien { row: alien.row },
-                    x + ALIEN_W / 2,
-                    y + ALIEN_H / 2,
-                ));
-                sounds.push(ALIEN_DESTROYED_SOUND);
-            }
-        }
-
-        if world.lives < before.lives {
-            new_effects.push(FeedbackEffect::new(
-                FeedbackKind::Player,
-                before.player_x.round() as i32 + PLAYER_W / 2,
-                PLAYER_Y + 3,
-            ));
-            sounds.push(PLAYER_DESTROYED_SOUND);
-        }
-
-        for (bunker_index, old_cells) in before.bunkers.into_iter().enumerate() {
-            let bunker = &world.bunkers[bunker_index];
-            let mut sum_x = 0_i32;
-            let mut sum_y = 0_i32;
-            let mut changed = 0_i32;
-
-            for y in 0..BUNKER_ROWS {
-                for x in 0..BUNKER_COLS {
-                    if old_cells[y][x] && !bunker.cells[y][x] {
-                        sum_x += bunker.x + x as i32 * BUNKER_CELL + BUNKER_CELL / 2;
-                        sum_y += BUNKER_Y + y as i32 * BUNKER_CELL + BUNKER_CELL / 2;
-                        changed += 1;
-                    }
+    fn consume_events(&mut self, events: Vec<SpaceInvadersEvent>, frame: &mut Frame<'_>) {
+        for event in events {
+            match event {
+                SpaceInvadersEvent::AlienDestroyed { x, y, row } => {
+                    self.effects
+                        .push(FeedbackEffect::new(FeedbackKind::Alien { row }, x, y));
+                    let _ = self.sounds.play(frame.audio, ALIEN_DESTROYED_SOUND);
                 }
+                SpaceInvadersEvent::PlayerDestroyed { x, y } => {
+                    self.effects
+                        .push(FeedbackEffect::new(FeedbackKind::Player, x, y));
+                    let _ = self.sounds.play(frame.audio, PLAYER_DESTROYED_SOUND);
+                }
+                SpaceInvadersEvent::BunkerHit { x, y } => {
+                    self.effects
+                        .push(FeedbackEffect::new(FeedbackKind::Bunker, x, y));
+                    let _ = self.sounds.play(frame.audio, BUNKER_HIT_SOUND);
+                }
+                SpaceInvadersEvent::RoundRestarted => self.effects.clear(),
             }
-
-            if changed > 0 {
-                new_effects.push(FeedbackEffect::new(
-                    FeedbackKind::Bunker,
-                    sum_x / changed,
-                    sum_y / changed,
-                ));
-                sounds.push(BUNKER_HIT_SOUND);
-            }
-        }
-
-        self.effects.extend(new_effects);
-        for sound in sounds {
-            let _ = frame.audio.play(sound);
         }
     }
 
@@ -217,16 +158,15 @@ impl EnhancedSpaceInvadersGame {
 
 impl Game for EnhancedSpaceInvadersGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        self.ensure_audio(frame);
         self.update_effects(frame.delta_time);
-        let before = FeedbackSnapshot::capture(&self.core.world);
 
         let result = self.core.update(frame);
         if result == GameResult::Exit {
             return result;
         }
 
-        self.collect_feedback(before, frame);
+        let events = self.core.take_events();
+        self.consume_events(events, frame);
         self.render_effects(frame.framebuffer);
         GameResult::Continue
     }
@@ -343,5 +283,13 @@ mod feedback_tests {
     fn feedback_effects_have_distinct_lifetimes() {
         assert!(PLAYER_EXPLOSION_DURATION > ALIEN_EXPLOSION_DURATION);
         assert!(ALIEN_EXPLOSION_DURATION > BUNKER_IMPACT_DURATION);
+    }
+
+    #[test]
+    fn sound_bank_owns_all_space_invaders_assets() {
+        let game = EnhancedSpaceInvadersGame::new();
+        assert!(game.sounds.contains(ALIEN_DESTROYED_SOUND));
+        assert!(game.sounds.contains(PLAYER_DESTROYED_SOUND));
+        assert!(game.sounds.contains(BUNKER_HIT_SOUND));
     }
 }
