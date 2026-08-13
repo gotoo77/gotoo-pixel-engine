@@ -1,9 +1,16 @@
 use std::time::Duration;
 
-use gotoo_pixel_engine::{Frame, Framebuffer, Game, GameResult, Key, Pixel};
+use gotoo_pixel_engine::{
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel,
+};
 
 pub const FRAMEBUFFER_WIDTH: u32 = 256;
 pub const FRAMEBUFFER_HEIGHT: u32 = 224;
+
+pub const CONTROL_LEFT: ActionId = ActionId::new("space_invaders.left");
+pub const CONTROL_RIGHT: ActionId = ActionId::new("space_invaders.right");
+pub const CONTROL_FIRE: ActionId = ActionId::new("space_invaders.fire");
+pub const CONTROL_EXIT: ActionId = ActionId::new("space_invaders.exit");
 
 const PLAYER_Y: i32 = 198;
 const PLAYER_W: i32 = 13;
@@ -189,6 +196,14 @@ enum RoundState {
     GameOver,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpaceInvadersEvent {
+    AlienDestroyed { x: i32, y: i32, row: usize },
+    PlayerDestroyed { x: i32, y: i32 },
+    BunkerHit { x: i32, y: i32 },
+    RoundRestarted,
+}
+
 #[derive(Debug, Clone)]
 struct SpaceInvadersWorld {
     aliens: Vec<Alien>,
@@ -206,6 +221,7 @@ struct SpaceInvadersWorld {
     lives: u32,
     state: RoundState,
     rng: u32,
+    events: Vec<SpaceInvadersEvent>,
 }
 
 impl SpaceInvadersWorld {
@@ -239,11 +255,17 @@ impl SpaceInvadersWorld {
             lives: 3,
             state: RoundState::Playing,
             rng: 0x51A7_1A0D,
+            events: Vec::new(),
         }
     }
 
     fn restart(&mut self) {
         *self = Self::new();
+        self.events.push(SpaceInvadersEvent::RoundRestarted);
+    }
+
+    fn take_events(&mut self) -> Vec<SpaceInvadersEvent> {
+        std::mem::take(&mut self.events)
     }
 
     fn alive_count(&self) -> usize {
@@ -334,7 +356,14 @@ impl SpaceInvadersWorld {
     }
 
     fn hit_bunker(&mut self, x: i32, y: i32) -> bool {
-        self.bunkers.iter_mut().any(|bunker| bunker.damage_at(x, y))
+        let hit = self
+            .bunkers
+            .iter_mut()
+            .any(|bunker| bunker.damage_at(x, y));
+        if hit {
+            self.events.push(SpaceInvadersEvent::BunkerHit { x, y });
+        }
+        hit
     }
 
     fn update_projectiles(&mut self, dt: f32) {
@@ -362,12 +391,18 @@ impl SpaceInvadersWorld {
                 }
 
                 if let Some(index) = hit {
-                    let row = self.aliens[index].row;
+                    let alien = self.aliens[index];
+                    let (x, y) = self.alien_position(alien);
                     self.aliens[index].alive = false;
-                    self.score = self.score.saturating_add(match row {
+                    self.score = self.score.saturating_add(match alien.row {
                         0 => 30,
                         1 | 2 => 20,
                         _ => 10,
+                    });
+                    self.events.push(SpaceInvadersEvent::AlienDestroyed {
+                        x: x + ALIEN_W / 2,
+                        y: y + ALIEN_H / 2,
+                        row: alien.row,
                     });
                     self.player_bullet = None;
                     if self.alive_count() == 0 {
@@ -389,15 +424,15 @@ impl SpaceInvadersWorld {
             let px = bullet.x.round() as i32;
             let py = bullet.y.round() as i32;
 
+            let hits_player =
+                (self.player_x as i32..self.player_x as i32 + PLAYER_W).contains(&px)
+                    && (PLAYER_Y..PLAYER_Y + 7).contains(&py);
             let remove = py >= FRAMEBUFFER_HEIGHT as i32 - 8
                 || self.hit_bunker(px, py)
-                || ((self.player_x as i32..self.player_x as i32 + PLAYER_W).contains(&px)
-                    && (PLAYER_Y..PLAYER_Y + 7).contains(&py));
+                || hits_player;
 
             if remove {
-                if (self.player_x as i32..self.player_x as i32 + PLAYER_W).contains(&px)
-                    && (PLAYER_Y..PLAYER_Y + 7).contains(&py)
-                {
+                if hits_player {
                     player_hit = true;
                 }
                 self.enemy_bullets.swap_remove(index);
@@ -405,6 +440,10 @@ impl SpaceInvadersWorld {
         }
 
         if player_hit {
+            let x = self.player_x.round() as i32 + PLAYER_W / 2;
+            let y = PLAYER_Y + 3;
+            self.events
+                .push(SpaceInvadersEvent::PlayerDestroyed { x, y });
             self.lives = self.lives.saturating_sub(1);
             self.player_x = (FRAMEBUFFER_WIDTH as i32 / 2 - PLAYER_W / 2) as f32;
             self.player_bullet = None;
@@ -442,30 +481,42 @@ impl SpaceInvadersWorld {
 #[derive(Debug)]
 pub struct SpaceInvadersGame {
     world: SpaceInvadersWorld,
+    controls: ControlMap,
 }
 
 impl SpaceInvadersGame {
     pub fn new() -> Self {
         Self {
             world: SpaceInvadersWorld::new(),
+            controls: default_controls(),
         }
     }
 
+    pub fn controls_mut(&mut self) -> &mut ControlMap {
+        &mut self.controls
+    }
+
+    pub fn take_events(&mut self) -> Vec<SpaceInvadersEvent> {
+        self.world.take_events()
+    }
+
     fn input(&mut self, frame: &Frame<'_>) -> GameResult {
-        if frame.input.key(Key::Escape).pressed() {
+        self.controls.update(frame.input);
+
+        if self.controls.action(CONTROL_EXIT).pressed() {
             return GameResult::Exit;
         }
 
         if self.world.state != RoundState::Playing {
-            if frame.input.key(Key::Space).pressed() {
+            if self.controls.action(CONTROL_FIRE).pressed() {
                 self.world.restart();
             }
             return GameResult::Continue;
         }
 
         let dt = frame.delta_time.as_secs_f32();
-        let left = frame.input.key(Key::Left).held() || frame.input.key(Key::A).held();
-        let right = frame.input.key(Key::Right).held() || frame.input.key(Key::D).held();
+        let left = self.controls.action(CONTROL_LEFT).held();
+        let right = self.controls.action(CONTROL_RIGHT).held();
         if left && !right {
             self.world.player_x -= PLAYER_SPEED * dt;
         } else if right && !left {
@@ -476,7 +527,7 @@ impl SpaceInvadersGame {
             .player_x
             .clamp(8.0, (FRAMEBUFFER_WIDTH as i32 - PLAYER_W - 8) as f32);
 
-        if frame.input.key(Key::Space).pressed() {
+        if self.controls.action(CONTROL_FIRE).pressed() {
             self.world.shoot_player();
         }
 
@@ -548,19 +599,19 @@ impl SpaceInvadersGame {
 
         match self.world.state {
             RoundState::Playing => {
-                fb.draw_text(76, 216, "ARROWS MOVE  SPACE FIRE", TEXT);
+                fb.draw_text(66, 216, "ARROWS/PAD MOVE  FIRE", TEXT);
             }
             RoundState::Victory => {
                 fb.fill_rect(65, 91, 126, 39, BG);
                 fb.draw_rect(65, 91, 126, 39, FOREGROUND);
                 fb.draw_text(94, 100, "YOU WIN", FOREGROUND);
-                fb.draw_text(78, 116, "SPACE TO REPLAY", TEXT);
+                fb.draw_text(81, 116, "FIRE TO REPLAY", TEXT);
             }
             RoundState::GameOver => {
                 fb.fill_rect(65, 91, 126, 39, BG);
                 fb.draw_rect(65, 91, 126, 39, DANGER);
                 fb.draw_text(88, 100, "GAME OVER", DANGER);
-                fb.draw_text(78, 116, "SPACE TO REPLAY", TEXT);
+                fb.draw_text(81, 116, "FIRE TO REPLAY", TEXT);
             }
         }
     }
@@ -576,6 +627,23 @@ impl Game for SpaceInvadersGame {
         self.render(frame);
         GameResult::Continue
     }
+}
+
+fn default_controls() -> ControlMap {
+    let mut controls = ControlMap::new();
+    controls
+        .bind_key(CONTROL_LEFT, Key::Left)
+        .bind_key(CONTROL_LEFT, Key::A)
+        .bind_gamepad(CONTROL_LEFT, GamepadButton::DPadLeft)
+        .bind_gamepad(CONTROL_LEFT, GamepadButton::LeftStickLeft)
+        .bind_key(CONTROL_RIGHT, Key::Right)
+        .bind_key(CONTROL_RIGHT, Key::D)
+        .bind_gamepad(CONTROL_RIGHT, GamepadButton::DPadRight)
+        .bind_gamepad(CONTROL_RIGHT, GamepadButton::LeftStickRight)
+        .bind_key(CONTROL_FIRE, Key::Space)
+        .bind_gamepad(CONTROL_FIRE, GamepadButton::South)
+        .bind_key(CONTROL_EXIT, Key::Escape);
+    controls
 }
 
 fn draw_mask(
@@ -647,5 +715,59 @@ mod tests {
         assert_eq!(world.lives, 3);
         assert_eq!(world.alive_count(), 55);
         assert_eq!(world.state, RoundState::Playing);
+        assert_eq!(world.take_events(), vec![SpaceInvadersEvent::RoundRestarted]);
+    }
+
+    #[test]
+    fn bunker_hit_emits_explicit_event() {
+        let mut world = SpaceInvadersWorld::new();
+        let x = BUNKER_X[0] + 12;
+        let y = BUNKER_Y + 6;
+
+        assert!(world.hit_bunker(x, y));
+        assert_eq!(
+            world.take_events(),
+            vec![SpaceInvadersEvent::BunkerHit { x, y }]
+        );
+    }
+
+    #[test]
+    fn alien_destruction_emits_explicit_event() {
+        let mut world = SpaceInvadersWorld::new();
+        let alien = world.aliens[0];
+        let (x, y) = world.alien_position(alien);
+        world.player_bullet = Some(Bullet {
+            x: (x + ALIEN_W / 2) as f32,
+            y: (y + ALIEN_H / 2) as f32,
+        });
+
+        world.update_projectiles(0.0);
+
+        assert_eq!(
+            world.take_events(),
+            vec![SpaceInvadersEvent::AlienDestroyed {
+                x: x + ALIEN_W / 2,
+                y: y + ALIEN_H / 2,
+                row: alien.row,
+            }]
+        );
+    }
+
+    #[test]
+    fn player_destruction_emits_explicit_event() {
+        let mut world = SpaceInvadersWorld::new();
+        let x = world.player_x.round() as i32 + PLAYER_W / 2;
+        let y = PLAYER_Y + 3;
+        world.enemy_bullets.push(Bullet {
+            x: x as f32,
+            y: y as f32,
+        });
+
+        world.update_projectiles(0.0);
+
+        assert_eq!(
+            world.take_events(),
+            vec![SpaceInvadersEvent::PlayerDestroyed { x, y }]
+        );
     }
 }
