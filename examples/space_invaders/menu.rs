@@ -23,28 +23,97 @@ enum Page {
     GamepadSetup,
 }
 
+#[derive(Debug, Clone)]
+struct GamepadSnapshot {
+    name: String,
+    connected: bool,
+    dpad_up: bool,
+    dpad_down: bool,
+    dpad_left: bool,
+    dpad_right: bool,
+    south: bool,
+    east: bool,
+    north: bool,
+    west: bool,
+    left_shoulder: bool,
+    right_shoulder: bool,
+    start: bool,
+    stick_left: bool,
+    stick_right: bool,
+}
+
+impl GamepadSnapshot {
+    fn disconnected() -> Self {
+        Self {
+            name: "NO GAMEPAD".to_owned(),
+            connected: false,
+            dpad_up: false,
+            dpad_down: false,
+            dpad_left: false,
+            dpad_right: false,
+            south: false,
+            east: false,
+            north: false,
+            west: false,
+            left_shoulder: false,
+            right_shoulder: false,
+            start: false,
+            stick_left: false,
+            stick_right: false,
+        }
+    }
+
+    fn capture(input: &Input) -> Self {
+        let Some(id) = first_gamepad(input) else {
+            return Self::disconnected();
+        };
+
+        Self {
+            name: gamepad_display_name(input, id),
+            connected: true,
+            dpad_up: held(input, id, GamepadButton::DPadUp),
+            dpad_down: held(input, id, GamepadButton::DPadDown),
+            dpad_left: held(input, id, GamepadButton::DPadLeft),
+            dpad_right: held(input, id, GamepadButton::DPadRight),
+            south: held(input, id, GamepadButton::South),
+            east: held(input, id, GamepadButton::East),
+            north: held(input, id, GamepadButton::North),
+            west: held(input, id, GamepadButton::West),
+            left_shoulder: held(input, id, GamepadButton::LeftShoulder),
+            right_shoulder: held(input, id, GamepadButton::RightShoulder),
+            start: held(input, id, GamepadButton::Start),
+            stick_left: held(input, id, GamepadButton::LeftStickLeft),
+            stick_right: held(input, id, GamepadButton::LeftStickRight),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SpaceInvadersMenu {
     page: Page,
     main_state: MenuState,
     controls_state: MenuState,
+    gamepad: GamepadSnapshot,
 }
 
 impl SpaceInvadersMenu {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             page: Page::Main,
             main_state: MenuState::new(3),
             controls_state: MenuState::new(2),
+            gamepad: GamepadSnapshot::disconnected(),
         }
     }
 
     pub fn update(&mut self, input: &Input) -> Option<MenuAction> {
+        self.gamepad = GamepadSnapshot::capture(input);
+
         match self.page {
             Page::Main => self.update_main(input),
             Page::Controls => self.update_controls(input),
             Page::GamepadSetup => {
-                if input.key(Key::Escape).pressed() {
+                if input.gamepad_button_any(GamepadButton::Select).pressed() {
                     self.page = Page::Controls;
                 }
                 None
@@ -53,9 +122,6 @@ impl SpaceInvadersMenu {
     }
 
     fn update_main(&mut self, input: &Input) -> Option<MenuAction> {
-        if back_pressed(input) {
-            return Some(MenuAction::Quit);
-        }
         if menu_up_pressed(input) {
             self.main_state.select_previous();
         }
@@ -78,7 +144,7 @@ impl SpaceInvadersMenu {
     }
 
     fn update_controls(&mut self, input: &Input) -> Option<MenuAction> {
-        if back_pressed(input) {
+        if input.gamepad_button_any(GamepadButton::East).pressed() {
             self.page = Page::Main;
             return None;
         }
@@ -100,12 +166,12 @@ impl SpaceInvadersMenu {
         None
     }
 
-    pub fn render(&self, framebuffer: &mut Framebuffer, input: &Input) {
+    pub fn render(&self, framebuffer: &mut Framebuffer) {
         framebuffer.clear(BACKGROUND);
         match self.page {
             Page::Main => self.render_main(framebuffer),
-            Page::Controls => self.render_controls(framebuffer, input),
-            Page::GamepadSetup => self.render_gamepad_setup(framebuffer, input),
+            Page::Controls => self.render_controls(framebuffer),
+            Page::GamepadSetup => self.render_gamepad_setup(framebuffer),
         }
     }
 
@@ -168,7 +234,7 @@ impl SpaceInvadersMenu {
         );
     }
 
-    fn render_controls(&self, framebuffer: &mut Framebuffer, input: &Input) {
+    fn render_controls(&self, framebuffer: &mut Framebuffer) {
         draw_panel(
             framebuffer,
             Rect {
@@ -197,17 +263,15 @@ impl SpaceInvadersMenu {
         draw_control_row(framebuffer, 50, "MOVE LEFT", "LEFT / A");
         draw_control_row(framebuffer, 62, "MOVE RIGHT", "RIGHT / D");
         draw_control_row(framebuffer, 74, "FIRE", "SPACE");
-        draw_control_row(framebuffer, 86, "BACK", "ESC");
+        draw_control_row(framebuffer, 86, "QUIT", "ESC");
 
         framebuffer.draw_text(18, 104, "GAMEPAD", ACCENT);
-        let gamepad_id = first_gamepad(input);
-        let gamepad_name = gamepad_display_name(input, gamepad_id);
-        draw_control_row(framebuffer, 118, "DEVICE", &gamepad_name);
+        draw_control_row(framebuffer, 118, "DEVICE", &self.gamepad.name);
         draw_control_row(
             framebuffer,
             130,
             "STATUS",
-            if gamepad_id.is_some() {
+            if self.gamepad.connected {
                 "CONNECTED"
             } else {
                 "NOT DETECTED"
@@ -238,7 +302,7 @@ impl SpaceInvadersMenu {
         }
     }
 
-    fn render_gamepad_setup(&self, framebuffer: &mut Framebuffer, input: &Input) {
+    fn render_gamepad_setup(&self, framebuffer: &mut Framebuffer) {
         draw_panel(
             framebuffer,
             Rect {
@@ -262,9 +326,6 @@ impl SpaceInvadersMenu {
             1,
             ACCENT,
         );
-
-        let gamepad_id = first_gamepad(input);
-        let gamepad_name = gamepad_display_name(input, gamepad_id);
         draw_text_centered(
             framebuffer,
             Rect {
@@ -273,7 +334,7 @@ impl SpaceInvadersMenu {
                 width: 224,
                 height: 12,
             },
-            &gamepad_name,
+            &self.gamepad.name,
             1,
             FOREGROUND,
         );
@@ -285,13 +346,13 @@ impl SpaceInvadersMenu {
                 width: 224,
                 height: 12,
             },
-            if gamepad_id.is_some() {
+            if self.gamepad.connected {
                 "STATUS CONNECTED"
             } else {
                 "STATUS NOT DETECTED"
             },
             1,
-            if gamepad_id.is_some() {
+            if self.gamepad.connected {
                 ACCENT
             } else {
                 FOREGROUND
@@ -305,7 +366,7 @@ impl SpaceInvadersMenu {
                 width: 224,
                 height: 12,
             },
-            if gamepad_id.is_some() {
+            if self.gamepad.connected {
                 "DPAD CENTER AUTO"
             } else {
                 "DPAD CENTER WAITING"
@@ -314,20 +375,19 @@ impl SpaceInvadersMenu {
             FOREGROUND,
         );
 
-        draw_gamepad_status(framebuffer, input, gamepad_id, 18, 84, "DPAD UP", GamepadButton::DPadUp);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 132, 84, "SOUTH", GamepadButton::South);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 18, 98, "DPAD DOWN", GamepadButton::DPadDown);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 132, 98, "EAST", GamepadButton::East);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 18, 112, "DPAD LEFT", GamepadButton::DPadLeft);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 132, 112, "NORTH", GamepadButton::North);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 18, 126, "DPAD RIGHT", GamepadButton::DPadRight);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 132, 126, "WEST", GamepadButton::West);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 18, 146, "L SHOULDER", GamepadButton::LeftShoulder);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 132, 146, "R SHOULDER", GamepadButton::RightShoulder);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 18, 160, "START", GamepadButton::Start);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 132, 160, "SELECT", GamepadButton::Select);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 18, 174, "STICK LEFT", GamepadButton::LeftStickLeft);
-        draw_gamepad_status(framebuffer, input, gamepad_id, 132, 174, "STICK RIGHT", GamepadButton::LeftStickRight);
+        draw_gamepad_status(framebuffer, 18, 84, "DPAD UP", self.gamepad.dpad_up);
+        draw_gamepad_status(framebuffer, 132, 84, "SOUTH", self.gamepad.south);
+        draw_gamepad_status(framebuffer, 18, 98, "DPAD DOWN", self.gamepad.dpad_down);
+        draw_gamepad_status(framebuffer, 132, 98, "EAST", self.gamepad.east);
+        draw_gamepad_status(framebuffer, 18, 112, "DPAD LEFT", self.gamepad.dpad_left);
+        draw_gamepad_status(framebuffer, 132, 112, "NORTH", self.gamepad.north);
+        draw_gamepad_status(framebuffer, 18, 126, "DPAD RIGHT", self.gamepad.dpad_right);
+        draw_gamepad_status(framebuffer, 132, 126, "WEST", self.gamepad.west);
+        draw_gamepad_status(framebuffer, 18, 146, "L SHOULDER", self.gamepad.left_shoulder);
+        draw_gamepad_status(framebuffer, 132, 146, "R SHOULDER", self.gamepad.right_shoulder);
+        draw_gamepad_status(framebuffer, 18, 160, "START", self.gamepad.start);
+        draw_gamepad_status(framebuffer, 18, 174, "STICK LEFT", self.gamepad.stick_left);
+        draw_gamepad_status(framebuffer, 132, 174, "STICK RIGHT", self.gamepad.stick_right);
 
         draw_text_centered(
             framebuffer,
@@ -337,7 +397,7 @@ impl SpaceInvadersMenu {
                 width: 224,
                 height: 12,
             },
-            "ESC TO GO BACK",
+            "SELECT TO GO BACK",
             1,
             FOREGROUND,
         );
@@ -351,16 +411,11 @@ fn draw_control_row(framebuffer: &mut Framebuffer, y: i32, label: &str, value: &
 
 fn draw_gamepad_status(
     framebuffer: &mut Framebuffer,
-    input: &Input,
-    gamepad_id: Option<GamepadId>,
     x: i32,
     y: i32,
     label: &str,
-    button: GamepadButton,
+    held: bool,
 ) {
-    let held = gamepad_id
-        .map(|id| input.gamepad_button(id, button).held())
-        .unwrap_or(false);
     framebuffer.draw_text(x, y, label, FOREGROUND);
     framebuffer.draw_text(
         x + 72,
@@ -374,11 +429,15 @@ fn first_gamepad(input: &Input) -> Option<GamepadId> {
     input.gamepad_ids().min_by_key(|id| id.as_usize())
 }
 
-fn gamepad_display_name(input: &Input, gamepad_id: Option<GamepadId>) -> String {
-    gamepad_id
-        .and_then(|id| input.gamepad_info(id))
+fn gamepad_display_name(input: &Input, gamepad_id: GamepadId) -> String {
+    input
+        .gamepad_info(gamepad_id)
         .map(|info| info.name.to_ascii_uppercase().chars().take(23).collect())
-        .unwrap_or_else(|| "NO GAMEPAD".to_owned())
+        .unwrap_or_else(|| "GAMEPAD".to_owned())
+}
+
+fn held(input: &Input, gamepad_id: GamepadId, button: GamepadButton) -> bool {
+    input.gamepad_button(gamepad_id, button).held()
 }
 
 fn menu_up_pressed(input: &Input) -> bool {
@@ -397,8 +456,4 @@ fn menu_down_pressed(input: &Input) -> bool {
 
 fn confirm_pressed(input: &Input) -> bool {
     input.key(Key::Space).pressed() || input.gamepad_button_any(GamepadButton::South).pressed()
-}
-
-fn back_pressed(input: &Input) -> bool {
-    input.key(Key::Escape).pressed() || input.gamepad_button_any(GamepadButton::East).pressed()
 }
