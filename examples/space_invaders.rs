@@ -5,6 +5,9 @@ use game::{EnhancedSpaceInvadersGame, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH};
 use gotoo_pixel_engine::{EngineConfig, EngineError, run};
 
 fn main() -> Result<(), EngineError> {
+    let mut game = EnhancedSpaceInvadersGame::new();
+    game.controls_mut().clear_virtual();
+
     run(
         EngineConfig {
             title: "Space Invaders - Gotoo Pixel Engine".into(),
@@ -13,6 +16,6 @@ fn main() -> Result<(), EngineError> {
             window_width: 768,
             window_height: 672,
         },
-        EnhancedSpaceInvadersGame::new(),
+        game,
     )
 }
