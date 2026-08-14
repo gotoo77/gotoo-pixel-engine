@@ -44,14 +44,14 @@ impl Game for SpaceInvadersApp {
             Some(MenuAction::Play) => self.playing = true,
             Some(MenuAction::Quit) => return GameResult::Exit,
             Some(MenuAction::DecreaseGamepadThreshold) => {
-                self.gamepad_profile = self.gamepad_profile.with_digital_threshold(
-                    self.gamepad_profile.digital_threshold - 0.05,
-                );
+                self.gamepad_profile = self
+                    .gamepad_profile
+                    .with_digital_threshold(self.gamepad_profile.digital_threshold - 0.05);
             }
             Some(MenuAction::IncreaseGamepadThreshold) => {
-                self.gamepad_profile = self.gamepad_profile.with_digital_threshold(
-                    self.gamepad_profile.digital_threshold + 0.05,
-                );
+                self.gamepad_profile = self
+                    .gamepad_profile
+                    .with_digital_threshold(self.gamepad_profile.digital_threshold + 0.05);
             }
             Some(MenuAction::ResetGamepadProfile) => {
                 self.gamepad_profile = GamepadProfile::standard();
@@ -59,8 +59,7 @@ impl Game for SpaceInvadersApp {
             None => {}
         }
 
-        self.menu
-            .render(frame.framebuffer, self.gamepad_profile);
+        self.menu.render(frame.framebuffer, self.gamepad_profile);
         GameResult::Continue
     }
 

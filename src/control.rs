@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{ButtonState, GamepadButton, Input, Key};
+use crate::{ButtonState, GamepadButton, GamepadId, Input, Key};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ActionId(&'static str);
@@ -19,6 +19,7 @@ impl ActionId {
 pub enum ControlBinding {
     Key(Key),
     Gamepad(GamepadButton),
+    GamepadDevice(GamepadId, GamepadButton),
 }
 
 #[derive(Debug, Default, Clone)]
@@ -47,6 +48,15 @@ impl ControlMap {
 
     pub fn bind_gamepad(&mut self, action: ActionId, button: GamepadButton) -> &mut Self {
         self.bind(action, ControlBinding::Gamepad(button))
+    }
+
+    pub fn bind_gamepad_device(
+        &mut self,
+        action: ActionId,
+        gamepad_id: GamepadId,
+        button: GamepadButton,
+    ) -> &mut Self {
+        self.bind(action, ControlBinding::GamepadDevice(gamepad_id, button))
     }
 
     pub fn clear_bindings(&mut self, action: ActionId) -> &mut Self {
@@ -84,6 +94,9 @@ impl ControlMap {
                 .any(|binding| match binding {
                     ControlBinding::Key(key) => input.key(*key).held(),
                     ControlBinding::Gamepad(button) => input.gamepad_button_any(*button).held(),
+                    ControlBinding::GamepadDevice(gamepad_id, button) => {
+                        input.gamepad_button(*gamepad_id, *button).held()
+                    }
                 });
 
             self.states.insert(
@@ -101,7 +114,6 @@ impl ControlMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::GamepadId;
 
     const MOVE_LEFT: ActionId = ActionId::new("test.left");
     const FIRE: ActionId = ActionId::new("test.fire");
@@ -123,6 +135,24 @@ mod tests {
         map.update(&input);
         assert!(map.action(MOVE_LEFT).held());
         assert!(!map.action(MOVE_LEFT).released());
+    }
+
+    #[test]
+    fn gamepad_device_binding_ignores_other_gamepads() {
+        let assigned = GamepadId::new(3);
+        let other = GamepadId::new(7);
+        let mut map = ControlMap::new();
+        map.bind_gamepad_device(MOVE_LEFT, assigned, GamepadButton::DPadLeft);
+        let mut input = Input::default();
+
+        input.set_gamepad_button(other, GamepadButton::DPadLeft, true);
+        map.update(&input);
+        assert!(!map.action(MOVE_LEFT).held());
+
+        input.set_gamepad_button(assigned, GamepadButton::DPadLeft, true);
+        map.update(&input);
+        assert!(map.action(MOVE_LEFT).pressed());
+        assert!(map.action(MOVE_LEFT).held());
     }
 
     #[test]
