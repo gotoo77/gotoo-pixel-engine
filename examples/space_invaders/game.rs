@@ -1,10 +1,12 @@
 use std::time::Duration;
 
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel, Rect,
+    ui::{VirtualButton, VirtualPad, draw_panel, draw_text_centered},
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 256;
+pub const TOUCH_FRAMEBUFFER_WIDTH: u32 = 376;
 pub const FRAMEBUFFER_HEIGHT: u32 = 224;
 
 pub const CONTROL_LEFT: ActionId = ActionId::new("space_invaders.left");
@@ -54,6 +56,32 @@ const BUNKER_COLOR: Pixel = Pixel::rgb(145, 155, 165);
 const ALIEN_TOP_COLOR: Pixel = Pixel::rgb(255, 100, 110);
 const ALIEN_MIDDLE_COLOR: Pixel = Pixel::rgb(255, 190, 90);
 const ALIEN_BOTTOM_COLOR: Pixel = Pixel::rgb(120, 255, 120);
+const TOUCH_FILL: Pixel = Pixel::rgb(12, 24, 28);
+const TOUCH_ACCENT: Pixel = Pixel::rgb(120, 255, 120);
+const TOUCH_PANEL: Rect = Rect {
+    x: FRAMEBUFFER_WIDTH as i32,
+    y: 0,
+    width: TOUCH_FRAMEBUFFER_WIDTH - FRAMEBUFFER_WIDTH,
+    height: FRAMEBUFFER_HEIGHT,
+};
+const TOUCH_FIRE: Rect = Rect {
+    x: 270,
+    y: 34,
+    width: 92,
+    height: 86,
+};
+const TOUCH_LEFT: Rect = Rect {
+    x: 262,
+    y: 150,
+    width: 50,
+    height: 50,
+};
+const TOUCH_RIGHT: Rect = Rect {
+    x: 320,
+    y: 150,
+    width: 50,
+    height: 50,
+};
 
 const PLAYER_MASK: [u16; 7] = [
     0b0000001000000,
@@ -482,13 +510,31 @@ impl SpaceInvadersWorld {
 pub struct SpaceInvadersGame {
     world: SpaceInvadersWorld,
     controls: ControlMap,
+    virtual_pad: Option<VirtualPad>,
 }
 
 impl SpaceInvadersGame {
     pub fn new() -> Self {
+        Self::new_with_touch(false)
+    }
+
+    pub fn new_touch() -> Self {
+        Self::new_with_touch(true)
+    }
+
+    fn new_with_touch(touch: bool) -> Self {
+        let virtual_pad = touch.then(|| {
+            VirtualPad::new([
+                VirtualButton::new(CONTROL_LEFT, TOUCH_LEFT),
+                VirtualButton::new(CONTROL_RIGHT, TOUCH_RIGHT),
+                VirtualButton::new(CONTROL_FIRE, TOUCH_FIRE),
+            ])
+        });
+
         Self {
             world: SpaceInvadersWorld::new(),
             controls: default_controls(),
+            virtual_pad,
         }
     }
 
@@ -501,6 +547,9 @@ impl SpaceInvadersGame {
     }
 
     fn input(&mut self, frame: &Frame<'_>) -> GameResult {
+        if let Some(virtual_pad) = &mut self.virtual_pad {
+            virtual_pad.update(frame.input, &mut self.controls);
+        }
         self.controls.update(frame.input);
 
         if self.controls.action(CONTROL_EXIT).pressed() {
@@ -614,6 +663,10 @@ impl SpaceInvadersGame {
                 fb.draw_text(81, 116, "FIRE TO REPLAY", TEXT);
             }
         }
+
+        if self.virtual_pad.is_some() {
+            draw_touch_controls(fb);
+        }
     }
 }
 
@@ -626,6 +679,28 @@ impl Game for SpaceInvadersGame {
         self.world.tick(frame.delta_time);
         self.render(frame);
         GameResult::Continue
+    }
+}
+
+fn draw_touch_controls(framebuffer: &mut Framebuffer) {
+    draw_panel(framebuffer, TOUCH_PANEL, BG, FOREGROUND);
+    draw_text_centered(
+        framebuffer,
+        Rect {
+            x: TOUCH_PANEL.x,
+            y: 6,
+            width: TOUCH_PANEL.width,
+            height: 12,
+        },
+        "TOUCH",
+        1,
+        TEXT,
+    );
+
+    for (rect, label) in [(TOUCH_FIRE, "FIRE"), (TOUCH_LEFT, "LEFT"), (TOUCH_RIGHT, "RIGHT")] {
+        framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, TOUCH_FILL);
+        framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, FOREGROUND);
+        draw_text_centered(framebuffer, rect, label, 1, TOUCH_ACCENT);
     }
 }
 
@@ -667,6 +742,16 @@ fn draw_mask(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn touch_mode_exposes_three_virtual_actions() {
+        let game = SpaceInvadersGame::new_touch();
+        let pad = game.virtual_pad.as_ref().expect("touch mode should own a virtual pad");
+        let actions = pad.buttons().iter().map(|button| button.action).collect::<Vec<_>>();
+        assert_eq!(actions, vec![CONTROL_LEFT, CONTROL_RIGHT, CONTROL_FIRE]);
+        assert_eq!(TOUCH_PANEL.x, FRAMEBUFFER_WIDTH as i32);
+        assert_eq!(TOUCH_FRAMEBUFFER_WIDTH, 376);
+    }
 
     #[test]
     fn starts_with_classic_fifty_five_invaders() {
