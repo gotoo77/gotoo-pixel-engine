@@ -54,12 +54,12 @@ jobs:
 
       - name: Commit implementation
         run: |
-          if git diff --quiet && git status --porcelain | grep -qv '^??'; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml examples/tetris/game.rs examples/tetris_web.rs scripts/build-web.sh web/tetris.html
+          if git diff --cached --quiet; then
             echo "No implementation changes to commit"
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml examples/tetris/game.rs examples/tetris_web.rs scripts/build-web.sh .github/workflows/pages.yml web/tetris.html
           git commit -m "webify Tetris with VirtualPad"
           git push origin HEAD:m5.1-tetris-web
