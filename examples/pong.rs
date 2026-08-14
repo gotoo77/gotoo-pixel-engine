@@ -179,22 +179,10 @@ impl PongApp {
 
         if self.ball_vx < 0.0 && overlaps(ball, p1) {
             self.ball_x = (p1.x + p1.width as i32) as f32;
-            bounce_from_paddle(
-                &mut self.ball_vx,
-                &mut self.ball_vy,
-                self.ball_y,
-                self.p1_y,
-                1.0,
-            );
+            bounce_from_paddle(&mut self.ball_vx, &mut self.ball_vy, self.ball_y, self.p1_y, 1.0);
         } else if self.ball_vx > 0.0 && overlaps(ball, p2) {
             self.ball_x = (p2.x - BALL_SIZE as i32) as f32;
-            bounce_from_paddle(
-                &mut self.ball_vx,
-                &mut self.ball_vy,
-                self.ball_y,
-                self.p2_y,
-                -1.0,
-            );
+            bounce_from_paddle(&mut self.ball_vx, &mut self.ball_vy, self.ball_y, self.p2_y, -1.0);
         }
 
         if self.ball_x + (BALL_SIZE as f32) < 0.0 {
@@ -335,13 +323,7 @@ impl PongApp {
             framebuffer.fill_rect(FRAMEBUFFER_WIDTH as i32 / 2 - 1, y, 2, 6, BORDER);
         }
 
-        framebuffer.fill_rect(
-            12,
-            self.p1_y.round() as i32,
-            PADDLE_WIDTH,
-            PADDLE_HEIGHT,
-            FG,
-        );
+        framebuffer.fill_rect(12, self.p1_y.round() as i32, PADDLE_WIDTH, PADDLE_HEIGHT, FG);
         framebuffer.fill_rect(
             FRAMEBUFFER_WIDTH as i32 - 18,
             self.p2_y.round() as i32,
