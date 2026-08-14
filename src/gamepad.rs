@@ -40,7 +40,10 @@ impl Default for GamepadInputBackend {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl GamepadInputBackend {
-    pub(crate) fn poll(&mut self, input: &mut Input) {
+    pub(crate) fn poll<F>(&mut self, input: &mut Input, mut profile_for: F)
+    where
+        F: FnMut(GamepadId) -> Option<GamepadProfile>,
+    {
         let Some(gilrs) = self.gilrs.as_mut() else {
             return;
         };
@@ -51,7 +54,7 @@ impl GamepadInputBackend {
             .collect::<Vec<_>>();
         for (id, name) in connected {
             input.connect_gamepad(id, name);
-            self.profiles.entry(id).or_default();
+            apply_profile_override(&mut self.profiles, id, profile_for(id));
         }
 
         while let Some(event) = gilrs.next_event() {
@@ -60,7 +63,7 @@ impl GamepadInputBackend {
                 gilrs::EventType::Connected => {
                     let name = gilrs.gamepad(event.id).name().to_owned();
                     input.connect_gamepad(id, name);
-                    self.profiles.entry(id).or_default();
+                    apply_profile_override(&mut self.profiles, id, profile_for(id));
                 }
                 gilrs::EventType::ButtonPressed(button, _) => {
                     if let Some(button) = button_from_gilrs(button) {
@@ -98,6 +101,18 @@ impl GamepadInputBackend {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn apply_profile_override(
+    profiles: &mut HashMap<GamepadId, GamepadProfile>,
+    id: GamepadId,
+    profile_override: Option<GamepadProfile>,
+) {
+    let profile = profiles.entry(id).or_default();
+    if let Some(profile_override) = profile_override {
+        *profile = profile_override;
     }
 }
 
@@ -284,8 +299,8 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        DPadAxis, button_from_gilrs, centered_dpad_calibration, set_axis_buttons,
-        update_button_edge, update_button_value,
+        DPadAxis, apply_profile_override, button_from_gilrs, centered_dpad_calibration,
+        set_axis_buttons, update_button_edge, update_button_value,
     };
     use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
 
@@ -299,6 +314,22 @@ mod tests {
             button_from_gilrs(gilrs::Button::RightTrigger),
             Some(GamepadButton::RightShoulder)
         );
+    }
+
+    #[test]
+    fn explicit_profile_override_replaces_default_and_none_preserves_it() {
+        let id = GamepadId::new(3);
+        let mut profiles = HashMap::new();
+        let custom = GamepadProfile::standard().with_digital_threshold(0.65);
+
+        apply_profile_override(&mut profiles, id, None);
+        assert_eq!(profiles.get(&id), Some(&GamepadProfile::standard()));
+
+        apply_profile_override(&mut profiles, id, Some(custom));
+        assert_eq!(profiles.get(&id), Some(&custom));
+
+        apply_profile_override(&mut profiles, id, None);
+        assert_eq!(profiles.get(&id), Some(&custom));
     }
 
     #[test]
@@ -490,5 +521,9 @@ pub(crate) struct GamepadInputBackend;
 
 #[cfg(target_arch = "wasm32")]
 impl GamepadInputBackend {
-    pub(crate) fn poll(&mut self, _input: &mut Input) {}
+    pub(crate) fn poll<F>(&mut self, _input: &mut Input, _profile_for: F)
+    where
+        F: FnMut(GamepadId) -> Option<GamepadProfile>,
+    {
+    }
 }
