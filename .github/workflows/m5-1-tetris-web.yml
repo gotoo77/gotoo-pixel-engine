@@ -6,6 +6,7 @@ on:
       - m5.1-tetris-web
     paths:
       - .github/scripts/m5_1_tetris_web.py
+      - .github/scripts/m5_1_tetris_web_fix.py
       - .github/workflows/m5-1-tetris-web.yml
 
 permissions:
@@ -35,7 +36,9 @@ jobs:
           rustup target add wasm32-unknown-unknown
 
       - name: Apply Tetris web migration
-        run: python .github/scripts/m5_1_tetris_web.py
+        run: |
+          python .github/scripts/m5_1_tetris_web.py
+          python .github/scripts/m5_1_tetris_web_fix.py
 
       - name: Format
         run: cargo fmt --all
