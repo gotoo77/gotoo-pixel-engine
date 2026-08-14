@@ -2,18 +2,19 @@ use gotoo_pixel_engine::{
     ActionId, ControlMap, EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult,
     GamepadButton, GamepadId, Input, Key, Pixel, Rect, SoundBank, SoundId, pcm16_mono_wav, run,
     ui::{
-        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
-        menu_down_pressed, menu_up_pressed,
+        MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
+        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
     },
 };
 
-const FRAMEBUFFER_WIDTH: u32 = 320;
-const FRAMEBUFFER_HEIGHT: u32 = 180;
+pub const FRAMEBUFFER_WIDTH: u32 = 320;
+pub const FRAMEBUFFER_HEIGHT: u32 = 180;
 
 const P1_UP: ActionId = ActionId::new("pong.p1.up");
 const P1_DOWN: ActionId = ActionId::new("pong.p1.down");
 const P2_UP: ActionId = ActionId::new("pong.p2.up");
 const P2_DOWN: ActionId = ActionId::new("pong.p2.down");
+const TOUCH_ACTION: ActionId = ActionId::new("pong.touch.action");
 
 const SERVE_SOUND: SoundId = SoundId::new("pong.serve");
 const PADDLE_HIT_SOUND: SoundId = SoundId::new("pong.paddle_hit");
@@ -24,6 +25,37 @@ const BG: Pixel = Pixel::rgb(6, 10, 14);
 const FG: Pixel = Pixel::rgb(230, 238, 230);
 const ACCENT: Pixel = Pixel::rgb(110, 235, 180);
 const BORDER: Pixel = Pixel::rgb(80, 150, 220);
+const TOUCH_ACCENT: Pixel = Pixel::rgb(245, 190, 90);
+const TOUCH_P1_UP: Rect = Rect {
+    x: 4,
+    y: 32,
+    width: 56,
+    height: 52,
+};
+const TOUCH_P1_DOWN: Rect = Rect {
+    x: 4,
+    y: 112,
+    width: 56,
+    height: 52,
+};
+const TOUCH_P2_UP: Rect = Rect {
+    x: 260,
+    y: 32,
+    width: 56,
+    height: 52,
+};
+const TOUCH_P2_DOWN: Rect = Rect {
+    x: 260,
+    y: 112,
+    width: 56,
+    height: 52,
+};
+const TOUCH_ACTION_RECT: Rect = Rect {
+    x: 120,
+    y: 154,
+    width: 80,
+    height: 22,
+};
 
 const PADDLE_WIDTH: u32 = 6;
 const PADDLE_HEIGHT: u32 = 30;
@@ -50,7 +82,7 @@ enum MatchState {
     MatchOver,
 }
 
-struct PongApp {
+pub struct PongApp {
     page: Page,
     main_menu: MenuState,
     end_menu: MenuState,
@@ -68,11 +100,28 @@ struct PongApp {
     assigned_gamepads: [Option<GamepadId>; 2],
     p1_controls: ControlMap,
     p2_controls: ControlMap,
+    virtual_pad: Option<VirtualPad>,
+    touch_controls: ControlMap,
     sounds: SoundBank,
 }
 
+impl Default for PongApp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PongApp {
-    fn new() -> Self {
+    pub fn new() -> Self {
+        Self::new_with_touch(false)
+    }
+
+    #[allow(dead_code)]
+    pub fn new_touch() -> Self {
+        Self::new_with_touch(true)
+    }
+
+    fn new_with_touch(touch: bool) -> Self {
         let mut sounds = SoundBank::new();
         sounds
             .insert_wav(SERVE_SOUND, synthesize_chirp(620.0, 880.0, 0.055, 0.34))
@@ -105,9 +154,23 @@ impl PongApp {
             assigned_gamepads: [None, None],
             p1_controls: ControlMap::new(),
             p2_controls: ControlMap::new(),
+            virtual_pad: touch.then(|| {
+                VirtualPad::new([
+                    VirtualButton::new(P1_UP, TOUCH_P1_UP),
+                    VirtualButton::new(P1_DOWN, TOUCH_P1_DOWN),
+                    VirtualButton::new(P2_UP, TOUCH_P2_UP),
+                    VirtualButton::new(P2_DOWN, TOUCH_P2_DOWN),
+                    VirtualButton::new(TOUCH_ACTION, TOUCH_ACTION_RECT),
+                ])
+            }),
+            touch_controls: ControlMap::new(),
             sounds,
         };
         app.rebuild_controls();
+        if touch {
+            app.reset_match();
+            app.playing = true;
+        }
         app
     }
 
@@ -177,11 +240,22 @@ impl PongApp {
     }
 
     fn update_game(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        if let Some(virtual_pad) = &mut self.virtual_pad {
+            virtual_pad.update(frame.input, &mut self.touch_controls);
+        }
+        self.touch_controls.update(frame.input);
+        let touch_action_pressed = self.touch_controls.action(TOUCH_ACTION).pressed();
+
         if frame.input.key(Key::Escape).pressed() {
             return GameResult::Exit;
         }
 
         if self.match_state == MatchState::MatchOver {
+            if touch_action_pressed {
+                self.reset_match();
+                self.render_game(frame.framebuffer);
+                return GameResult::Continue;
+            }
             if menu_up_pressed(frame.input) {
                 self.end_menu.select_previous();
             }
@@ -203,20 +277,20 @@ impl PongApp {
         self.p2_controls.update(frame.input);
 
         let dt = frame.delta_time.as_secs_f32().min(0.05);
-        self.p1_y = move_paddle(
-            self.p1_y,
-            self.p1_controls.action(P1_UP).held(),
-            self.p1_controls.action(P1_DOWN).held(),
-            dt,
-        );
-        self.p2_y = move_paddle(
-            self.p2_y,
-            self.p2_controls.action(P2_UP).held(),
-            self.p2_controls.action(P2_DOWN).held(),
-            dt,
-        );
+        let p1_up =
+            self.p1_controls.action(P1_UP).held() || self.touch_controls.action(P1_UP).held();
+        let p1_down =
+            self.p1_controls.action(P1_DOWN).held() || self.touch_controls.action(P1_DOWN).held();
+        let p2_up =
+            self.p2_controls.action(P2_UP).held() || self.touch_controls.action(P2_UP).held();
+        let p2_down =
+            self.p2_controls.action(P2_DOWN).held() || self.touch_controls.action(P2_DOWN).held();
+        self.p1_y = move_paddle(self.p1_y, p1_up, p1_down, dt);
+        self.p2_y = move_paddle(self.p2_y, p2_up, p2_down, dt);
 
-        if self.match_state == MatchState::WaitingServe && menu_confirm_pressed(frame.input) {
+        if self.match_state == MatchState::WaitingServe
+            && (menu_confirm_pressed(frame.input) || touch_action_pressed)
+        {
             self.serve();
             let _ = self.sounds.play(frame.audio, SERVE_SOUND);
         }
@@ -515,21 +589,27 @@ impl PongApp {
 
         match self.match_state {
             MatchState::WaitingServe => {
-                draw_text_centered(
-                    framebuffer,
-                    Rect {
-                        x: 72,
-                        y: 158,
-                        width: 176,
-                        height: 12,
-                    },
-                    "SPACE/SOUTH SERVE",
-                    1,
-                    FG,
-                );
+                if self.virtual_pad.is_none() {
+                    draw_text_centered(
+                        framebuffer,
+                        Rect {
+                            x: 72,
+                            y: 158,
+                            width: 176,
+                            height: 12,
+                        },
+                        "SPACE/SOUTH SERVE",
+                        1,
+                        FG,
+                    );
+                }
             }
             MatchState::Playing => {}
             MatchState::MatchOver => self.render_end_menu(framebuffer),
+        }
+
+        if self.virtual_pad.is_some() {
+            draw_touch_controls(framebuffer, self.match_state);
         }
     }
 
@@ -580,6 +660,34 @@ impl PongApp {
                 ACCENT,
             );
         }
+    }
+}
+
+fn draw_touch_controls(framebuffer: &mut Framebuffer, state: MatchState) {
+    for (rect, label) in [
+        (TOUCH_P1_UP, "P1 UP"),
+        (TOUCH_P1_DOWN, "P1 DOWN"),
+        (TOUCH_P2_UP, "P2 UP"),
+        (TOUCH_P2_DOWN, "P2 DOWN"),
+    ] {
+        framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, BORDER);
+        draw_text_centered(framebuffer, rect, label, 1, TOUCH_ACCENT);
+    }
+
+    let action_label = match state {
+        MatchState::WaitingServe => Some("SERVE"),
+        MatchState::MatchOver => Some("REPLAY"),
+        MatchState::Playing => None,
+    };
+    if let Some(label) = action_label {
+        framebuffer.draw_rect(
+            TOUCH_ACTION_RECT.x,
+            TOUCH_ACTION_RECT.y,
+            TOUCH_ACTION_RECT.width,
+            TOUCH_ACTION_RECT.height,
+            TOUCH_ACCENT,
+        );
+        draw_text_centered(framebuffer, TOUCH_ACTION_RECT, label, 1, TOUCH_ACCENT);
     }
 }
 
@@ -788,6 +896,25 @@ mod tests {
         assert!(!point_scored);
         assert!(app.ball_vx > 0.0);
         assert_eq!(app.match_state, MatchState::Playing);
+    }
+
+    #[test]
+    fn touch_mode_starts_match_with_two_player_virtual_controls() {
+        let app = PongApp::new_touch();
+        assert!(app.playing);
+        let pad = app
+            .virtual_pad
+            .as_ref()
+            .expect("touch mode owns a virtual pad");
+        let actions = pad
+            .buttons()
+            .iter()
+            .map(|button| button.action)
+            .collect::<Vec<_>>();
+        assert_eq!(actions.len(), 5);
+        for action in [P1_UP, P1_DOWN, P2_UP, P2_DOWN, TOUCH_ACTION] {
+            assert!(actions.contains(&action));
+        }
     }
 
     #[test]

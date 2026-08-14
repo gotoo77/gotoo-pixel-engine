@@ -17,6 +17,7 @@ build_web_example() {
 build_web_example snake_web
 build_web_example breakout_web
 build_web_example tetris_web
+build_web_example pong_web
 build_web_example space_invaders_web
 
 echo "==> build web_demo"
