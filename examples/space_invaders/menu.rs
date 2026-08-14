@@ -1,6 +1,9 @@
 use gotoo_pixel_engine::{
     Framebuffer, GamepadButton, GamepadId, GamepadProfile, Input, Key, Pixel, Rect,
-    ui::{MenuState, draw_menu_item, draw_panel, draw_text_centered},
+    ui::{
+        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
+        menu_down_pressed, menu_up_pressed,
+    },
 };
 
 use super::game::FRAMEBUFFER_WIDTH;
@@ -126,7 +129,7 @@ impl SpaceInvadersMenu {
         if menu_down_pressed(input) {
             self.main_state.select_next();
         }
-        if !confirm_pressed(input) {
+        if !menu_confirm_pressed(input) {
             return None;
         }
 
@@ -152,7 +155,7 @@ impl SpaceInvadersMenu {
         if menu_down_pressed(input) {
             self.controls_state.select_next();
         }
-        if !confirm_pressed(input) {
+        if !menu_confirm_pressed(input) {
             return None;
         }
 
@@ -490,26 +493,4 @@ fn gamepad_display_name(input: &Input, gamepad_id: GamepadId) -> String {
 
 fn held(input: &Input, gamepad_id: GamepadId, button: GamepadButton) -> bool {
     input.gamepad_button(gamepad_id, button).held()
-}
-
-fn menu_up_pressed(input: &Input) -> bool {
-    input.key(Key::Up).pressed()
-        || input.key(Key::W).pressed()
-        || input.gamepad_button_any(GamepadButton::DPadUp).pressed()
-        || input
-            .gamepad_button_any(GamepadButton::LeftStickUp)
-            .pressed()
-}
-
-fn menu_down_pressed(input: &Input) -> bool {
-    input.key(Key::Down).pressed()
-        || input.key(Key::S).pressed()
-        || input.gamepad_button_any(GamepadButton::DPadDown).pressed()
-        || input
-            .gamepad_button_any(GamepadButton::LeftStickDown)
-            .pressed()
-}
-
-fn confirm_pressed(input: &Input) -> bool {
-    input.key(Key::Space).pressed() || input.gamepad_button_any(GamepadButton::South).pressed()
 }
