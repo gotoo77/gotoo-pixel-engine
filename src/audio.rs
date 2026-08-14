@@ -210,7 +210,7 @@ mod native {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use rodio::buffer::SamplesBuffer;
-    use rodio::cpal::StreamError;
+    use rodio::cpal::{BufferSize, StreamError};
     use rodio::{DeviceSinkBuilder, MixerDeviceSink};
 
     use super::{Audio, AudioError, DecodedSound, PlatformAudio, SoundId, register_decoded_wav};
@@ -240,6 +240,7 @@ mod native {
         pub(crate) fn new() -> Result<Self, AudioError> {
             let builder = DeviceSinkBuilder::from_default_device()
                 .map_err(|err| AudioError::new(format!("audio device unavailable: {err}")))?
+                .with_buffer_size(BufferSize::Fixed(2048))
                 .with_error_callback(report_stream_error as fn(StreamError));
             let mut sink = builder
                 .open_sink_or_fallback()
