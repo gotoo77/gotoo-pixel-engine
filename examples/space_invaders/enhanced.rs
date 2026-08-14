@@ -2,6 +2,8 @@ include!("game.rs");
 
 use gotoo_pixel_engine::{SoundBank, pcm16_mono_wav};
 
+const PLAYER_FIRED_SOUND: gotoo_pixel_engine::SoundId =
+    gotoo_pixel_engine::SoundId::new("space_invaders.player_fired");
 const ALIEN_DESTROYED_SOUND: gotoo_pixel_engine::SoundId =
     gotoo_pixel_engine::SoundId::new("space_invaders.alien_destroyed");
 const PLAYER_DESTROYED_SOUND: gotoo_pixel_engine::SoundId =
@@ -56,6 +58,9 @@ pub struct EnhancedSpaceInvadersGame {
 impl EnhancedSpaceInvadersGame {
     pub fn new() -> Self {
         let mut sounds = SoundBank::new();
+        sounds
+            .insert_wav(PLAYER_FIRED_SOUND, synthesize_player_fire_sound())
+            .expect("player fire sound id should be unique");
         sounds
             .insert_wav(
                 ALIEN_DESTROYED_SOUND,
@@ -157,9 +162,15 @@ impl Game for EnhancedSpaceInvadersGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.update_effects(frame.delta_time);
 
+        let player_can_fire = self.core.world.state == RoundState::Playing
+            && self.core.world.player_bullet.is_none();
         let result = self.core.update(frame);
         if result == GameResult::Exit {
             return result;
+        }
+
+        if player_can_fire && self.core.controls.action(CONTROL_FIRE).pressed() {
+            let _ = self.sounds.play(frame.audio, PLAYER_FIRED_SOUND);
         }
 
         let events = self.core.take_events();
@@ -193,6 +204,27 @@ fn draw_burst(fb: &mut Framebuffer, x: i32, y: i32, radius: i32, color: Pixel) {
     for (dx, dy) in points {
         fb.fill_rect(x + dx, y + dy, 1, 1, color);
     }
+}
+
+fn synthesize_player_fire_sound() -> Vec<u8> {
+    let duration = 0.09_f32;
+    let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
+    let mut samples = Vec::with_capacity(sample_count);
+    let mut phase = 0.0_f32;
+
+    for index in 0..sample_count {
+        let t = index as f32 / AUDIO_SAMPLE_RATE as f32;
+        let progress = t / duration;
+        let envelope = (1.0 - progress).max(0.0);
+        let frequency = 980.0 - 520.0 * progress;
+        phase += frequency / AUDIO_SAMPLE_RATE as f32;
+        let square = if phase.fract() < 0.5 { 1.0 } else { -1.0 };
+        let sample = square * envelope * envelope * 0.28;
+        samples.push((sample * i16::MAX as f32) as i16);
+    }
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Space Invaders fire audio should use a supported PCM format")
 }
 
 fn synthesize_sound(kind: FeedbackKind) -> Vec<u8> {
@@ -244,6 +276,11 @@ mod feedback_tests {
 
     #[test]
     fn synthesized_feedback_is_pcm_wav() {
+        let fire = synthesize_player_fire_sound();
+        assert_eq!(&fire[0..4], b"RIFF");
+        assert_eq!(&fire[8..12], b"WAVE");
+        assert!(fire.len() > 44);
+
         for kind in [
             FeedbackKind::Alien { row: 0 },
             FeedbackKind::Player,
@@ -265,6 +302,7 @@ mod feedback_tests {
     #[test]
     fn sound_bank_owns_all_space_invaders_assets() {
         let game = EnhancedSpaceInvadersGame::new();
+        assert!(game.sounds.contains(PLAYER_FIRED_SOUND));
         assert!(game.sounds.contains(ALIEN_DESTROYED_SOUND));
         assert!(game.sounds.contains(PLAYER_DESTROYED_SOUND));
         assert!(game.sounds.contains(BUNKER_HIT_SOUND));
