@@ -1,4 +1,4 @@
-use crate::{Framebuffer, Pixel, Rect};
+use crate::{Framebuffer, GamepadButton, Input, Key, Pixel, Rect};
 
 pub fn draw_panel(framebuffer: &mut Framebuffer, rect: Rect, background: Pixel, border: Pixel) {
     framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, background);
@@ -41,6 +41,28 @@ pub fn draw_menu_item(
         };
         draw_text_centered(framebuffer, marker_rect, ">", scale, accent);
     }
+}
+
+pub fn menu_up_pressed(input: &Input) -> bool {
+    input.key(Key::Up).pressed()
+        || input.key(Key::W).pressed()
+        || input.gamepad_button_any(GamepadButton::DPadUp).pressed()
+        || input
+            .gamepad_button_any(GamepadButton::LeftStickUp)
+            .pressed()
+}
+
+pub fn menu_down_pressed(input: &Input) -> bool {
+    input.key(Key::Down).pressed()
+        || input.key(Key::S).pressed()
+        || input.gamepad_button_any(GamepadButton::DPadDown).pressed()
+        || input
+            .gamepad_button_any(GamepadButton::LeftStickDown)
+            .pressed()
+}
+
+pub fn menu_confirm_pressed(input: &Input) -> bool {
+    input.key(Key::Space).pressed() || input.gamepad_button_any(GamepadButton::South).pressed()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +136,15 @@ mod tests {
         menu.select_next();
         menu.select_previous();
         assert_eq!(menu.selected(), None);
+    }
+
+    #[test]
+    fn menu_input_helpers_are_idle_for_default_input() {
+        let input = Input::default();
+
+        assert!(!menu_up_pressed(&input));
+        assert!(!menu_down_pressed(&input));
+        assert!(!menu_confirm_pressed(&input));
     }
 
     #[test]
