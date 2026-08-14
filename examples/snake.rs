@@ -3,13 +3,12 @@ mod game;
 
 use game::{SnakeGame, SnakeInteractionMode};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Game, GameResult, GamepadButton, GamepadId, Input, Key, Pixel,
-    Rect,
+    EngineConfig, EngineError, Frame, Game, GameResult, GamepadButton, GamepadId, Input, Key,
+    Pixel, Rect, run,
     ui::{
         MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
         menu_down_pressed, menu_up_pressed,
     },
-    run,
 };
 
 const BACKGROUND: Pixel = Pixel::rgb(10, 14, 18);
@@ -176,7 +175,12 @@ impl SnakeApp {
         draw_control_row(framebuffer, 94, "QUIT", "ESC");
 
         framebuffer.draw_text(44, 116, "GAMEPAD", ACCENT);
-        draw_control_row(framebuffer, 130, "DEVICE", &gamepad_display_name(frame.input));
+        draw_control_row(
+            framebuffer,
+            130,
+            "DEVICE",
+            &gamepad_display_name(frame.input),
+        );
         draw_control_row(framebuffer, 144, "MOVE", "DPAD / LEFT STICK");
         draw_control_row(framebuffer, 158, "REPLAY", "SOUTH / START");
 
