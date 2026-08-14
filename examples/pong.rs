@@ -27,6 +27,9 @@ const BALL_SIZE: u32 = 6;
 const BALL_SPEED_X: f32 = 125.0;
 const BALL_SPEED_Y: f32 = 72.0;
 const BALL_SPEED_MAX: f32 = 220.0;
+const BALL_SUBSTEP: f32 = 3.0;
+const MAX_BOUNCE_ANGLE: f32 = std::f32::consts::PI / 3.0;
+const WIN_SCORE: u32 = 7;
 const PLAY_TOP: f32 = 24.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,10 +38,18 @@ enum Page {
     Controls,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MatchState {
+    WaitingServe,
+    Playing,
+    MatchOver,
+}
+
 struct PongApp {
     page: Page,
     menu: MenuState,
     playing: bool,
+    match_state: MatchState,
     p1_y: f32,
     p2_y: f32,
     ball_x: f32,
@@ -47,6 +58,7 @@ struct PongApp {
     ball_vy: f32,
     p1_score: u32,
     p2_score: u32,
+    serve_direction: f32,
     assigned_gamepads: [Option<GamepadId>; 2],
     p1_controls: ControlMap,
     p2_controls: ControlMap,
@@ -58,14 +70,16 @@ impl PongApp {
             page: Page::Main,
             menu: MenuState::new(3),
             playing: false,
+            match_state: MatchState::WaitingServe,
             p1_y: centered_paddle_y(),
             p2_y: centered_paddle_y(),
             ball_x: centered_ball_x(),
             ball_y: centered_ball_y(),
-            ball_vx: BALL_SPEED_X,
-            ball_vy: BALL_SPEED_Y,
+            ball_vx: 0.0,
+            ball_vy: 0.0,
             p1_score: 0,
             p2_score: 0,
+            serve_direction: 1.0,
             assigned_gamepads: [None, None],
             p1_controls: ControlMap::new(),
             p2_controls: ControlMap::new(),
@@ -116,7 +130,10 @@ impl PongApp {
                 }
                 if menu_confirm_pressed(frame.input) {
                     match self.menu.selected() {
-                        Some(0) => self.playing = true,
+                        Some(0) => {
+                            self.reset_match();
+                            self.playing = true;
+                        }
                         Some(1) => self.page = Page::Controls,
                         Some(2) => return GameResult::Exit,
                         _ => {}
@@ -147,28 +164,75 @@ impl PongApp {
         self.p2_controls.update(frame.input);
 
         let dt = frame.delta_time.as_secs_f32().min(0.05);
-        self.p1_y = move_paddle(
-            self.p1_y,
-            self.p1_controls.action(P1_UP).held(),
-            self.p1_controls.action(P1_DOWN).held(),
-            dt,
-        );
-        self.p2_y = move_paddle(
-            self.p2_y,
-            self.p2_controls.action(P2_UP).held(),
-            self.p2_controls.action(P2_DOWN).held(),
-            dt,
-        );
+        if self.match_state != MatchState::MatchOver {
+            self.p1_y = move_paddle(
+                self.p1_y,
+                self.p1_controls.action(P1_UP).held(),
+                self.p1_controls.action(P1_DOWN).held(),
+                dt,
+            );
+            self.p2_y = move_paddle(
+                self.p2_y,
+                self.p2_controls.action(P2_UP).held(),
+                self.p2_controls.action(P2_DOWN).held(),
+                dt,
+            );
+        }
 
+        let confirm = frame.input.key(Key::Space).pressed()
+            || frame.input.gamepad_button_any(GamepadButton::South).pressed();
+
+        match self.match_state {
+            MatchState::WaitingServe if confirm => self.serve(),
+            MatchState::MatchOver if confirm => self.reset_match(),
+            _ => {}
+        }
+
+        if self.match_state == MatchState::Playing {
+            self.update_ball(dt);
+        }
+
+        self.render_game(frame.framebuffer);
+        GameResult::Continue
+    }
+
+    fn serve(&mut self) {
+        if self.match_state != MatchState::WaitingServe {
+            return;
+        }
+
+        self.ball_vx = BALL_SPEED_X * self.serve_direction;
+        self.ball_vy = if (self.p1_score + self.p2_score) % 2 == 0 {
+            BALL_SPEED_Y
+        } else {
+            -BALL_SPEED_Y
+        };
+        self.match_state = MatchState::Playing;
+    }
+
+    fn update_ball(&mut self, dt: f32) {
+        let largest_delta = self.ball_vx.abs().max(self.ball_vy.abs()) * dt;
+        let steps = ((largest_delta / BALL_SUBSTEP).ceil() as u32).clamp(1, 32);
+        let step_dt = dt / steps as f32;
+
+        for _ in 0..steps {
+            if self.match_state != MatchState::Playing {
+                break;
+            }
+            self.step_ball(step_dt);
+        }
+    }
+
+    fn step_ball(&mut self, dt: f32) {
         self.ball_x += self.ball_vx * dt;
         self.ball_y += self.ball_vy * dt;
 
-        if self.ball_y <= PLAY_TOP {
+        if self.ball_y <= PLAY_TOP && self.ball_vy < 0.0 {
             self.ball_y = PLAY_TOP;
             self.ball_vy = self.ball_vy.abs();
         }
         let bottom = FRAMEBUFFER_HEIGHT as f32 - BALL_SIZE as f32;
-        if self.ball_y >= bottom {
+        if self.ball_y >= bottom && self.ball_vy > 0.0 {
             self.ball_y = bottom;
             self.ball_vy = -self.ball_vy.abs();
         }
@@ -179,33 +243,68 @@ impl PongApp {
 
         if self.ball_vx < 0.0 && overlaps(ball, p1) {
             self.ball_x = (p1.x + p1.width as i32) as f32;
-            bounce_from_paddle(&mut self.ball_vx, &mut self.ball_vy, self.ball_y, self.p1_y, 1.0);
+            bounce_from_paddle(
+                &mut self.ball_vx,
+                &mut self.ball_vy,
+                self.ball_y,
+                self.p1_y,
+                1.0,
+            );
         } else if self.ball_vx > 0.0 && overlaps(ball, p2) {
             self.ball_x = (p2.x - BALL_SIZE as i32) as f32;
-            bounce_from_paddle(&mut self.ball_vx, &mut self.ball_vy, self.ball_y, self.p2_y, -1.0);
+            bounce_from_paddle(
+                &mut self.ball_vx,
+                &mut self.ball_vy,
+                self.ball_y,
+                self.p2_y,
+                -1.0,
+            );
         }
 
-        if self.ball_x + (BALL_SIZE as f32) < 0.0 {
+        if self.ball_x + BALL_SIZE as f32 < 0.0 {
             self.p2_score = self.p2_score.saturating_add(1);
-            self.reset_ball(-1.0);
+            self.after_point(-1.0);
         } else if self.ball_x > FRAMEBUFFER_WIDTH as f32 {
             self.p1_score = self.p1_score.saturating_add(1);
-            self.reset_ball(1.0);
+            self.after_point(1.0);
         }
-
-        self.render_game(frame.framebuffer);
-        GameResult::Continue
     }
 
-    fn reset_ball(&mut self, direction: f32) {
+    fn after_point(&mut self, direction_toward_loser: f32) {
+        self.serve_direction = direction_toward_loser;
+        self.reset_ball();
+        self.match_state = if self.p1_score >= WIN_SCORE || self.p2_score >= WIN_SCORE {
+            MatchState::MatchOver
+        } else {
+            MatchState::WaitingServe
+        };
+    }
+
+    fn reset_ball(&mut self) {
         self.ball_x = centered_ball_x();
         self.ball_y = centered_ball_y();
-        self.ball_vx = BALL_SPEED_X * direction;
-        self.ball_vy = if (self.p1_score + self.p2_score) % 2 == 0 {
-            BALL_SPEED_Y
+        self.ball_vx = 0.0;
+        self.ball_vy = 0.0;
+    }
+
+    fn reset_match(&mut self) {
+        self.p1_y = centered_paddle_y();
+        self.p2_y = centered_paddle_y();
+        self.p1_score = 0;
+        self.p2_score = 0;
+        self.serve_direction = 1.0;
+        self.reset_ball();
+        self.match_state = MatchState::WaitingServe;
+    }
+
+    fn winner(&self) -> Option<u8> {
+        if self.p1_score >= WIN_SCORE {
+            Some(1)
+        } else if self.p2_score >= WIN_SCORE {
+            Some(2)
         } else {
-            -BALL_SPEED_Y
-        };
+            None
+        }
     }
 
     fn render_main_menu(&self, framebuffer: &mut Framebuffer) {
@@ -351,6 +450,66 @@ impl PongApp {
             1,
             FG,
         );
+
+        match self.match_state {
+            MatchState::WaitingServe => {
+                draw_text_centered(
+                    framebuffer,
+                    Rect {
+                        x: 72,
+                        y: 158,
+                        width: 176,
+                        height: 12,
+                    },
+                    "SPACE/SOUTH SERVE",
+                    1,
+                    FG,
+                );
+            }
+            MatchState::Playing => {}
+            MatchState::MatchOver => {
+                draw_panel(
+                    framebuffer,
+                    Rect {
+                        x: 82,
+                        y: 62,
+                        width: 156,
+                        height: 56,
+                    },
+                    BG,
+                    BORDER,
+                );
+                let winner = match self.winner() {
+                    Some(1) => "P1 WINS",
+                    Some(2) => "P2 WINS",
+                    _ => "MATCH OVER",
+                };
+                draw_text_centered(
+                    framebuffer,
+                    Rect {
+                        x: 94,
+                        y: 76,
+                        width: 132,
+                        height: 12,
+                    },
+                    winner,
+                    1,
+                    ACCENT,
+                );
+                draw_text_centered(
+                    framebuffer,
+                    Rect {
+                        x: 94,
+                        y: 96,
+                        width: 132,
+                        height: 12,
+                    },
+                    "SPACE/SOUTH REPLAY",
+                    1,
+                    FG,
+                );
+            }
+        }
     }
 }
 
@@ -403,13 +562,14 @@ fn bounce_from_paddle(
     paddle_y: f32,
     direction: f32,
 ) {
-    let speed_x = (vx.abs() * 1.04).min(BALL_SPEED_MAX);
-    *vx = speed_x * direction;
-
     let paddle_center = paddle_y + PADDLE_HEIGHT as f32 / 2.0;
     let ball_center = ball_y + BALL_SIZE as f32 / 2.0;
     let offset = ((ball_center - paddle_center) / (PADDLE_HEIGHT as f32 / 2.0)).clamp(-1.0, 1.0);
-    *vy = (BALL_SPEED_Y + speed_x * 0.35) * offset;
+    let angle = offset * MAX_BOUNCE_ANGLE;
+    let speed = (vx.hypot(*vy) * 1.04).clamp(BALL_SPEED_X.hypot(BALL_SPEED_Y), BALL_SPEED_MAX);
+
+    *vx = direction * speed * angle.cos();
+    *vy = speed * angle.sin();
 }
 
 fn paddle_rect(x: i32, y: f32) -> Rect {
@@ -480,5 +640,59 @@ mod tests {
         let paddle = paddle_rect(12, 60.0);
         assert!(overlaps(ball_rect(15.0, 70.0), paddle));
         assert!(!overlaps(ball_rect(30.0, 70.0), paddle));
+    }
+
+    #[test]
+    fn new_match_waits_for_serve() {
+        let app = PongApp::new();
+        assert_eq!(app.match_state, MatchState::WaitingServe);
+        assert_eq!(app.ball_vx, 0.0);
+        assert_eq!(app.ball_vy, 0.0);
+    }
+
+    #[test]
+    fn serve_starts_rally() {
+        let mut app = PongApp::new();
+        app.serve();
+        assert_eq!(app.match_state, MatchState::Playing);
+        assert!(app.ball_vx > 0.0);
+        assert_ne!(app.ball_vy, 0.0);
+    }
+
+    #[test]
+    fn point_waits_for_next_serve() {
+        let mut app = PongApp::new();
+        app.match_state = MatchState::Playing;
+        app.p1_score = 1;
+        app.after_point(1.0);
+        assert_eq!(app.match_state, MatchState::WaitingServe);
+        assert_eq!(app.ball_vx, 0.0);
+        assert_eq!(app.ball_vy, 0.0);
+        assert_eq!(app.serve_direction, 1.0);
+    }
+
+    #[test]
+    fn first_player_to_seven_wins_match() {
+        let mut app = PongApp::new();
+        app.p1_score = WIN_SCORE;
+        app.after_point(1.0);
+        assert_eq!(app.match_state, MatchState::MatchOver);
+        assert_eq!(app.winner(), Some(1));
+    }
+
+    #[test]
+    fn substeps_catch_fast_paddle_collision() {
+        let mut app = PongApp::new();
+        app.match_state = MatchState::Playing;
+        app.p1_y = 70.0;
+        app.ball_x = 30.0;
+        app.ball_y = 80.0;
+        app.ball_vx = -900.0;
+        app.ball_vy = 0.0;
+
+        app.update_ball(0.03);
+
+        assert!(app.ball_vx > 0.0);
+        assert_eq!(app.match_state, MatchState::Playing);
     }
 }
