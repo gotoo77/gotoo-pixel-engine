@@ -38,6 +38,7 @@ jobs:
         run: |
           cargo build --release --target wasm32-unknown-unknown --example snake_web
           cargo build --release --target wasm32-unknown-unknown --example breakout_web
+          cargo build --release --target wasm32-unknown-unknown --example tetris_web
 
       - name: Assemble Pages artifact
         run: |
@@ -45,6 +46,7 @@ jobs:
           mkdir -p dist/pkg
           cp web/snake.html dist/snake.html
           cp web/breakout.html dist/breakout.html
+          cp web/tetris.html dist/tetris.html
           wasm-bindgen \
             --target web \
             --out-dir dist/pkg \
@@ -53,6 +55,10 @@ jobs:
             --target web \
             --out-dir dist/pkg \
             target/wasm32-unknown-unknown/release/examples/breakout_web.wasm
+          wasm-bindgen \
+            --target web \
+            --out-dir dist/pkg \
+            target/wasm32-unknown-unknown/release/examples/tetris_web.wasm
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
