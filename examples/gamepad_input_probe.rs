@@ -113,7 +113,13 @@ fn render_probe(framebuffer: &mut Framebuffer, input: &Input, profile: GamepadPr
 
     let active_gamepad = input.gamepad_ids().min_by_key(|id| id.as_usize());
     let device = active_gamepad
-        .map(|id| format!("DEVICE {} {}", id.as_usize(), gamepad_display_name(input, id)))
+        .map(|id| {
+            format!(
+                "DEVICE {} {}",
+                id.as_usize(),
+                gamepad_display_name(input, id)
+            )
+        })
         .unwrap_or_else(|| "DEVICE NONE".to_owned());
     framebuffer.draw_text(8, 18, &device, FOREGROUND);
     framebuffer.draw_text(
@@ -128,7 +134,15 @@ fn render_probe(framebuffer: &mut Framebuffer, input: &Input, profile: GamepadPr
 
     if let Some(id) = active_gamepad {
         for (row, (button, label)) in BUTTONS[..8].iter().copied().enumerate() {
-            draw_button_status(framebuffer, input, id, 8, 48 + row as i32 * 12, label, button);
+            draw_button_status(
+                framebuffer,
+                input,
+                id,
+                8,
+                48 + row as i32 * 12,
+                label,
+                button,
+            );
         }
         for (row, (button, label)) in BUTTONS[8..].iter().copied().enumerate() {
             draw_button_status(
