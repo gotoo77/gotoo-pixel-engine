@@ -1,6 +1,6 @@
 use gotoo_pixel_engine::{
     ActionId, ControlMap, EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult,
-    GamepadButton, GamepadId, Input, Key, Pixel, Rect, run,
+    GamepadButton, GamepadId, Input, Key, Pixel, Rect, SoundBank, SoundId, pcm16_mono_wav, run,
     ui::{
         MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
         menu_down_pressed, menu_up_pressed,
@@ -15,6 +15,11 @@ const P1_DOWN: ActionId = ActionId::new("pong.p1.down");
 const P2_UP: ActionId = ActionId::new("pong.p2.up");
 const P2_DOWN: ActionId = ActionId::new("pong.p2.down");
 
+const SERVE_SOUND: SoundId = SoundId::new("pong.serve");
+const PADDLE_HIT_SOUND: SoundId = SoundId::new("pong.paddle_hit");
+const POINT_SOUND: SoundId = SoundId::new("pong.point");
+const AUDIO_SAMPLE_RATE: u32 = 44_100;
+
 const BG: Pixel = Pixel::rgb(6, 10, 14);
 const FG: Pixel = Pixel::rgb(230, 238, 230);
 const ACCENT: Pixel = Pixel::rgb(110, 235, 180);
@@ -27,6 +32,9 @@ const BALL_SIZE: u32 = 6;
 const BALL_SPEED_X: f32 = 125.0;
 const BALL_SPEED_Y: f32 = 72.0;
 const BALL_SPEED_MAX: f32 = 220.0;
+const BALL_SUBSTEP: f32 = 3.0;
+const MAX_BOUNCE_ANGLE: f32 = std::f32::consts::PI / 3.0;
+const WIN_SCORE: u32 = 7;
 const PLAY_TOP: f32 = 24.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,10 +43,19 @@ enum Page {
     Controls,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MatchState {
+    WaitingServe,
+    Playing,
+    MatchOver,
+}
+
 struct PongApp {
     page: Page,
-    menu: MenuState,
+    main_menu: MenuState,
+    end_menu: MenuState,
     playing: bool,
+    match_state: MatchState,
     p1_y: f32,
     p2_y: f32,
     ball_x: f32,
@@ -47,28 +64,48 @@ struct PongApp {
     ball_vy: f32,
     p1_score: u32,
     p2_score: u32,
+    serve_direction: f32,
     assigned_gamepads: [Option<GamepadId>; 2],
     p1_controls: ControlMap,
     p2_controls: ControlMap,
+    sounds: SoundBank,
 }
 
 impl PongApp {
     fn new() -> Self {
+        let mut sounds = SoundBank::new();
+        sounds
+            .insert_wav(SERVE_SOUND, synthesize_chirp(620.0, 880.0, 0.055, 0.34))
+            .expect("Pong serve sound id should be unique");
+        sounds
+            .insert_wav(
+                PADDLE_HIT_SOUND,
+                synthesize_chirp(430.0, 350.0, 0.040, 0.30),
+            )
+            .expect("Pong paddle hit sound id should be unique");
+        sounds
+            .insert_wav(POINT_SOUND, synthesize_chirp(230.0, 105.0, 0.180, 0.38))
+            .expect("Pong point sound id should be unique");
+
         let mut app = Self {
             page: Page::Main,
-            menu: MenuState::new(3),
+            main_menu: MenuState::new(3),
+            end_menu: MenuState::new(2),
             playing: false,
+            match_state: MatchState::WaitingServe,
             p1_y: centered_paddle_y(),
             p2_y: centered_paddle_y(),
             ball_x: centered_ball_x(),
             ball_y: centered_ball_y(),
-            ball_vx: BALL_SPEED_X,
-            ball_vy: BALL_SPEED_Y,
+            ball_vx: 0.0,
+            ball_vy: 0.0,
             p1_score: 0,
             p2_score: 0,
+            serve_direction: 1.0,
             assigned_gamepads: [None, None],
             p1_controls: ControlMap::new(),
             p2_controls: ControlMap::new(),
+            sounds,
         };
         app.rebuild_controls();
         app
@@ -109,14 +146,17 @@ impl PongApp {
         match self.page {
             Page::Main => {
                 if menu_up_pressed(frame.input) {
-                    self.menu.select_previous();
+                    self.main_menu.select_previous();
                 }
                 if menu_down_pressed(frame.input) {
-                    self.menu.select_next();
+                    self.main_menu.select_next();
                 }
                 if menu_confirm_pressed(frame.input) {
-                    match self.menu.selected() {
-                        Some(0) => self.playing = true,
+                    match self.main_menu.selected() {
+                        Some(0) => {
+                            self.reset_match();
+                            self.playing = true;
+                        }
                         Some(1) => self.page = Page::Controls,
                         Some(2) => return GameResult::Exit,
                         _ => {}
@@ -143,6 +183,24 @@ impl PongApp {
             return GameResult::Exit;
         }
 
+        if self.match_state == MatchState::MatchOver {
+            if menu_up_pressed(frame.input) {
+                self.end_menu.select_previous();
+            }
+            if menu_down_pressed(frame.input) {
+                self.end_menu.select_next();
+            }
+            if menu_confirm_pressed(frame.input) {
+                match self.end_menu.selected() {
+                    Some(0) => self.reset_match(),
+                    Some(1) => return GameResult::Exit,
+                    _ => {}
+                }
+            }
+            self.render_game(frame.framebuffer);
+            return GameResult::Continue;
+        }
+
         self.p1_controls.update(frame.input);
         self.p2_controls.update(frame.input);
 
@@ -160,15 +218,68 @@ impl PongApp {
             dt,
         );
 
+        if self.match_state == MatchState::WaitingServe && menu_confirm_pressed(frame.input) {
+            self.serve();
+            let _ = self.sounds.play(frame.audio, SERVE_SOUND);
+        }
+
+        if self.match_state == MatchState::Playing {
+            let (paddle_hit, point_scored) = self.update_ball(dt);
+            if paddle_hit {
+                let _ = self.sounds.play(frame.audio, PADDLE_HIT_SOUND);
+            }
+            if point_scored {
+                let _ = self.sounds.play(frame.audio, POINT_SOUND);
+            }
+        }
+
+        self.render_game(frame.framebuffer);
+        GameResult::Continue
+    }
+
+    fn serve(&mut self) {
+        if self.match_state != MatchState::WaitingServe {
+            return;
+        }
+
+        self.ball_vx = BALL_SPEED_X * self.serve_direction;
+        self.ball_vy = if (self.p1_score + self.p2_score) % 2 == 0 {
+            BALL_SPEED_Y
+        } else {
+            -BALL_SPEED_Y
+        };
+        self.match_state = MatchState::Playing;
+    }
+
+    fn update_ball(&mut self, dt: f32) -> (bool, bool) {
+        let largest_delta = self.ball_vx.abs().max(self.ball_vy.abs()) * dt;
+        let steps = ((largest_delta / BALL_SUBSTEP).ceil() as u32).clamp(1, 32);
+        let step_dt = dt / steps as f32;
+        let mut paddle_hit = false;
+        let mut point_scored = false;
+
+        for _ in 0..steps {
+            if self.match_state != MatchState::Playing {
+                break;
+            }
+            let (step_paddle_hit, step_point_scored) = self.step_ball(step_dt);
+            paddle_hit |= step_paddle_hit;
+            point_scored |= step_point_scored;
+        }
+
+        (paddle_hit, point_scored)
+    }
+
+    fn step_ball(&mut self, dt: f32) -> (bool, bool) {
         self.ball_x += self.ball_vx * dt;
         self.ball_y += self.ball_vy * dt;
 
-        if self.ball_y <= PLAY_TOP {
+        if self.ball_y <= PLAY_TOP && self.ball_vy < 0.0 {
             self.ball_y = PLAY_TOP;
             self.ball_vy = self.ball_vy.abs();
         }
         let bottom = FRAMEBUFFER_HEIGHT as f32 - BALL_SIZE as f32;
-        if self.ball_y >= bottom {
+        if self.ball_y >= bottom && self.ball_vy > 0.0 {
             self.ball_y = bottom;
             self.ball_vy = -self.ball_vy.abs();
         }
@@ -176,36 +287,82 @@ impl PongApp {
         let p1 = paddle_rect(12, self.p1_y);
         let p2 = paddle_rect(FRAMEBUFFER_WIDTH as i32 - 18, self.p2_y);
         let ball = ball_rect(self.ball_x, self.ball_y);
+        let mut paddle_hit = false;
 
         if self.ball_vx < 0.0 && overlaps(ball, p1) {
             self.ball_x = (p1.x + p1.width as i32) as f32;
-            bounce_from_paddle(&mut self.ball_vx, &mut self.ball_vy, self.ball_y, self.p1_y, 1.0);
+            bounce_from_paddle(
+                &mut self.ball_vx,
+                &mut self.ball_vy,
+                self.ball_y,
+                self.p1_y,
+                1.0,
+            );
+            paddle_hit = true;
         } else if self.ball_vx > 0.0 && overlaps(ball, p2) {
             self.ball_x = (p2.x - BALL_SIZE as i32) as f32;
-            bounce_from_paddle(&mut self.ball_vx, &mut self.ball_vy, self.ball_y, self.p2_y, -1.0);
+            bounce_from_paddle(
+                &mut self.ball_vx,
+                &mut self.ball_vy,
+                self.ball_y,
+                self.p2_y,
+                -1.0,
+            );
+            paddle_hit = true;
         }
 
-        if self.ball_x + (BALL_SIZE as f32) < 0.0 {
+        let point_scored = if self.ball_x + (BALL_SIZE as f32) < 0.0 {
             self.p2_score = self.p2_score.saturating_add(1);
-            self.reset_ball(-1.0);
+            self.after_point(-1.0);
+            true
         } else if self.ball_x > FRAMEBUFFER_WIDTH as f32 {
             self.p1_score = self.p1_score.saturating_add(1);
-            self.reset_ball(1.0);
-        }
+            self.after_point(1.0);
+            true
+        } else {
+            false
+        };
 
-        self.render_game(frame.framebuffer);
-        GameResult::Continue
+        (paddle_hit, point_scored)
     }
 
-    fn reset_ball(&mut self, direction: f32) {
+    fn after_point(&mut self, direction_toward_loser: f32) {
+        self.serve_direction = direction_toward_loser;
+        self.reset_ball();
+        if self.p1_score >= WIN_SCORE || self.p2_score >= WIN_SCORE {
+            self.match_state = MatchState::MatchOver;
+            self.end_menu = MenuState::new(2);
+        } else {
+            self.match_state = MatchState::WaitingServe;
+        }
+    }
+
+    fn reset_ball(&mut self) {
         self.ball_x = centered_ball_x();
         self.ball_y = centered_ball_y();
-        self.ball_vx = BALL_SPEED_X * direction;
-        self.ball_vy = if (self.p1_score + self.p2_score) % 2 == 0 {
-            BALL_SPEED_Y
+        self.ball_vx = 0.0;
+        self.ball_vy = 0.0;
+    }
+
+    fn reset_match(&mut self) {
+        self.p1_y = centered_paddle_y();
+        self.p2_y = centered_paddle_y();
+        self.p1_score = 0;
+        self.p2_score = 0;
+        self.serve_direction = 1.0;
+        self.end_menu = MenuState::new(2);
+        self.reset_ball();
+        self.match_state = MatchState::WaitingServe;
+    }
+
+    fn winner(&self) -> Option<u8> {
+        if self.p1_score >= WIN_SCORE {
+            Some(1)
+        } else if self.p2_score >= WIN_SCORE {
+            Some(2)
         } else {
-            -BALL_SPEED_Y
-        };
+            None
+        }
     }
 
     fn render_main_menu(&self, framebuffer: &mut Framebuffer) {
@@ -247,7 +404,7 @@ impl PongApp {
                     height: 16,
                 },
                 label,
-                self.menu.selected() == Some(index),
+                self.main_menu.selected() == Some(index),
                 1,
                 FG,
                 ACCENT,
@@ -351,6 +508,74 @@ impl PongApp {
             1,
             FG,
         );
+
+        match self.match_state {
+            MatchState::WaitingServe => {
+                draw_text_centered(
+                    framebuffer,
+                    Rect {
+                        x: 72,
+                        y: 158,
+                        width: 176,
+                        height: 12,
+                    },
+                    "SPACE/SOUTH SERVE",
+                    1,
+                    FG,
+                );
+            }
+            MatchState::Playing => {}
+            MatchState::MatchOver => self.render_end_menu(framebuffer),
+        }
+    }
+
+    fn render_end_menu(&self, framebuffer: &mut Framebuffer) {
+        draw_panel(
+            framebuffer,
+            Rect {
+                x: 82,
+                y: 46,
+                width: 156,
+                height: 98,
+            },
+            BG,
+            BORDER,
+        );
+
+        let winner = match self.winner() {
+            Some(1) => "P1 WINS",
+            Some(2) => "P2 WINS",
+            _ => "MATCH OVER",
+        };
+        draw_text_centered(
+            framebuffer,
+            Rect {
+                x: 94,
+                y: 60,
+                width: 132,
+                height: 16,
+            },
+            winner,
+            1,
+            ACCENT,
+        );
+
+        for (index, (label, y)) in [("REPLAY", 91), ("QUIT", 115)].into_iter().enumerate() {
+            draw_menu_item(
+                framebuffer,
+                Rect {
+                    x: 100,
+                    y,
+                    width: 120,
+                    height: 16,
+                },
+                label,
+                self.end_menu.selected() == Some(index),
+                1,
+                FG,
+                ACCENT,
+            );
+        }
     }
 }
 
@@ -403,13 +628,33 @@ fn bounce_from_paddle(
     paddle_y: f32,
     direction: f32,
 ) {
-    let speed_x = (vx.abs() * 1.04).min(BALL_SPEED_MAX);
-    *vx = speed_x * direction;
-
     let paddle_center = paddle_y + PADDLE_HEIGHT as f32 / 2.0;
     let ball_center = ball_y + BALL_SIZE as f32 / 2.0;
     let offset = ((ball_center - paddle_center) / (PADDLE_HEIGHT as f32 / 2.0)).clamp(-1.0, 1.0);
-    *vy = (BALL_SPEED_Y + speed_x * 0.35) * offset;
+    let angle = offset * MAX_BOUNCE_ANGLE;
+    let speed = (vx.hypot(*vy) * 1.04).clamp(BALL_SPEED_X.hypot(BALL_SPEED_Y), BALL_SPEED_MAX);
+
+    *vx = direction * speed * angle.cos();
+    *vy = speed * angle.sin();
+}
+
+fn synthesize_chirp(start_hz: f32, end_hz: f32, duration: f32, gain: f32) -> Vec<u8> {
+    let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
+    let mut samples = Vec::with_capacity(sample_count);
+    let mut phase = 0.0_f32;
+
+    for index in 0..sample_count {
+        let progress = index as f32 / sample_count.max(1) as f32;
+        let frequency = start_hz + (end_hz - start_hz) * progress;
+        phase += frequency / AUDIO_SAMPLE_RATE as f32;
+        let square = if phase.fract() < 0.5 { 1.0 } else { -1.0 };
+        let envelope = (1.0 - progress).max(0.0);
+        let sample = square * envelope * envelope * gain;
+        samples.push((sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
+    }
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Pong procedural audio should use a supported PCM format")
 }
 
 fn paddle_rect(x: i32, y: f32) -> Rect {
@@ -480,5 +725,78 @@ mod tests {
         let paddle = paddle_rect(12, 60.0);
         assert!(overlaps(ball_rect(15.0, 70.0), paddle));
         assert!(!overlaps(ball_rect(30.0, 70.0), paddle));
+    }
+
+    #[test]
+    fn new_match_waits_for_serve() {
+        let app = PongApp::new();
+        assert_eq!(app.match_state, MatchState::WaitingServe);
+        assert_eq!(app.ball_vx, 0.0);
+        assert_eq!(app.ball_vy, 0.0);
+    }
+
+    #[test]
+    fn serve_starts_rally() {
+        let mut app = PongApp::new();
+        app.serve();
+        assert_eq!(app.match_state, MatchState::Playing);
+        assert!(app.ball_vx > 0.0);
+        assert_ne!(app.ball_vy, 0.0);
+    }
+
+    #[test]
+    fn point_waits_for_next_serve() {
+        let mut app = PongApp::new();
+        app.match_state = MatchState::Playing;
+        app.p1_score = 1;
+        app.after_point(1.0);
+        assert_eq!(app.match_state, MatchState::WaitingServe);
+        assert_eq!(app.ball_vx, 0.0);
+        assert_eq!(app.ball_vy, 0.0);
+        assert_eq!(app.serve_direction, 1.0);
+    }
+
+    #[test]
+    fn first_player_to_seven_wins_match() {
+        let mut app = PongApp::new();
+        app.p1_score = WIN_SCORE;
+        app.after_point(1.0);
+        assert_eq!(app.match_state, MatchState::MatchOver);
+        assert_eq!(app.winner(), Some(1));
+        assert_eq!(app.end_menu.selected(), Some(0));
+    }
+
+    #[test]
+    fn end_menu_has_replay_and_quit_choices() {
+        let mut app = PongApp::new();
+        assert_eq!(app.end_menu.selected(), Some(0));
+        app.end_menu.select_next();
+        assert_eq!(app.end_menu.selected(), Some(1));
+    }
+
+    #[test]
+    fn substeps_catch_fast_paddle_collision() {
+        let mut app = PongApp::new();
+        app.match_state = MatchState::Playing;
+        app.p1_y = 70.0;
+        app.ball_x = 30.0;
+        app.ball_y = 80.0;
+        app.ball_vx = -900.0;
+        app.ball_vy = 0.0;
+
+        let (paddle_hit, point_scored) = app.update_ball(0.03);
+
+        assert!(paddle_hit);
+        assert!(!point_scored);
+        assert!(app.ball_vx > 0.0);
+        assert_eq!(app.match_state, MatchState::Playing);
+    }
+
+    #[test]
+    fn sound_bank_owns_pong_feedback_assets() {
+        let app = PongApp::new();
+        assert!(app.sounds.contains(SERVE_SOUND));
+        assert!(app.sounds.contains(PADDLE_HIT_SOUND));
+        assert!(app.sounds.contains(POINT_SOUND));
     }
 }
