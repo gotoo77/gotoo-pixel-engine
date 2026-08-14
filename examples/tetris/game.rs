@@ -1,11 +1,13 @@
 use std::time::Duration;
 
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Game, GameResult, GamepadButton, Key, Pixel, SoundBank, SoundId,
-    pcm16_mono_wav,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel, Rect,
+    SoundBank, SoundId, pcm16_mono_wav,
+    ui::{VirtualButton, VirtualPad, draw_panel, draw_text_centered},
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 220;
+pub const TOUCH_FRAMEBUFFER_WIDTH: u32 = 360;
 pub const FRAMEBUFFER_HEIGHT: u32 = 224;
 
 const CONTROL_LEFT: ActionId = ActionId::new("tetris.left");
@@ -40,6 +42,44 @@ const GRID: Pixel = Pixel::rgb(28, 35, 42);
 const BORDER: Pixel = Pixel::rgb(112, 126, 138);
 const TEXT: Pixel = Pixel::rgb(226, 234, 218);
 const GAME_OVER: Pixel = Pixel::rgb(245, 76, 76);
+const TOUCH_FILL: Pixel = Pixel::rgb(18, 28, 34);
+const TOUCH_ACCENT: Pixel = Pixel::rgb(80, 220, 230);
+const TOUCH_PANEL: Rect = Rect {
+    x: FRAMEBUFFER_WIDTH as i32,
+    y: 0,
+    width: TOUCH_FRAMEBUFFER_WIDTH - FRAMEBUFFER_WIDTH,
+    height: FRAMEBUFFER_HEIGHT,
+};
+const TOUCH_ROTATE: Rect = Rect {
+    x: 244,
+    y: 20,
+    width: 92,
+    height: 42,
+};
+const TOUCH_LEFT: Rect = Rect {
+    x: 226,
+    y: 82,
+    width: 52,
+    height: 44,
+};
+const TOUCH_RIGHT: Rect = Rect {
+    x: 302,
+    y: 82,
+    width: 52,
+    height: 44,
+};
+const TOUCH_SOFT_DROP: Rect = Rect {
+    x: 264,
+    y: 136,
+    width: 52,
+    height: 40,
+};
+const TOUCH_HARD_DROP: Rect = Rect {
+    x: 244,
+    y: 184,
+    width: 92,
+    height: 32,
+};
 const COLORS: [Pixel; 7] = [
     Pixel::rgb(80, 220, 230),
     Pixel::rgb(80, 110, 230),
@@ -312,20 +352,47 @@ pub struct TetrisGame {
     world: TetrisWorld,
     accumulator: Duration,
     controls: ControlMap,
+    virtual_pad: Option<VirtualPad>,
     sounds: SoundBank,
 }
 
 impl TetrisGame {
     pub fn new() -> Self {
+        Self::new_with_touch(false)
+    }
+
+    // This constructor is consumed by the separate `tetris_web` entrypoint.
+    // The native `tetris` example compiles this module independently and cannot
+    // see that cross-entrypoint consumer, so dead-code analysis needs this hint.
+    #[allow(dead_code)]
+    pub fn new_touch() -> Self {
+        Self::new_with_touch(true)
+    }
+
+    fn new_with_touch(touch: bool) -> Self {
+        let virtual_pad = touch.then(|| {
+            VirtualPad::new([
+                VirtualButton::new(CONTROL_LEFT, TOUCH_LEFT),
+                VirtualButton::new(CONTROL_RIGHT, TOUCH_RIGHT),
+                VirtualButton::new(CONTROL_ROTATE, TOUCH_ROTATE),
+                VirtualButton::new(CONTROL_SOFT_DROP, TOUCH_SOFT_DROP),
+                VirtualButton::new(CONTROL_HARD_DROP, TOUCH_HARD_DROP),
+            ])
+        });
+
         Self {
             world: TetrisWorld::new(),
             accumulator: Duration::ZERO,
             controls: default_controls(),
+            virtual_pad,
             sounds: tetris_sound_bank(),
         }
     }
 
     fn input(&mut self, frame: &Frame<'_>) -> GameResult {
+        if let Some(virtual_pad) = &mut self.virtual_pad {
+            virtual_pad.update(frame.input, &mut self.controls);
+        }
         self.controls.update(frame.input);
 
         if self.controls.action(CONTROL_EXIT).pressed() {
@@ -420,6 +487,9 @@ impl TetrisGame {
             fb.draw_text(25, 101, "GAME OVER", GAME_OVER);
             fb.draw_text(24, 117, "DROP TO REPLAY", TEXT);
         }
+        if self.virtual_pad.is_some() {
+            draw_touch_controls(fb);
+        }
     }
 }
 
@@ -444,6 +514,34 @@ impl Game for TetrisGame {
         self.consume_events(frame);
         self.render(frame);
         GameResult::Continue
+    }
+}
+
+fn draw_touch_controls(framebuffer: &mut Framebuffer) {
+    draw_panel(framebuffer, TOUCH_PANEL, BG, BORDER);
+    draw_text_centered(
+        framebuffer,
+        Rect {
+            x: TOUCH_PANEL.x,
+            y: 4,
+            width: TOUCH_PANEL.width,
+            height: 12,
+        },
+        "TOUCH",
+        1,
+        TEXT,
+    );
+
+    for (rect, label) in [
+        (TOUCH_ROTATE, "ROTATE"),
+        (TOUCH_LEFT, "LEFT"),
+        (TOUCH_RIGHT, "RIGHT"),
+        (TOUCH_SOFT_DROP, "DOWN"),
+        (TOUCH_HARD_DROP, "DROP"),
+    ] {
+        framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, TOUCH_FILL);
+        framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, BORDER);
+        draw_text_centered(framebuffer, rect, label, 1, TOUCH_ACCENT);
     }
 }
 
@@ -589,6 +687,15 @@ fn draw_preview_block(fb: &mut gotoo_pixel_engine::Framebuffer, x: i32, y: i32, 
 mod tests {
     use super::*;
     use gotoo_pixel_engine::NoopAudio;
+
+    #[test]
+    fn touch_mode_exposes_five_virtual_actions() {
+        let game = TetrisGame::new_touch();
+        assert_eq!(
+            game.virtual_pad.as_ref().map(|pad| pad.buttons().len()),
+            Some(5)
+        );
+    }
 
     #[test]
     fn bag_contains_every_piece_once() {

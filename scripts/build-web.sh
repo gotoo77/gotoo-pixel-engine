@@ -16,6 +16,7 @@ build_web_example() {
 
 build_web_example snake_web
 build_web_example breakout_web
+build_web_example tetris_web
 
 echo "==> build web_demo"
 cargo build --target wasm32-unknown-unknown --example web_demo

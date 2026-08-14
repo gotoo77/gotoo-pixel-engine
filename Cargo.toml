@@ -39,6 +39,11 @@ name = "breakout_web"
 path = "examples/breakout_web.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "tetris_web"
+path = "examples/tetris_web.rs"
+crate-type = ["cdylib"]
+
 [[bench]]
 name = "primitives"
 harness = false
