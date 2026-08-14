@@ -12,7 +12,7 @@ use crate::gamepad::GamepadInputBackend;
 use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use crate::storage::{LocalStorage, platform_storage};
-use crate::{Size, Viewport};
+use crate::{GamepadId, GamepadProfile, Size, Viewport};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
@@ -33,6 +33,10 @@ pub struct EngineConfig {
 
 pub trait Game {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult;
+
+    fn gamepad_profile(&self, _id: GamepadId) -> Option<GamepadProfile> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,7 +196,11 @@ impl<G: Game> PlatformApp<G> {
             return;
         };
 
-        self.gamepads.poll(&mut self.input);
+        {
+            let game = &self.game;
+            self.gamepads
+                .poll(&mut self.input, |id| game.gamepad_profile(id));
+        }
 
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame_at);
