@@ -1,0 +1,57 @@
+name: Temporary Pong web migration
+
+on:
+  push:
+    branches:
+      - m5.3-pong-web
+    paths:
+      - .github/scripts/m5_3_pong_web.py
+      - .github/workflows/m5-3-pong-web.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v6
+        with:
+          ref: m5.3-pong-web
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
+
+      - name: Install Rust 1.97.1
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustup component add rustfmt clippy
+          rustup target add wasm32-unknown-unknown
+
+      - name: Apply Pong web migration
+        run: python .github/scripts/m5_3_pong_web.py
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Test
+        run: cargo test --all-targets
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check Pong WASM build
+        run: cargo build --target wasm32-unknown-unknown --example pong_web
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml examples/pong.rs examples/pong_web.rs scripts/build-web.sh web/pong.html
+          git commit -m "webify Pong with VirtualPad"
+          git push origin HEAD:m5.3-pong-web
