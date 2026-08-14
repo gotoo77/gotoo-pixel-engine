@@ -68,14 +68,26 @@ impl Game for SpaceInvadersApp {
     }
 }
 
+fn window_size() -> (u32, u32) {
+    if std::env::var_os("WSL_DISTRO_NAME").is_some() {
+        // WSLg/Weston is known to crash for some surface sizes. 960x612 is
+        // documented as stable in docs/investigations/wslg-surface-present-stall.md.
+        (960, 612)
+    } else {
+        (768, 672)
+    }
+}
+
 fn main() -> Result<(), EngineError> {
+    let (window_width, window_height) = window_size();
+
     run(
         EngineConfig {
             title: "Space Invaders - Gotoo Pixel Engine".into(),
             framebuffer_width: FRAMEBUFFER_WIDTH,
             framebuffer_height: FRAMEBUFFER_HEIGHT,
-            window_width: 768,
-            window_height: 672,
+            window_width,
+            window_height,
         },
         SpaceInvadersApp::new(),
     )
