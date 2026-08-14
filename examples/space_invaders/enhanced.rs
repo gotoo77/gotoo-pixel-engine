@@ -57,6 +57,16 @@ pub struct EnhancedSpaceInvadersGame {
 
 impl EnhancedSpaceInvadersGame {
     pub fn new() -> Self {
+        Self::new_with_touch(false)
+    }
+
+    // Consumed by the separate `space_invaders_web` entrypoint.
+    #[allow(dead_code)]
+    pub fn new_touch() -> Self {
+        Self::new_with_touch(true)
+    }
+
+    fn new_with_touch(touch: bool) -> Self {
         let mut sounds = SoundBank::new();
         sounds
             .insert_wav(PLAYER_FIRED_SOUND, synthesize_player_fire_sound())
@@ -78,7 +88,11 @@ impl EnhancedSpaceInvadersGame {
             .expect("bunker hit sound id should be unique");
 
         Self {
-            core: SpaceInvadersGame::new(),
+            core: if touch {
+                SpaceInvadersGame::new_touch()
+            } else {
+                SpaceInvadersGame::new()
+            },
             effects: Vec::new(),
             sounds,
         }
@@ -162,8 +176,8 @@ impl Game for EnhancedSpaceInvadersGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.update_effects(frame.delta_time);
 
-        let player_can_fire = self.core.world.state == RoundState::Playing
-            && self.core.world.player_bullet.is_none();
+        let player_can_fire =
+            self.core.world.state == RoundState::Playing && self.core.world.player_bullet.is_none();
         let result = self.core.update(frame);
         if result == GameResult::Exit {
             return result;
