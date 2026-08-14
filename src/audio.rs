@@ -207,11 +207,28 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedSound, AudioError> {
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use rodio::buffer::SamplesBuffer;
+    use rodio::cpal::StreamError;
     use rodio::{DeviceSinkBuilder, MixerDeviceSink};
 
     use super::{Audio, AudioError, DecodedSound, PlatformAudio, SoundId, register_decoded_wav};
+
+    static XRUN_REPORTED: AtomicBool = AtomicBool::new(false);
+
+    fn report_stream_error(error: StreamError) {
+        if matches!(error, StreamError::BufferUnderrun) {
+            if !XRUN_REPORTED.swap(true, Ordering::Relaxed) {
+                eprintln!(
+                    "audio stream warning: buffer underrun/overrun occurred; suppressing repeats"
+                );
+            }
+            return;
+        }
+
+        eprintln!("audio stream error: {error}");
+    }
 
     #[derive(Default)]
     pub(crate) struct NativeAudio {
@@ -221,7 +238,11 @@ mod native {
 
     impl NativeAudio {
         pub(crate) fn new() -> Result<Self, AudioError> {
-            let mut sink = DeviceSinkBuilder::open_default_sink()
+            let builder = DeviceSinkBuilder::from_default_device()
+                .map_err(|err| AudioError::new(format!("audio device unavailable: {err}")))?
+                .with_error_callback(report_stream_error as fn(StreamError));
+            let mut sink = builder
+                .open_sink_or_fallback()
                 .map_err(|err| AudioError::new(format!("audio device unavailable: {err}")))?;
             sink.log_on_drop(false);
 
