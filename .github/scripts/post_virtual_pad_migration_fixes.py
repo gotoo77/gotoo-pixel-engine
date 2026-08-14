@@ -58,4 +58,55 @@ new_test = '''    #[test]
 if breakout.count(old_test) != 1:
     raise SystemExit("expected one Breakout fast collision regression test")
 breakout = breakout.replace(old_test, new_test, 1)
+
+old_parity = "self.ball_vx = if self.lives % 2 == 0 {"
+new_parity = "self.ball_vx = if self.lives.is_multiple_of(2) {"
+if breakout.count(old_parity) != 1:
+    raise SystemExit("expected one Breakout life parity expression")
+breakout = breakout.replace(old_parity, new_parity, 1)
+
+old_bricks = '''    for row in 0..BRICK_ROWS {
+        for column in 0..BRICK_COLUMNS {
+            bricks.push(Brick {
+                rect: Rect {
+                    x: BRICK_START_X + column as i32 * (BRICK_WIDTH as i32 + BRICK_GAP_X),
+                    y: BRICK_START_Y + row as i32 * (BRICK_HEIGHT as i32 + BRICK_GAP_Y),
+                    width: BRICK_WIDTH,
+                    height: BRICK_HEIGHT,
+                },
+                active: true,
+                color: BRICK_COLORS[row],
+                row,
+            });
+        }
+    }
+'''
+new_bricks = '''    for (row, color) in BRICK_COLORS.into_iter().enumerate() {
+        for column in 0..BRICK_COLUMNS {
+            bricks.push(Brick {
+                rect: Rect {
+                    x: BRICK_START_X + column as i32 * (BRICK_WIDTH as i32 + BRICK_GAP_X),
+                    y: BRICK_START_Y + row as i32 * (BRICK_HEIGHT as i32 + BRICK_GAP_Y),
+                    width: BRICK_WIDTH,
+                    height: BRICK_HEIGHT,
+                },
+                active: true,
+                color,
+                row,
+            });
+        }
+    }
+'''
+if breakout.count(old_bricks) != 1:
+    raise SystemExit("expected one Breakout brick construction loop")
+breakout = breakout.replace(old_bricks, new_bricks, 1)
 breakout_path.write_text(breakout)
+
+pong_path = Path("examples/pong.rs")
+pong = pong_path.read_text()
+old_pong_parity = "self.ball_vy = if (self.p1_score + self.p2_score) % 2 == 0 {"
+new_pong_parity = "self.ball_vy = if (self.p1_score + self.p2_score).is_multiple_of(2) {"
+if pong.count(old_pong_parity) != 1:
+    raise SystemExit("expected one Pong score parity expression")
+pong = pong.replace(old_pong_parity, new_pong_parity, 1)
+pong_path.write_text(pong)
