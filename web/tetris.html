@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tetris</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #111;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+      }
+
+      canvas {
+        display: block;
+        width: 1080px;
+        height: 672px;
+        max-width: 100vw;
+        max-height: 100vh;
+        touch-action: none;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import init from "./pkg/tetris_web.js";
+
+      init();
+    </script>
+  </body>
+</html>
