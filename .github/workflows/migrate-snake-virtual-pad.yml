@@ -31,7 +31,9 @@ jobs:
           rustup component add rustfmt clippy
 
       - name: Migrate Snake touch input
-        run: python .github/scripts/migrate_snake_virtual_pad.py
+        run: |
+          python .github/scripts/migrate_snake_virtual_pad.py
+          python .github/scripts/post_virtual_pad_migration_fixes.py
 
       - name: Format
         run: cargo fmt --all
@@ -50,6 +52,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add examples/snake/game.rs
+          git add examples/snake/game.rs examples/breakout.rs
           git commit -m "migrate Snake touch controls to VirtualPad [snake-migrated]"
           git push origin HEAD:m5.0-virtual-pad
