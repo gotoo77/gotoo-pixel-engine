@@ -1,5 +1,5 @@
 use gotoo_pixel_engine::{
-    Framebuffer, GamepadButton, GamepadId, Input, Key, Pixel, Rect,
+    Framebuffer, GamepadButton, GamepadId, GamepadProfile, Input, Key, Pixel, Rect,
     ui::{MenuState, draw_menu_item, draw_panel, draw_text_centered},
 };
 
@@ -14,6 +14,9 @@ const BORDER: Pixel = Pixel::rgb(80, 180, 255);
 pub enum MenuAction {
     Play,
     Quit,
+    DecreaseGamepadThreshold,
+    IncreaseGamepadThreshold,
+    ResetGamepadProfile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,12 +115,7 @@ impl SpaceInvadersMenu {
         match self.page {
             Page::Main => self.update_main(input),
             Page::Controls => self.update_controls(input),
-            Page::GamepadSetup => {
-                if input.gamepad_button_any(GamepadButton::Select).pressed() {
-                    self.page = Page::Controls;
-                }
-                None
-            }
+            Page::GamepadSetup => self.update_gamepad_setup(input),
         }
     }
 
@@ -166,12 +164,43 @@ impl SpaceInvadersMenu {
         None
     }
 
-    pub fn render(&self, framebuffer: &mut Framebuffer) {
+    fn update_gamepad_setup(&mut self, input: &Input) -> Option<MenuAction> {
+        if input.gamepad_button_any(GamepadButton::Select).pressed() {
+            self.page = Page::Controls;
+            return None;
+        }
+
+        if input.key(Key::Space).pressed()
+            || input.gamepad_button_any(GamepadButton::Start).pressed()
+        {
+            return Some(MenuAction::ResetGamepadProfile);
+        }
+
+        if input.key(Key::A).pressed()
+            || input
+                .gamepad_button_any(GamepadButton::LeftShoulder)
+                .pressed()
+        {
+            return Some(MenuAction::DecreaseGamepadThreshold);
+        }
+
+        if input.key(Key::D).pressed()
+            || input
+                .gamepad_button_any(GamepadButton::RightShoulder)
+                .pressed()
+        {
+            return Some(MenuAction::IncreaseGamepadThreshold);
+        }
+
+        None
+    }
+
+    pub fn render(&self, framebuffer: &mut Framebuffer, gamepad_profile: GamepadProfile) {
         framebuffer.clear(BACKGROUND);
         match self.page {
             Page::Main => self.render_main(framebuffer),
             Page::Controls => self.render_controls(framebuffer),
-            Page::GamepadSetup => self.render_gamepad_setup(framebuffer),
+            Page::GamepadSetup => self.render_gamepad_setup(framebuffer, gamepad_profile),
         }
     }
 
@@ -302,7 +331,7 @@ impl SpaceInvadersMenu {
         }
     }
 
-    fn render_gamepad_setup(&self, framebuffer: &mut Framebuffer) {
+    fn render_gamepad_setup(&self, framebuffer: &mut Framebuffer, gamepad_profile: GamepadProfile) {
         draw_panel(
             framebuffer,
             Rect {
@@ -366,11 +395,10 @@ impl SpaceInvadersMenu {
                 width: 224,
                 height: 12,
             },
-            if self.gamepad.connected {
-                "DPAD CENTER AUTO"
-            } else {
-                "DPAD CENTER WAITING"
-            },
+            &format!(
+                "THRESHOLD {:02} PCT",
+                (gamepad_profile.digital_threshold * 100.0).round() as u32
+            ),
             1,
             FOREGROUND,
         );
@@ -411,11 +439,23 @@ impl SpaceInvadersMenu {
             framebuffer,
             Rect {
                 x: 16,
-                y: 196,
+                y: 188,
                 width: 224,
                 height: 12,
             },
-            "SELECT TO GO BACK",
+            "L/R SHOULDER OR A/D ADJUST",
+            1,
+            FOREGROUND,
+        );
+        draw_text_centered(
+            framebuffer,
+            Rect {
+                x: 16,
+                y: 200,
+                width: 224,
+                height: 12,
+            },
+            "START/SPACE RESET  SELECT BACK",
             1,
             FOREGROUND,
         );
