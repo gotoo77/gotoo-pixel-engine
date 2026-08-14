@@ -155,6 +155,36 @@ logiciel, est cohérent avec ce fallback. Cette cohérence ne permet cependant
 pas, à elle seule, d'affirmer quel bug précis de WSLg/Weston/pixman est en
 cause.
 
+## Confirmation supplémentaire — Space Invaders, août 2026
+
+Le même défaut a été recroisé pendant une investigation qui semblait initialement audio.
+
+Space Invaders utilisait :
+
+    window_width: 768
+    window_height: 672
+
+Sous WSLg, le jeu présentait rapidement :
+
+- un warning audio `Buffer underrun/overrun` ;
+- des sons perçus comme saccadés ou désynchronisés ;
+- puis, sur certaines exécutions, le même `Broken pipe` et le même échec d'event loop que Tetris.
+
+Plusieurs pistes audio ont été éliminées :
+
+- un WAV continu joué directement par PulseAudio était propre ;
+- un probe utilisant le vrai backend GPE/Rodio était propre ;
+- les trois sons procéduraux exacts de Space Invaders étaient propres dans le probe ;
+- le build `--release` ne changeait rien au symptôme.
+
+Le seul changement de la taille de fenêtre vers la dimension déjà connue comme stable :
+
+    960 × 612
+
+fait disparaître le `Broken pipe` pendant le test et rend l'audio à nouveau comparable au comportement natif observé sur Mac.
+
+Cette confirmation est importante : un symptôme apparemment audio peut être secondaire à un chemin de présentation WSLg défaillant. Voir également [`native-audio-xrun-spam.md`](native-audio-xrun-spam.md).
+
 ## Conclusion
 
 La chaîne de panne observée est :
@@ -189,6 +219,11 @@ Tetris utilise provisoirement :
 
 Cette dimension est connue comme stable dans l'environnement testé.
 
+Space Invaders applique désormais le même workaround uniquement lorsqu'il détecte WSL via `WSL_DISTRO_NAME` :
+
+    WSL    -> 960 × 612
+    autres -> 768 × 672
+
 Ce choix est explicitement un workaround WSLg et ne constitue pas un correctif
 moteur. Il devra être supprimé dès que l'environnement WSLg concerné ne
 reproduira plus le problème ou qu'une solution amont sera disponible.
@@ -201,6 +236,9 @@ reproduira plus le problème ou qu'une solution amont sera disponible.
 - backend `WGPU_BACKEND=vulkan` : problème reproduit ;
 - backend `WGPU_BACKEND=gl` : problème reproduit ;
 - comparaison avec Snake ;
+- comparaison Space Invaders WSLg / Mac natif ;
+- test Space Invaders en debug et release ;
+- probe audio séparé du rendu Space Invaders ;
 - instrumentation détaillée du renderer ;
 - inspection de `/mnt/wslg/stderr.log` ;
 - inspection de `dmesg` ;
@@ -219,4 +257,4 @@ Actions utiles restantes :
 - préparer un reproducer minimal indépendant de Tetris si nécessaire ;
 - ouvrir ou compléter une issue WSLg avec les dimensions stable/défaillantes,
   les versions, les logs Weston et la trace `dmesg` ;
-- supprimer le workaround 960 × 612 lorsque le problème amont est résolu.
+- supprimer les workarounds 960 × 612 lorsque le problème amont est résolu.
