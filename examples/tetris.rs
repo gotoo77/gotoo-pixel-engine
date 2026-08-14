@@ -3,12 +3,11 @@ mod game;
 
 use game::{FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, TetrisGame};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Game, GameResult, Key, Pixel, Rect,
+    EngineConfig, EngineError, Frame, Game, GameResult, Key, Pixel, Rect, run,
     ui::{
         MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
         menu_down_pressed, menu_up_pressed,
     },
-    run,
 };
 
 const BACKGROUND: Pixel = Pixel::rgb(9, 12, 16);
