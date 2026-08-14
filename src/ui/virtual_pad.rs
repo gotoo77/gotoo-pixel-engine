@@ -14,6 +14,17 @@ impl VirtualButton {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct VirtualPadUpdate {
+    pressed_actions: Vec<ActionId>,
+}
+
+impl VirtualPadUpdate {
+    pub fn pressed_actions(&self) -> &[ActionId] {
+        &self.pressed_actions
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct VirtualPad {
     buttons: Vec<VirtualButton>,
@@ -42,8 +53,12 @@ impl VirtualPad {
     ///
     /// Call this before `ControlMap::update` so keyboard, gamepad and touch
     /// sources are folded into the same `ButtonState` transition.
-    pub fn update(&mut self, input: &Input, controls: &mut ControlMap) {
-        self.update_touches(input.touches(), controls);
+    ///
+    /// The returned update also preserves ordered action-entry events inside
+    /// the frame. Consumers such as Snake can use those events when several
+    /// touch moves must not be collapsed into the final held state.
+    pub fn update(&mut self, input: &Input, controls: &mut ControlMap) -> VirtualPadUpdate {
+        self.update_touches(input.touches(), controls)
     }
 
     pub fn reset(&mut self, controls: &mut ControlMap) {
@@ -51,14 +66,23 @@ impl VirtualPad {
         self.apply_virtual_states(controls);
     }
 
-    fn update_touches(&mut self, touches: &[Touch], controls: &mut ControlMap) {
+    fn update_touches(
+        &mut self,
+        touches: &[Touch],
+        controls: &mut ControlMap,
+    ) -> VirtualPadUpdate {
         if !touches.is_empty() {
             self.visible = true;
         }
 
+        let mut pressed_actions = Vec::new();
         for touch in touches {
             match touch.phase {
-                TouchPhase::Started | TouchPhase::Moved => self.update_contact(*touch),
+                TouchPhase::Started | TouchPhase::Moved => {
+                    if let Some(action) = self.update_contact(*touch) {
+                        pressed_actions.push(action);
+                    }
+                }
                 TouchPhase::Ended | TouchPhase::Cancelled => {
                     self.contacts.remove(&touch.id);
                 }
@@ -66,15 +90,22 @@ impl VirtualPad {
         }
 
         self.apply_virtual_states(controls);
+        VirtualPadUpdate { pressed_actions }
     }
 
-    fn update_contact(&mut self, touch: Touch) {
+    fn update_contact(&mut self, touch: Touch) -> Option<ActionId> {
+        let previous = self.contacts.get(&touch.id).copied();
         let action = touch.position.and_then(|position| self.action_at(position));
 
-        if let Some(action) = action {
-            self.contacts.insert(touch.id, action);
-        } else {
-            self.contacts.remove(&touch.id);
+        match action {
+            Some(action) => {
+                self.contacts.insert(touch.id, action);
+                (previous != Some(action)).then_some(action)
+            }
+            None => {
+                self.contacts.remove(&touch.id);
+                None
+            }
         }
     }
 
@@ -87,7 +118,12 @@ impl VirtualPad {
 
     fn apply_virtual_states(&self, controls: &mut ControlMap) {
         let held = self.contacts.values().copied().collect::<HashSet<_>>();
-        for action in self.buttons.iter().map(|button| button.action).collect::<HashSet<_>>() {
+        for action in self
+            .buttons
+            .iter()
+            .map(|button| button.action)
+            .collect::<HashSet<_>>()
+        {
             controls.set_virtual(action, held.contains(&action));
         }
     }
@@ -192,6 +228,63 @@ mod tests {
         assert!(controls.action(LEFT).released());
         assert!(controls.action(RIGHT).pressed());
         assert!(controls.action(RIGHT).held());
+    }
+
+    #[test]
+    fn ordered_pressed_actions_preserve_multiple_moves_in_one_frame() {
+        let mut pad = pad();
+        let mut controls = ControlMap::new();
+
+        let update = pad.update_touches(
+            &[
+                Touch {
+                    id: 7,
+                    phase: TouchPhase::Started,
+                    position: Some((5, 5)),
+                },
+                Touch {
+                    id: 7,
+                    phase: TouchPhase::Moved,
+                    position: Some((25, 5)),
+                },
+                Touch {
+                    id: 7,
+                    phase: TouchPhase::Moved,
+                    position: Some((5, 5)),
+                },
+            ],
+            &mut controls,
+        );
+
+        assert_eq!(update.pressed_actions(), &[LEFT, RIGHT, LEFT]);
+        controls.update(&Input::default());
+        assert!(controls.action(LEFT).pressed());
+        assert!(controls.action(LEFT).held());
+        assert!(!controls.action(RIGHT).held());
+    }
+
+    #[test]
+    fn moving_inside_same_button_does_not_repeat_press_event() {
+        let mut pad = pad();
+        let mut controls = ControlMap::new();
+
+        let update = pad.update_touches(
+            &[
+                Touch {
+                    id: 3,
+                    phase: TouchPhase::Started,
+                    position: Some((5, 5)),
+                },
+                Touch {
+                    id: 3,
+                    phase: TouchPhase::Moved,
+                    position: Some((10, 10)),
+                },
+            ],
+            &mut controls,
+        );
+
+        assert_eq!(update.pressed_actions(), &[LEFT]);
     }
 
     #[test]
