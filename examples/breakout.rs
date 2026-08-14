@@ -1,6 +1,6 @@
 use gotoo_pixel_engine::{
     ActionId, ControlMap, EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult,
-    GamepadButton, Key, Pixel, Rect, run,
+    GamepadButton, Key, Pixel, Rect, SoundBank, SoundId, pcm16_mono_wav, run,
     ui::{
         MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
         menu_down_pressed, menu_up_pressed,
@@ -14,6 +14,14 @@ const PLAY_TOP: f32 = 24.0;
 const MOVE_LEFT: ActionId = ActionId::new("breakout.left");
 const MOVE_RIGHT: ActionId = ActionId::new("breakout.right");
 const ACTION: ActionId = ActionId::new("breakout.action");
+
+const LAUNCH_SOUND: SoundId = SoundId::new("breakout.launch");
+const PADDLE_HIT_SOUND: SoundId = SoundId::new("breakout.paddle_hit");
+const BRICK_HIT_SOUND: SoundId = SoundId::new("breakout.brick_hit");
+const LIFE_LOST_SOUND: SoundId = SoundId::new("breakout.life_lost");
+const LEVEL_CLEAR_SOUND: SoundId = SoundId::new("breakout.level_clear");
+const GAME_OVER_SOUND: SoundId = SoundId::new("breakout.game_over");
+const AUDIO_SAMPLE_RATE: u32 = 44_100;
 
 const BG: Pixel = Pixel::rgb(7, 10, 14);
 const FG: Pixel = Pixel::rgb(230, 238, 228);
@@ -71,9 +79,19 @@ struct Brick {
     row: usize,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct BallFeedback {
+    paddle_hit: bool,
+    brick_hits: u8,
+    life_lost: bool,
+    level_cleared: bool,
+    game_over: bool,
+}
+
 struct BreakoutApp {
     page: Page,
     menu: MenuState,
+    end_menu: MenuState,
     playing: bool,
     round_state: RoundState,
     paddle_x: f32,
@@ -87,13 +105,50 @@ struct BreakoutApp {
     level: u32,
     bricks: Vec<Brick>,
     controls: ControlMap,
+    sounds: SoundBank,
 }
 
 impl BreakoutApp {
     fn new() -> Self {
+        let mut sounds = SoundBank::new();
+        sounds
+            .insert_wav(LAUNCH_SOUND, synthesize_chirp(520.0, 760.0, 0.055, 0.32))
+            .expect("Breakout launch sound id should be unique");
+        sounds
+            .insert_wav(
+                PADDLE_HIT_SOUND,
+                synthesize_chirp(330.0, 255.0, 0.040, 0.30),
+            )
+            .expect("Breakout paddle hit sound id should be unique");
+        sounds
+            .insert_wav(
+                BRICK_HIT_SOUND,
+                synthesize_chirp(920.0, 670.0, 0.035, 0.26),
+            )
+            .expect("Breakout brick hit sound id should be unique");
+        sounds
+            .insert_wav(
+                LIFE_LOST_SOUND,
+                synthesize_chirp(210.0, 100.0, 0.160, 0.34),
+            )
+            .expect("Breakout life lost sound id should be unique");
+        sounds
+            .insert_wav(
+                LEVEL_CLEAR_SOUND,
+                synthesize_chirp(430.0, 980.0, 0.220, 0.34),
+            )
+            .expect("Breakout level clear sound id should be unique");
+        sounds
+            .insert_wav(
+                GAME_OVER_SOUND,
+                synthesize_chirp(190.0, 62.0, 0.360, 0.38),
+            )
+            .expect("Breakout game over sound id should be unique");
+
         let mut app = Self {
             page: Page::Main,
             menu: MenuState::new(3),
+            end_menu: MenuState::new(2),
             playing: false,
             round_state: RoundState::Playing,
             paddle_x: centered_paddle_x(),
@@ -107,6 +162,7 @@ impl BreakoutApp {
             level: 1,
             bricks: make_bricks(),
             controls: breakout_controls(),
+            sounds,
         };
         app.reset_ball();
         app
@@ -159,8 +215,18 @@ impl BreakoutApp {
 
         self.controls.update(frame.input);
         if self.round_state == RoundState::Lost {
-            if self.controls.action(ACTION).pressed() {
-                self.restart_round();
+            if menu_up_pressed(frame.input) {
+                self.end_menu.select_previous();
+            }
+            if menu_down_pressed(frame.input) {
+                self.end_menu.select_next();
+            }
+            if menu_confirm_pressed(frame.input) {
+                match self.end_menu.selected() {
+                    Some(0) => self.restart_round(),
+                    Some(1) => return GameResult::Exit,
+                    _ => {}
+                }
             }
             self.render_game(frame.framebuffer);
             return GameResult::Continue;
@@ -169,11 +235,25 @@ impl BreakoutApp {
         let dt = frame.delta_time.as_secs_f32().min(0.05);
         self.update_paddle(dt);
 
-        if self.controls.action(ACTION).pressed() {
-            self.launch_ball();
+        if self.controls.action(ACTION).pressed() && self.launch_ball() {
+            let _ = self.sounds.play(frame.audio, LAUNCH_SOUND);
         }
         if !self.ball_stuck {
-            self.update_ball(dt);
+            let feedback = self.update_ball(dt);
+            if feedback.paddle_hit {
+                let _ = self.sounds.play(frame.audio, PADDLE_HIT_SOUND);
+            }
+            for _ in 0..feedback.brick_hits {
+                let _ = self.sounds.play(frame.audio, BRICK_HIT_SOUND);
+            }
+            if feedback.level_cleared {
+                let _ = self.sounds.play(frame.audio, LEVEL_CLEAR_SOUND);
+            }
+            if feedback.game_over {
+                let _ = self.sounds.play(frame.audio, GAME_OVER_SOUND);
+            } else if feedback.life_lost {
+                let _ = self.sounds.play(frame.audio, LIFE_LOST_SOUND);
+            }
         }
 
         self.render_game(frame.framebuffer);
@@ -195,26 +275,32 @@ impl BreakoutApp {
         }
     }
 
-    fn launch_ball(&mut self) {
+    fn launch_ball(&mut self) -> bool {
         if self.round_state == RoundState::Playing && self.ball_stuck {
             self.ball_stuck = false;
+            true
+        } else {
+            false
         }
     }
 
-    fn update_ball(&mut self, dt: f32) {
+    fn update_ball(&mut self, dt: f32) -> BallFeedback {
         let largest_delta = self.ball_vx.abs().max(self.ball_vy.abs()) * dt;
         let steps = ((largest_delta / BALL_SUBSTEP).ceil() as u32).clamp(1, 32);
         let step_dt = dt / steps as f32;
+        let mut feedback = BallFeedback::default();
 
         for _ in 0..steps {
             if self.ball_stuck || self.round_state != RoundState::Playing {
                 break;
             }
-            self.step_ball(step_dt);
+            self.step_ball(step_dt, &mut feedback);
         }
+
+        feedback
     }
 
-    fn step_ball(&mut self, dt: f32) {
+    fn step_ball(&mut self, dt: f32, feedback: &mut BallFeedback) {
         self.ball_x += self.ball_vx * dt;
         self.ball_y += self.ball_vy * dt;
 
@@ -249,6 +335,7 @@ impl BreakoutApp {
                 .clamp(-1.0, 1.0);
             self.ball_vx = (self.ball_vx + offset * 45.0)
                 .clamp(-BALL_SPEED_MAX_X, BALL_SPEED_MAX_X);
+            feedback.paddle_hit = true;
         }
 
         if let Some(index) = self
@@ -259,6 +346,7 @@ impl BreakoutApp {
             let brick = self.bricks[index];
             self.bricks[index].active = false;
             self.score = self.score.saturating_add(brick_score(brick.row));
+            feedback.brick_hits = feedback.brick_hits.saturating_add(1);
             bounce_from_brick(
                 brick.rect,
                 self.ball_x,
@@ -269,12 +357,18 @@ impl BreakoutApp {
 
             if self.bricks.iter().all(|brick| !brick.active) {
                 self.advance_level();
+                feedback.level_cleared = true;
                 return;
             }
         }
 
         if self.ball_y > FRAMEBUFFER_HEIGHT as f32 {
             self.lose_life();
+            if self.round_state == RoundState::Lost {
+                feedback.game_over = true;
+            } else {
+                feedback.life_lost = true;
+            }
         }
     }
 
@@ -283,6 +377,7 @@ impl BreakoutApp {
         if self.lives == 0 {
             self.round_state = RoundState::Lost;
             self.ball_stuck = true;
+            self.end_menu = MenuState::new(2);
         } else {
             self.paddle_x = centered_paddle_x();
             self.reset_ball();
@@ -315,6 +410,7 @@ impl BreakoutApp {
 
     fn restart_round(&mut self) {
         self.round_state = RoundState::Playing;
+        self.end_menu = MenuState::new(2);
         self.score = 0;
         self.lives = INITIAL_LIVES;
         self.level = 1;
@@ -451,7 +547,7 @@ impl BreakoutApp {
         );
 
         if self.round_state == RoundState::Lost {
-            self.render_round_message(framebuffer, "GAME OVER", "SPACE/SOUTH REPLAY");
+            self.render_game_over(framebuffer);
         } else if self.ball_stuck {
             draw_text_centered(
                 framebuffer,
@@ -468,14 +564,14 @@ impl BreakoutApp {
         }
     }
 
-    fn render_round_message(&self, framebuffer: &mut Framebuffer, message: &str, action: &str) {
+    fn render_game_over(&self, framebuffer: &mut Framebuffer) {
         draw_panel(
             framebuffer,
             Rect {
-                x: 76,
-                y: 88,
-                width: 168,
-                height: 54,
+                x: 70,
+                y: 64,
+                width: 180,
+                height: 96,
             },
             BG,
             BORDER,
@@ -483,27 +579,44 @@ impl BreakoutApp {
         draw_text_centered(
             framebuffer,
             Rect {
-                x: 88,
-                y: 98,
-                width: 144,
-                height: 16,
+                x: 84,
+                y: 76,
+                width: 152,
+                height: 14,
             },
-            message,
+            "GAME OVER",
             1,
             ACCENT,
         );
         draw_text_centered(
             framebuffer,
             Rect {
-                x: 88,
-                y: 120,
-                width: 144,
+                x: 84,
+                y: 94,
+                width: 152,
                 height: 12,
             },
-            action,
+            &format!("SCORE {}  LV {}", self.score, self.level),
             1,
             FG,
         );
+
+        for (index, (label, y)) in [("REPLAY", 116), ("QUIT", 138)].into_iter().enumerate() {
+            draw_menu_item(
+                framebuffer,
+                Rect {
+                    x: 96,
+                    y,
+                    width: 128,
+                    height: 16,
+                },
+                label,
+                self.end_menu.selected() == Some(index),
+                1,
+                FG,
+                ACCENT,
+            );
+        }
     }
 }
 
@@ -594,6 +707,25 @@ fn bounce_from_brick(
     } else {
         *ball_vy = -*ball_vy;
     }
+}
+
+fn synthesize_chirp(start_hz: f32, end_hz: f32, duration: f32, gain: f32) -> Vec<u8> {
+    let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
+    let mut samples = Vec::with_capacity(sample_count);
+    let mut phase = 0.0_f32;
+
+    for index in 0..sample_count {
+        let progress = index as f32 / sample_count.max(1) as f32;
+        let frequency = start_hz + (end_hz - start_hz) * progress;
+        phase += frequency / AUDIO_SAMPLE_RATE as f32;
+        let square = if phase.fract() < 0.5 { 1.0 } else { -1.0 };
+        let envelope = (1.0 - progress).max(0.0);
+        let sample = square * envelope * envelope * gain;
+        samples.push((sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
+    }
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Breakout procedural audio should use a supported PCM format")
 }
 
 fn ball_rect(x: f32, y: f32) -> Rect {
@@ -691,8 +823,9 @@ mod tests {
         app.attach_ball_to_paddle();
         assert!(app.ball_x > initial_x);
 
-        app.launch_ball();
+        assert!(app.launch_ball());
         assert!(!app.ball_stuck);
+        assert!(!app.launch_ball());
     }
 
     #[test]
@@ -722,9 +855,31 @@ mod tests {
         app.ball_vx = 0.0;
         app.ball_vy = -900.0;
 
-        app.update_ball(0.02);
+        let feedback = app.update_ball(0.02);
 
         assert!(!app.bricks[0].active);
         assert!(app.score > 0);
+        assert!(feedback.brick_hits > 0);
+    }
+
+    #[test]
+    fn game_over_menu_defaults_to_replay() {
+        let mut app = BreakoutApp::new();
+        app.lives = 1;
+        app.lose_life();
+
+        assert_eq!(app.round_state, RoundState::Lost);
+        assert_eq!(app.end_menu.selected(), Some(0));
+    }
+
+    #[test]
+    fn sound_bank_owns_breakout_feedback_assets() {
+        let app = BreakoutApp::new();
+        assert!(app.sounds.contains(LAUNCH_SOUND));
+        assert!(app.sounds.contains(PADDLE_HIT_SOUND));
+        assert!(app.sounds.contains(BRICK_HIT_SOUND));
+        assert!(app.sounds.contains(LIFE_LOST_SOUND));
+        assert!(app.sounds.contains(LEVEL_CLEAR_SOUND));
+        assert!(app.sounds.contains(GAME_OVER_SOUND));
     }
 }
