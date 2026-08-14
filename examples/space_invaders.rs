@@ -74,8 +74,8 @@ fn main() -> Result<(), EngineError> {
             title: "Space Invaders - Gotoo Pixel Engine".into(),
             framebuffer_width: FRAMEBUFFER_WIDTH,
             framebuffer_height: FRAMEBUFFER_HEIGHT,
-            window_width: 768,
-            window_height: 672,
+            window_width: 960,
+            window_height: 612,
         },
         SpaceInvadersApp::new(),
     )
