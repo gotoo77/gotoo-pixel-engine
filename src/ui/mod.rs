@@ -1,3 +1,7 @@
+mod virtual_pad;
+
+pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
+
 use crate::{Framebuffer, GamepadButton, Input, Key, Pixel, Rect};
 
 pub fn draw_panel(framebuffer: &mut Framebuffer, rect: Rect, background: Pixel, border: Pixel) {

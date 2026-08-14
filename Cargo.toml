@@ -34,6 +34,11 @@ name = "snake_web"
 path = "examples/snake_web.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "breakout_web"
+path = "examples/breakout_web.rs"
+crate-type = ["cdylib"]
+
 [[bench]]
 name = "primitives"
 harness = false

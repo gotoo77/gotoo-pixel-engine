@@ -122,13 +122,8 @@ impl PongApp {
     }
 
     fn rebuild_controls(&mut self) {
-        self.p1_controls = player_controls(
-            P1_UP,
-            P1_DOWN,
-            Key::W,
-            Key::S,
-            self.assigned_gamepads[0],
-        );
+        self.p1_controls =
+            player_controls(P1_UP, P1_DOWN, Key::W, Key::S, self.assigned_gamepads[0]);
         self.p2_controls = player_controls(
             P2_UP,
             P2_DOWN,
@@ -166,7 +161,10 @@ impl PongApp {
             }
             Page::Controls => {
                 if frame.input.key(Key::Escape).pressed()
-                    || frame.input.gamepad_button_any(GamepadButton::East).pressed()
+                    || frame
+                        .input
+                        .gamepad_button_any(GamepadButton::East)
+                        .pressed()
                     || menu_confirm_pressed(frame.input)
                 {
                     self.page = Page::Main;
@@ -243,7 +241,7 @@ impl PongApp {
         }
 
         self.ball_vx = BALL_SPEED_X * self.serve_direction;
-        self.ball_vy = if (self.p1_score + self.p2_score) % 2 == 0 {
+        self.ball_vy = if (self.p1_score + self.p2_score).is_multiple_of(2) {
             BALL_SPEED_Y
         } else {
             -BALL_SPEED_Y
@@ -480,7 +478,13 @@ impl PongApp {
             framebuffer.fill_rect(FRAMEBUFFER_WIDTH as i32 / 2 - 1, y, 2, 6, BORDER);
         }
 
-        framebuffer.fill_rect(12, self.p1_y.round() as i32, PADDLE_WIDTH, PADDLE_HEIGHT, FG);
+        framebuffer.fill_rect(
+            12,
+            self.p1_y.round() as i32,
+            PADDLE_WIDTH,
+            PADDLE_HEIGHT,
+            FG,
+        );
         framebuffer.fill_rect(
             FRAMEBUFFER_WIDTH as i32 - 18,
             self.p2_y.round() as i32,
@@ -621,13 +625,7 @@ fn move_paddle(y: f32, up: bool, down: bool, dt: f32) -> f32 {
     (y + direction * PADDLE_SPEED * dt).clamp(PLAY_TOP, max_y)
 }
 
-fn bounce_from_paddle(
-    vx: &mut f32,
-    vy: &mut f32,
-    ball_y: f32,
-    paddle_y: f32,
-    direction: f32,
-) {
+fn bounce_from_paddle(vx: &mut f32, vy: &mut f32, ball_y: f32, paddle_y: f32, direction: f32) {
     let paddle_center = paddle_y + PADDLE_HEIGHT as f32 / 2.0;
     let ball_center = ball_y + BALL_SIZE as f32 / 2.0;
     let offset = ((ball_center - paddle_center) / (PADDLE_HEIGHT as f32 / 2.0)).clamp(-1.0, 1.0);

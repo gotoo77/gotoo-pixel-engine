@@ -2,13 +2,14 @@ use gotoo_pixel_engine::{
     ActionId, ControlMap, EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult,
     GamepadButton, Key, Pixel, Rect, SoundBank, SoundId, pcm16_mono_wav, run,
     ui::{
-        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
-        menu_down_pressed, menu_up_pressed,
+        MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
+        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
     },
 };
 
-const FRAMEBUFFER_WIDTH: u32 = 320;
-const FRAMEBUFFER_HEIGHT: u32 = 180;
+pub const FRAMEBUFFER_WIDTH: u32 = 320;
+pub const TOUCH_FRAMEBUFFER_WIDTH: u32 = 480;
+pub const FRAMEBUFFER_HEIGHT: u32 = 180;
 const PLAY_TOP: f32 = 24.0;
 
 const MOVE_LEFT: ActionId = ActionId::new("breakout.left");
@@ -27,6 +28,7 @@ const BG: Pixel = Pixel::rgb(7, 10, 14);
 const FG: Pixel = Pixel::rgb(230, 238, 228);
 const ACCENT: Pixel = Pixel::rgb(120, 235, 180);
 const BORDER: Pixel = Pixel::rgb(80, 150, 220);
+const TOUCH_FILL: Pixel = Pixel::rgb(18, 28, 34);
 const BRICK_COLORS: [Pixel; 5] = [
     Pixel::rgb(236, 92, 92),
     Pixel::rgb(236, 144, 84),
@@ -58,6 +60,30 @@ const BRICK_START_X: i32 = 21;
 const BRICK_START_Y: i32 = 38;
 
 const INITIAL_LIVES: u32 = 3;
+const TOUCH_PANEL: Rect = Rect {
+    x: FRAMEBUFFER_WIDTH as i32,
+    y: 0,
+    width: TOUCH_FRAMEBUFFER_WIDTH - FRAMEBUFFER_WIDTH,
+    height: FRAMEBUFFER_HEIGHT,
+};
+const TOUCH_ACTION: Rect = Rect {
+    x: 354,
+    y: 44,
+    width: 92,
+    height: 48,
+};
+const TOUCH_LEFT: Rect = Rect {
+    x: 326,
+    y: 112,
+    width: 60,
+    height: 48,
+};
+const TOUCH_RIGHT: Rect = Rect {
+    x: 414,
+    y: 112,
+    width: 60,
+    height: 48,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -88,7 +114,7 @@ struct BallFeedback {
     game_over: bool,
 }
 
-struct BreakoutApp {
+pub struct BreakoutApp {
     page: Page,
     menu: MenuState,
     end_menu: MenuState,
@@ -105,11 +131,23 @@ struct BreakoutApp {
     level: u32,
     bricks: Vec<Brick>,
     controls: ControlMap,
+    virtual_pad: Option<VirtualPad>,
     sounds: SoundBank,
 }
 
 impl BreakoutApp {
-    fn new() -> Self {
+    pub fn new() -> Self {
+        Self::new_with_touch(false)
+    }
+
+    pub fn new_touch() -> Self {
+        let mut app = Self::new_with_touch(true);
+        app.restart_round();
+        app.playing = true;
+        app
+    }
+
+    fn new_with_touch(touch: bool) -> Self {
         let mut sounds = SoundBank::new();
         sounds
             .insert_wav(LAUNCH_SOUND, synthesize_chirp(520.0, 760.0, 0.055, 0.32))
@@ -121,16 +159,10 @@ impl BreakoutApp {
             )
             .expect("Breakout paddle hit sound id should be unique");
         sounds
-            .insert_wav(
-                BRICK_HIT_SOUND,
-                synthesize_chirp(920.0, 670.0, 0.035, 0.26),
-            )
+            .insert_wav(BRICK_HIT_SOUND, synthesize_chirp(920.0, 670.0, 0.035, 0.26))
             .expect("Breakout brick hit sound id should be unique");
         sounds
-            .insert_wav(
-                LIFE_LOST_SOUND,
-                synthesize_chirp(210.0, 100.0, 0.160, 0.34),
-            )
+            .insert_wav(LIFE_LOST_SOUND, synthesize_chirp(210.0, 100.0, 0.160, 0.34))
             .expect("Breakout life lost sound id should be unique");
         sounds
             .insert_wav(
@@ -139,11 +171,16 @@ impl BreakoutApp {
             )
             .expect("Breakout level clear sound id should be unique");
         sounds
-            .insert_wav(
-                GAME_OVER_SOUND,
-                synthesize_chirp(190.0, 62.0, 0.360, 0.38),
-            )
+            .insert_wav(GAME_OVER_SOUND, synthesize_chirp(190.0, 62.0, 0.360, 0.38))
             .expect("Breakout game over sound id should be unique");
+
+        let virtual_pad = touch.then(|| {
+            VirtualPad::new([
+                VirtualButton::new(MOVE_LEFT, TOUCH_LEFT),
+                VirtualButton::new(MOVE_RIGHT, TOUCH_RIGHT),
+                VirtualButton::new(ACTION, TOUCH_ACTION),
+            ])
+        });
 
         let mut app = Self {
             page: Page::Main,
@@ -162,6 +199,7 @@ impl BreakoutApp {
             level: 1,
             bricks: make_bricks(),
             controls: breakout_controls(),
+            virtual_pad,
             sounds,
         };
         app.reset_ball();
@@ -196,7 +234,10 @@ impl BreakoutApp {
             }
             Page::Controls => {
                 if frame.input.key(Key::Escape).pressed()
-                    || frame.input.gamepad_button_any(GamepadButton::East).pressed()
+                    || frame
+                        .input
+                        .gamepad_button_any(GamepadButton::East)
+                        .pressed()
                     || menu_confirm_pressed(frame.input)
                 {
                     self.page = Page::Main;
@@ -213,15 +254,19 @@ impl BreakoutApp {
             return GameResult::Exit;
         }
 
+        if let Some(virtual_pad) = &mut self.virtual_pad {
+            virtual_pad.update(frame.input, &mut self.controls);
+        }
         self.controls.update(frame.input);
+
         if self.round_state == RoundState::Lost {
-            if menu_up_pressed(frame.input) {
+            if menu_up_pressed(frame.input) || self.controls.action(MOVE_LEFT).pressed() {
                 self.end_menu.select_previous();
             }
-            if menu_down_pressed(frame.input) {
+            if menu_down_pressed(frame.input) || self.controls.action(MOVE_RIGHT).pressed() {
                 self.end_menu.select_next();
             }
-            if menu_confirm_pressed(frame.input) {
+            if menu_confirm_pressed(frame.input) || self.controls.action(ACTION).pressed() {
                 match self.end_menu.selected() {
                     Some(0) => self.restart_round(),
                     Some(1) => return GameResult::Exit,
@@ -331,18 +376,16 @@ impl BreakoutApp {
 
             let paddle_center = self.paddle_x + PADDLE_WIDTH as f32 / 2.0;
             let ball_center = self.ball_x + BALL_SIZE as f32 / 2.0;
-            let offset = ((ball_center - paddle_center) / (PADDLE_WIDTH as f32 / 2.0))
-                .clamp(-1.0, 1.0);
-            self.ball_vx = (self.ball_vx + offset * 45.0)
-                .clamp(-BALL_SPEED_MAX_X, BALL_SPEED_MAX_X);
+            let offset =
+                ((ball_center - paddle_center) / (PADDLE_WIDTH as f32 / 2.0)).clamp(-1.0, 1.0);
+            self.ball_vx =
+                (self.ball_vx + offset * 45.0).clamp(-BALL_SPEED_MAX_X, BALL_SPEED_MAX_X);
             feedback.paddle_hit = true;
         }
 
-        if let Some(index) = self
-            .bricks
-            .iter()
-            .position(|brick| brick.active && overlaps(ball_rect(self.ball_x, self.ball_y), brick.rect))
-        {
+        if let Some(index) = self.bricks.iter().position(|brick| {
+            brick.active && overlaps(ball_rect(self.ball_x, self.ball_y), brick.rect)
+        }) {
             let brick = self.bricks[index];
             self.bricks[index].active = false;
             self.score = self.score.saturating_add(brick_score(brick.row));
@@ -393,7 +436,7 @@ impl BreakoutApp {
 
     fn reset_ball(&mut self) {
         let speed_scale = level_speed_scale(self.level);
-        self.ball_vx = if self.lives % 2 == 0 {
+        self.ball_vx = if self.lives.is_multiple_of(2) {
             -BALL_SPEED_X * speed_scale
         } else {
             BALL_SPEED_X * speed_scale
@@ -557,10 +600,18 @@ impl BreakoutApp {
                     width: 176,
                     height: 12,
                 },
-                "SPACE/SOUTH LAUNCH",
+                if self.virtual_pad.is_some() {
+                    "ACTION TO LAUNCH"
+                } else {
+                    "SPACE/SOUTH LAUNCH"
+                },
                 1,
                 FG,
             );
+        }
+
+        if self.virtual_pad.is_some() {
+            draw_touch_controls(framebuffer);
         }
     }
 
@@ -620,6 +671,12 @@ impl BreakoutApp {
     }
 }
 
+impl Default for BreakoutApp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Game for BreakoutApp {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         if self.playing {
@@ -646,9 +703,35 @@ fn breakout_controls() -> ControlMap {
     controls
 }
 
+fn draw_touch_controls(framebuffer: &mut Framebuffer) {
+    draw_panel(framebuffer, TOUCH_PANEL, BG, BORDER);
+    draw_text_centered(
+        framebuffer,
+        Rect {
+            x: TOUCH_PANEL.x,
+            y: 12,
+            width: TOUCH_PANEL.width,
+            height: 18,
+        },
+        "TOUCH",
+        1,
+        FG,
+    );
+
+    for (rect, label) in [
+        (TOUCH_ACTION, "ACTION"),
+        (TOUCH_LEFT, "LEFT"),
+        (TOUCH_RIGHT, "RIGHT"),
+    ] {
+        framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, TOUCH_FILL);
+        framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, BORDER);
+        draw_text_centered(framebuffer, rect, label, 1, ACCENT);
+    }
+}
+
 fn make_bricks() -> Vec<Brick> {
     let mut bricks = Vec::with_capacity(BRICK_COLUMNS * BRICK_ROWS);
-    for row in 0..BRICK_ROWS {
+    for (row, color) in BRICK_COLORS.into_iter().enumerate() {
         for column in 0..BRICK_COLUMNS {
             bricks.push(Brick {
                 rect: Rect {
@@ -658,7 +741,7 @@ fn make_bricks() -> Vec<Brick> {
                     height: BRICK_HEIGHT,
                 },
                 active: true,
-                color: BRICK_COLORS[row],
+                color,
                 row,
             });
         }
@@ -679,13 +762,7 @@ fn move_paddle(x: f32, direction: f32, dt: f32) -> f32 {
     (x + direction * PADDLE_SPEED * dt).clamp(0.0, max_x)
 }
 
-fn bounce_from_brick(
-    brick: Rect,
-    ball_x: f32,
-    ball_y: f32,
-    ball_vx: &mut f32,
-    ball_vy: &mut f32,
-) {
+fn bounce_from_brick(brick: Rect, ball_x: f32, ball_y: f32, ball_vx: &mut f32, ball_vy: &mut f32) {
     let ball_left = ball_x;
     let ball_right = ball_x + BALL_SIZE as f32;
     let ball_top = ball_y;
@@ -829,6 +906,16 @@ mod tests {
     }
 
     #[test]
+    fn touch_mode_has_three_virtual_actions_and_starts_in_game() {
+        let app = BreakoutApp::new_touch();
+        assert!(app.playing);
+        assert_eq!(
+            app.virtual_pad.as_ref().map(|pad| pad.buttons().len()),
+            Some(3)
+        );
+    }
+
+    #[test]
     fn upper_rows_score_more_points() {
         assert!(brick_score(0) > brick_score(BRICK_ROWS - 1));
         assert_eq!(brick_score(0), BRICK_ROWS as u32 * 10);
@@ -848,7 +935,10 @@ mod tests {
     #[test]
     fn substeps_catch_fast_brick_collision() {
         let mut app = BreakoutApp::new();
-        let brick = app.bricks[0];
+        // Approach the bottom brick row from below so no other active brick can
+        // legitimately intercept the ball before the brick under test.
+        let brick_index = (BRICK_ROWS - 1) * BRICK_COLUMNS;
+        let brick = app.bricks[brick_index];
         app.ball_stuck = false;
         app.ball_x = brick.rect.x as f32 + 4.0;
         app.ball_y = brick.rect.y as f32 + brick.rect.height as f32 + 8.0;
@@ -857,7 +947,7 @@ mod tests {
 
         let feedback = app.update_ball(0.02);
 
-        assert!(!app.bricks[0].active);
+        assert!(!app.bricks[brick_index].active);
         assert!(app.score > 0);
         assert!(feedback.brick_hits > 0);
     }

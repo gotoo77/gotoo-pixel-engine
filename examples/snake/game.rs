@@ -4,6 +4,7 @@ use std::time::Duration;
 use gotoo_pixel_engine::{
     ActionId, Audio, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key,
     LocalStorage, MouseButton, Pixel, Rect, Size, SoundBank, SoundId, Touch, TouchPhase,
+    ui::{VirtualButton, VirtualPad, VirtualPadUpdate},
 };
 
 pub const KEYBOARD_FRAMEBUFFER_WIDTH: u32 = 320;
@@ -238,11 +239,23 @@ impl DPadLayout {
     }
 }
 
+fn virtual_pad_for_mode(mode: SnakeInteractionMode) -> Option<VirtualPad> {
+    let d_pad = SnakeLayout::for_mode(mode).d_pad?;
+    Some(VirtualPad::new([
+        VirtualButton::new(CONTROL_UP, d_pad.up),
+        VirtualButton::new(CONTROL_RIGHT, d_pad.right),
+        VirtualButton::new(CONTROL_DOWN, d_pad.down),
+        VirtualButton::new(CONTROL_LEFT, d_pad.left),
+    ]))
+}
+
 #[derive(Debug)]
 pub struct SnakeGame {
     world: SnakeWorld,
     accumulator: Duration,
     interaction_mode: SnakeInteractionMode,
+    virtual_pad: Option<VirtualPad>,
+    #[cfg(test)]
     touch_controls: TouchControls,
     controls: ControlMap,
     sounds: SoundBank,
@@ -252,10 +265,13 @@ pub struct SnakeGame {
 
 impl SnakeGame {
     pub fn new(interaction_mode: SnakeInteractionMode) -> Self {
+        let virtual_pad = virtual_pad_for_mode(interaction_mode);
         Self {
             world: SnakeWorld::new(INITIAL_SEED),
             accumulator: Duration::ZERO,
             interaction_mode,
+            virtual_pad,
+            #[cfg(test)]
             touch_controls: TouchControls::default(),
             controls: default_controls(),
             sounds: snake_sound_bank(),
@@ -298,6 +314,8 @@ impl SnakeGame {
             ticks += 1;
 
             if self.world.phase() != Phase::Running {
+                self.reset_virtual_pad();
+                #[cfg(test)]
                 self.touch_controls.reset_contact();
                 break;
             }
@@ -309,7 +327,15 @@ impl SnakeGame {
     fn restart(&mut self) {
         self.world.restart();
         self.accumulator = Duration::ZERO;
+        self.reset_virtual_pad();
+        #[cfg(test)]
         self.touch_controls.reset_contact();
+    }
+
+    fn reset_virtual_pad(&mut self) {
+        if let Some(virtual_pad) = &mut self.virtual_pad {
+            virtual_pad.reset(&mut self.controls);
+        }
     }
 
     fn load_best_score_once(&mut self, storage: &mut dyn LocalStorage) {
@@ -377,7 +403,9 @@ impl SnakeGame {
 
         if self.world.phase() == Phase::GameOver {
             draw_game_over(framebuffer, layout, self.world.score());
-        } else if self.touch_controls.visible() && layout.d_pad.is_some() {
+        } else if self.virtual_pad.as_ref().is_some_and(VirtualPad::visible)
+            && layout.d_pad.is_some()
+        {
             draw_d_pad(framebuffer, layout);
         }
     }
@@ -386,6 +414,18 @@ impl SnakeGame {
 impl Game for SnakeGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.load_best_score_once(frame.storage);
+
+        let phase = self.world.phase();
+        let virtual_update = match phase {
+            Phase::Running => self
+                .virtual_pad
+                .as_mut()
+                .map(|virtual_pad| virtual_pad.update(frame.input, &mut self.controls)),
+            Phase::GameOver => {
+                self.reset_virtual_pad();
+                None
+            }
+        };
         self.controls.update(frame.input);
 
         if self.controls.action(CONTROL_EXIT).pressed() {
@@ -395,8 +435,8 @@ impl Game for SnakeGame {
         let layout = self.layout();
         let controls = SnakeControls::from_frame(
             frame,
-            self.world.phase(),
-            &mut self.touch_controls,
+            phase,
+            virtual_update.as_ref(),
             layout,
             &self.controls,
         );
@@ -715,32 +755,39 @@ impl SnakeControls {
     fn from_frame(
         frame: &Frame<'_>,
         phase: Phase,
-        touch_controls: &mut TouchControls,
+        virtual_update: Option<&VirtualPadUpdate>,
         layout: SnakeLayout,
         controls: &ControlMap,
     ) -> Self {
-        touch_controls.observe_touches(frame.input.touches());
-
         match phase {
-            Phase::Running => Self::from_running_frame(frame, touch_controls, layout, controls),
-            Phase::GameOver => Self::from_game_over_inputs_in_layout(
-                controls.action(CONTROL_RESTART).pressed(),
-                frame.input.mouse_button(MouseButton::Left).pressed(),
-                frame.input.mouse_position(),
-                frame.input.touches(),
-                touch_controls,
-                layout,
-            ),
+            Phase::Running => Self::from_running_inputs(controls, virtual_update),
+            Phase::GameOver => Self {
+                directions: Vec::new(),
+                restart: replay_requested(
+                    controls.action(CONTROL_RESTART).pressed(),
+                    frame.input.mouse_button(MouseButton::Left).pressed(),
+                    frame.input.mouse_position(),
+                    frame.input.touches(),
+                    layout,
+                ),
+            },
         }
     }
 
-    fn from_running_frame(
-        frame: &Frame<'_>,
-        touch_controls: &mut TouchControls,
-        layout: SnakeLayout,
+    fn from_running_inputs(
         controls: &ControlMap,
+        virtual_update: Option<&VirtualPadUpdate>,
     ) -> Self {
         let mut result = Self::none();
+        let virtual_actions = virtual_update
+            .map(VirtualPadUpdate::pressed_actions)
+            .unwrap_or(&[]);
+
+        for action in virtual_actions.iter().copied() {
+            if let Some(direction) = direction_for_action(action) {
+                result.directions.push(direction);
+            }
+        }
 
         for (action, direction) in [
             (CONTROL_UP, Direction::Up),
@@ -748,14 +795,11 @@ impl SnakeControls {
             (CONTROL_DOWN, Direction::Down),
             (CONTROL_LEFT, Direction::Left),
         ] {
-            if controls.action(action).pressed() {
+            if controls.action(action).pressed() && !virtual_actions.contains(&action) {
                 result.directions.push(direction);
             }
         }
 
-        result
-            .directions
-            .extend(touch_controls.directions_from_touches(frame.input.touches(), layout));
         result.restart = controls.action(CONTROL_RESTART).pressed();
         result
     }
@@ -778,6 +822,7 @@ impl SnakeControls {
         )
     }
 
+    #[cfg(test)]
     fn from_game_over_inputs_in_layout(
         keyboard_restart_pressed: bool,
         mouse_left_pressed: bool,
@@ -817,6 +862,20 @@ impl SnakeControls {
     }
 }
 
+fn direction_for_action(action: ActionId) -> Option<Direction> {
+    if action == CONTROL_UP {
+        Some(Direction::Up)
+    } else if action == CONTROL_RIGHT {
+        Some(Direction::Right)
+    } else if action == CONTROL_DOWN {
+        Some(Direction::Down)
+    } else if action == CONTROL_LEFT {
+        Some(Direction::Left)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 fn direction_for_key(key: Key) -> Option<Direction> {
     match key {
@@ -828,12 +887,14 @@ fn direction_for_key(key: Key) -> Option<Direction> {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct TouchControls {
     visible: bool,
     d_pad: DPadTracker,
 }
 
+#[cfg(test)]
 impl TouchControls {
     fn observe_touches(&mut self, touches: &[Touch]) {
         if !touches.is_empty() {
@@ -848,22 +909,15 @@ impl TouchControls {
     fn reset_contact(&mut self) {
         self.d_pad.reset();
     }
-
-    fn directions_from_touches(
-        &mut self,
-        touches: &[Touch],
-        layout: SnakeLayout,
-    ) -> Vec<Direction> {
-        self.d_pad
-            .directions_from_touches_in_layout(touches, layout)
-    }
 }
 
+#[cfg(test)]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct DPadTracker {
     active: Option<DPadContact>,
 }
 
+#[cfg(test)]
 impl DPadTracker {
     fn reset(&mut self) {
         self.active = None;
@@ -956,11 +1010,13 @@ struct DirectionZone {
     direction: Direction,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DPadZone {
     direction: Option<Direction>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DPadContact {
     id: u64,
@@ -972,6 +1028,7 @@ fn d_pad_zone_at(position: (i32, i32)) -> Option<DPadZone> {
     d_pad_zone_at_in_layout(position, SnakeLayout::touch())
 }
 
+#[cfg(test)]
 fn d_pad_zone_at_in_layout(position: (i32, i32), layout: SnakeLayout) -> Option<DPadZone> {
     let d_pad = layout.d_pad?;
 

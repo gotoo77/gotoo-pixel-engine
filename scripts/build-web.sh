@@ -3,9 +3,19 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-echo "==> build snake_web"
-cargo build --target wasm32-unknown-unknown --example snake_web
-wasm-bindgen --target web --out-dir web/pkg target/wasm32-unknown-unknown/debug/examples/snake_web.wasm
+build_web_example() {
+    local example="$1"
+
+    echo "==> build ${example}"
+    cargo build --target wasm32-unknown-unknown --example "${example}"
+    wasm-bindgen \
+        --target web \
+        --out-dir web/pkg \
+        "target/wasm32-unknown-unknown/debug/examples/${example}.wasm"
+}
+
+build_web_example snake_web
+build_web_example breakout_web
 
 echo "==> build web_demo"
 cargo build --target wasm32-unknown-unknown --example web_demo
