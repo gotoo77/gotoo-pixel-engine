@@ -52,7 +52,8 @@ enum MatchState {
 
 struct PongApp {
     page: Page,
-    menu: MenuState,
+    main_menu: MenuState,
+    end_menu: MenuState,
     playing: bool,
     match_state: MatchState,
     p1_y: f32,
@@ -88,7 +89,8 @@ impl PongApp {
 
         let mut app = Self {
             page: Page::Main,
-            menu: MenuState::new(3),
+            main_menu: MenuState::new(3),
+            end_menu: MenuState::new(2),
             playing: false,
             match_state: MatchState::WaitingServe,
             p1_y: centered_paddle_y(),
@@ -144,13 +146,13 @@ impl PongApp {
         match self.page {
             Page::Main => {
                 if menu_up_pressed(frame.input) {
-                    self.menu.select_previous();
+                    self.main_menu.select_previous();
                 }
                 if menu_down_pressed(frame.input) {
-                    self.menu.select_next();
+                    self.main_menu.select_next();
                 }
                 if menu_confirm_pressed(frame.input) {
-                    match self.menu.selected() {
+                    match self.main_menu.selected() {
                         Some(0) => {
                             self.reset_match();
                             self.playing = true;
@@ -181,35 +183,44 @@ impl PongApp {
             return GameResult::Exit;
         }
 
+        if self.match_state == MatchState::MatchOver {
+            if menu_up_pressed(frame.input) {
+                self.end_menu.select_previous();
+            }
+            if menu_down_pressed(frame.input) {
+                self.end_menu.select_next();
+            }
+            if menu_confirm_pressed(frame.input) {
+                match self.end_menu.selected() {
+                    Some(0) => self.reset_match(),
+                    Some(1) => return GameResult::Exit,
+                    _ => {}
+                }
+            }
+            self.render_game(frame.framebuffer);
+            return GameResult::Continue;
+        }
+
         self.p1_controls.update(frame.input);
         self.p2_controls.update(frame.input);
 
         let dt = frame.delta_time.as_secs_f32().min(0.05);
-        if self.match_state != MatchState::MatchOver {
-            self.p1_y = move_paddle(
-                self.p1_y,
-                self.p1_controls.action(P1_UP).held(),
-                self.p1_controls.action(P1_DOWN).held(),
-                dt,
-            );
-            self.p2_y = move_paddle(
-                self.p2_y,
-                self.p2_controls.action(P2_UP).held(),
-                self.p2_controls.action(P2_DOWN).held(),
-                dt,
-            );
-        }
+        self.p1_y = move_paddle(
+            self.p1_y,
+            self.p1_controls.action(P1_UP).held(),
+            self.p1_controls.action(P1_DOWN).held(),
+            dt,
+        );
+        self.p2_y = move_paddle(
+            self.p2_y,
+            self.p2_controls.action(P2_UP).held(),
+            self.p2_controls.action(P2_DOWN).held(),
+            dt,
+        );
 
-        let confirm = frame.input.key(Key::Space).pressed()
-            || frame.input.gamepad_button_any(GamepadButton::South).pressed();
-
-        match self.match_state {
-            MatchState::WaitingServe if confirm => {
-                self.serve();
-                let _ = self.sounds.play(frame.audio, SERVE_SOUND);
-            }
-            MatchState::MatchOver if confirm => self.reset_match(),
-            _ => {}
+        if self.match_state == MatchState::WaitingServe && menu_confirm_pressed(frame.input) {
+            self.serve();
+            let _ = self.sounds.play(frame.audio, SERVE_SOUND);
         }
 
         if self.match_state == MatchState::Playing {
@@ -318,11 +329,12 @@ impl PongApp {
     fn after_point(&mut self, direction_toward_loser: f32) {
         self.serve_direction = direction_toward_loser;
         self.reset_ball();
-        self.match_state = if self.p1_score >= WIN_SCORE || self.p2_score >= WIN_SCORE {
-            MatchState::MatchOver
+        if self.p1_score >= WIN_SCORE || self.p2_score >= WIN_SCORE {
+            self.match_state = MatchState::MatchOver;
+            self.end_menu = MenuState::new(2);
         } else {
-            MatchState::WaitingServe
-        };
+            self.match_state = MatchState::WaitingServe;
+        }
     }
 
     fn reset_ball(&mut self) {
@@ -338,6 +350,7 @@ impl PongApp {
         self.p1_score = 0;
         self.p2_score = 0;
         self.serve_direction = 1.0;
+        self.end_menu = MenuState::new(2);
         self.reset_ball();
         self.match_state = MatchState::WaitingServe;
     }
@@ -391,7 +404,7 @@ impl PongApp {
                     height: 16,
                 },
                 label,
-                self.menu.selected() == Some(index),
+                self.main_menu.selected() == Some(index),
                 1,
                 FG,
                 ACCENT,
@@ -512,48 +525,56 @@ impl PongApp {
                 );
             }
             MatchState::Playing => {}
-            MatchState::MatchOver => {
-                draw_panel(
-                    framebuffer,
-                    Rect {
-                        x: 82,
-                        y: 62,
-                        width: 156,
-                        height: 56,
-                    },
-                    BG,
-                    BORDER,
-                );
-                let winner = match self.winner() {
-                    Some(1) => "P1 WINS",
-                    Some(2) => "P2 WINS",
-                    _ => "MATCH OVER",
-                };
-                draw_text_centered(
-                    framebuffer,
-                    Rect {
-                        x: 94,
-                        y: 76,
-                        width: 132,
-                        height: 12,
-                    },
-                    winner,
-                    1,
-                    ACCENT,
-                );
-                draw_text_centered(
-                    framebuffer,
-                    Rect {
-                        x: 94,
-                        y: 96,
-                        width: 132,
-                        height: 12,
-                    },
-                    "SPACE/SOUTH REPLAY",
-                    1,
-                    FG,
-                );
-            }
+            MatchState::MatchOver => self.render_end_menu(framebuffer),
+        }
+    }
+
+    fn render_end_menu(&self, framebuffer: &mut Framebuffer) {
+        draw_panel(
+            framebuffer,
+            Rect {
+                x: 82,
+                y: 46,
+                width: 156,
+                height: 98,
+            },
+            BG,
+            BORDER,
+        );
+
+        let winner = match self.winner() {
+            Some(1) => "P1 WINS",
+            Some(2) => "P2 WINS",
+            _ => "MATCH OVER",
+        };
+        draw_text_centered(
+            framebuffer,
+            Rect {
+                x: 94,
+                y: 60,
+                width: 132,
+                height: 16,
+            },
+            winner,
+            1,
+            ACCENT,
+        );
+
+        for (index, (label, y)) in [("REPLAY", 91), ("QUIT", 115)].into_iter().enumerate() {
+            draw_menu_item(
+                framebuffer,
+                Rect {
+                    x: 100,
+                    y,
+                    width: 120,
+                    height: 16,
+                },
+                label,
+                self.end_menu.selected() == Some(index),
+                1,
+                FG,
+                ACCENT,
+            );
         }
     }
 }
@@ -742,6 +763,15 @@ mod tests {
         app.after_point(1.0);
         assert_eq!(app.match_state, MatchState::MatchOver);
         assert_eq!(app.winner(), Some(1));
+        assert_eq!(app.end_menu.selected(), Some(0));
+    }
+
+    #[test]
+    fn end_menu_has_replay_and_quit_choices() {
+        let mut app = PongApp::new();
+        assert_eq!(app.end_menu.selected(), Some(0));
+        app.end_menu.select_next();
+        assert_eq!(app.end_menu.selected(), Some(1));
     }
 
     #[test]
