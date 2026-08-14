@@ -6,6 +6,7 @@ on:
       - m5.3-pong-web
     paths:
       - .github/scripts/m5_3_pong_web.py
+      - .github/scripts/m5_3_pong_web_fix.py
       - .github/workflows/m5-3-pong-web.yml
 
 permissions:
@@ -34,7 +35,9 @@ jobs:
           rustup target add wasm32-unknown-unknown
 
       - name: Apply Pong web migration
-        run: python .github/scripts/m5_3_pong_web.py
+        run: |
+          python .github/scripts/m5_3_pong_web.py
+          python .github/scripts/m5_3_pong_web_fix.py
 
       - name: Format
         run: cargo fmt --all
