@@ -1,6 +1,6 @@
 mod virtual_pad;
 
-pub use virtual_pad::{VirtualButton, VirtualPad};
+pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
 
 use crate::{Framebuffer, GamepadButton, Input, Key, Pixel, Rect};
 
