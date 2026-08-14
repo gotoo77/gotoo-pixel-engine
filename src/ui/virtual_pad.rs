@@ -20,6 +20,10 @@ pub struct VirtualPadUpdate {
 }
 
 impl VirtualPadUpdate {
+    /// Ordered action entries observed while processing this frame's touch events.
+    ///
+    /// Unlike the final `ControlMap` state, this preserves intermediate zone
+    /// changes such as RIGHT -> UP -> LEFT occurring inside one frame.
     pub fn pressed_actions(&self) -> &[ActionId] {
         &self.pressed_actions
     }
