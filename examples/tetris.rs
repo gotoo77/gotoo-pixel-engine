@@ -3,8 +3,11 @@ mod game;
 
 use game::{FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, TetrisGame};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Game, GameResult, GamepadButton, Key, Pixel, Rect,
-    ui::{MenuState, draw_menu_item, draw_panel, draw_text_centered},
+    EngineConfig, EngineError, Frame, Game, GameResult, Key, Pixel, Rect,
+    ui::{
+        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
+        menu_down_pressed, menu_up_pressed,
+    },
     run,
 };
 
@@ -32,13 +35,13 @@ impl TetrisApp {
         if frame.input.key(Key::Escape).pressed() {
             return GameResult::Exit;
         }
-        if menu_up_pressed(frame) {
+        if menu_up_pressed(frame.input) {
             self.menu.select_previous();
         }
-        if menu_down_pressed(frame) {
+        if menu_down_pressed(frame.input) {
             self.menu.select_next();
         }
-        if confirm_pressed(frame) {
+        if menu_confirm_pressed(frame.input) {
             match self.menu.selected() {
                 Some(0) => self.playing = true,
                 Some(1) => return GameResult::Exit,
@@ -59,40 +62,6 @@ impl Game for TetrisApp {
             self.update_menu(frame)
         }
     }
-}
-
-fn menu_up_pressed(frame: &Frame<'_>) -> bool {
-    frame.input.key(Key::Up).pressed()
-        || frame.input.key(Key::W).pressed()
-        || frame
-            .input
-            .gamepad_button_any(GamepadButton::DPadUp)
-            .pressed()
-        || frame
-            .input
-            .gamepad_button_any(GamepadButton::LeftStickUp)
-            .pressed()
-}
-
-fn menu_down_pressed(frame: &Frame<'_>) -> bool {
-    frame.input.key(Key::Down).pressed()
-        || frame.input.key(Key::S).pressed()
-        || frame
-            .input
-            .gamepad_button_any(GamepadButton::DPadDown)
-            .pressed()
-        || frame
-            .input
-            .gamepad_button_any(GamepadButton::LeftStickDown)
-            .pressed()
-}
-
-fn confirm_pressed(frame: &Frame<'_>) -> bool {
-    frame.input.key(Key::Space).pressed()
-        || frame
-            .input
-            .gamepad_button_any(GamepadButton::South)
-            .pressed()
 }
 
 fn render_menu(frame: &mut Frame<'_>, menu: MenuState) {
