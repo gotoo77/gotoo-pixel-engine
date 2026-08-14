@@ -1,6 +1,6 @@
 use gotoo_pixel_engine::{
     ActionId, ControlMap, EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult,
-    GamepadButton, GamepadId, Input, Key, Pixel, Rect, run,
+    GamepadButton, GamepadId, Input, Key, Pixel, Rect, SoundBank, SoundId, pcm16_mono_wav, run,
     ui::{
         MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
         menu_down_pressed, menu_up_pressed,
@@ -14,6 +14,11 @@ const P1_UP: ActionId = ActionId::new("pong.p1.up");
 const P1_DOWN: ActionId = ActionId::new("pong.p1.down");
 const P2_UP: ActionId = ActionId::new("pong.p2.up");
 const P2_DOWN: ActionId = ActionId::new("pong.p2.down");
+
+const SERVE_SOUND: SoundId = SoundId::new("pong.serve");
+const PADDLE_HIT_SOUND: SoundId = SoundId::new("pong.paddle_hit");
+const POINT_SOUND: SoundId = SoundId::new("pong.point");
+const AUDIO_SAMPLE_RATE: u32 = 44_100;
 
 const BG: Pixel = Pixel::rgb(6, 10, 14);
 const FG: Pixel = Pixel::rgb(230, 238, 230);
@@ -62,10 +67,25 @@ struct PongApp {
     assigned_gamepads: [Option<GamepadId>; 2],
     p1_controls: ControlMap,
     p2_controls: ControlMap,
+    sounds: SoundBank,
 }
 
 impl PongApp {
     fn new() -> Self {
+        let mut sounds = SoundBank::new();
+        sounds
+            .insert_wav(SERVE_SOUND, synthesize_chirp(620.0, 880.0, 0.055, 0.34))
+            .expect("Pong serve sound id should be unique");
+        sounds
+            .insert_wav(
+                PADDLE_HIT_SOUND,
+                synthesize_chirp(430.0, 350.0, 0.040, 0.30),
+            )
+            .expect("Pong paddle hit sound id should be unique");
+        sounds
+            .insert_wav(POINT_SOUND, synthesize_chirp(230.0, 105.0, 0.180, 0.38))
+            .expect("Pong point sound id should be unique");
+
         let mut app = Self {
             page: Page::Main,
             menu: MenuState::new(3),
@@ -83,6 +103,7 @@ impl PongApp {
             assigned_gamepads: [None, None],
             p1_controls: ControlMap::new(),
             p2_controls: ControlMap::new(),
+            sounds,
         };
         app.rebuild_controls();
         app
@@ -183,13 +204,22 @@ impl PongApp {
             || frame.input.gamepad_button_any(GamepadButton::South).pressed();
 
         match self.match_state {
-            MatchState::WaitingServe if confirm => self.serve(),
+            MatchState::WaitingServe if confirm => {
+                self.serve();
+                let _ = self.sounds.play(frame.audio, SERVE_SOUND);
+            }
             MatchState::MatchOver if confirm => self.reset_match(),
             _ => {}
         }
 
         if self.match_state == MatchState::Playing {
-            self.update_ball(dt);
+            let (paddle_hit, point_scored) = self.update_ball(dt);
+            if paddle_hit {
+                let _ = self.sounds.play(frame.audio, PADDLE_HIT_SOUND);
+            }
+            if point_scored {
+                let _ = self.sounds.play(frame.audio, POINT_SOUND);
+            }
         }
 
         self.render_game(frame.framebuffer);
@@ -210,20 +240,26 @@ impl PongApp {
         self.match_state = MatchState::Playing;
     }
 
-    fn update_ball(&mut self, dt: f32) {
+    fn update_ball(&mut self, dt: f32) -> (bool, bool) {
         let largest_delta = self.ball_vx.abs().max(self.ball_vy.abs()) * dt;
         let steps = ((largest_delta / BALL_SUBSTEP).ceil() as u32).clamp(1, 32);
         let step_dt = dt / steps as f32;
+        let mut paddle_hit = false;
+        let mut point_scored = false;
 
         for _ in 0..steps {
             if self.match_state != MatchState::Playing {
                 break;
             }
-            self.step_ball(step_dt);
+            let (step_paddle_hit, step_point_scored) = self.step_ball(step_dt);
+            paddle_hit |= step_paddle_hit;
+            point_scored |= step_point_scored;
         }
+
+        (paddle_hit, point_scored)
     }
 
-    fn step_ball(&mut self, dt: f32) {
+    fn step_ball(&mut self, dt: f32) -> (bool, bool) {
         self.ball_x += self.ball_vx * dt;
         self.ball_y += self.ball_vy * dt;
 
@@ -240,6 +276,7 @@ impl PongApp {
         let p1 = paddle_rect(12, self.p1_y);
         let p2 = paddle_rect(FRAMEBUFFER_WIDTH as i32 - 18, self.p2_y);
         let ball = ball_rect(self.ball_x, self.ball_y);
+        let mut paddle_hit = false;
 
         if self.ball_vx < 0.0 && overlaps(ball, p1) {
             self.ball_x = (p1.x + p1.width as i32) as f32;
@@ -250,6 +287,7 @@ impl PongApp {
                 self.p1_y,
                 1.0,
             );
+            paddle_hit = true;
         } else if self.ball_vx > 0.0 && overlaps(ball, p2) {
             self.ball_x = (p2.x - BALL_SIZE as i32) as f32;
             bounce_from_paddle(
@@ -259,15 +297,22 @@ impl PongApp {
                 self.p2_y,
                 -1.0,
             );
+            paddle_hit = true;
         }
 
-        if self.ball_x + (BALL_SIZE as f32) < 0.0 {
+        let point_scored = if self.ball_x + (BALL_SIZE as f32) < 0.0 {
             self.p2_score = self.p2_score.saturating_add(1);
             self.after_point(-1.0);
+            true
         } else if self.ball_x > FRAMEBUFFER_WIDTH as f32 {
             self.p1_score = self.p1_score.saturating_add(1);
             self.after_point(1.0);
-        }
+            true
+        } else {
+            false
+        };
+
+        (paddle_hit, point_scored)
     }
 
     fn after_point(&mut self, direction_toward_loser: f32) {
@@ -572,6 +617,25 @@ fn bounce_from_paddle(
     *vy = speed * angle.sin();
 }
 
+fn synthesize_chirp(start_hz: f32, end_hz: f32, duration: f32, gain: f32) -> Vec<u8> {
+    let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
+    let mut samples = Vec::with_capacity(sample_count);
+    let mut phase = 0.0_f32;
+
+    for index in 0..sample_count {
+        let progress = index as f32 / sample_count.max(1) as f32;
+        let frequency = start_hz + (end_hz - start_hz) * progress;
+        phase += frequency / AUDIO_SAMPLE_RATE as f32;
+        let square = if phase.fract() < 0.5 { 1.0 } else { -1.0 };
+        let envelope = (1.0 - progress).max(0.0);
+        let sample = square * envelope * envelope * gain;
+        samples.push((sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
+    }
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Pong procedural audio should use a supported PCM format")
+}
+
 fn paddle_rect(x: i32, y: f32) -> Rect {
     Rect {
         x,
@@ -690,9 +754,19 @@ mod tests {
         app.ball_vx = -900.0;
         app.ball_vy = 0.0;
 
-        app.update_ball(0.03);
+        let (paddle_hit, point_scored) = app.update_ball(0.03);
 
+        assert!(paddle_hit);
+        assert!(!point_scored);
         assert!(app.ball_vx > 0.0);
         assert_eq!(app.match_state, MatchState::Playing);
+    }
+
+    #[test]
+    fn sound_bank_owns_pong_feedback_assets() {
+        let app = PongApp::new();
+        assert!(app.sounds.contains(SERVE_SOUND));
+        assert!(app.sounds.contains(PADDLE_HIT_SOUND));
+        assert!(app.sounds.contains(POINT_SOUND));
     }
 }
