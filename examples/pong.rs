@@ -261,7 +261,7 @@ impl PongApp {
             );
         }
 
-        if self.ball_x + BALL_SIZE as f32 < 0.0 {
+        if self.ball_x + (BALL_SIZE as f32) < 0.0 {
             self.p2_score = self.p2_score.saturating_add(1);
             self.after_point(-1.0);
         } else if self.ball_x > FRAMEBUFFER_WIDTH as f32 {
