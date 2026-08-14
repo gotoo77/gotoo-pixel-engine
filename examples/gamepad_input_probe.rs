@@ -100,7 +100,7 @@ impl Game for GamepadInputProbe {
             8,
             24,
             &format!(
-                "DIGITAL THRESHOLD {:02}%",
+                "DIGITAL THRESHOLD {:02} PCT",
                 (self.profile.digital_threshold * 100.0).round() as u32
             ),
             Pixel::rgb(160, 200, 180),
@@ -108,13 +108,13 @@ impl Game for GamepadInputProbe {
         frame.framebuffer.draw_text(
             8,
             40,
-            "L/R SHOULDER OR A/D: ADJUST",
+            "L/R SHOULDER OR A/D ADJUST",
             Pixel::rgb(160, 200, 180),
         );
         frame.framebuffer.draw_text(
             8,
             56,
-            "START OR SPACE: RESET",
+            "START OR SPACE RESET",
             Pixel::rgb(160, 200, 180),
         );
         frame
