@@ -56,10 +56,7 @@ impl ControlMap {
         gamepad_id: GamepadId,
         button: GamepadButton,
     ) -> &mut Self {
-        self.bind(
-            action,
-            ControlBinding::GamepadDevice(gamepad_id, button),
-        )
+        self.bind(action, ControlBinding::GamepadDevice(gamepad_id, button))
     }
 
     pub fn clear_bindings(&mut self, action: ActionId) -> &mut Self {
