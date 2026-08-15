@@ -257,10 +257,6 @@ impl Input {
         self.gamepad_profiles.borrow_mut().set_profile(id, profile);
     }
 
-    pub(crate) fn reset_gamepad_profile(&self, id: GamepadId) {
-        self.gamepad_profiles.borrow_mut().reset_profile(id);
-    }
-
     pub(crate) fn remove_gamepad_profile(&self, id: GamepadId) {
         self.gamepad_profiles.borrow_mut().remove_profile(id);
     }
