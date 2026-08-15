@@ -30,6 +30,20 @@ jobs:
           rustup component add rustfmt clippy
           rustup target add wasm32-unknown-unknown
 
+      - name: Mark cross-entrypoint Arcade modes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("examples/arcade/game.rs")
+          text = path.read_text()
+          old = "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\npub enum ArcadeInteractionMode"
+          new = "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n#[allow(dead_code)]\npub enum ArcadeInteractionMode"
+          if new not in text:
+              if old not in text:
+                  raise SystemExit("ArcadeInteractionMode declaration not found")
+              path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Format
         run: cargo fmt --all
 
@@ -48,7 +62,7 @@ jobs:
       - name: Build web Arcade
         run: cargo build --target wasm32-unknown-unknown --example arcade_web
 
-      - name: Commit formatting
+      - name: Commit validated changes
         run: |
           if git diff --quiet; then
             exit 0
@@ -56,5 +70,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add examples/arcade/game.rs src/ui/virtual_pad.rs
-          git commit -m "format shared Arcade launcher"
+          git commit -m "finalize shared Arcade launcher"
           git push origin HEAD:m5.4-arcade-launcher
