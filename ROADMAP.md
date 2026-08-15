@@ -184,12 +184,25 @@ Une suspension navigateur ou un stall long ne peut donc plus réinjecter plusieu
 secondes de simulation d'un coup. Aucun `TimeSystem` ni paramétrage générique n'a
 été ajouté.
 
-### C5 — Ownership de la calibration gamepad 🚧
+### C5 — Ownership de la calibration gamepad ✅
 
-`Game::gamepad_profile()` a été utile pour valider les profils, mais Arcade
-montre que la calibration est liée au périphérique/runtime plus qu'au gameplay.
-Étudier le déplacement minimal de cette responsabilité hors de `Game` avant
-d'ajouter de nouvelles options de configuration.
+La calibration appartient maintenant au chemin runtime du périphérique, pas au
+gameplay :
+
+- `Game::gamepad_profile()` a été supprimé ;
+- l'état de profil est conservé par périphérique dans le sous-système `Input` ;
+- les backends natif et Web lisent ce même état avant de normaliser les entrées ;
+- `Frame` expose seulement `gamepad_profile`, `set_gamepad_profile` et
+  `reset_gamepad_profile` pour les outils ou écrans de configuration qui ont
+  réellement besoin de modifier la normalisation ;
+- le probe et le menu standalone de Space Invaders utilisent ces méthodes ;
+- Pause et Arcade n'ont plus à relayer une responsabilité de périphérique ;
+- le profil d'un périphérique est supprimé à sa déconnexion.
+
+La structure publique de `Frame` n'a gagné aucun champ obligatoire et les jeux
+ordinaires continuent simplement à consommer un `Input` déjà normalisé. Aucun
+`DeviceManager`, registre de configuration ou système générique de périphériques
+n'a été introduit.
 
 ### C6 — Dette locale Snake 🚧
 
@@ -211,6 +224,7 @@ Le moteur possède maintenant :
 - framebuffer CPU pixel-first ;
 - primitives de dessin, texte bitmap et `Rect` ;
 - clavier, souris, tactile et gamepad natif/Web ;
+- calibration gamepad par périphérique possédée par le runtime d'input ;
 - `ControlMap` et `VirtualPad` ;
 - timing de simulation borné par frame ;
 - viewport et mapping surface -> framebuffer ;
