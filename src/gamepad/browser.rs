@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use wasm_bindgen::JsCast;
 use web_sys::{Gamepad as WebGamepad, GamepadButton as WebGamepadButton, GamepadMappingType};
 
-use super::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
+use super::{
+    AxisCalibration, GamepadButton, GamepadId, GamepadProfile, GamepadProfiles, Input,
+};
 
 const STANDARD_BUTTONS: [(u32, GamepadButton); 12] = [
     (0, GamepadButton::South),
@@ -45,10 +47,7 @@ pub(crate) struct GamepadInputBackend {
 }
 
 impl GamepadInputBackend {
-    pub(crate) fn poll<F>(&mut self, input: &mut Input, mut profile_for: F)
-    where
-        F: FnMut(GamepadId) -> Option<GamepadProfile>,
-    {
+    pub(crate) fn poll(&mut self, input: &mut Input, profiles: &mut GamepadProfiles) {
         let Some(window) = web_sys::window() else {
             return;
         };
@@ -73,7 +72,7 @@ impl GamepadInputBackend {
             input.connect_gamepad(id, gamepad.id());
 
             if gamepad.mapping() == GamepadMappingType::Standard {
-                update_standard_gamepad(input, id, &gamepad, profile_for(id).unwrap_or_default());
+                update_standard_gamepad(input, id, &gamepad, profiles.profile(id));
             } else {
                 clear_gamepad(input, id);
             }
@@ -86,6 +85,7 @@ impl GamepadInputBackend {
             .collect::<Vec<_>>();
         for id in disconnected {
             input.disconnect_gamepad(id);
+            profiles.remove_profile(id);
         }
         self.connected = seen;
     }
