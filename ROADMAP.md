@@ -192,10 +192,9 @@ gameplay :
 - `Game::gamepad_profile()` a été supprimé ;
 - l'état de profil est conservé par périphérique dans le sous-système `Input` ;
 - les backends natif et Web lisent ce même état avant de normaliser les entrées ;
-- `Frame` expose seulement `gamepad_profile`, `set_gamepad_profile` et
-  `reset_gamepad_profile` pour les outils ou écrans de configuration qui ont
-  réellement besoin de modifier la normalisation ;
-- le probe et le menu standalone de Space Invaders utilisent ces méthodes ;
+- `Frame` expose uniquement `set_gamepad_profile`, l'opération publique requise
+  par les écrans de configuration réellement présents ;
+- le probe et le menu standalone de Space Invaders utilisent ce setter ;
 - Pause et Arcade n'ont plus à relayer une responsabilité de périphérique ;
 - le profil d'un périphérique est supprimé à sa déconnexion.
 
