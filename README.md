@@ -38,7 +38,8 @@ Capacités disponibles :
 - gamepad natif et Web avec boutons, D-pad et stick gauche normalisés ;
 - états `pressed`, `held`, `released` ;
 - `ControlMap` pour faire converger clavier, gamepad ciblé/global et contrôles virtuels ;
-- profils et calibration gamepad ;
+- profils et calibration gamepad par périphérique, possédés par le runtime d'input ;
+- réglage explicite d'un `GamepadProfile` via `Frame` pour les outils qui en ont besoin ;
 - timing de simulation par frame via `delta_time`, borné face aux stalls et suspensions ;
 - viewport conservant le ratio du framebuffer ;
 - mapping cohérent surface -> viewport -> framebuffer pour souris/tactile ;
@@ -47,6 +48,11 @@ Capacités disponibles :
 - UI immediate-mode minimale : panneaux, texte centré, menus, contrôles virtuels et pause ;
 - backend natif via `winit`/`wgpu` ;
 - cible WebAssembly/WebGPU.
+
+Un jeu ordinaire n'a pas à gérer la calibration du périphérique : il lit un
+`Input` déjà normalisé. Les méthodes de profil de `Frame` servent aux outils de
+diagnostic ou aux écrans de configuration, comme le probe gamepad et le menu
+standalone de Space Invaders.
 
 ## Jeux consommateurs
 
