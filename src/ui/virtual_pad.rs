@@ -70,11 +70,7 @@ impl VirtualPad {
         self.apply_virtual_states(controls);
     }
 
-    fn update_touches(
-        &mut self,
-        touches: &[Touch],
-        controls: &mut ControlMap,
-    ) -> VirtualPadUpdate {
+    fn update_touches(&mut self, touches: &[Touch], controls: &mut ControlMap) -> VirtualPadUpdate {
         if !touches.is_empty() {
             self.visible = true;
         }
