@@ -36,12 +36,24 @@ const BOARD_X: i32 = 8;
 const BOARD_Y: i32 = 16;
 const GRAVITY: Duration = Duration::from_millis(500);
 const SOFT_DROP: Duration = Duration::from_millis(45);
+const LINE_CLEAR_DELAY: Duration = Duration::from_millis(600);
+const LINE_CLEAR_BLINK: Duration = Duration::from_millis(100);
+const SCORE_POPUP_DURATION: Duration = Duration::from_millis(900);
+const HORIZONTAL_REPEAT_DELAY: Duration = Duration::from_millis(180);
+const HORIZONTAL_REPEAT_PERIOD: Duration = Duration::from_millis(60);
 
 const BG: Pixel = Pixel::rgb(9, 12, 16);
 const GRID: Pixel = Pixel::rgb(28, 35, 42);
 const BORDER: Pixel = Pixel::rgb(112, 126, 138);
 const TEXT: Pixel = Pixel::rgb(226, 234, 218);
 const GAME_OVER: Pixel = Pixel::rgb(245, 76, 76);
+const LINE_FLASH: Pixel = Pixel::rgb(245, 245, 220);
+const LINE_SCORE_COLORS: [Pixel; 4] = [
+    Pixel::rgb(80, 220, 230),
+    Pixel::rgb(80, 205, 105),
+    Pixel::rgb(235, 150, 55),
+    Pixel::rgb(210, 95, 235),
+];
 const TOUCH_FILL: Pixel = Pixel::rgb(18, 28, 34);
 const TOUCH_ACCENT: Pixel = Pixel::rgb(80, 220, 230);
 const TOUCH_PANEL: Rect = Rect {
@@ -199,6 +211,7 @@ struct TetrisWorld {
     score: u32,
     lines: u32,
     game_over: bool,
+    pending_rows: Vec<usize>,
     events: Vec<TetrisEvent>,
 }
 
@@ -215,6 +228,7 @@ impl TetrisWorld {
             score: 0,
             lines: 0,
             game_over: false,
+            pending_rows: Vec::new(),
             events: Vec::new(),
         }
     }
@@ -237,7 +251,7 @@ impl TetrisWorld {
     }
 
     fn translate(&mut self, dx: i32, dy: i32) -> bool {
-        if self.game_over {
+        if self.game_over || self.has_pending_clear() {
             return false;
         }
         let candidate = Piece {
@@ -254,7 +268,7 @@ impl TetrisWorld {
     }
 
     fn rotate(&mut self) -> bool {
-        if self.game_over || self.active.kind == Kind::O {
+        if self.game_over || self.has_pending_clear() || self.active.kind == Kind::O {
             return false;
         }
         let rotated = Piece {
@@ -275,14 +289,10 @@ impl TetrisWorld {
     }
 
     fn hard_drop(&mut self) {
-        if self.game_over {
+        if self.game_over || self.has_pending_clear() {
             return;
         }
-        let mut distance = 0;
-        while self.translate(0, 1) {
-            distance += 1;
-        }
-        self.score = self.score.saturating_add(distance * 2);
+        while self.translate(0, 1) {}
         self.lock();
     }
 
@@ -293,6 +303,10 @@ impl TetrisWorld {
     }
 
     fn lock(&mut self) {
+        if self.has_pending_clear() {
+            return;
+        }
+
         let cells = self.active.cells();
         if cells.iter().any(|&(_, y)| y < 0) {
             self.game_over = true;
@@ -305,19 +319,42 @@ impl TetrisWorld {
         }
         self.events.push(TetrisEvent::Locked);
 
-        let cleared = self.clear_lines();
-        self.lines += cleared;
-        self.score = self.score.saturating_add(match cleared {
-            1 => 100,
-            2 => 300,
-            3 => 500,
-            4 => 800,
-            _ => 0,
-        });
-        if cleared > 0 {
-            self.events.push(TetrisEvent::LinesCleared(cleared));
+        self.pending_rows = self.full_rows();
+        if self.pending_rows.is_empty() {
+            self.spawn_next();
+        }
+    }
+
+    fn has_pending_clear(&self) -> bool {
+        !self.pending_rows.is_empty()
+    }
+
+    fn pending_rows(&self) -> &[usize] {
+        &self.pending_rows
+    }
+
+    fn full_rows(&self) -> Vec<usize> {
+        (0..BOARD_HEIGHT as usize)
+            .filter(|&row| self.board[row].iter().all(Option::is_some))
+            .collect()
+    }
+
+    fn finish_pending_clear(&mut self) -> u32 {
+        let rows = std::mem::take(&mut self.pending_rows);
+        if rows.is_empty() {
+            return 0;
         }
 
+        let cleared = rows.len() as u32;
+        self.clear_rows(&rows);
+        self.lines = self.lines.saturating_add(cleared);
+        self.score = self.score.saturating_add(line_clear_score(cleared));
+        self.events.push(TetrisEvent::LinesCleared(cleared));
+        self.spawn_next();
+        cleared
+    }
+
+    fn spawn_next(&mut self) {
         self.active = spawn(self.next);
         self.next = self.bag.next();
         if !self.valid(self.active) {
@@ -326,24 +363,67 @@ impl TetrisWorld {
         }
     }
 
-    fn clear_lines(&mut self) -> u32 {
+    fn clear_rows(&mut self, rows: &[usize]) {
         let mut write = BOARD_HEIGHT - 1;
-        let mut cleared = 0;
         for read in (0..BOARD_HEIGHT).rev() {
-            if self.board[read as usize].iter().all(Option::is_some) {
-                cleared += 1;
-            } else {
-                if write != read {
-                    self.board[write as usize] = self.board[read as usize];
-                }
-                write -= 1;
+            if rows.contains(&(read as usize)) {
+                continue;
             }
+            if write != read {
+                self.board[write as usize] = self.board[read as usize];
+            }
+            write -= 1;
         }
         while write >= 0 {
             self.board[write as usize] = [None; BOARD_WIDTH as usize];
             write -= 1;
         }
+    }
+
+    #[cfg(test)]
+    fn clear_lines(&mut self) -> u32 {
+        let rows = self.full_rows();
+        let cleared = rows.len() as u32;
+        self.clear_rows(&rows);
         cleared
+    }
+}
+
+fn line_clear_score(lines: u32) -> u32 {
+    match lines {
+        1 => 100,
+        2 => 300,
+        3 => 500,
+        4 => 800,
+        _ => 0,
+    }
+}
+
+#[derive(Debug, Default)]
+struct HorizontalRepeat {
+    direction: i32,
+    held_for: Duration,
+    repeat_accumulator: Duration,
+}
+
+impl HorizontalRepeat {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ScorePopup {
+    lines: u32,
+    remaining: Duration,
+}
+
+impl ScorePopup {
+    fn new(lines: u32) -> Self {
+        Self {
+            lines,
+            remaining: SCORE_POPUP_DURATION,
+        }
     }
 }
 
@@ -351,6 +431,9 @@ impl TetrisWorld {
 pub struct TetrisGame {
     world: TetrisWorld,
     accumulator: Duration,
+    line_clear_elapsed: Duration,
+    score_popup: Option<ScorePopup>,
+    horizontal_repeat: HorizontalRepeat,
     controls: ControlMap,
     virtual_pad: Option<VirtualPad>,
     sounds: SoundBank,
@@ -383,6 +466,9 @@ impl TetrisGame {
         Self {
             world: TetrisWorld::new(),
             accumulator: Duration::ZERO,
+            line_clear_elapsed: Duration::ZERO,
+            score_popup: None,
+            horizontal_repeat: HorizontalRepeat::default(),
             controls: default_controls(),
             virtual_pad,
             sounds: tetris_sound_bank(),
@@ -402,23 +488,87 @@ impl TetrisGame {
             if self.controls.action(CONTROL_HARD_DROP).pressed() {
                 self.world.restart();
                 self.accumulator = Duration::ZERO;
+                self.line_clear_elapsed = Duration::ZERO;
+                self.score_popup = None;
+                self.horizontal_repeat.reset();
             }
             return GameResult::Continue;
         }
-        if self.controls.action(CONTROL_LEFT).pressed() && self.world.translate(-1, 0) {
-            self.world.events.push(TetrisEvent::Moved);
+        if self.world.has_pending_clear() {
+            self.horizontal_repeat.reset();
+            return GameResult::Continue;
         }
-        if self.controls.action(CONTROL_RIGHT).pressed() && self.world.translate(1, 0) {
-            self.world.events.push(TetrisEvent::Moved);
-        }
+
+        self.update_horizontal_repeat(frame.delta_time);
         if self.controls.action(CONTROL_ROTATE).pressed() && self.world.rotate() {
             self.world.events.push(TetrisEvent::Rotated);
         }
         if self.controls.action(CONTROL_HARD_DROP).pressed() {
             self.world.hard_drop();
             self.accumulator = Duration::ZERO;
+            self.horizontal_repeat.reset();
         }
         GameResult::Continue
+    }
+
+    fn update_horizontal_repeat(&mut self, delta_time: Duration) {
+        let left = self.controls.action(CONTROL_LEFT).held();
+        let right = self.controls.action(CONTROL_RIGHT).held();
+        let direction = match (left, right) {
+            (true, false) => -1,
+            (false, true) => 1,
+            _ => 0,
+        };
+
+        if direction == 0 {
+            self.horizontal_repeat.reset();
+            return;
+        }
+
+        if self.horizontal_repeat.direction != direction {
+            self.horizontal_repeat.direction = direction;
+            self.horizontal_repeat.held_for = Duration::ZERO;
+            self.horizontal_repeat.repeat_accumulator = Duration::ZERO;
+            self.move_horizontal(direction);
+            return;
+        }
+
+        self.horizontal_repeat.held_for =
+            self.horizontal_repeat.held_for.saturating_add(delta_time);
+        if self.horizontal_repeat.held_for < HORIZONTAL_REPEAT_DELAY {
+            return;
+        }
+
+        self.horizontal_repeat.repeat_accumulator = self
+            .horizontal_repeat
+            .repeat_accumulator
+            .saturating_add(delta_time);
+        while self.horizontal_repeat.repeat_accumulator >= HORIZONTAL_REPEAT_PERIOD {
+            self.horizontal_repeat.repeat_accumulator -= HORIZONTAL_REPEAT_PERIOD;
+            if !self.move_horizontal(direction) {
+                self.horizontal_repeat.repeat_accumulator = Duration::ZERO;
+                break;
+            }
+        }
+    }
+
+    fn move_horizontal(&mut self, direction: i32) -> bool {
+        if self.world.translate(direction, 0) {
+            self.world.events.push(TetrisEvent::Moved);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn update_score_popup(&mut self, delta_time: Duration) {
+        let Some(popup) = self.score_popup.as_mut() else {
+            return;
+        };
+        popup.remaining = popup.remaining.saturating_sub(delta_time);
+        if popup.remaining.is_zero() {
+            self.score_popup = None;
+        }
     }
 
     fn consume_events(&mut self, frame: &mut Frame<'_>) {
@@ -451,17 +601,31 @@ impl TetrisGame {
             (BOARD_HEIGHT * CELL_SIZE + 2) as u32,
             BORDER,
         );
+        let flash_on = self.world.has_pending_clear()
+            && (self.line_clear_elapsed.as_millis() / LINE_CLEAR_BLINK.as_millis())
+                .is_multiple_of(2);
         for y in 0..BOARD_HEIGHT {
+            let clearing = self.world.pending_rows().contains(&(y as usize));
             for x in 0..BOARD_WIDTH {
                 let px = BOARD_X + x * CELL_SIZE;
                 let py = BOARD_Y + y * CELL_SIZE;
                 fb.draw_rect(px, py, CELL_SIZE as u32, CELL_SIZE as u32, GRID);
                 if let Some(kind) = self.world.board[y as usize][x as usize] {
-                    draw_block(fb, x, y, kind);
+                    if clearing && flash_on {
+                        fb.fill_rect(
+                            px + 1,
+                            py + 1,
+                            (CELL_SIZE - 1) as u32,
+                            (CELL_SIZE - 1) as u32,
+                            LINE_FLASH,
+                        );
+                    } else {
+                        draw_block(fb, x, y, kind);
+                    }
                 }
             }
         }
-        if !self.world.game_over {
+        if !self.world.game_over && !self.world.has_pending_clear() {
             for (x, y) in self.world.active.cells() {
                 if y >= 0 {
                     draw_block(fb, x, y, self.world.active.kind);
@@ -487,6 +651,9 @@ impl TetrisGame {
             fb.draw_text(25, 101, "GAME OVER", GAME_OVER);
             fb.draw_text(24, 117, "DROP TO REPLAY", TEXT);
         }
+        if let Some(popup) = self.score_popup {
+            draw_score_popup(fb, popup);
+        }
         if self.virtual_pad.is_some() {
             draw_touch_controls(fb);
         }
@@ -499,14 +666,29 @@ impl Game for TetrisGame {
         if result == GameResult::Exit {
             return result;
         }
-        if !self.world.game_over {
+
+        self.update_score_popup(frame.delta_time);
+        if self.world.has_pending_clear() {
+            self.line_clear_elapsed = self.line_clear_elapsed.saturating_add(frame.delta_time);
+            if self.line_clear_elapsed >= LINE_CLEAR_DELAY {
+                let cleared = self.world.finish_pending_clear();
+                self.line_clear_elapsed = Duration::ZERO;
+                self.accumulator = Duration::ZERO;
+                if cleared > 0 {
+                    self.score_popup = Some(ScorePopup::new(cleared));
+                }
+            }
+        } else if !self.world.game_over {
             self.accumulator = self.accumulator.saturating_add(frame.delta_time);
             let period = if self.controls.action(CONTROL_SOFT_DROP).held() {
                 SOFT_DROP
             } else {
                 GRAVITY
             };
-            while self.accumulator >= period && !self.world.game_over {
+            while self.accumulator >= period
+                && !self.world.game_over
+                && !self.world.has_pending_clear()
+            {
                 self.accumulator -= period;
                 self.world.gravity_step();
             }
@@ -515,6 +697,33 @@ impl Game for TetrisGame {
         self.render(frame);
         GameResult::Continue
     }
+}
+
+fn draw_score_popup(framebuffer: &mut Framebuffer, popup: ScorePopup) {
+    let points = line_clear_score(popup.lines);
+    let color = LINE_SCORE_COLORS[popup.lines.clamp(1, 4) as usize - 1];
+    let score_text = format!("+{points}");
+    let (score_width, score_height) = Framebuffer::text_size(&score_text, 2);
+    let playfield_width = (BOARD_WIDTH * CELL_SIZE) as u32;
+    let score_x = BOARD_X + playfield_width.saturating_sub(score_width) as i32 / 2;
+    let score_y = BOARD_Y + 76;
+    framebuffer.fill_rect(
+        score_x - 4,
+        score_y - 4,
+        score_width + 8,
+        score_height + 8,
+        BG,
+    );
+    framebuffer.draw_text_scaled(score_x, score_y, &score_text, 2, color);
+
+    let line_text = if popup.lines == 1 {
+        "1 LINE".to_string()
+    } else {
+        format!("{} LINES", popup.lines)
+    };
+    let (line_width, _) = Framebuffer::text_size(&line_text, 1);
+    let line_x = BOARD_X + playfield_width.saturating_sub(line_width) as i32 / 2;
+    framebuffer.draw_text(line_x, score_y + score_height as i32 + 7, &line_text, color);
 }
 
 fn draw_touch_controls(framebuffer: &mut Framebuffer) {
@@ -750,6 +959,39 @@ mod tests {
         assert_eq!(world.score, 0);
         assert!(!world.game_over);
         assert_eq!(world.take_events(), vec![TetrisEvent::Restarted]);
+    }
+
+    #[test]
+    fn hard_drop_without_line_clear_does_not_score() {
+        let mut world = TetrisWorld::new();
+        world.hard_drop();
+        assert_eq!(world.score, 0);
+    }
+
+    #[test]
+    fn completed_line_waits_until_clear_is_finished() {
+        let mut world = TetrisWorld::new();
+        let row = (BOARD_HEIGHT - 1) as usize;
+        world.board[row] = [Some(Kind::I); BOARD_WIDTH as usize];
+        world.pending_rows = world.full_rows();
+
+        assert!(world.has_pending_clear());
+        assert!(world.board[row].iter().all(Option::is_some));
+        assert_eq!(world.score, 0);
+
+        assert_eq!(world.finish_pending_clear(), 1);
+        assert_eq!(world.score, 100);
+        assert_eq!(world.lines, 1);
+        assert!(world.board[row].iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn line_clear_scoring_is_explicit() {
+        assert_eq!(line_clear_score(1), 100);
+        assert_eq!(line_clear_score(2), 300);
+        assert_eq!(line_clear_score(3), 500);
+        assert_eq!(line_clear_score(4), 800);
+        assert_eq!(line_clear_score(0), 0);
     }
 
     #[test]
