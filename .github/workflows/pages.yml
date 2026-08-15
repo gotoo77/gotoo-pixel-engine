@@ -36,15 +36,14 @@ jobs:
 
       - name: Build Web games
         run: |
-          cargo build --release --target wasm32-unknown-unknown --example snake_web
-          cargo build --release --target wasm32-unknown-unknown --example breakout_web
-          cargo build --release --target wasm32-unknown-unknown --example tetris_web
-          cargo build --release --target wasm32-unknown-unknown --example space_invaders_web
-          cargo build --release --target wasm32-unknown-unknown --example pong_web
-          cargo build --release --target wasm32-unknown-unknown --example arcade_web
+          source scripts/web-examples.sh
+          for example in "${GPE_WEB_GAME_EXAMPLES[@]}"; do
+            cargo build --release --target wasm32-unknown-unknown --example "${example}"
+          done
 
       - name: Assemble Pages artifact
         run: |
+          source scripts/web-examples.sh
           rm -rf dist
           mkdir -p dist/pkg
           cp web/index.html dist/index.html
@@ -55,30 +54,12 @@ jobs:
           cp web/pong.html dist/pong.html
           cp web/audio-unlock.js dist/audio-unlock.js
           cp web/fullscreen.js dist/fullscreen.js
-          wasm-bindgen \
-            --target web \
-            --out-dir dist/pkg \
-            target/wasm32-unknown-unknown/release/examples/snake_web.wasm
-          wasm-bindgen \
-            --target web \
-            --out-dir dist/pkg \
-            target/wasm32-unknown-unknown/release/examples/breakout_web.wasm
-          wasm-bindgen \
-            --target web \
-            --out-dir dist/pkg \
-            target/wasm32-unknown-unknown/release/examples/tetris_web.wasm
-          wasm-bindgen \
-            --target web \
-            --out-dir dist/pkg \
-            target/wasm32-unknown-unknown/release/examples/space_invaders_web.wasm
-          wasm-bindgen \
-            --target web \
-            --out-dir dist/pkg \
-            target/wasm32-unknown-unknown/release/examples/pong_web.wasm
-          wasm-bindgen \
-            --target web \
-            --out-dir dist/pkg \
-            target/wasm32-unknown-unknown/release/examples/arcade_web.wasm
+          for example in "${GPE_WEB_GAME_EXAMPLES[@]}"; do
+            wasm-bindgen \
+              --target web \
+              --out-dir dist/pkg \
+              "target/wasm32-unknown-unknown/release/examples/${example}.wasm"
+          done
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
