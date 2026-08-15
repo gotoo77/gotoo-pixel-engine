@@ -1,0 +1,57 @@
+name: Temporary game feel polish
+
+on:
+  push:
+    branches:
+      - m5.9-game-feel-polish
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.event.head_commit.message == 'trigger game feel polish'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: m5.9-game-feel-polish
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
+
+      - run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustup target add wasm32-unknown-unknown
+          rustup component add rustfmt clippy
+
+      - name: Apply requested game feel changes
+        run: python3 scripts/temporary_game_feel_patch.py
+
+      - name: Format
+        run: cargo fmt --all
+
+      - name: Check diff hygiene
+        run: git diff --check
+
+      - name: Test all targets
+        run: cargo test --all-targets
+
+      - name: Clippy strict
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build Arcade WASM
+        run: cargo build --target wasm32-unknown-unknown --example arcade_web
+
+      - name: Check fullscreen helper
+        run: node --check web/fullscreen.js
+
+      - name: Commit validated changes
+        run: |
+          git config user.name gotoo
+          git config user.email gautier.duval@gmail.com
+          git add examples/tetris/game.rs examples/snake/game.rs
+          git commit -m 'polish Tetris feel and Snake turn feedback'
+          git push origin HEAD:m5.9-game-feel-polish
