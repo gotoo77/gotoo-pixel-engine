@@ -3,9 +3,10 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-choice="$(printf '%s\n' 'Snake' 'Space Invaders' 'Tetris' 'Pong' 'Breakout' | fzf --height=40% --reverse --prompt='Game > ')"
+choice="$(printf '%s\n' 'Arcade' 'Snake' 'Space Invaders' 'Tetris' 'Pong' 'Breakout' | fzf --height=40% --reverse --prompt='Game > ')"
 
 case "$choice" in
+    Arcade) exec cargo run --example arcade ;;
     Snake) exec cargo run --example snake ;;
     'Space Invaders') exec cargo run --example space_invaders ;;
     Tetris) exec cargo run --example tetris ;;
