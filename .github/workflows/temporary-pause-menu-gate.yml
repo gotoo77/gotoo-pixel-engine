@@ -1,13 +1,16 @@
 name: Temporary pause menu validation
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - m5.6-pause-menu
 
 permissions:
   contents: write
 
 jobs:
   validate:
+    if: github.event.head_commit.message == 'trigger pause validation'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
