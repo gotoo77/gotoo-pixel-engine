@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use gotoo_pixel_engine::{
-    Frame, Framebuffer, Input, NoopAudio, NoopStorage, Rect, Size, Viewport,
-};
+use gotoo_pixel_engine::{Frame, Framebuffer, Input, NoopAudio, NoopStorage, Rect, Size, Viewport};
 
 #[test]
 fn frame_remains_constructible_without_optional_platform_services() {
