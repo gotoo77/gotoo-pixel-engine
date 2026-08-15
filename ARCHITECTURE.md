@@ -267,6 +267,11 @@ UI immediate-mode minimale, introduite uniquement après duplication observée :
 Ce module n'est pas un framework UI généraliste. Il n'existe pas d'arbre de
 widgets, de callbacks, de système de focus ou de thème générique.
 
+`VirtualPad` possède les tests de sa propre mécanique tactile : cycle des
+contacts, déplacements entre boutons, multi-contact, ordre des actions et reset.
+Les jeux consommateurs testent leur câblage vers leurs actions, pas une seconde
+implémentation locale de cette mécanique.
+
 ## Frontières plateforme
 
 Native :
@@ -291,18 +296,25 @@ filesystem, de `rodio`, `gilrs` ou `web_sys`.
 
 ## Consommateurs architecturaux
 
-Snake a validé la séparation initiale :
+Snake a validé la séparation initiale, désormais matérialisée localement par deux
+fichiers aux responsabilités distinctes :
 
 ```text
-SnakeWorld
-    métier pur
+examples/snake/world.rs
+    SnakeWorld, grille, serpent, nourriture, collisions, file de virages
+    aucune dépendance à gotoo-pixel-engine
 
-SnakeGame
-    adaptation input, layout, HUD, storage, audio
+examples/snake/game.rs
+    adaptation input, timing, layout, HUD, rendu, stockage, audio
 
 gotoo-pixel-engine
-    plateforme, rendu, input, viewport, storage, audio
+    plateforme, rendu, input, viewport, stockage, audio
 ```
+
+Le tactile de Snake passe par le `VirtualPad` partagé. Snake teste son câblage des
+zones vers ses quatre actions et ses règles propres ; la mécanique générique de
+contacts tactiles est testée dans `VirtualPad` lui-même. Aucun `WorldSystem`,
+scene framework ou autre abstraction moteur n'a été créé pour ce découpage.
 
 Tetris, Space Invaders, Pong et Breakout ont ensuite validé d'autres besoins :
 menus, gamepad, tactile, audio, deux joueurs, collisions et feedback.
