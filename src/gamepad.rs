@@ -1,4 +1,4 @@
-use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, GamepadProfiles, Input};
+use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
@@ -37,7 +37,7 @@ impl Default for GamepadInputBackend {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl GamepadInputBackend {
-    pub(crate) fn poll(&mut self, input: &mut Input, profiles: &mut GamepadProfiles) {
+    pub(crate) fn poll(&mut self, input: &mut Input) {
         let Some(gilrs) = self.gilrs.as_mut() else {
             return;
         };
@@ -69,22 +69,24 @@ impl GamepadInputBackend {
                 }
                 gilrs::EventType::ButtonChanged(button, value, _) => {
                     if let Some(button) = button_from_gilrs(button) {
+                        let profile = input.gamepad_profile(id);
                         update_button_value(
                             input,
                             &mut self.centered_dpad_axes,
                             id,
                             button,
                             value,
-                            profiles.profile(id),
+                            profile,
                         );
                     }
                 }
                 gilrs::EventType::AxisChanged(axis, value, _) => {
-                    update_axis(input, id, axis, value, profiles.profile(id));
+                    let profile = input.gamepad_profile(id);
+                    update_axis(input, id, axis, value, profile);
                 }
                 gilrs::EventType::Disconnected => {
                     input.disconnect_gamepad(id);
-                    profiles.remove_profile(id);
+                    input.remove_gamepad_profile(id);
                     self.centered_dpad_axes
                         .retain(|(gamepad_id, _), _| *gamepad_id != id);
                 }
