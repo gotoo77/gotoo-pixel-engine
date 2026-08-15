@@ -21,6 +21,7 @@ const MOVE_SOUND: SoundId = SoundId::new("tetris.move");
 const ROTATE_SOUND: SoundId = SoundId::new("tetris.rotate");
 const LOCK_SOUND: SoundId = SoundId::new("tetris.lock");
 const GAME_OVER_SOUND: SoundId = SoundId::new("tetris.game_over");
+const LINE_FLASH_SOUND: SoundId = SoundId::new("tetris.line_flash");
 const LINE_CLEAR_SOUNDS: [SoundId; 4] = [
     SoundId::new("tetris.line_clear.1"),
     SoundId::new("tetris.line_clear.2"),
@@ -669,7 +670,15 @@ impl Game for TetrisGame {
 
         self.update_score_popup(frame.delta_time);
         if self.world.has_pending_clear() {
+            let previous_blink = self.line_clear_elapsed.as_millis() / LINE_CLEAR_BLINK.as_millis();
+            let entering_clear = self.line_clear_elapsed.is_zero();
             self.line_clear_elapsed = self.line_clear_elapsed.saturating_add(frame.delta_time);
+            let current_blink = self.line_clear_elapsed.as_millis() / LINE_CLEAR_BLINK.as_millis();
+            let flash_pulse = entering_clear
+                || (current_blink != previous_blink && current_blink.is_multiple_of(2));
+            if flash_pulse && self.line_clear_elapsed < LINE_CLEAR_DELAY {
+                let _ = self.sounds.play(frame.audio, LINE_FLASH_SOUND);
+            }
             if self.line_clear_elapsed >= LINE_CLEAR_DELAY {
                 let cleared = self.world.finish_pending_clear();
                 self.line_clear_elapsed = Duration::ZERO;
@@ -785,6 +794,7 @@ fn tetris_sound_bank() -> SoundBank {
         (MOVE_SOUND, TetrisSound::Move),
         (ROTATE_SOUND, TetrisSound::Rotate),
         (LOCK_SOUND, TetrisSound::Lock),
+        (LINE_FLASH_SOUND, TetrisSound::LineFlash),
         (GAME_OVER_SOUND, TetrisSound::GameOver),
     ] {
         sounds
@@ -807,6 +817,7 @@ enum TetrisSound {
     Move,
     Rotate,
     Lock,
+    LineFlash,
     LineClear(u32),
     GameOver,
 }
@@ -816,6 +827,7 @@ fn synthesize_sound(kind: TetrisSound) -> Vec<u8> {
         TetrisSound::Move => (0.035, 0x7100_0001),
         TetrisSound::Rotate => (0.07, 0x7100_0002),
         TetrisSound::Lock => (0.09, 0x7100_0003),
+        TetrisSound::LineFlash => (0.028, 0x7100_0004),
         TetrisSound::LineClear(lines) => (0.14 + lines as f32 * 0.025, 0x7100_1000 + lines),
         TetrisSound::GameOver => (0.42, 0x7100_0005),
     };
@@ -834,18 +846,23 @@ fn synthesize_sound(kind: TetrisSound) -> Vec<u8> {
             TetrisSound::Move => (210.0, 0.18),
             TetrisSound::Rotate => (300.0 + 320.0 * progress, 0.25),
             TetrisSound::Lock => (125.0 - 35.0 * progress, 0.30),
+            TetrisSound::LineFlash => (560.0 + 120.0 * progress, 0.13),
             TetrisSound::LineClear(lines) => (390.0 + lines as f32 * 70.0 + 460.0 * progress, 0.30),
             TetrisSound::GameOver => (260.0 - 185.0 * progress, 0.34),
         };
         phase += frequency / AUDIO_SAMPLE_RATE as f32;
         let square = if phase.fract() < 0.5 { 1.0 } else { -1.0 };
+        let sine = (phase * std::f32::consts::TAU).sin();
         let mixed = match kind {
             TetrisSound::Lock => (0.72 * square + 0.28 * noise) * sample,
+            TetrisSound::LineFlash => sine * sample,
             TetrisSound::GameOver => (0.78 * square + 0.22 * noise) * sample,
             _ => square * sample,
         };
         let shaped = match kind {
-            TetrisSound::Move | TetrisSound::Lock => mixed * envelope * envelope,
+            TetrisSound::Move | TetrisSound::Lock | TetrisSound::LineFlash => {
+                mixed * envelope * envelope
+            }
             _ => mixed * envelope,
         };
         samples.push((shaped.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
