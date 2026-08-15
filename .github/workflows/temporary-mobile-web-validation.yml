@@ -7,14 +7,15 @@ on:
 
 jobs:
   validate:
-    if: github.event.head_commit.message == 'trigger mobile web validation'
+    if: github.event.head_commit.message == 'trigger mobile web validation retry'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           ref: m5.8-mobile-web-polish
+          fetch-depth: 0
 
-      - run: git diff --check main...HEAD
+      - run: git diff --check origin/main...HEAD
 
       - name: Check JavaScript syntax
         run: |
