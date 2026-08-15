@@ -128,7 +128,7 @@ Pong et Breakout utilisent tous deux des collisions AABB. La primitive
 à faire converger les consommateurs vers cette API existante plutôt qu'à créer
 une nouvelle couche de physique.
 
-## Phase actuelle — consolidation multi-jeux 🚧
+## Phase actuelle — consolidation multi-jeux ✅
 
 Objectif : stabiliser ce que les consommateurs ont réellement démontré avant
 d'ajouter de nouvelles capacités moteur.
@@ -227,18 +227,33 @@ snake/world.rs  -> modèle et règles de jeu purs
 Aucun framework de scènes, système de monde ou abstraction moteur supplémentaire
 n'a été introduit pour ce découpage.
 
-### C7 — Documentation 🚧
+### C7 — Durcissement final et documentation ✅
 
-Maintenir README, architecture et roadmap synchronisés avec les capacités
-réellement présentes. Pour ce projet pédagogique, la documentation fait partie
-du contrat d'architecture.
+`Framebuffer::draw_line` conserve la rasterisation visible de Bresenham sans
+parcourir les portions gigantesques situées hors du framebuffer :
+
+- seules les étapes de l'axe majeur susceptibles d'être visibles sont parcourues ;
+- le nombre d'itérations est donc borné par la largeur ou la hauteur du
+  framebuffer, pas par l'écart entre les coordonnées du segment ;
+- la phase de rasterisation d'origine est préservée aux frontières au lieu de
+  relancer Bresenham depuis des extrémités arrondies ;
+- les spans horizontaux, verticaux et diagonaux allant de `i32::MIN` à
+  `i32::MAX` sont couverts par les tests ;
+- les calculs intermédiaires utilisent `i128` lorsque nécessaire pour éviter les
+  débordements.
+
+Aucune bibliothèque Geometry2D ni abstraction générique de clipping n'a été
+introduite. La roadmap et l'architecture documentent l'état final de cette passe ;
+le README reste inchangé sur ce point purement interne, son contrat public ne
+changeant pas.
 
 ## État actuel du moteur
 
 Le moteur possède maintenant :
 
 - framebuffer CPU pixel-first ;
-- primitives de dessin, texte bitmap et `Rect` ;
+- primitives de dessin, texte bitmap et `Rect`, avec coût de rasterisation des
+  lignes borné à leur portion potentiellement visible ;
 - clavier, souris, tactile et gamepad natif/Web ;
 - calibration gamepad par périphérique possédée par le runtime d'input ;
 - `ControlMap` et `VirtualPad` ;
