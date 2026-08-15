@@ -516,14 +516,6 @@ mod tests {
 }
 
 #[cfg(target_arch = "wasm32")]
-#[derive(Default)]
-pub(crate) struct GamepadInputBackend;
-
+mod browser;
 #[cfg(target_arch = "wasm32")]
-impl GamepadInputBackend {
-    pub(crate) fn poll<F>(&mut self, _input: &mut Input, _profile_for: F)
-    where
-        F: FnMut(GamepadId) -> Option<GamepadProfile>,
-    {
-    }
-}
+pub(crate) use browser::GamepadInputBackend;
