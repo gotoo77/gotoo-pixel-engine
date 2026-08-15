@@ -41,11 +41,13 @@ jobs:
           cargo build --release --target wasm32-unknown-unknown --example tetris_web
           cargo build --release --target wasm32-unknown-unknown --example space_invaders_web
           cargo build --release --target wasm32-unknown-unknown --example pong_web
+          cargo build --release --target wasm32-unknown-unknown --example arcade_web
 
       - name: Assemble Pages artifact
         run: |
           rm -rf dist
           mkdir -p dist/pkg
+          cp web/index.html dist/index.html
           cp web/snake.html dist/snake.html
           cp web/breakout.html dist/breakout.html
           cp web/tetris.html dist/tetris.html
@@ -71,6 +73,10 @@ jobs:
             --target web \
             --out-dir dist/pkg \
             target/wasm32-unknown-unknown/release/examples/pong_web.wasm
+          wasm-bindgen \
+            --target web \
+            --out-dir dist/pkg \
+            target/wasm32-unknown-unknown/release/examples/arcade_web.wasm
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
