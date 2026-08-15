@@ -4,7 +4,7 @@ mod virtual_pad;
 pub use pause::{PauseConfig, PauseGame};
 pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
 
-use crate::{Framebuffer, GamepadButton, Input, Key, Pixel, Rect};
+use crate::{ActionId, ControlMap, Framebuffer, GamepadButton, Input, Key, Pixel, Rect};
 
 pub fn draw_panel(framebuffer: &mut Framebuffer, rect: Rect, background: Pixel, border: Pixel) {
     framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, background);
@@ -47,6 +47,22 @@ pub fn draw_menu_item(
         };
         draw_text_centered(framebuffer, marker_rect, ">", scale, accent);
     }
+}
+
+pub fn standard_menu_controls(up: ActionId, down: ActionId, confirm: ActionId) -> ControlMap {
+    let mut controls = ControlMap::new();
+    controls
+        .bind_key(up, Key::Up)
+        .bind_key(up, Key::W)
+        .bind_gamepad(up, GamepadButton::DPadUp)
+        .bind_gamepad(up, GamepadButton::LeftStickUp)
+        .bind_key(down, Key::Down)
+        .bind_key(down, Key::S)
+        .bind_gamepad(down, GamepadButton::DPadDown)
+        .bind_gamepad(down, GamepadButton::LeftStickDown)
+        .bind_key(confirm, Key::Space)
+        .bind_gamepad(confirm, GamepadButton::South);
+    controls
 }
 
 pub fn menu_up_pressed(input: &Input) -> bool {
@@ -121,6 +137,10 @@ fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
 mod tests {
     use super::*;
 
+    const MENU_UP: ActionId = ActionId::new("test.menu.up");
+    const MENU_DOWN: ActionId = ActionId::new("test.menu.down");
+    const MENU_CONFIRM: ActionId = ActionId::new("test.menu.confirm");
+
     #[test]
     fn menu_navigation_wraps_in_both_directions() {
         let mut menu = MenuState::new(3);
@@ -151,6 +171,16 @@ mod tests {
         assert!(!menu_up_pressed(&input));
         assert!(!menu_down_pressed(&input));
         assert!(!menu_confirm_pressed(&input));
+    }
+
+    #[test]
+    fn standard_menu_control_map_is_idle_for_default_input() {
+        let mut controls = standard_menu_controls(MENU_UP, MENU_DOWN, MENU_CONFIRM);
+        controls.update(&Input::default());
+
+        assert!(!controls.action(MENU_UP).held());
+        assert!(!controls.action(MENU_DOWN).held());
+        assert!(!controls.action(MENU_CONFIRM).held());
     }
 
     #[test]
