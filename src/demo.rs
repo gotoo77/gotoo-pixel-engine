@@ -129,7 +129,8 @@ mod tests {
 
     use super::DemoGame;
     use gotoo_pixel_engine::{
-        Frame, Framebuffer, Game, GameResult, Input, NoopAudio, NoopStorage, Size, Viewport,
+        Frame, Framebuffer, Game, GameResult, GamepadProfiles, Input, NoopAudio, NoopStorage, Size,
+        Viewport,
     };
 
     #[test]
@@ -137,6 +138,7 @@ mod tests {
         let mut demo = DemoGame::new(2.0, 2.0);
         let mut framebuffer = Framebuffer::new(4, 4);
         let input = Input::default();
+        let mut gamepad_profiles = GamepadProfiles::default();
         let mut storage = NoopStorage;
         let mut audio = NoopAudio::default();
         let surface_size = Size {
@@ -146,6 +148,7 @@ mod tests {
         let mut frame = Frame {
             framebuffer: &mut framebuffer,
             input: &input,
+            gamepad_profiles: &mut gamepad_profiles,
             delta_time: Duration::from_millis(16),
             storage: &mut storage,
             audio: &mut audio,
@@ -170,6 +173,7 @@ mod tests {
         let mut first = Framebuffer::new(20, 20);
         let mut second = Framebuffer::new(20, 20);
         let input = Input::default();
+        let mut gamepad_profiles = GamepadProfiles::default();
         let mut storage = NoopStorage;
         let mut audio = NoopAudio::default();
         let surface_size = Size {
@@ -181,6 +185,7 @@ mod tests {
             let mut frame = Frame {
                 framebuffer: &mut first,
                 input: &input,
+                gamepad_profiles: &mut gamepad_profiles,
                 delta_time: Duration::ZERO,
                 storage: &mut storage,
                 audio: &mut audio,
@@ -195,6 +200,7 @@ mod tests {
             let mut frame = Frame {
                 framebuffer: &mut second,
                 input: &input,
+                gamepad_profiles: &mut gamepad_profiles,
                 delta_time: Duration::ZERO,
                 storage: &mut storage,
                 audio: &mut audio,
