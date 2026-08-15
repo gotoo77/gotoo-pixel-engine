@@ -498,12 +498,14 @@ fn is_fullscreen_shortcut(key: PhysicalKey, modifiers: ModifiersState) -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn toggle_fullscreen(window: &Window) {
-    let fullscreen = if window.fullscreen().is_some() {
-        None
+    if window.fullscreen().is_some() {
+        window.set_fullscreen(None);
+        window.set_decorations(true);
     } else {
-        Some(Fullscreen::Borderless(None))
-    };
-    window.set_fullscreen(fullscreen);
+        window.set_decorations(false);
+        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+    }
+    window.request_redraw();
 }
 
 fn key_from_winit(key: PhysicalKey) -> Option<Key> {
