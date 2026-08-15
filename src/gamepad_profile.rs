@@ -209,7 +209,10 @@ mod tests {
     #[test]
     fn runtime_profiles_default_to_standard_per_device() {
         let profiles = GamepadProfiles::default();
-        assert_eq!(profiles.profile(GamepadId::new(2)), GamepadProfile::standard());
+        assert_eq!(
+            profiles.profile(GamepadId::new(2)),
+            GamepadProfile::standard()
+        );
     }
 
     #[test]
