@@ -1,0 +1,117 @@
+name: Temporary fullscreen validation
+
+on:
+  push:
+    branches:
+      - m5.7-fullscreen
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.event.head_commit.message == 'trigger fullscreen validation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: m5.7-fullscreen
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
+
+      - run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustup component add rustfmt clippy
+          rustup target add wasm32-unknown-unknown
+
+      - name: Integrate native and web fullscreen
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/platform.rs')
+          s = p.read_text()
+
+          def replace(old, new, count=1):
+              global s
+              if old not in s:
+                  raise SystemExit(f'platform marker not found:\n{old}')
+              s = s.replace(old, new, count)
+
+          replace(
+              'use winit::keyboard::{KeyCode, PhysicalKey};\nuse winit::window::{Window, WindowId};\n',
+              'use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};\n#[cfg(not(target_arch = "wasm32"))]\nuse winit::window::Fullscreen;\nuse winit::window::{Window, WindowId};\n',
+          )
+          replace(
+              '    framebuffer: Framebuffer,\n    input: Input,\n    gamepads: GamepadInputBackend,\n',
+              '    framebuffer: Framebuffer,\n    input: Input,\n    modifiers: ModifiersState,\n    gamepads: GamepadInputBackend,\n',
+          )
+          s = s.replace(
+              '            input: Input::default(),\n            gamepads: GamepadInputBackend::default(),\n',
+              '            input: Input::default(),\n            modifiers: ModifiersState::empty(),\n            gamepads: GamepadInputBackend::default(),\n',
+          )
+          if s.count('modifiers: ModifiersState::empty(),') != 2:
+              raise SystemExit('expected native and wasm PlatformApp constructors')
+
+          replace(
+              '            WindowEvent::KeyboardInput { event, .. } => {\n                let Some(key) = key_from_winit(event.physical_key) else {\n',
+              '            WindowEvent::ModifiersChanged(modifiers) => {\n                self.modifiers = modifiers.state();\n            }\n            WindowEvent::KeyboardInput { event, .. } => {\n                #[cfg(not(target_arch = "wasm32"))]\n                if event.state == ElementState::Pressed\n                    && !event.repeat\n                    && is_fullscreen_shortcut(event.physical_key, self.modifiers)\n                {\n                    toggle_fullscreen(window);\n                    return;\n                }\n\n                let Some(key) = key_from_winit(event.physical_key) else {\n',
+          )
+
+          marker = 'fn key_from_winit(key: PhysicalKey) -> Option<Key> {\n'
+          helpers = '''#[cfg(not(target_arch = "wasm32"))]\nfn is_fullscreen_shortcut(key: PhysicalKey, modifiers: ModifiersState) -> bool {\n    matches!(key, PhysicalKey::Code(KeyCode::F11))\n        || (modifiers.alt_key()\n            && matches!(\n                key,\n                PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter)\n            ))\n}\n\n#[cfg(not(target_arch = "wasm32"))]\nfn toggle_fullscreen(window: &Window) {\n    let fullscreen = if window.fullscreen().is_some() {\n        None\n    } else {\n        Some(Fullscreen::Borderless(None))\n    };\n    window.set_fullscreen(fullscreen);\n}\n\n'''
+          replace(marker, helpers + marker)
+
+          replace(
+              '        EngineConfig, Key, MouseButton, TouchPhase, current_viewport, key_from_winit,\n',
+              '        EngineConfig, Key, MouseButton, TouchPhase, current_viewport,\n        is_fullscreen_shortcut, key_from_winit,\n',
+          )
+          replace(
+              '    use winit::keyboard::{KeyCode, PhysicalKey};\n\n    #[test]\n    fn maps_minimal_keyboard_keys() {\n',
+              '''    use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};\n\n    #[test]\n    fn recognizes_native_fullscreen_shortcuts() {\n        assert!(is_fullscreen_shortcut(\n            PhysicalKey::Code(KeyCode::F11),\n            ModifiersState::empty(),\n        ));\n        assert!(is_fullscreen_shortcut(\n            PhysicalKey::Code(KeyCode::Enter),\n            ModifiersState::ALT,\n        ));\n        assert!(!is_fullscreen_shortcut(\n            PhysicalKey::Code(KeyCode::Enter),\n            ModifiersState::empty(),\n        ));\n    }\n\n    #[test]\n    fn maps_minimal_keyboard_keys() {\n''',
+          )
+
+          p.write_text(s)
+
+          for path in sorted(Path('web').glob('*.html')):
+              html = path.read_text()
+              script = '    <script type="module" src="./fullscreen.js"></script>\n'
+              if script not in html:
+                  if '</body>' not in html:
+                      raise SystemExit(f'no body marker in {path}')
+                  html = html.replace('  </body>', script + '  </body>')
+                  path.write_text(html)
+
+          p = Path('.github/workflows/pages.yml')
+          pages = p.read_text()
+          old = '          cp web/pong.html dist/pong.html\n'
+          new = old + '          cp web/fullscreen.js dist/fullscreen.js\n'
+          if new not in pages:
+              if old not in pages:
+                  raise SystemExit('pages copy marker not found')
+              pages = pages.replace(old, new)
+          p.write_text(pages)
+          PY
+
+      - run: cargo fmt --all
+      - run: cargo test --all-targets
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo build --target wasm32-unknown-unknown --example arcade_web
+      - run: node --check web/fullscreen.js
+      - name: Verify all Web pages load shared fullscreen helper
+        run: |
+          for page in web/index.html web/snake.html web/breakout.html web/tetris.html web/pong.html web/space_invaders.html; do
+            grep -F './fullscreen.js' "$page"
+          done
+          grep -F 'cp web/fullscreen.js dist/fullscreen.js' .github/workflows/pages.yml
+
+      - name: Commit validated fullscreen integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/platform.rs web .github/workflows/pages.yml
+          git commit -m "add native and web fullscreen support"
+          git push origin HEAD:m5.7-fullscreen
