@@ -54,6 +54,11 @@ name = "space_invaders_web"
 path = "examples/space_invaders_web.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "arcade_web"
+path = "examples/arcade_web.rs"
+crate-type = ["cdylib"]
+
 [[bench]]
 name = "primitives"
 harness = false
