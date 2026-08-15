@@ -162,11 +162,7 @@ impl ArcadeApp {
             .update(frame.input, &mut self.return_controls);
         self.return_controls.update(frame.input);
 
-        if self
-            .return_controls
-            .action(RETURN_TO_CATALOG)
-            .pressed()
-        {
+        if self.return_controls.action(RETURN_TO_CATALOG).pressed() {
             self.return_to_catalog();
             self.render_catalog(frame.framebuffer);
             return GameResult::Continue;
@@ -347,7 +343,10 @@ mod tests {
         let snake_size = SnakeInteractionMode::Touch.framebuffer_size();
         let extents = [
             (snake_size.width, snake_size.height),
-            (breakout::TOUCH_FRAMEBUFFER_WIDTH, breakout::FRAMEBUFFER_HEIGHT),
+            (
+                breakout::TOUCH_FRAMEBUFFER_WIDTH,
+                breakout::FRAMEBUFFER_HEIGHT,
+            ),
             (tetris::TOUCH_FRAMEBUFFER_WIDTH, tetris::FRAMEBUFFER_HEIGHT),
             (
                 space_invaders::TOUCH_FRAMEBUFFER_WIDTH,
@@ -367,7 +366,10 @@ mod tests {
         let snake_size = SnakeInteractionMode::Touch.framebuffer_size();
         let extents = [
             (snake_size.width, snake_size.height),
-            (breakout::TOUCH_FRAMEBUFFER_WIDTH, breakout::FRAMEBUFFER_HEIGHT),
+            (
+                breakout::TOUCH_FRAMEBUFFER_WIDTH,
+                breakout::FRAMEBUFFER_HEIGHT,
+            ),
             (tetris::TOUCH_FRAMEBUFFER_WIDTH, tetris::FRAMEBUFFER_HEIGHT),
             (
                 space_invaders::TOUCH_FRAMEBUFFER_WIDTH,
