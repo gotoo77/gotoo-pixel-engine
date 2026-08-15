@@ -863,20 +863,24 @@ mod tests {
             width: 20,
             height: 10,
         };
-        assert!(Rect {
-            x: 12,
-            y: 12,
-            width: 4,
-            height: 4,
-        }
-        .intersects(brick));
-        assert!(!Rect {
-            x: 30,
-            y: 12,
-            width: 4,
-            height: 4,
-        }
-        .intersects(brick));
+        assert!(
+            Rect {
+                x: 12,
+                y: 12,
+                width: 4,
+                height: 4,
+            }
+            .intersects(brick)
+        );
+        assert!(
+            !Rect {
+                x: 30,
+                y: 12,
+                width: 4,
+                height: 4,
+            }
+            .intersects(brick)
+        );
     }
 
     #[test]
