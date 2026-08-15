@@ -1128,17 +1128,16 @@ mod tests {
     use super::{
         BEST_SCORE_KEY, BUTTON_BORDER, BUTTON_TEXT, CELL_SIZE, CONTROL_DOWN, CONTROL_LEFT,
         CONTROL_RIGHT, CONTROL_UP, Cell, D_PAD_ARROW, D_PAD_CENTER_FILL, D_PAD_FILL, DEATH_SOUND,
-        Direction, EAT_SOUND, FOOD, FRAMEBUFFER_HEIGHT, GAME_OVER, GRID_LINE, HUD_BACKDROP,
-        HUD_TEXT, KEYBOARD_FRAMEBUFFER_WIDTH, PANEL_FILL, Phase, SNAKE_BODY, SNAKE_HEAD,
-        SNAKE_SOUNDS, SnakeControls, SnakeGame, SnakeInteractionMode, SnakeLayout, SnakeWorld,
-        TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY, TURN_SOUND, default_controls,
-        direction_for_action, draw_d_pad, draw_game_over, draw_grid, draw_score_hud,
-        replay_requested, virtual_pad_for_mode,
+        Direction, EAT_SOUND, FOOD, FRAMEBUFFER_HEIGHT, GAME_OVER, GRID_HEIGHT, GRID_LINE,
+        GRID_WIDTH, HUD_BACKDROP, HUD_TEXT, KEYBOARD_FRAMEBUFFER_WIDTH, PANEL_FILL, Phase,
+        SNAKE_BODY, SNAKE_HEAD, SNAKE_SOUNDS, SnakeControls, SnakeGame, SnakeInteractionMode,
+        SnakeLayout, SnakeWorld, TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY,
+        TURN_SOUND, default_controls, direction_for_action, draw_d_pad, draw_game_over, draw_grid,
+        draw_score_hud, initial_snake, replay_requested, virtual_pad_for_mode,
     };
     use gotoo_pixel_engine::{
         Audio, AudioError, Frame, Framebuffer, Game, GameResult, Input, LocalStorage, NoopAudio,
-        Pixel, Rect, Size, SoundId, StorageError, Touch, TouchPhase, Viewport,
-        ui::VirtualButton,
+        Pixel, Rect, Size, SoundId, StorageError, Touch, TouchPhase, Viewport, ui::VirtualButton,
     };
 
     #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1781,7 +1780,10 @@ mod tests {
         update_with_storage(&mut game, &mut storage, TICK_PERIOD);
 
         assert_eq!(game.best_score, 1);
-        assert_eq!(storage.entries.get(BEST_SCORE_KEY).map(String::as_str), Some("1"));
+        assert_eq!(
+            storage.entries.get(BEST_SCORE_KEY).map(String::as_str),
+            Some("1")
+        );
     }
 
     #[test]
@@ -1802,7 +1804,13 @@ mod tests {
         let mut audio = TestAudio::default();
         game.world.food = Some(Cell { x: 17, y: 9 });
         let normal_size = game.layout().framebuffer_size;
-        update_with_services(&mut game, &mut storage, &mut audio, TICK_PERIOD, normal_size);
+        update_with_services(
+            &mut game,
+            &mut storage,
+            &mut audio,
+            TICK_PERIOD,
+            normal_size,
+        );
         let world_before = game.world.clone();
 
         update_with_services(
