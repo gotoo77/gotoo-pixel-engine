@@ -1,6 +1,7 @@
 (() => {
   const contexts = new Set();
   const contextMeta = new Map();
+  const activeMedia = new Set();
   const debugEnabled = new URLSearchParams(window.location.search).has("audio-debug");
   const debugState = {
     lastGesture: "none",
@@ -9,6 +10,7 @@
     resumeFailures: 0,
     lastError: "none",
     testBeep: "not run",
+    mediaBeep: "not run",
     brave: "unknown",
   };
   let debugPanel = null;
@@ -23,6 +25,10 @@
     return `active=${activation.isActive} ever=${activation.hasBeenActive}`;
   }
 
+  function finiteOrUnknown(value) {
+    return Number.isFinite(value) ? value : "?";
+  }
+
   function contextSummary() {
     if (contexts.size === 0) {
       return "none";
@@ -33,8 +39,12 @@
         const meta = contextMeta.get(context);
         const id = meta?.id ?? "?";
         const name = meta?.name ?? "AudioContext";
-        const sampleRate = Number.isFinite(context.sampleRate) ? context.sampleRate : "?";
-        return `#${id} ${name}: state=${context.state} rate=${sampleRate}`;
+        const sampleRate = finiteOrUnknown(context.sampleRate);
+        const baseLatency = finiteOrUnknown(context.baseLatency);
+        const outputLatency = finiteOrUnknown(context.outputLatency);
+        const channels = finiteOrUnknown(context.destination?.channelCount);
+        const maxChannels = finiteOrUnknown(context.destination?.maxChannelCount);
+        return `#${id} ${name}: state=${context.state} rate=${sampleRate} base=${baseLatency} out=${outputLatency} ch=${channels}/${maxChannels}`;
       })
       .join("\n");
   }
@@ -43,11 +53,13 @@
     const brands = navigator.userAgentData?.brands
       ?.map((brand) => `${brand.brand}/${brand.version}`)
       .join(", ") ?? "n/a";
+    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? "n/a";
 
     return [
       "GPE WebAudio diagnostics",
       `Brave: ${debugState.brave}`,
       `UA brands: ${brands}`,
+      `platform: ${platform}; touchPoints=${navigator.maxTouchPoints}`,
       `UA: ${navigator.userAgent}`,
       `visibility: ${document.visibilityState}`,
       `fullscreen: ${Boolean(document.fullscreenElement)}`,
@@ -59,7 +71,8 @@
       `last gesture: ${debugState.lastGesture}`,
       `resume: ${debugState.resumeSuccesses}/${debugState.resumeAttempts} ok, ${debugState.resumeFailures} failed`,
       `last error: ${debugState.lastError}`,
-      `test beep: ${debugState.testBeep}`,
+      `WebAudio loud beep: ${debugState.testBeep}`,
+      `<audio> WAV beep: ${debugState.mediaBeep}`,
     ].join("\n");
   }
 
@@ -140,20 +153,126 @@
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       const now = context.currentTime;
-      oscillator.frequency.value = 440;
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(440, now);
+      oscillator.frequency.setValueAtTime(880, now + 0.3);
+      oscillator.frequency.setValueAtTime(660, now + 0.6);
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+      gain.gain.linearRampToValueAtTime(0.35, now + 0.02);
+      gain.gain.setValueAtTime(0.35, now + 0.85);
+      gain.gain.linearRampToValueAtTime(0.0001, now + 0.95);
       oscillator.connect(gain);
       gain.connect(context.destination);
       oscillator.start(now);
-      oscillator.stop(now + 0.2);
-      debugState.testBeep = `played; context=${context.state}`;
+      oscillator.stop(now + 1.0);
+      debugState.testBeep = `scheduled LOUD; context=${context.state}`;
       renderDebug();
     } catch (error) {
       debugState.testBeep = "failed";
       setError(error);
     }
+  }
+
+  function createToneWav() {
+    const sampleRate = 48000;
+    const durationSeconds = 0.9;
+    const sampleCount = Math.floor(sampleRate * durationSeconds);
+    const dataSize = sampleCount * 2;
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    function ascii(offset, text) {
+      for (let i = 0; i < text.length; i += 1) {
+        view.setUint8(offset + i, text.charCodeAt(i));
+      }
+    }
+
+    ascii(0, "RIFF");
+    view.setUint32(4, 36 + dataSize, true);
+    ascii(8, "WAVE");
+    ascii(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    ascii(36, "data");
+    view.setUint32(40, dataSize, true);
+
+    for (let i = 0; i < sampleCount; i += 1) {
+      const t = i / sampleRate;
+      const frequency = t < 0.3 ? 523.25 : t < 0.6 ? 783.99 : 659.25;
+      const attack = Math.min(1, t / 0.02);
+      const release = Math.min(1, (durationSeconds - t) / 0.05);
+      const envelope = Math.max(0, Math.min(attack, release));
+      const sample = Math.sin(2 * Math.PI * frequency * t) * 0.45 * envelope;
+      view.setInt16(44 + i * 2, Math.round(sample * 32767), true);
+    }
+
+    return new Blob([buffer], { type: "audio/wav" });
+  }
+
+  async function playMediaBeep() {
+    let url = null;
+    try {
+      url = URL.createObjectURL(createToneWav());
+      const audio = new Audio(url);
+      audio.volume = 1;
+      audio.preload = "auto";
+      audio.playsInline = true;
+      activeMedia.add(audio);
+
+      audio.addEventListener(
+        "playing",
+        () => {
+          debugState.mediaBeep = `playing; paused=${audio.paused} volume=${audio.volume} muted=${audio.muted}`;
+          renderDebug();
+        },
+        { once: true },
+      );
+      audio.addEventListener(
+        "ended",
+        () => {
+          debugState.mediaBeep = "ended normally";
+          activeMedia.delete(audio);
+          URL.revokeObjectURL(url);
+          renderDebug();
+        },
+        { once: true },
+      );
+      audio.addEventListener(
+        "error",
+        () => {
+          const code = audio.error?.code ?? "?";
+          debugState.mediaBeep = `media error code=${code}`;
+          activeMedia.delete(audio);
+          URL.revokeObjectURL(url);
+          renderDebug();
+        },
+        { once: true },
+      );
+
+      await audio.play();
+      debugState.mediaBeep = `play() resolved; paused=${audio.paused} volume=${audio.volume} muted=${audio.muted}`;
+      renderDebug();
+    } catch (error) {
+      debugState.mediaBeep = "failed";
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+      setError(error);
+    }
+  }
+
+  function makeButton(label, handler) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.style.cssText = "padding:7px;font:12px monospace";
+    button.addEventListener("click", handler);
+    return button;
   }
 
   function installDebugPanel() {
@@ -169,7 +288,7 @@
       "right:8px",
       "bottom:8px",
       "z-index:2147483647",
-      "max-height:52vh",
+      "max-height:58vh",
       "overflow:auto",
       "padding:10px",
       "border:1px solid #78ebb4",
@@ -182,19 +301,11 @@
     ].join(";");
 
     const controls = document.createElement("div");
-    controls.style.cssText = "display:flex;gap:8px;margin-bottom:8px;position:sticky;top:0";
+    controls.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;position:sticky;top:0";
 
-    const beepButton = document.createElement("button");
-    beepButton.type = "button";
-    beepButton.textContent = "TEST BEEP";
-    beepButton.style.cssText = "padding:7px;font:12px monospace";
-    beepButton.addEventListener("click", playTestBeep);
-
-    const copyButton = document.createElement("button");
-    copyButton.type = "button";
-    copyButton.textContent = "COPY INFO";
-    copyButton.style.cssText = "padding:7px;font:12px monospace";
-    copyButton.addEventListener("click", async () => {
+    const webAudioButton = makeButton("LOUD WEB AUDIO", playTestBeep);
+    const mediaButton = makeButton("WAV <audio>", playMediaBeep);
+    const copyButton = makeButton("COPY INFO", async () => {
       try {
         await navigator.clipboard.writeText(debugReport());
         copyButton.textContent = "COPIED";
@@ -207,7 +318,7 @@
     const text = document.createElement("pre");
     text.style.cssText = "margin:0;white-space:pre-wrap";
 
-    controls.append(beepButton, copyButton);
+    controls.append(webAudioButton, mediaButton, copyButton);
     panel.append(controls, text);
     document.documentElement.append(panel);
     debugPanel = panel;
