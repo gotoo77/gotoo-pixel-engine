@@ -16,7 +16,7 @@ pub use audio::{Audio, AudioError, NoopAudio, SoundBank, SoundId};
 pub use audio_wav::pcm16_mono_wav;
 pub use control::{ActionId, ControlBinding, ControlMap};
 pub use framebuffer::Framebuffer;
-pub use gamepad_profile::{AxisCalibration, GamepadProfile, GamepadProfiles};
+pub use gamepad_profile::{AxisCalibration, GamepadProfile};
 pub use input::{
     ButtonState, GamepadButton, GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, Input, Key,
     MouseButton, Touch, TouchPhase,
