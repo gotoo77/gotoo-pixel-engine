@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use gotoo_pixel_engine::{
-    Frame, Framebuffer, Input, NoopAudio, NoopStorage, Rect, Size, Viewport,
-};
+use gotoo_pixel_engine::{Frame, Framebuffer, Input, NoopAudio, NoopStorage, Rect, Size, Viewport};
 
 #[test]
 fn frame_remains_constructible_without_optional_platform_services() {
@@ -37,27 +35,33 @@ fn rect_intersects_exposes_aabb_semantics_to_games() {
         height: 10,
     };
 
-    assert!(Rect {
-        x: 12,
-        y: 12,
-        width: 4,
-        height: 4,
-    }
-    .intersects(paddle));
+    assert!(
+        Rect {
+            x: 12,
+            y: 12,
+            width: 4,
+            height: 4,
+        }
+        .intersects(paddle)
+    );
 
-    assert!(!Rect {
-        x: 30,
-        y: 12,
-        width: 4,
-        height: 4,
-    }
-    .intersects(paddle));
+    assert!(
+        !Rect {
+            x: 30,
+            y: 12,
+            width: 4,
+            height: 4,
+        }
+        .intersects(paddle)
+    );
 
-    assert!(!Rect {
-        x: 10,
-        y: 10,
-        width: 0,
-        height: 4,
-    }
-    .intersects(paddle));
+    assert!(
+        !Rect {
+            x: 10,
+            y: 10,
+            width: 0,
+            height: 4,
+        }
+        .intersects(paddle)
+    );
 }
