@@ -58,7 +58,7 @@ impl Game for GamepadInputProbe {
 
         let gamepad_ids = frame.input.gamepad_ids().collect::<Vec<_>>();
         for id in gamepad_ids.iter().copied() {
-            frame.gamepad_profiles.set_profile(id, self.profile);
+            frame.set_gamepad_profile(id, self.profile);
         }
 
         for event in frame.input.gamepad_connection_events() {
