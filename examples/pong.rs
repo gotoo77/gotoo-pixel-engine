@@ -9,6 +9,7 @@ use gotoo_pixel_engine::{
 
 pub const FRAMEBUFFER_WIDTH: u32 = 320;
 pub const FRAMEBUFFER_HEIGHT: u32 = 180;
+pub const TOUCH_FRAMEBUFFER_HEIGHT: u32 = 260;
 
 const P1_UP: ActionId = ActionId::new("pong.p1.up");
 const P1_DOWN: ActionId = ActionId::new("pong.p1.down");
@@ -27,34 +28,34 @@ const ACCENT: Pixel = Pixel::rgb(110, 235, 180);
 const BORDER: Pixel = Pixel::rgb(80, 150, 220);
 const TOUCH_ACCENT: Pixel = Pixel::rgb(245, 190, 90);
 const TOUCH_P1_UP: Rect = Rect {
-    x: 4,
-    y: 32,
+    x: 8,
+    y: 188,
     width: 56,
-    height: 52,
+    height: 30,
 };
 const TOUCH_P1_DOWN: Rect = Rect {
-    x: 4,
-    y: 112,
+    x: 8,
+    y: 224,
     width: 56,
-    height: 52,
+    height: 30,
 };
 const TOUCH_P2_UP: Rect = Rect {
-    x: 260,
-    y: 32,
+    x: 256,
+    y: 188,
     width: 56,
-    height: 52,
+    height: 30,
 };
 const TOUCH_P2_DOWN: Rect = Rect {
-    x: 260,
-    y: 112,
+    x: 256,
+    y: 224,
     width: 56,
-    height: 52,
+    height: 30,
 };
 const TOUCH_ACTION_RECT: Rect = Rect {
     x: 120,
-    y: 154,
+    y: 206,
     width: 80,
-    height: 22,
+    height: 32,
 };
 
 const PADDLE_WIDTH: u32 = 6;
@@ -664,6 +665,14 @@ impl PongApp {
 }
 
 fn draw_touch_controls(framebuffer: &mut Framebuffer, state: MatchState) {
+    framebuffer.draw_line(
+        0,
+        FRAMEBUFFER_HEIGHT as i32,
+        FRAMEBUFFER_WIDTH as i32 - 1,
+        FRAMEBUFFER_HEIGHT as i32,
+        BORDER,
+    );
+
     for (rect, label) in [
         (TOUCH_P1_UP, "P1 UP"),
         (TOUCH_P1_DOWN, "P1 DOWN"),
@@ -915,6 +924,12 @@ mod tests {
         for action in [P1_UP, P1_DOWN, P2_UP, P2_DOWN, TOUCH_ACTION] {
             assert!(actions.contains(&action));
         }
+        assert!(TOUCH_FRAMEBUFFER_HEIGHT > FRAMEBUFFER_HEIGHT);
+        assert!(
+            pad.buttons()
+                .iter()
+                .all(|button| button.rect.y >= FRAMEBUFFER_HEIGHT as i32)
+        );
     }
 
     #[test]
