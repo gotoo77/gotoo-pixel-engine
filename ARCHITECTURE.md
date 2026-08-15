@@ -65,6 +65,17 @@ Frame
  └── audio
 ```
 
+`delta_time` représente du temps de simulation fourni par le runtime, pas une
+dette de temps murale. Le runtime plafonne un frame de simulation à 100 ms et
+réinitialise sa référence temporelle lors des transitions focus/resume. Une
+suspension navigateur ou un stall long ne peut donc pas injecter plusieurs
+secondes de simulation dans la frame suivante.
+
+Le temps brut entre deux frames reste utilisé pour le diagnostic du frame time
+et des FPS. Les jeux peuvent conserver des substeps lorsqu'ils en ont besoin
+pour leurs collisions ou leur intégration locale, mais ils n'ont pas à définir
+leur propre politique de suspension/stall.
+
 `storage` et `audio` sont des capabilities injectées, mais il ne s'agit pas d'un
 framework de capabilities. Il n'existe ni registre générique, ni conteneur
 dynamique, ni système de plugins.
@@ -99,6 +110,7 @@ Frontière principale avec `winit`. Elle :
 - initialise le renderer ;
 - convertit clavier, souris et tactile vers `Input` ;
 - poll le backend gamepad ;
+- borne le `delta_time` de simulation et réinitialise le timing sur focus/resume ;
 - active l'audio après interaction utilisateur ;
 - injecte stockage et audio dans `Frame` ;
 - gère resize, focus et raccourcis plateforme.
