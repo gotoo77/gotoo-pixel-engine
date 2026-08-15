@@ -12,7 +12,7 @@ function installStyle() {
     #${BUTTON_ID} {
       position: fixed;
       top: 10px;
-      right: 10px;
+      left: 10px;
       z-index: 1000;
       padding: 6px 9px;
       border: 1px solid #78ebb4;
