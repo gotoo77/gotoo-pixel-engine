@@ -12,203 +12,221 @@ Corollaires :
 
 - pas d'ECS par anticipation ;
 - pas de scene graph par anticipation ;
-- pas de framework UI par anticipation ;
+- pas de framework UI généraliste par anticipation ;
 - pas d'asset manager par anticipation ;
 - pas d'optimisation sans mesure ;
-- préférer une petite API explicite à une architecture générique prématurée.
+- préférer une petite API explicite à une architecture générique prématurée ;
+- une abstraction déjà présente doit être réellement utilisée par ses
+  consommateurs, sinon son placement ou son utilité doit être reconsidéré.
 
 ## Phase historique — socle moteur ✅
 
 ### M0 — Spike plateforme
 
-Acquis : fenêtre, framebuffer CPU, upload GPU, présentation `wgpu`, clavier,
-delta-time, resize et premières mesures de performance.
+Fenêtre, framebuffer CPU, upload GPU, présentation `wgpu`, clavier, delta-time,
+resize et premières mesures de performance.
 
 ### M1.1 — Pixel et framebuffer public
 
-Acquis : `Pixel`, `Framebuffer`, couleurs de base, lecture/écriture de pixels et
-tests de limites.
+`Pixel`, `Framebuffer`, couleurs de base, lecture/écriture de pixels et tests de
+limites.
 
 ### M1.2 — Primitives de dessin CPU
 
-Acquis : lignes, rectangles, rectangles pleins, cercles, cercles pleins,
-clipping local et benchmarks.
+Lignes, rectangles, rectangles pleins, cercles, cercles pleins, clipping local,
+texte bitmap et benchmarks.
 
 ### M1.3 — API de jeu et input
 
-Acquis : `Game`, `Frame`, `GameResult`, clavier, souris, états
-`pressed/held/released`, timing et reset input à la perte de focus.
+`Game`, `Frame`, `GameResult`, clavier, souris, états `pressed/held/released`,
+timing et reset input à la perte de focus.
 
 ### M1.5 — Portabilité WebAssembly
 
-Acquis : build `wasm32-unknown-unknown`, WebGPU via `wgpu`, chemin de rendu
-partagé et divergence Web confinée à la frontière plateforme.
+Build `wasm32-unknown-unknown`, WebGPU via `wgpu`, chemin de rendu partagé et
+divergence Web confinée à la frontière plateforme.
 
 ## Validation par Snake ✅
 
-Snake est le premier jeu réel ayant validé l'architecture du moteur.
+Snake a été le premier jeu réel à valider l'architecture : gameplay pur,
+présentation/adaptation et moteur restent séparés. Il a également poussé les
+besoins de viewport, tactile, stockage local et audio one-shot.
+
+## Phase multi-jeux ✅
+
+Le moteur est désormais exercé par :
+
+- Snake ;
+- Tetris ;
+- Space Invaders ;
+- Pong deux joueurs ;
+- Breakout ;
+- GPE Arcade, qui compose les cinq jeux dans un même runtime.
+
+Cette phase a validé plusieurs abstractions qui possèdent maintenant plusieurs
+consommateurs réels.
+
+### `ControlMap` ✅
 
 Acquis :
 
-- natif et Web/WASM ;
-- rendu sRGB cohérent ;
-- déploiement GitHub Pages ;
-- clavier et tactile ;
-- D-pad tactile privé au jeu ;
-- texte bitmap, score, HUD et layout ;
-- `Viewport`, letterbox/pillarbox et mapping input ;
-- stockage local persistant ;
-- audio one-shot natif/Web ;
-- `ControlMap` avec clavier et gamepad ;
-- menu natif `PLAY / CONTROLS / QUIT` réutilisant l'UI minimale commune.
-
-Séparation validée :
-
-```text
-SnakeWorld
-    métier pur du jeu
-
-SnakeGame
-    adaptation input, layout, HUD, replay, storage, audio
-
-gotoo-pixel-engine
-    plateforme, rendu, input, viewport, storage, audio
-```
-
-## Phase multi-jeux ✅ / 🚧
-
-Le moteur n'est plus validé par un seul jeu. Les consommateurs actuels sont
-Snake, Tetris, Space Invaders et Pong, avec Breakout en cours de validation.
-
-### Tetris ✅
-
-Tetris a validé un second gameplay, une grille différente et un second
-consommateur de l'UI minimale.
-
-Acquis :
-
-- jeu jouable ;
-- menu natif ;
-- réutilisation des primitives UI communes ;
-- validation de la philosophie « laisser les besoins spécifiques dans le jeu ».
-
-### Space Invaders ✅
-
-Space Invaders a poussé plus loin l'input et l'UI.
-
-Acquis :
-
-- gameplay jouable ;
-- `ControlMap` ;
-- menu principal et écran de contrôles ;
-- diagnostic gamepad ;
-- profils gamepad déclaratifs via `Game::gamepad_profile()` ;
-- réglage du seuil numérique sans alourdir `Frame`.
+- actions logiques indépendantes des périphériques ;
+- bindings clavier ;
+- bindings « any gamepad » ;
+- bindings gamepad ciblés pour Pong deux joueurs ;
+- sources virtuelles tactiles via `VirtualPad` ;
+- états `pressed`, `held`, `released` communs aux différentes sources.
 
 ### UI minimale partagée ✅
 
-Les abstractions UI actuellement justifiées par plusieurs consommateurs sont :
+Abstractions actuellement justifiées :
 
 - `draw_panel` ;
 - `draw_text_centered` ;
 - `draw_menu_item` ;
 - `MenuState` ;
-- `menu_up_pressed` ;
-- `menu_down_pressed` ;
-- `menu_confirm_pressed`.
+- aides de navigation menu ;
+- `VirtualPad` ;
+- `PauseGame`.
 
-Pas de composant générique, arbre UI, système de focus, callbacks ou thème tant
+Pas de composant générique, arbre UI, callbacks, thème ou focus manager tant
 qu'un besoin concret supplémentaire ne les impose pas.
 
-### Gamepad natif et profils ✅
+### Gamepad natif et Web ✅
 
 Acquis :
 
 - détection connexion/déconnexion ;
 - boutons, D-pad et stick gauche normalisés ;
+- backend natif `gilrs` ;
+- backend Web basé sur la Gamepad API pour les mappings standards ;
 - gestion du D-pad centré observé sur le NEXT SNES Controller ;
 - `GamepadProfile` et calibration d'axes ;
 - probe visuel de diagnostic ;
-- binding `ControlMap` acceptant n'importe quelle manette pour les jeux solo.
+- binding gamepad global et binding ciblé par périphérique.
 
 ### M4.0 — Pong deux joueurs ✅
 
 Pong a fourni le premier besoin réel d'affectation d'un périphérique à un
-joueur précis.
+joueur précis sans introduire de `PlayerManager` généraliste.
 
-Acquis :
+### M4.1 — Breakout / collisions ✅
 
-- Pong V0 jouable à deux ;
-- P1 clavier `W/S`, P2 clavier `Up/Down` ;
-- première manette connectée -> P1 ;
-- deuxième manette connectée -> P2 ;
-- hotplug simple ;
-- `ControlBinding::GamepadDevice(GamepadId, GamepadButton)` ;
-- `ControlMap::bind_gamepad_device(...)` ;
-- conservation du comportement « any gamepad » des jeux solo.
+Breakout a validé :
 
-Aucun `PlayerManager` ou système générique de slots n'a été introduit : Pong ne
-le justifie pas encore.
+- balle et rebonds ;
+- raquette ;
+- briques destructibles ;
+- score, vies et niveaux ;
+- game over / replay ;
+- clavier, gamepad et tactile ;
+- audio one-shot ;
+- composition dans GPE Arcade.
 
-### M4.1 — Breakout / validation collisions 🚧
+Pong et Breakout utilisent tous deux des collisions AABB. La primitive
+`Rect::intersects()` existe déjà dans le moteur : la consolidation consiste donc
+à faire converger les consommateurs vers cette API existante plutôt qu'à créer
+une nouvelle couche de physique.
 
-Objectif : ajouter un nouveau jeu consommateur qui exerce davantage les
-collisions 2D et la destruction d'objets.
+## Phase actuelle — consolidation multi-jeux 🚧
 
-Validation attendue :
+Objectif : stabiliser ce que les consommateurs ont réellement démontré avant
+d'ajouter de nouvelles capacités moteur.
 
-- raquette clavier + gamepad ;
-- balle et rebonds murs/raquette ;
-- grille de briques destructibles ;
-- score et vies ;
-- victoire / game over / restart ;
-- menu partagé ;
-- collisions gardées privées à Breakout pendant le premier passage.
+### C1 — Garde-fous dépôt 🚧
 
-Décision après validation : comparer les collisions de Pong et Breakout. Si le
-même test AABB est réellement dupliqué et stable, promouvoir uniquement cette
-petite primitive dans le moteur. Ne pas créer un système de physique général.
+- CI native : format, tests, clippy warnings-as-errors, whitespace ;
+- CI Web : compilation de tous les entrypoints WASM ;
+- liste canonique des jeux Web partagée par les scripts ;
+- déploiement Pages conservé comme étape distincte.
+
+### C2 — Frontière uniforme des jeux 🚧
+
+Arcade doit composer des objets `Game` homogènes. Les jeux monolithiques doivent
+être séparés uniquement lorsque leur entrypoint standalone et leur cœur
+réutilisable sont aujourd'hui mélangés.
+
+Cible immédiate :
+
+```text
+pong.rs
+pong/game.rs
+
+breakout.rs
+breakout/game.rs
+```
+
+Aucun framework de scènes ou système de plugins n'est justifié par ce besoin.
+
+### C3 — Réutilisation des primitives existantes 🚧
+
+- remplacer les copies locales d'AABB Pong/Breakout par `Rect::intersects()` ;
+- identifier les helpers moteur déjà présents mais contournés par les jeux ;
+- ne promouvoir aucune nouvelle primitive sans duplication stable démontrée.
+
+### C4 — Politique de timing 🚧
+
+Les jeux appliquent aujourd'hui des stratégies différentes face aux gros
+`delta_time`. Définir un contrat moteur cohérent contre les pauses pathologiques
+sans introduire un système de temps généraliste.
+
+### C5 — Ownership de la calibration gamepad 🚧
+
+`Game::gamepad_profile()` a été utile pour valider les profils, mais Arcade
+montre que la calibration est liée au périphérique/runtime plus qu'au gameplay.
+Étudier le déplacement minimal de cette responsabilité hors de `Game` avant
+d'ajouter de nouvelles options de configuration.
+
+### C6 — Dette locale Snake 🚧
+
+- supprimer les chemins tactiles uniquement présents pour les tests lorsqu'ils
+  dupliquent `VirtualPad` ;
+- découper le fichier du jeu si cela améliore la cohésion ;
+- conserver `SnakeWorld` indépendant du moteur.
+
+### C7 — Documentation 🚧
+
+Maintenir README, architecture et roadmap synchronisés avec les capacités
+réellement présentes. Pour ce projet pédagogique, la documentation fait partie
+du contrat d'architecture.
 
 ## État actuel du moteur
 
 Le moteur possède maintenant :
 
 - framebuffer CPU pixel-first ;
-- primitives de dessin et texte bitmap ;
-- clavier, souris, tactile et gamepad natif ;
-- `ControlMap` avec bindings clavier, gamepad global et gamepad ciblé ;
-- timing ;
+- primitives de dessin, texte bitmap et `Rect` ;
+- clavier, souris, tactile et gamepad natif/Web ;
+- `ControlMap` et `VirtualPad` ;
+- timing par frame ;
 - viewport et mapping surface -> framebuffer ;
 - stockage local natif/Web ;
 - audio one-shot natif/Web ;
 - cible native ;
 - cible WebAssembly/WebGPU ;
-- UI immediate-mode minimale validée par plusieurs jeux ;
-- plusieurs jeux consommateurs indépendants.
+- UI immediate-mode minimale ;
+- pause réutilisable ;
+- plusieurs jeux consommateurs indépendants ;
+- Arcade comme consommateur de composition.
 
 ## Backlog futur non engagé
 
 ### Geometry2D
 
-Candidat désormais concret, mais pas encore engagé. Pong et Breakout doivent
-d'abord démontrer une duplication stable. Le premier candidat serait une
-primitive AABB minimale, pas une bibliothèque de physique.
+Pas de bibliothèque Geometry2D générale actuellement. `Rect::intersects()`
+couvre déjà le premier besoin AABB démontré. Ajouter seulement les opérations
+suivantes lorsqu'un nouveau consommateur réel les impose.
 
 ### Sprites et images
 
 Besoin attendu : chargement d'image, représentation `Sprite`, dessin
-complet/partiel, transparence et ownership Rust clair. À engager seulement avec
-un jeu consommateur qui en a réellement besoin.
+complet/partiel, transparence et ownership Rust clair. À engager avec un jeu
+consommateur concret.
 
 ### Rendu GPU / decals
 
 Explorer seulement lorsque des mesures ou un jeu réel montrent que le chemin
 framebuffer CPU ne suffit plus.
-
-### Gamepad Web
-
-Le backend gamepad Web reste non engagé. Ne pas généraliser le backend natif
-avant qu'un jeu Web demande réellement le support manette.
 
 ### Audio avancé
 
@@ -224,6 +242,6 @@ ou ludique concret apparaît.
 
 Pas d'ECS actuellement.
 
-Snake, Tetris, Space Invaders, Pong et Breakout ne le justifient pas. Une
-décision ECS ne serait défendable qu'à partir d'une duplication ou friction
-observée sur plusieurs jeux.
+Snake, Tetris, Space Invaders, Pong, Breakout et Arcade ne le justifient pas.
+Une décision ECS ne serait défendable qu'à partir d'une duplication ou friction
+observée sur plusieurs jeux plus complexes.
