@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use crate::input::GamepadId;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AxisCalibration {
     raw_negative: f32,
@@ -129,9 +133,33 @@ impl Default for GamepadProfile {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct GamepadProfiles {
+    profiles: HashMap<GamepadId, GamepadProfile>,
+}
+
+impl GamepadProfiles {
+    pub fn profile(&self, id: GamepadId) -> GamepadProfile {
+        self.profiles.get(&id).copied().unwrap_or_default()
+    }
+
+    pub fn set_profile(&mut self, id: GamepadId, profile: GamepadProfile) {
+        self.profiles.insert(id, profile);
+    }
+
+    pub fn reset_profile(&mut self, id: GamepadId) {
+        self.profiles.remove(&id);
+    }
+
+    pub(crate) fn remove_profile(&mut self, id: GamepadId) {
+        self.profiles.remove(&id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{AxisCalibration, GamepadProfile};
+    use super::{AxisCalibration, GamepadProfile, GamepadProfiles};
+    use crate::GamepadId;
 
     #[test]
     fn standard_axis_normalizes_both_directions() {
@@ -176,5 +204,26 @@ mod tests {
 
         assert_eq!(profile.left_stick_x, standard.left_stick_x);
         assert_eq!(profile.left_stick_y, inverted_y);
+    }
+
+    #[test]
+    fn runtime_profiles_default_to_standard_per_device() {
+        let profiles = GamepadProfiles::default();
+        assert_eq!(profiles.profile(GamepadId::new(2)), GamepadProfile::standard());
+    }
+
+    #[test]
+    fn runtime_profiles_are_device_scoped_and_resettable() {
+        let first = GamepadId::new(1);
+        let second = GamepadId::new(2);
+        let custom = GamepadProfile::standard().with_digital_threshold(0.65);
+        let mut profiles = GamepadProfiles::default();
+
+        profiles.set_profile(first, custom);
+        assert_eq!(profiles.profile(first), custom);
+        assert_eq!(profiles.profile(second), GamepadProfile::standard());
+
+        profiles.reset_profile(first);
+        assert_eq!(profiles.profile(first), GamepadProfile::standard());
     }
 }
