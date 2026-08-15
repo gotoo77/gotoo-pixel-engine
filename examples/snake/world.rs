@@ -244,9 +244,7 @@ impl FoodRng {
 mod tests {
     use std::collections::VecDeque;
 
-    use super::{
-        Cell, Direction, GRID_HEIGHT, GRID_WIDTH, Phase, SnakeWorld, TURN_QUEUE_CAPACITY,
-    };
+    use super::{Cell, Direction, GRID_HEIGHT, GRID_WIDTH, Phase, SnakeWorld, TURN_QUEUE_CAPACITY};
 
     #[test]
     fn turn_queue_capacity_is_limited() {
