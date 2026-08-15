@@ -174,6 +174,7 @@ pub struct ArcadeApp {
     return_pad: Option<VirtualPad>,
     active_game: Option<Box<dyn Game>>,
     waiting_for_launch_release: bool,
+    waiting_for_catalog_release: bool,
 }
 
 impl ArcadeApp {
@@ -196,6 +197,7 @@ impl ArcadeApp {
                 .then(|| VirtualPad::new([VirtualButton::new(RETURN_TO_CATALOG, RETURN_BUTTON)])),
             active_game: None,
             waiting_for_launch_release: false,
+            waiting_for_catalog_release: false,
         }
     }
 
@@ -204,6 +206,17 @@ impl ArcadeApp {
             catalog_pad.update(frame.input, &mut self.catalog_controls);
         }
         self.catalog_controls.update(frame.input);
+
+        if self.waiting_for_catalog_release {
+            if self.catalog_controls.action(CATALOG_SELECT).held() {
+                self.render_catalog(frame.framebuffer);
+                return GameResult::Continue;
+            }
+            self.waiting_for_catalog_release = false;
+            if let Some(catalog_pad) = &mut self.catalog_pad {
+                catalog_pad.reset(&mut self.catalog_controls);
+            }
+        }
 
         if self.catalog_controls.action(CATALOG_UP).pressed() {
             self.catalog_menu.select_previous();
@@ -287,6 +300,7 @@ impl ArcadeApp {
         }
         self.active_game = None;
         self.waiting_for_launch_release = false;
+        self.waiting_for_catalog_release = true;
     }
 
     fn render_catalog(&self, framebuffer: &mut Framebuffer) {
@@ -403,6 +417,17 @@ mod tests {
 
     fn outside_extent(rect: Rect, width: u32, height: u32) -> bool {
         rect.x >= width as i32 || rect.y >= height as i32
+    }
+
+    #[test]
+    fn returning_to_catalog_arms_catalog_select_release_gate() {
+        let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
+        app.active_game = Some(Box::new(BreakoutApp::new()));
+
+        app.return_to_catalog();
+
+        assert!(app.active_game.is_none());
+        assert!(app.waiting_for_catalog_release);
     }
 
     #[test]
