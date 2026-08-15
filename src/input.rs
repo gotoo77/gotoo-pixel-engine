@@ -1,4 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+
+use crate::gamepad_profile::{GamepadProfile, GamepadProfiles};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
@@ -173,7 +176,7 @@ impl GamepadState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Input {
     keys: [ButtonState; KEY_COUNT],
     mouse_buttons: [ButtonState; MOUSE_BUTTON_COUNT],
@@ -181,7 +184,21 @@ pub struct Input {
     touches: Vec<Touch>,
     gamepads: HashMap<GamepadId, GamepadState>,
     gamepad_connection_events: Vec<GamepadConnectionEvent>,
+    gamepad_profiles: RefCell<GamepadProfiles>,
 }
+
+impl PartialEq for Input {
+    fn eq(&self, other: &Self) -> bool {
+        self.keys == other.keys
+            && self.mouse_buttons == other.mouse_buttons
+            && self.mouse_position == other.mouse_position
+            && self.touches == other.touches
+            && self.gamepads == other.gamepads
+            && self.gamepad_connection_events == other.gamepad_connection_events
+    }
+}
+
+impl Eq for Input {}
 
 impl Input {
     pub fn key(&self, key: Key) -> ButtonState {
@@ -230,6 +247,22 @@ impl Input {
 
     pub fn gamepad_connection_events(&self) -> &[GamepadConnectionEvent] {
         &self.gamepad_connection_events
+    }
+
+    pub(crate) fn gamepad_profile(&self, id: GamepadId) -> GamepadProfile {
+        self.gamepad_profiles.borrow().profile(id)
+    }
+
+    pub(crate) fn set_gamepad_profile(&self, id: GamepadId, profile: GamepadProfile) {
+        self.gamepad_profiles.borrow_mut().set_profile(id, profile);
+    }
+
+    pub(crate) fn reset_gamepad_profile(&self, id: GamepadId) {
+        self.gamepad_profiles.borrow_mut().reset_profile(id);
+    }
+
+    pub(crate) fn remove_gamepad_profile(&self, id: GamepadId) {
+        self.gamepad_profiles.borrow_mut().remove_profile(id);
     }
 
     pub(crate) fn press_key(&mut self, key: Key) {
@@ -324,6 +357,7 @@ impl Default for Input {
             touches: Vec::new(),
             gamepads: HashMap::new(),
             gamepad_connection_events: Vec::new(),
+            gamepad_profiles: RefCell::new(GamepadProfiles::default()),
         }
     }
 }
@@ -382,6 +416,7 @@ mod tests {
         GamepadButton, GamepadConnectionEvent, GamepadId, Input, Key, MouseButton, Touch,
         TouchPhase,
     };
+    use crate::GamepadProfile;
 
     #[test]
     fn key_transitions_pressed_held_released() {
@@ -518,6 +553,18 @@ mod tests {
 
         assert!(input.gamepad_button_any(GamepadButton::DPadLeft).held());
         assert!(input.gamepad_button_any(GamepadButton::South).held());
+    }
+
+    #[test]
+    fn runtime_profile_state_is_separate_from_input_snapshot_equality() {
+        let first = Input::default();
+        let second = Input::default();
+        first.set_gamepad_profile(
+            GamepadId::new(1),
+            GamepadProfile::standard().with_digital_threshold(0.70),
+        );
+
+        assert_eq!(first, second);
     }
 
     #[test]
