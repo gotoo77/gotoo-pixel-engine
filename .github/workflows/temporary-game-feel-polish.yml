@@ -28,7 +28,9 @@ jobs:
           rustup component add rustfmt clippy
 
       - name: Apply requested game feel changes
-        run: python3 scripts/temporary_game_feel_patch.py
+        run: |
+          python3 scripts/temporary_game_feel_patch.py
+          sed -i 's/let mut bank = snake_sound_bank();/let mut bank = super::snake_sound_bank();/' examples/snake/game.rs
 
       - name: Format
         run: cargo fmt --all
