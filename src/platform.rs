@@ -24,6 +24,8 @@ use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::Fullscreen;
 use winit::window::{Window, WindowId};
 
+const MAX_FRAME_DELTA: Duration = Duration::from_millis(100);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineConfig {
     pub title: String,
@@ -50,6 +52,9 @@ pub enum GameResult {
 pub struct Frame<'a> {
     pub framebuffer: &'a mut Framebuffer,
     pub input: &'a Input,
+    /// Simulation time elapsed since the previous frame. The runtime bounds
+    /// pathological stalls and resets its timing baseline across focus/resume
+    /// transitions so games do not receive accumulated wall-clock downtime.
     pub delta_time: Duration,
     pub storage: &'a mut dyn LocalStorage,
     pub audio: &'a mut dyn Audio,
@@ -193,6 +198,13 @@ impl<G: Game> PlatformApp<G> {
         }
     }
 
+    fn reset_frame_timing(&mut self) {
+        let now = Instant::now();
+        self.last_frame_at = now;
+        self.fps_timer = now;
+        self.fps_frames = 0;
+    }
+
     fn render_frame(&mut self, event_loop: &ActiveEventLoop) {
         let Some(window) = self.window.as_ref() else {
             return;
@@ -208,7 +220,8 @@ impl<G: Game> PlatformApp<G> {
         }
 
         let now = Instant::now();
-        let dt = now.duration_since(self.last_frame_at);
+        let raw_dt = now.duration_since(self.last_frame_at);
+        let dt = simulation_delta_time(raw_dt);
         self.last_frame_at = now;
         let surface_size = size_from_physical(window.inner_size());
         let viewport = renderer.viewport();
@@ -237,7 +250,7 @@ impl<G: Game> PlatformApp<G> {
                     window.set_title(&format!(
                         "{} | {:.1} ms | {:.0} FPS",
                         self.config.title,
-                        dt.as_secs_f64() * 1_000.0,
+                        raw_dt.as_secs_f64() * 1_000.0,
                         fps
                     ));
                     self.fps_timer = now;
@@ -321,8 +334,7 @@ impl<G: Game> PlatformApp<G> {
 
         #[cfg(target_arch = "wasm32")]
         {
-            self.last_frame_at = Instant::now();
-            self.fps_timer = self.last_frame_at;
+            self.reset_frame_timing();
             self.window = Some(Arc::clone(&window));
 
             let proxy = self.event_loop_proxy.clone();
@@ -353,8 +365,7 @@ impl<G: Game> PlatformApp<G> {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.last_frame_at = Instant::now();
-            self.fps_timer = self.last_frame_at;
+            self.reset_frame_timing();
             self.window = Some(window);
             self.renderer = Some(renderer);
         }
@@ -374,8 +385,7 @@ impl<G: Game> PlatformApp<G> {
             }
         };
 
-        self.last_frame_at = Instant::now();
-        self.fps_timer = self.last_frame_at;
+        self.reset_frame_timing();
         if let Some(size) = self.last_non_zero_window_size {
             renderer.resize(size);
         }
@@ -389,6 +399,7 @@ impl<G: Game> PlatformApp<G> {
 
 impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.reset_frame_timing();
         if self.window.is_some() {
             return;
         }
@@ -467,7 +478,12 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             WindowEvent::CursorMoved { position, .. } => self.update_mouse_position(position),
             WindowEvent::CursorLeft { .. } => self.input.set_mouse_position(None),
             WindowEvent::Touch(touch) => self.update_touch(touch),
-            WindowEvent::Focused(false) => self.input.reset_window_devices(),
+            WindowEvent::Focused(focused) => {
+                self.reset_frame_timing();
+                if !focused {
+                    self.input.reset_window_devices();
+                }
+            }
             WindowEvent::RedrawRequested => self.render_frame(event_loop),
             _ => {}
         }
@@ -478,6 +494,10 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             window.request_redraw();
         }
     }
+}
+
+fn simulation_delta_time(elapsed: Duration) -> Duration {
+    elapsed.min(MAX_FRAME_DELTA)
 }
 
 fn remember_non_zero_size(last_size: &mut Option<PhysicalSize<u32>>, size: PhysicalSize<u32>) {
@@ -606,13 +626,31 @@ fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{
-        EngineConfig, Key, MouseButton, TouchPhase, current_viewport, is_fullscreen_shortcut,
-        key_from_winit, mouse_button_from_winit, remember_non_zero_size,
-        surface_to_framebuffer_position, touch_from_winit, touch_phase_from_winit, validate_config,
+        EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, TouchPhase, current_viewport,
+        is_fullscreen_shortcut, key_from_winit, mouse_button_from_winit, remember_non_zero_size,
+        simulation_delta_time, surface_to_framebuffer_position, touch_from_winit,
+        touch_phase_from_winit, validate_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+
+    #[test]
+    fn simulation_delta_keeps_regular_frames() {
+        let regular = Duration::from_millis(16);
+        assert_eq!(simulation_delta_time(regular), regular);
+        assert_eq!(simulation_delta_time(MAX_FRAME_DELTA), MAX_FRAME_DELTA);
+    }
+
+    #[test]
+    fn simulation_delta_caps_pathological_stalls() {
+        assert_eq!(
+            simulation_delta_time(Duration::from_secs(2)),
+            MAX_FRAME_DELTA
+        );
+    }
 
     #[test]
     fn recognizes_native_fullscreen_shortcuts() {
