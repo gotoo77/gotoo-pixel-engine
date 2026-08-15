@@ -362,7 +362,7 @@ impl PongApp {
         let ball = ball_rect(self.ball_x, self.ball_y);
         let mut paddle_hit = false;
 
-        if self.ball_vx < 0.0 && overlaps(ball, p1) {
+        if self.ball_vx < 0.0 && ball.intersects(p1) {
             self.ball_x = (p1.x + p1.width as i32) as f32;
             bounce_from_paddle(
                 &mut self.ball_vx,
@@ -372,7 +372,7 @@ impl PongApp {
                 1.0,
             );
             paddle_hit = true;
-        } else if self.ball_vx > 0.0 && overlaps(ball, p2) {
+        } else if self.ball_vx > 0.0 && ball.intersects(p2) {
             self.ball_x = (p2.x - BALL_SIZE as i32) as f32;
             bounce_from_paddle(
                 &mut self.ball_vx,
@@ -790,13 +790,6 @@ fn ball_rect(x: f32, y: f32) -> Rect {
     }
 }
 
-fn overlaps(a: Rect, b: Rect) -> bool {
-    a.x < b.x + b.width as i32
-        && a.x + a.width as i32 > b.x
-        && a.y < b.y + b.height as i32
-        && a.y + a.height as i32 > b.y
-}
-
 fn centered_paddle_y() -> f32 {
     (FRAMEBUFFER_HEIGHT - PADDLE_HEIGHT) as f32 / 2.0
 }
@@ -838,8 +831,8 @@ mod tests {
     #[test]
     fn rectangles_overlap_only_when_they_share_area() {
         let paddle = paddle_rect(12, 60.0);
-        assert!(overlaps(ball_rect(15.0, 70.0), paddle));
-        assert!(!overlaps(ball_rect(30.0, 70.0), paddle));
+        assert!(ball_rect(15.0, 70.0).intersects(paddle));
+        assert!(!ball_rect(30.0, 70.0).intersects(paddle));
     }
 
     #[test]
