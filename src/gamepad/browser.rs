@@ -3,9 +3,7 @@ use std::collections::HashSet;
 use wasm_bindgen::JsCast;
 use web_sys::{Gamepad as WebGamepad, GamepadButton as WebGamepadButton, GamepadMappingType};
 
-use super::{
-    AxisCalibration, GamepadButton, GamepadId, GamepadProfile, GamepadProfiles, Input,
-};
+use super::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, GamepadProfiles, Input};
 
 const STANDARD_BUTTONS: [(u32, GamepadButton); 12] = [
     (0, GamepadButton::South),
