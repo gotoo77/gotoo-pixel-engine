@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>gotoo-pixel-engine web spike</title>
+    <title>GPE Arcade</title>
     <style>
       html,
       body {
@@ -16,22 +16,22 @@
       body {
         display: grid;
         place-items: center;
+        overflow: hidden;
       }
 
       canvas {
         display: block;
-        width: 960px;
-        height: 540px;
-        max-width: 100vw;
+        width: min(960px, 100vw);
+        height: auto;
         max-height: 100vh;
+        touch-action: none;
         image-rendering: pixelated;
       }
     </style>
   </head>
   <body>
     <script type="module">
-      import init from "./pkg/web_demo.js";
-
+      import init from "./pkg/arcade_web.js";
       init();
     </script>
   </body>
