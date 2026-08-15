@@ -1,6 +1,6 @@
 use crate::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, GamepadId,
-    GamepadProfile, Input, Key, Pixel, Rect, Size,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, Pixel,
+    Rect, Size,
 };
 
 use super::{
@@ -283,10 +283,6 @@ impl<G: Game> Game for PauseGame<G> {
             PauseState::ResumeGate => self.update_resume_gate(frame),
         }
     }
-
-    fn gamepad_profile(&self, id: GamepadId) -> Option<GamepadProfile> {
-        self.game.gamepad_profile(id)
-    }
 }
 
 fn pause_controls() -> ControlMap {
@@ -302,7 +298,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::{NoopAudio, NoopStorage, Viewport};
+    use crate::{GamepadProfiles, NoopAudio, NoopStorage, Viewport};
 
     #[derive(Default)]
     struct CountingGame {
@@ -327,9 +323,11 @@ mod tests {
         };
         let mut storage = NoopStorage;
         let mut audio = NoopAudio::default();
+        let mut gamepad_profiles = GamepadProfiles::default();
         let mut frame = Frame {
             framebuffer,
             input,
+            gamepad_profiles: &mut gamepad_profiles,
             delta_time: Duration::from_millis(16),
             storage: &mut storage,
             audio: &mut audio,
