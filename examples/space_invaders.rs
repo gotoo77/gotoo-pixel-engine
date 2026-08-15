@@ -5,7 +5,7 @@ mod menu;
 
 use game::{EnhancedSpaceInvadersGame, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Game, GameResult, GamepadId, GamepadProfile, Key, run,
+    EngineConfig, EngineError, Frame, Game, GameResult, GamepadProfile, Key, run,
 };
 use menu::{MenuAction, SpaceInvadersMenu};
 
@@ -28,10 +28,19 @@ impl SpaceInvadersApp {
             gamepad_profile: GamepadProfile::standard(),
         }
     }
+
+    fn apply_gamepad_profile(&self, frame: &mut Frame<'_>) {
+        let gamepad_ids = frame.input.gamepad_ids().collect::<Vec<_>>();
+        for id in gamepad_ids {
+            frame.set_gamepad_profile(id, self.gamepad_profile);
+        }
+    }
 }
 
 impl Game for SpaceInvadersApp {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        self.apply_gamepad_profile(frame);
+
         if self.playing {
             return self.game.update(frame);
         }
@@ -61,10 +70,6 @@ impl Game for SpaceInvadersApp {
 
         self.menu.render(frame.framebuffer, self.gamepad_profile);
         GameResult::Continue
-    }
-
-    fn gamepad_profile(&self, _id: GamepadId) -> Option<GamepadProfile> {
-        Some(self.gamepad_profile)
     }
 }
 
