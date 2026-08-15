@@ -27,11 +27,32 @@
         touch-action: none;
         image-rendering: pixelated;
       }
+
+      #audio-hint {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        z-index: 10;
+        padding: 6px 9px;
+        border: 1px solid #f6c453;
+        background: #111d;
+        color: #f6c453;
+        font: 12px monospace;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
+    <div id="audio-hint">AUDIO: CLICK / TAP / KEY ONCE</div>
     <script type="module">
       import init from "./pkg/arcade_web.js";
+
+      const audioHint = document.querySelector("#audio-hint");
+      const dismissAudioHint = () => audioHint?.remove();
+      for (const type of ["pointerdown", "touchstart", "keydown"]) {
+        document.addEventListener(type, dismissAudioHint, { once: true, capture: true });
+      }
+
       init();
     </script>
   </body>
