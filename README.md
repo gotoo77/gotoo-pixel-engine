@@ -39,7 +39,7 @@ Capacités disponibles :
 - états `pressed`, `held`, `released` ;
 - `ControlMap` pour faire converger clavier, gamepad ciblé/global et contrôles virtuels ;
 - profils et calibration gamepad ;
-- timing par frame via `delta_time` ;
+- timing de simulation par frame via `delta_time`, borné face aux stalls et suspensions ;
 - viewport conservant le ratio du framebuffer ;
 - mapping cohérent surface -> viewport -> framebuffer pour souris/tactile ;
 - stockage local persistant natif/Web via `LocalStorage` ;
@@ -122,7 +122,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 `Frame` contient aussi `storage`, `audio`, `surface_size` et `viewport`. Un jeu
-les utilise seulement lorsqu'il en a besoin.
+les utilise seulement lorsqu'il en a besoin. Son `delta_time` est un temps de
+simulation borné par le runtime : un retour après un gros stall ou une
+suspension ne transmet pas toute la durée murale au jeu en une seule frame.
 
 ## Commandes utiles
 
