@@ -53,6 +53,7 @@ jobs:
           cp web/tetris.html dist/tetris.html
           cp web/space_invaders.html dist/space_invaders.html
           cp web/pong.html dist/pong.html
+          cp web/audio-unlock.js dist/audio-unlock.js
           cp web/fullscreen.js dist/fullscreen.js
           wasm-bindgen \
             --target web \
