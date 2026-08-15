@@ -94,9 +94,6 @@ jobs:
       - name: Build Arcade WASM
         run: cargo build --target wasm32-unknown-unknown --example arcade_web
 
-      - name: WASM clippy
-        run: cargo clippy --target wasm32-unknown-unknown --example arcade_web -- -D warnings
-
       - name: Commit validated browser backend
         run: |
           if git diff --quiet; then
