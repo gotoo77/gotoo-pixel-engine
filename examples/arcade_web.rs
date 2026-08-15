@@ -131,12 +131,12 @@ impl ArcadeApp {
         if self.catalog_controls.action(CATALOG_DOWN).pressed() {
             self.catalog_menu.select_next();
         }
-        if self.catalog_controls.action(CATALOG_SELECT).pressed() {
-            if let Some(index) = self.catalog_menu.selected() {
-                self.launch(index);
-                frame.framebuffer.clear(BG);
-                return GameResult::Continue;
-            }
+        if self.catalog_controls.action(CATALOG_SELECT).pressed()
+            && let Some(index) = self.catalog_menu.selected()
+        {
+            self.launch(index);
+            frame.framebuffer.clear(BG);
+            return GameResult::Continue;
         }
 
         self.render_catalog(frame.framebuffer);
