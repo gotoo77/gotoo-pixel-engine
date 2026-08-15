@@ -104,9 +104,9 @@ pub struct PauseGame<G> {
 impl<G> PauseGame<G> {
     pub fn new(game: G, config: PauseConfig) -> Self {
         let layout = PauseLayout::new(config.surface_size);
-        let trigger_pad = config.touch_button.map(|rect| {
-            VirtualPad::new([VirtualButton::new(PAUSE_TOGGLE, rect)])
-        });
+        let trigger_pad = config
+            .touch_button
+            .map(|rect| VirtualPad::new([VirtualButton::new(PAUSE_TOGGLE, rect)]));
         let menu_pad = config.touch_button.map(|_| {
             VirtualPad::new([
                 VirtualButton::new(TOUCH_RESUME, layout.resume),
@@ -255,12 +255,9 @@ impl<G> PauseGame<G> {
         draw_panel(framebuffer, self.layout.panel, PANEL, BORDER);
         draw_text_centered(framebuffer, self.layout.title, "PAUSED", 2, ACCENT);
 
-        for (index, (rect, label)) in [
-            (self.layout.resume, "RESUME"),
-            (self.layout.quit, "QUIT"),
-        ]
-        .into_iter()
-        .enumerate()
+        for (index, (rect, label)) in [(self.layout.resume, "RESUME"), (self.layout.quit, "QUIT")]
+            .into_iter()
+            .enumerate()
         {
             draw_menu_item(
                 framebuffer,
@@ -335,7 +332,7 @@ mod tests {
             width: framebuffer.width(),
             height: framebuffer.height(),
         };
-        let mut storage = NoopStorage::default();
+        let mut storage = NoopStorage;
         let mut audio = NoopAudio::default();
         let mut frame = Frame {
             framebuffer,
@@ -500,7 +497,9 @@ mod tests {
         });
         let wrapper = PauseGame::new(CountingGame::default(), config);
 
-        let trigger = config.touch_button.expect("touch config should have trigger");
+        let trigger = config
+            .touch_button
+            .expect("touch config should have trigger");
         assert!(!trigger.intersects(wrapper.layout.resume));
         assert!(!trigger.intersects(wrapper.layout.quit));
     }

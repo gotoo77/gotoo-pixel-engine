@@ -18,7 +18,10 @@ use breakout::BreakoutApp;
 use gotoo_pixel_engine::{
     ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, GamepadId,
     GamepadProfile, Key, Pixel, Rect, Size,
-    ui::{MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered},
+    ui::{
+        MenuState, PauseConfig, PauseGame, VirtualButton, VirtualPad, draw_menu_item, draw_panel,
+        draw_text_centered,
+    },
 };
 use pong::PongApp;
 use snake::{SnakeGame, SnakeInteractionMode};
@@ -28,7 +31,6 @@ use tetris::TetrisGame;
 const CATALOG_UP: ActionId = ActionId::new("arcade.catalog.up");
 const CATALOG_DOWN: ActionId = ActionId::new("arcade.catalog.down");
 const CATALOG_SELECT: ActionId = ActionId::new("arcade.catalog.select");
-const RETURN_TO_CATALOG: ActionId = ActionId::new("arcade.return_to_catalog");
 
 const GAME_LABELS: [&str; 5] = ["SNAKE", "TETRIS", "SPACE INVADERS", "PONG", "BREAKOUT"];
 
@@ -57,7 +59,7 @@ const TOUCH_DOWN: Rect = Rect {
     width: 64,
     height: 42,
 };
-const RETURN_BUTTON: Rect = Rect {
+const PAUSE_BUTTON: Rect = Rect {
     x: 400,
     y: 228,
     width: 72,
@@ -170,8 +172,6 @@ pub struct ArcadeApp {
     catalog_menu: MenuState,
     catalog_controls: ControlMap,
     catalog_pad: Option<VirtualPad>,
-    return_controls: ControlMap,
-    return_pad: Option<VirtualPad>,
     active_game: Option<Box<dyn Game>>,
     waiting_for_launch_release: bool,
     waiting_for_catalog_release: bool,
@@ -192,9 +192,6 @@ impl ArcadeApp {
                     VirtualButton::new(CATALOG_DOWN, TOUCH_DOWN),
                 ])
             }),
-            return_controls: return_controls(),
-            return_pad: touch
-                .then(|| VirtualPad::new([VirtualButton::new(RETURN_TO_CATALOG, RETURN_BUTTON)])),
             active_game: None,
             waiting_for_launch_release: false,
             waiting_for_catalog_release: false,
@@ -252,17 +249,6 @@ impl ArcadeApp {
             }
         }
 
-        if let Some(return_pad) = &mut self.return_pad {
-            return_pad.update(frame.input, &mut self.return_controls);
-        }
-        self.return_controls.update(frame.input);
-
-        if self.return_controls.action(RETURN_TO_CATALOG).pressed() {
-            self.return_to_catalog();
-            self.render_catalog(frame.framebuffer);
-            return GameResult::Continue;
-        }
-
         let result = self
             .active_game
             .as_mut()
@@ -272,8 +258,6 @@ impl ArcadeApp {
         if result == GameResult::Exit {
             self.return_to_catalog();
             self.render_catalog(frame.framebuffer);
-        } else if self.mode == ArcadeInteractionMode::Touch {
-            draw_return_button(frame.framebuffer);
         }
 
         GameResult::Continue
@@ -284,17 +268,11 @@ impl ArcadeApp {
             return;
         };
 
-        if let Some(return_pad) = &mut self.return_pad {
-            return_pad.reset(&mut self.return_controls);
-        }
         self.active_game = Some(game);
         self.waiting_for_launch_release = true;
     }
 
     fn return_to_catalog(&mut self) {
-        if let Some(return_pad) = &mut self.return_pad {
-            return_pad.reset(&mut self.return_controls);
-        }
         if let Some(catalog_pad) = &mut self.catalog_pad {
             catalog_pad.reset(&mut self.catalog_controls);
         }
@@ -379,36 +357,35 @@ fn catalog_controls() -> ControlMap {
     controls
 }
 
-fn return_controls() -> ControlMap {
-    let mut controls = ControlMap::new();
-    controls
-        .bind_key(RETURN_TO_CATALOG, Key::Escape)
-        .bind_gamepad(RETURN_TO_CATALOG, GamepadButton::Start);
-    controls
-}
-
 fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>> {
-    let game: Box<dyn Game> = match (mode, index) {
+    let game = match (mode, index) {
         (ArcadeInteractionMode::Native, 0) => {
-            Box::new(SnakeGame::new(SnakeInteractionMode::Keyboard))
+            pause_game(SnakeGame::new(SnakeInteractionMode::Keyboard), mode)
         }
-        (ArcadeInteractionMode::Touch, 0) => Box::new(SnakeGame::new(SnakeInteractionMode::Touch)),
-        (ArcadeInteractionMode::Native, 1) => Box::new(TetrisGame::new()),
-        (ArcadeInteractionMode::Touch, 1) => Box::new(TetrisGame::new_touch()),
-        (ArcadeInteractionMode::Native, 2) => Box::new(EnhancedSpaceInvadersGame::new()),
-        (ArcadeInteractionMode::Touch, 2) => Box::new(EnhancedSpaceInvadersGame::new_touch()),
-        (ArcadeInteractionMode::Native, 3) => Box::new(PongApp::new()),
-        (ArcadeInteractionMode::Touch, 3) => Box::new(PongApp::new_touch()),
-        (ArcadeInteractionMode::Native, 4) => Box::new(BreakoutApp::new()),
-        (ArcadeInteractionMode::Touch, 4) => Box::new(BreakoutApp::new_touch()),
+        (ArcadeInteractionMode::Touch, 0) => {
+            pause_game(SnakeGame::new(SnakeInteractionMode::Touch), mode)
+        }
+        (ArcadeInteractionMode::Native, 1) => pause_game(TetrisGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 1) => pause_game(TetrisGame::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 2) => pause_game(EnhancedSpaceInvadersGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 2) => {
+            pause_game(EnhancedSpaceInvadersGame::new_touch(), mode)
+        }
+        (ArcadeInteractionMode::Native, 3) => pause_game(PongApp::new(), mode),
+        (ArcadeInteractionMode::Touch, 3) => pause_game(PongApp::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutApp::new(), mode),
+        (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutApp::new_touch(), mode),
         (_, _) => return None,
     };
     Some(game)
 }
 
-fn draw_return_button(framebuffer: &mut Framebuffer) {
-    draw_panel(framebuffer, RETURN_BUTTON, BG, TOUCH_ACCENT);
-    draw_text_centered(framebuffer, RETURN_BUTTON, "MENU", 1, TOUCH_ACCENT);
+fn pause_game<G: Game + 'static>(game: G, mode: ArcadeInteractionMode) -> Box<dyn Game> {
+    let mut config = PauseConfig::new(mode.framebuffer_size());
+    if mode == ArcadeInteractionMode::Touch {
+        config = config.with_touch_button(PAUSE_BUTTON);
+    }
+    Box::new(PauseGame::new(game, config))
 }
 
 #[cfg(test)]
@@ -494,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn return_button_is_outside_every_touch_game_extent() {
+    fn pause_button_is_outside_every_touch_game_extent() {
         let snake_size = SnakeInteractionMode::Touch.framebuffer_size();
         let extents = [
             (snake_size.width, snake_size.height),
@@ -511,7 +488,7 @@ mod tests {
         ];
 
         for (width, height) in extents {
-            assert!(outside_extent(RETURN_BUTTON, width, height));
+            assert!(outside_extent(PAUSE_BUTTON, width, height));
         }
     }
 
@@ -529,14 +506,12 @@ mod tests {
     fn native_mode_has_no_virtual_pads() {
         let arcade = ArcadeApp::new(ArcadeInteractionMode::Native);
         assert!(arcade.catalog_pad.is_none());
-        assert!(arcade.return_pad.is_none());
     }
 
     #[test]
-    fn touch_mode_has_catalog_and_return_virtual_pads() {
+    fn touch_mode_has_catalog_virtual_pad() {
         let arcade = ArcadeApp::new(ArcadeInteractionMode::Touch);
         assert!(arcade.catalog_pad.is_some());
-        assert!(arcade.return_pad.is_some());
     }
 
     #[test]
