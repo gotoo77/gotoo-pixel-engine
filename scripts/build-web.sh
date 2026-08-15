@@ -2,6 +2,7 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+source scripts/web-examples.sh
 
 build_web_example() {
     local example="$1"
@@ -14,12 +15,9 @@ build_web_example() {
         "target/wasm32-unknown-unknown/debug/examples/${example}.wasm"
 }
 
-build_web_example snake_web
-build_web_example breakout_web
-build_web_example tetris_web
-build_web_example pong_web
-build_web_example space_invaders_web
-build_web_example arcade_web
+for example in "${GPE_WEB_GAME_EXAMPLES[@]}"; do
+    build_web_example "${example}"
+done
 
 echo "==> build web_demo"
 cargo build --target wasm32-unknown-unknown --example web_demo
