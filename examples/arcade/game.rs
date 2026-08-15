@@ -16,8 +16,7 @@ mod tetris;
 
 use breakout::BreakoutGame;
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadId, GamepadProfile, Pixel,
-    Rect, Size,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, Pixel, Rect, Size,
     ui::{
         MenuState, PauseConfig, PauseGame, VirtualButton, VirtualPad, draw_menu_item, draw_panel,
         draw_text_centered, standard_menu_controls,
@@ -332,12 +331,6 @@ impl Game for ArcadeApp {
         } else {
             self.update_catalog(frame)
         }
-    }
-
-    fn gamepad_profile(&self, id: GamepadId) -> Option<GamepadProfile> {
-        self.active_game
-            .as_ref()
-            .and_then(|game| game.gamepad_profile(id))
     }
 }
 
