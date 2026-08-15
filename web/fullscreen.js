@@ -1,5 +1,6 @@
 const STYLE_ID = "gpe-fullscreen-style";
 const BUTTON_ID = "gpe-fullscreen-button";
+let touchFullscreenAttempted = false;
 
 function installStyle() {
   if (document.getElementById(STYLE_ID)) {
@@ -49,6 +50,29 @@ async function toggleFullscreen() {
   }
 }
 
+async function enterFullscreenFromTouch(event) {
+  if (
+    touchFullscreenAttempted ||
+    document.fullscreenElement ||
+    !document.fullscreenEnabled ||
+    (event.pointerType && event.pointerType !== "touch")
+  ) {
+    return;
+  }
+
+  touchFullscreenAttempted = true;
+  try {
+    await document.documentElement.requestFullscreen();
+  } catch (_) {
+    // Fullscreen is opportunistic on touch devices; keep normal play if denied.
+  }
+}
+
+function installTouchFullscreen() {
+  document.addEventListener("pointerup", enterFullscreenFromTouch, { capture: true });
+  document.addEventListener("touchend", enterFullscreenFromTouch, { capture: true });
+}
+
 function installFullscreenButton() {
   if (!document.fullscreenEnabled || document.getElementById(BUTTON_ID)) {
     return;
@@ -65,4 +89,5 @@ function installFullscreenButton() {
   document.body.append(button);
 }
 
+installTouchFullscreen();
 installFullscreenButton();

@@ -4,6 +4,7 @@ use std::time::Duration;
 use gotoo_pixel_engine::{
     ActionId, Audio, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key,
     LocalStorage, MouseButton, Pixel, Rect, Size, SoundBank, SoundId, Touch, TouchPhase,
+    pcm16_mono_wav,
     ui::{VirtualButton, VirtualPad, VirtualPadUpdate},
 };
 
@@ -33,6 +34,8 @@ const CONTROL_EXIT: ActionId = ActionId::new("snake.exit");
 
 const EAT_SOUND: SoundId = SoundId::new("snake.eat");
 const DEATH_SOUND: SoundId = SoundId::new("snake.death");
+const TURN_SOUND: SoundId = SoundId::new("snake.turn");
+const SNAKE_AUDIO_SAMPLE_RATE: u32 = 44_100;
 const SNAKE_SOUNDS: [(SoundId, &[u8]); 2] = [
     (EAT_SOUND, include_bytes!("assets/eat.wav")),
     (DEATH_SOUND, include_bytes!("assets/death.wav")),
@@ -304,6 +307,9 @@ impl SnakeGame {
         let mut ticks = 0;
         while self.accumulator >= TICK_PERIOD && ticks < MAX_CATCH_UP {
             let result = self.world.tick();
+            if result.turned {
+                events.turns += 1;
+            }
             if result.ate_food {
                 events.food_eaten += 1;
             }
@@ -358,6 +364,9 @@ impl SnakeGame {
     }
 
     fn play_sounds(&mut self, audio: &mut dyn Audio, events: SnakeEvents) {
+        for _ in 0..events.turns {
+            let _ = self.sounds.play(audio, TURN_SOUND);
+        }
         for _ in 0..events.food_eaten {
             let _ = self.sounds.play(audio, EAT_SOUND);
         }
@@ -451,6 +460,7 @@ impl Game for SnakeGame {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct SnakeEvents {
+    turns: u32,
     food_eaten: u32,
     game_over: bool,
 }
@@ -489,6 +499,29 @@ fn snake_sound_bank() -> SoundBank {
             .expect("Snake sound ids should be unique");
     }
     sounds
+        .insert_wav(TURN_SOUND, synthesize_turn_sound())
+        .expect("Snake turn sound id should be unique");
+    sounds
+}
+
+fn synthesize_turn_sound() -> Vec<u8> {
+    let duration = 0.035_f32;
+    let sample_count = (SNAKE_AUDIO_SAMPLE_RATE as f32 * duration) as usize;
+    let mut samples = Vec::with_capacity(sample_count);
+    let mut phase = 0.0_f32;
+
+    for index in 0..sample_count {
+        let progress = index as f32 / sample_count as f32;
+        let envelope = (1.0 - progress).powi(2);
+        let frequency = 175.0 + 45.0 * progress;
+        phase += frequency / SNAKE_AUDIO_SAMPLE_RATE as f32;
+        let wave = (phase * std::f32::consts::TAU).sin();
+        let sample = wave * envelope * 0.11;
+        samples.push((sample * i16::MAX as f32) as i16);
+    }
+
+    pcm16_mono_wav(SNAKE_AUDIO_SAMPLE_RATE, &samples)
+        .expect("Snake procedural turn sound should use a supported PCM format")
 }
 
 fn draw_grid(framebuffer: &mut Framebuffer, layout: SnakeLayout) {
@@ -1133,9 +1166,12 @@ impl SnakeWorld {
             return TickResult::default();
         }
 
-        if let Some(direction) = self.turn_queue.pop_front() {
+        let turned = if let Some(direction) = self.turn_queue.pop_front() {
             self.direction = direction;
-        }
+            true
+        } else {
+            false
+        };
 
         let next_head = self.snake[0].next(self.direction);
         let will_grow = self.food == Some(next_head);
@@ -1143,6 +1179,7 @@ impl SnakeWorld {
         if !next_head.is_inside_grid() || self.collides_with_body(next_head, will_grow) {
             self.phase = Phase::GameOver;
             return TickResult {
+                turned,
                 ate_food: false,
                 game_over: true,
             };
@@ -1158,6 +1195,7 @@ impl SnakeWorld {
         }
 
         TickResult {
+            turned,
             ate_food: will_grow,
             game_over: false,
         }
@@ -1204,6 +1242,7 @@ impl SnakeWorld {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct TickResult {
+    turned: bool,
     ate_food: bool,
     game_over: bool,
 }
@@ -1307,9 +1346,9 @@ mod tests {
         FOOD, FRAMEBUFFER_HEIGHT, GAME_OVER, GRID_LINE, HUD_BACKDROP, HUD_TEXT,
         KEYBOARD_FRAMEBUFFER_WIDTH, PANEL_FILL, Phase, RESTART_KEY, SNAKE_BODY, SNAKE_HEAD,
         SNAKE_SOUNDS, SnakeControls, SnakeGame, SnakeInteractionMode, SnakeLayout, SnakeWorld,
-        TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY, TouchControls, d_pad_zone_at,
-        d_pad_zone_at_in_layout, direction_for_key, draw_d_pad, draw_game_over, draw_grid,
-        draw_score_hud,
+        TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY, TURN_SOUND, TouchControls,
+        d_pad_zone_at, d_pad_zone_at_in_layout, direction_for_key, draw_d_pad, draw_game_over,
+        draw_grid, draw_score_hud,
     };
     use gotoo_pixel_engine::{
         Audio, AudioError, Frame, Framebuffer, Game, GameResult, Input, Key, LocalStorage,
@@ -1936,6 +1975,36 @@ mod tests {
                 layout.replay.y + layout.replay.height as i32 - 1,
             )));
         }
+    }
+
+    #[test]
+    fn applied_turn_is_reported_on_tick() {
+        let mut game = touch_game();
+        let events =
+            game.update_logic(TICK_PERIOD, SnakeControls::with_directions([Direction::Up]));
+
+        assert_eq!(events.turns, 1);
+        assert_eq!(game.world.direction, Direction::Up);
+    }
+
+    #[test]
+    fn invalid_reverse_does_not_report_a_turn() {
+        let mut game = touch_game();
+        let events = game.update_logic(
+            TICK_PERIOD,
+            SnakeControls::with_directions([Direction::Left]),
+        );
+
+        assert_eq!(events.turns, 0);
+        assert_eq!(game.world.direction, Direction::Right);
+    }
+
+    #[test]
+    fn turn_sound_is_registered_and_playable() {
+        let mut bank = super::snake_sound_bank();
+        let mut audio = NoopAudio::default();
+        bank.play(&mut audio, TURN_SOUND)
+            .expect("generated Snake turn sound should be playable");
     }
 
     #[test]
