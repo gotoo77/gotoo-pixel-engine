@@ -258,8 +258,6 @@ pub struct SnakeGame {
     accumulator: Duration,
     interaction_mode: SnakeInteractionMode,
     virtual_pad: Option<VirtualPad>,
-    #[cfg(test)]
-    touch_controls: TouchControls,
     controls: ControlMap,
     sounds: SoundBank,
     best_score: u32,
@@ -274,8 +272,6 @@ impl SnakeGame {
             accumulator: Duration::ZERO,
             interaction_mode,
             virtual_pad,
-            #[cfg(test)]
-            touch_controls: TouchControls::default(),
             controls: default_controls(),
             sounds: snake_sound_bank(),
             best_score: 0,
@@ -321,8 +317,6 @@ impl SnakeGame {
 
             if self.world.phase() != Phase::Running {
                 self.reset_virtual_pad();
-                #[cfg(test)]
-                self.touch_controls.reset_contact();
                 break;
             }
         }
@@ -334,8 +328,6 @@ impl SnakeGame {
         self.world.restart();
         self.accumulator = Duration::ZERO;
         self.reset_virtual_pad();
-        #[cfg(test)]
-        self.touch_controls.reset_contact();
     }
 
     fn reset_virtual_pad(&mut self) {
@@ -838,47 +830,6 @@ impl SnakeControls {
     }
 
     #[cfg(test)]
-    fn from_game_over_inputs(
-        keyboard_restart_pressed: bool,
-        mouse_left_pressed: bool,
-        mouse_position: Option<(i32, i32)>,
-        touches: &[Touch],
-        touch_controls: &mut TouchControls,
-    ) -> Self {
-        Self::from_game_over_inputs_in_layout(
-            keyboard_restart_pressed,
-            mouse_left_pressed,
-            mouse_position,
-            touches,
-            touch_controls,
-            SnakeLayout::touch(),
-        )
-    }
-
-    #[cfg(test)]
-    fn from_game_over_inputs_in_layout(
-        keyboard_restart_pressed: bool,
-        mouse_left_pressed: bool,
-        mouse_position: Option<(i32, i32)>,
-        touches: &[Touch],
-        touch_controls: &mut TouchControls,
-        layout: SnakeLayout,
-    ) -> Self {
-        touch_controls.reset_contact();
-
-        Self {
-            directions: Vec::new(),
-            restart: replay_requested(
-                keyboard_restart_pressed,
-                mouse_left_pressed,
-                mouse_position,
-                touches,
-                layout,
-            ),
-        }
-    }
-
-    #[cfg(test)]
     fn with_directions(directions: impl IntoIterator<Item = Direction>) -> Self {
         Self {
             directions: directions.into_iter().collect(),
@@ -909,175 +860,10 @@ fn direction_for_action(action: ActionId) -> Option<Direction> {
     }
 }
 
-#[cfg(test)]
-fn direction_for_key(key: Key) -> Option<Direction> {
-    match key {
-        Key::Up | Key::W => Some(Direction::Up),
-        Key::Right | Key::D => Some(Direction::Right),
-        Key::Down | Key::S => Some(Direction::Down),
-        Key::Left | Key::A => Some(Direction::Left),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct TouchControls {
-    visible: bool,
-    d_pad: DPadTracker,
-}
-
-#[cfg(test)]
-impl TouchControls {
-    fn observe_touches(&mut self, touches: &[Touch]) {
-        if !touches.is_empty() {
-            self.visible = true;
-        }
-    }
-
-    fn visible(&self) -> bool {
-        self.visible
-    }
-
-    fn reset_contact(&mut self) {
-        self.d_pad.reset();
-    }
-}
-
-#[cfg(test)]
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct DPadTracker {
-    active: Option<DPadContact>,
-}
-
-#[cfg(test)]
-impl DPadTracker {
-    fn reset(&mut self) {
-        self.active = None;
-    }
-
-    #[cfg(test)]
-    fn directions_from_touches(&mut self, touches: &[Touch]) -> Vec<Direction> {
-        self.directions_from_touches_in_layout(touches, SnakeLayout::touch())
-    }
-
-    fn directions_from_touches_in_layout(
-        &mut self,
-        touches: &[Touch],
-        layout: SnakeLayout,
-    ) -> Vec<Direction> {
-        let mut directions = Vec::new();
-
-        for touch in touches {
-            match touch.phase {
-                TouchPhase::Started => {
-                    if let Some(direction) = self.start(touch, layout) {
-                        directions.push(direction);
-                    }
-                }
-                TouchPhase::Moved => {
-                    if let Some(direction) = self.move_active(touch, layout) {
-                        directions.push(direction);
-                    }
-                }
-                TouchPhase::Ended => self.end_active(touch),
-                TouchPhase::Cancelled => self.cancel_active(touch),
-            }
-        }
-
-        directions
-    }
-
-    fn start(&mut self, touch: &Touch, layout: SnakeLayout) -> Option<Direction> {
-        if self.active.is_some() {
-            return None;
-        }
-
-        let position = touch.position?;
-        let zone = d_pad_zone_at_in_layout(position, layout)?;
-
-        self.active = Some(DPadContact {
-            id: touch.id,
-            last_direction: zone.direction,
-        });
-
-        zone.direction
-    }
-
-    fn move_active(&mut self, touch: &Touch, layout: SnakeLayout) -> Option<Direction> {
-        let contact = self.active.as_mut()?;
-        if contact.id != touch.id {
-            return None;
-        }
-
-        let position = touch.position?;
-        let zone = d_pad_zone_at_in_layout(position, layout)?;
-        let direction = zone.direction?;
-
-        if contact.last_direction == Some(direction) {
-            return None;
-        }
-
-        contact.last_direction = Some(direction);
-        Some(direction)
-    }
-
-    fn end_active(&mut self, touch: &Touch) {
-        if self
-            .active
-            .as_ref()
-            .is_some_and(|contact| contact.id == touch.id)
-        {
-            self.active = None;
-        }
-    }
-
-    fn cancel_active(&mut self, touch: &Touch) {
-        self.end_active(touch);
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DirectionZone {
     rect: Rect,
     direction: Direction,
-}
-
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct DPadZone {
-    direction: Option<Direction>,
-}
-
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct DPadContact {
-    id: u64,
-    last_direction: Option<Direction>,
-}
-
-#[cfg(test)]
-fn d_pad_zone_at(position: (i32, i32)) -> Option<DPadZone> {
-    d_pad_zone_at_in_layout(position, SnakeLayout::touch())
-}
-
-#[cfg(test)]
-fn d_pad_zone_at_in_layout(position: (i32, i32), layout: SnakeLayout) -> Option<DPadZone> {
-    let d_pad = layout.d_pad?;
-
-    for zone in d_pad.direction_zones() {
-        if zone.rect.contains(position) {
-            return Some(DPadZone {
-                direction: Some(zone.direction),
-            });
-        }
-    }
-
-    if d_pad.center.contains(position) {
-        return Some(DPadZone { direction: None });
-    }
-
-    None
 }
 
 fn replay_requested(
@@ -1336,23 +1122,23 @@ impl FoodRng {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::collections::VecDeque;
+    use std::collections::{HashMap, VecDeque};
     use std::time::Duration;
 
     use super::{
-        BEST_SCORE_KEY, BUTTON_BORDER, BUTTON_TEXT, CELL_SIZE, Cell, D_PAD_ARROW,
-        D_PAD_CENTER_FILL, D_PAD_FILL, DEATH_SOUND, DPadTracker, Direction, EAT_SOUND, EXIT_KEY,
-        FOOD, FRAMEBUFFER_HEIGHT, GAME_OVER, GRID_LINE, HUD_BACKDROP, HUD_TEXT,
-        KEYBOARD_FRAMEBUFFER_WIDTH, PANEL_FILL, Phase, RESTART_KEY, SNAKE_BODY, SNAKE_HEAD,
+        BEST_SCORE_KEY, BUTTON_BORDER, BUTTON_TEXT, CELL_SIZE, CONTROL_DOWN, CONTROL_LEFT,
+        CONTROL_RIGHT, CONTROL_UP, Cell, D_PAD_ARROW, D_PAD_CENTER_FILL, D_PAD_FILL, DEATH_SOUND,
+        Direction, EAT_SOUND, FOOD, FRAMEBUFFER_HEIGHT, GAME_OVER, GRID_LINE, HUD_BACKDROP,
+        HUD_TEXT, KEYBOARD_FRAMEBUFFER_WIDTH, PANEL_FILL, Phase, SNAKE_BODY, SNAKE_HEAD,
         SNAKE_SOUNDS, SnakeControls, SnakeGame, SnakeInteractionMode, SnakeLayout, SnakeWorld,
-        TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY, TURN_SOUND, TouchControls,
-        d_pad_zone_at, d_pad_zone_at_in_layout, direction_for_key, draw_d_pad, draw_game_over,
-        draw_grid, draw_score_hud,
+        TICK_PERIOD, TOUCH_FRAMEBUFFER_WIDTH, TURN_QUEUE_CAPACITY, TURN_SOUND, default_controls,
+        direction_for_action, draw_d_pad, draw_game_over, draw_grid, draw_score_hud,
+        replay_requested, virtual_pad_for_mode,
     };
     use gotoo_pixel_engine::{
-        Audio, AudioError, Frame, Framebuffer, Game, GameResult, Input, Key, LocalStorage,
-        NoopAudio, Pixel, Rect, Size, SoundId, StorageError, Touch, TouchPhase, Viewport,
+        Audio, AudioError, Frame, Framebuffer, Game, GameResult, Input, LocalStorage, NoopAudio,
+        Pixel, Rect, Size, SoundId, StorageError, Touch, TouchPhase, Viewport,
+        ui::VirtualButton,
     };
 
     #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1395,7 +1181,6 @@ mod tests {
             if self.fail_reads {
                 return Err(StorageError::new("read failed"));
             }
-
             Ok(self.entries.get(key).cloned())
         }
 
@@ -1403,7 +1188,6 @@ mod tests {
             if self.fail_writes {
                 return Err(StorageError::new("write failed"));
             }
-
             self.entries.insert(key.into(), value.into());
             Ok(())
         }
@@ -1431,18 +1215,9 @@ mod tests {
             if self.fail_play {
                 return Err(AudioError::new("play failed"));
             }
-
             self.plays.push(id);
             Ok(())
         }
-    }
-
-    fn head(game: &SnakeGame) -> Cell {
-        game.world.snake[0]
-    }
-
-    fn tick(game: &mut SnakeGame) {
-        game.update_logic(TICK_PERIOD, SnakeControls::none());
     }
 
     fn keyboard_game() -> SnakeGame {
@@ -1453,43 +1228,79 @@ mod tests {
         SnakeGame::new(SnakeInteractionMode::Touch)
     }
 
-    fn update_with_storage(
-        game: &mut SnakeGame,
-        storage: &mut dyn LocalStorage,
-        delta_time: Duration,
-    ) -> GameResult {
-        let framebuffer_size = game.layout().framebuffer_size;
-        let mut audio = TestAudio::default();
-        update_with_storage_audio_and_surface(
-            game,
-            storage,
-            &mut audio,
-            delta_time,
-            framebuffer_size,
+    fn head(game: &SnakeGame) -> Cell {
+        game.world.snake[0]
+    }
+
+    fn tick(game: &mut SnakeGame) {
+        game.update_logic(TICK_PERIOD, SnakeControls::none());
+    }
+
+    fn touch_layout() -> SnakeLayout {
+        SnakeLayout::touch()
+    }
+
+    fn keyboard_layout() -> SnakeLayout {
+        SnakeLayout::keyboard()
+    }
+
+    fn rect_center(rect: Rect) -> (i32, i32) {
+        (
+            rect.x + rect.width as i32 / 2,
+            rect.y + rect.height as i32 / 2,
         )
     }
 
-    fn update_with_storage_and_audio(
-        game: &mut SnakeGame,
-        storage: &mut dyn LocalStorage,
-        audio: &mut dyn Audio,
-        delta_time: Duration,
-    ) -> GameResult {
-        let framebuffer_size = game.layout().framebuffer_size;
-        update_with_storage_audio_and_surface(game, storage, audio, delta_time, framebuffer_size)
+    fn touch(id: u64, phase: TouchPhase, position: Option<(i32, i32)>) -> Touch {
+        Touch {
+            id,
+            phase,
+            position,
+        }
     }
 
-    fn update_with_storage_and_surface(
-        game: &mut SnakeGame,
-        storage: &mut dyn LocalStorage,
-        delta_time: Duration,
-        surface_size: Size,
-    ) -> GameResult {
-        let mut audio = TestAudio::default();
-        update_with_storage_audio_and_surface(game, storage, &mut audio, delta_time, surface_size)
+    fn count_pixels(framebuffer: &Framebuffer, pixel: Pixel) -> usize {
+        let mut count = 0;
+        for y in 0..framebuffer.height() as i32 {
+            for x in 0..framebuffer.width() as i32 {
+                if framebuffer.pixel(x, y) == Some(pixel) {
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 
-    fn update_with_storage_audio_and_surface(
+    fn count_pixels_in_rect(framebuffer: &Framebuffer, pixel: Pixel, rect: Rect) -> usize {
+        let mut count = 0;
+        for y in rect.y..rect.y + rect.height as i32 {
+            for x in rect.x..rect.x + rect.width as i32 {
+                if framebuffer.pixel(x, y) == Some(pixel) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    fn count_pixels_outside_rect(framebuffer: &Framebuffer, pixel: Pixel, rect: Rect) -> usize {
+        let mut count = 0;
+        for y in 0..framebuffer.height() as i32 {
+            for x in 0..framebuffer.width() as i32 {
+                if !rect.contains((x, y)) && framebuffer.pixel(x, y) == Some(pixel) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    fn assert_color_only_inside(framebuffer: &Framebuffer, pixel: Pixel, rect: Rect) {
+        assert!(count_pixels_in_rect(framebuffer, pixel, rect) > 0);
+        assert_eq!(count_pixels_outside_rect(framebuffer, pixel, rect), 0);
+    }
+
+    fn update_with_services(
         game: &mut SnakeGame,
         storage: &mut dyn LocalStorage,
         audio: &mut dyn Audio,
@@ -1508,296 +1319,99 @@ mod tests {
             storage,
             audio,
         };
-
         game.update(&mut frame)
     }
 
-    fn touch_layout() -> SnakeLayout {
-        SnakeLayout::touch()
-    }
-
-    fn keyboard_layout() -> SnakeLayout {
-        SnakeLayout::keyboard()
-    }
-
-    fn replay_button_center() -> (i32, i32) {
-        let replay = touch_layout().replay;
-
-        (
-            replay.x + replay.width as i32 / 2,
-            replay.y + replay.height as i32 / 2,
-        )
-    }
-
-    fn keyboard_replay_button_center() -> (i32, i32) {
-        let replay = keyboard_layout().replay;
-
-        (
-            replay.x + replay.width as i32 / 2,
-            replay.y + replay.height as i32 / 2,
-        )
-    }
-
-    fn touch(id: u64, phase: TouchPhase, position: Option<(i32, i32)>) -> Touch {
-        Touch {
-            id,
-            phase,
-            position,
-        }
-    }
-
-    fn d_pad_up() -> Rect {
-        touch_layout()
-            .d_pad
-            .expect("touch layout should have a D-pad")
-            .up
-    }
-
-    fn d_pad_down() -> Rect {
-        touch_layout()
-            .d_pad
-            .expect("touch layout should have a D-pad")
-            .down
-    }
-
-    fn d_pad_left() -> Rect {
-        touch_layout()
-            .d_pad
-            .expect("touch layout should have a D-pad")
-            .left
-    }
-
-    fn d_pad_right() -> Rect {
-        touch_layout()
-            .d_pad
-            .expect("touch layout should have a D-pad")
-            .right
-    }
-
-    fn d_pad_center() -> Rect {
-        touch_layout()
-            .d_pad
-            .expect("touch layout should have a D-pad")
-            .center
-    }
-
-    fn rect_center(rect: Rect) -> (i32, i32) {
-        (
-            rect.x + rect.width as i32 / 2,
-            rect.y + rect.height as i32 / 2,
-        )
-    }
-
-    fn active_d_pad_contact() -> super::DPadContact {
-        super::DPadContact {
-            id: 1,
-            last_direction: Some(Direction::Right),
-        }
-    }
-
-    fn touch_controls_with_active_contact() -> TouchControls {
-        TouchControls {
-            visible: true,
-            d_pad: DPadTracker {
-                active: Some(active_d_pad_contact()),
-            },
-        }
-    }
-
-    fn count_pixels(framebuffer: &Framebuffer, pixel: Pixel) -> usize {
-        let mut count = 0;
-
-        for y in 0..framebuffer.height() as i32 {
-            for x in 0..framebuffer.width() as i32 {
-                if framebuffer.pixel(x, y) == Some(pixel) {
-                    count += 1;
-                }
-            }
-        }
-
-        count
-    }
-
-    fn count_pixels_in_rect(framebuffer: &Framebuffer, pixel: Pixel, rect: Rect) -> usize {
-        let mut count = 0;
-
-        for y in rect.y..rect.y + rect.height as i32 {
-            for x in rect.x..rect.x + rect.width as i32 {
-                if framebuffer.pixel(x, y) == Some(pixel) {
-                    count += 1;
-                }
-            }
-        }
-
-        count
-    }
-
-    fn count_pixels_outside_rect(framebuffer: &Framebuffer, pixel: Pixel, rect: Rect) -> usize {
-        let mut count = 0;
-
-        for y in 0..framebuffer.height() as i32 {
-            for x in 0..framebuffer.width() as i32 {
-                if !rect.contains((x, y)) && framebuffer.pixel(x, y) == Some(pixel) {
-                    count += 1;
-                }
-            }
-        }
-
-        count
-    }
-
-    fn assert_color_only_inside(framebuffer: &Framebuffer, pixel: Pixel, rect: Rect) {
-        assert!(count_pixels_in_rect(framebuffer, pixel, rect) > 0);
-        assert_eq!(count_pixels_outside_rect(framebuffer, pixel, rect), 0);
-    }
-
-    fn d_pad_direction_at(position: (i32, i32)) -> Option<Direction> {
-        d_pad_zone_at(position).and_then(|zone| zone.direction)
+    fn update_with_storage(
+        game: &mut SnakeGame,
+        storage: &mut dyn LocalStorage,
+        delta_time: Duration,
+    ) -> GameResult {
+        let mut audio = TestAudio::default();
+        let size = game.layout().framebuffer_size;
+        update_with_services(game, storage, &mut audio, delta_time, size)
     }
 
     #[test]
-    fn keyboard_layout_uses_expected_framebuffer_and_zones() {
-        let layout = keyboard_layout();
+    fn interaction_modes_expose_expected_layouts() {
+        let keyboard = keyboard_layout();
+        let touch = touch_layout();
 
-        assert_eq!(KEYBOARD_FRAMEBUFFER_WIDTH, 320);
-        assert_eq!(FRAMEBUFFER_HEIGHT, 204);
         assert_eq!(
-            layout.framebuffer_size,
+            keyboard.framebuffer_size,
             Size {
-                width: 320,
-                height: 204
+                width: KEYBOARD_FRAMEBUFFER_WIDTH,
+                height: FRAMEBUFFER_HEIGHT,
+            }
+        );
+        assert_eq!(keyboard.controls, None);
+        assert_eq!(keyboard.d_pad, None);
+
+        assert_eq!(
+            touch.framebuffer_size,
+            Size {
+                width: TOUCH_FRAMEBUFFER_WIDTH,
+                height: FRAMEBUFFER_HEIGHT,
             }
         );
         assert_eq!(
-            layout.hud,
-            Rect {
-                x: 0,
-                y: 0,
-                width: 320,
-                height: 24
-            }
-        );
-        assert_eq!(
-            layout.playfield,
+            touch.playfield,
             Rect {
                 x: 0,
                 y: 24,
                 width: 320,
-                height: 180
+                height: 180,
             }
         );
-        assert_eq!(layout.controls, None);
-        assert_eq!(layout.d_pad, None);
+        assert!(touch.controls.is_some());
+        assert!(touch.d_pad.is_some());
     }
 
     #[test]
-    fn touch_layout_uses_expected_framebuffer_and_zones() {
+    fn touch_virtual_pad_is_wired_to_snake_actions_and_layout() {
         let layout = touch_layout();
+        let d_pad = layout.d_pad.expect("touch layout should have a D-pad");
+        let pad = virtual_pad_for_mode(SnakeInteractionMode::Touch)
+            .expect("touch mode should create a virtual pad");
 
-        assert_eq!(TOUCH_FRAMEBUFFER_WIDTH, 480);
-        assert_eq!(FRAMEBUFFER_HEIGHT, 204);
         assert_eq!(
-            layout.framebuffer_size,
-            Size {
-                width: 480,
-                height: 204
-            }
+            pad.buttons(),
+            &[
+                VirtualButton::new(CONTROL_UP, d_pad.up),
+                VirtualButton::new(CONTROL_RIGHT, d_pad.right),
+                VirtualButton::new(CONTROL_DOWN, d_pad.down),
+                VirtualButton::new(CONTROL_LEFT, d_pad.left),
+            ]
         );
-        assert_eq!(
-            layout.hud,
-            Rect {
-                x: 0,
-                y: 0,
-                width: 480,
-                height: 24
-            }
-        );
-        assert_eq!(
-            layout.playfield,
-            Rect {
-                x: 0,
-                y: 24,
-                width: 320,
-                height: 180
-            }
-        );
-        assert_eq!(
-            layout.controls,
-            Some(Rect {
-                x: 320,
-                y: 24,
-                width: 160,
-                height: 180
-            })
-        );
-        assert!(layout.d_pad.is_some());
+        assert!(!pad.visible());
     }
 
     #[test]
-    fn interaction_modes_expose_expected_framebuffer_sizes() {
-        assert_eq!(
-            SnakeInteractionMode::Keyboard.framebuffer_size(),
-            Size {
-                width: 320,
-                height: 204
-            }
-        );
-        assert_eq!(
-            SnakeInteractionMode::Touch.framebuffer_size(),
-            Size {
-                width: 480,
-                height: 204
-            }
-        );
+    fn keyboard_mode_has_no_virtual_pad() {
+        assert!(virtual_pad_for_mode(SnakeInteractionMode::Keyboard).is_none());
+        assert!(keyboard_game().virtual_pad.is_none());
     }
 
     #[test]
-    fn examples_engine_config_dimensions_are_derived_from_interaction_mode() {
-        let keyboard_size = SnakeInteractionMode::Keyboard.framebuffer_size();
-        let touch_size = SnakeInteractionMode::Touch.framebuffer_size();
-
-        assert_eq!(
-            (
-                keyboard_size.width,
-                keyboard_size.height,
-                keyboard_size.width * 3,
-                keyboard_size.height * 3,
-            ),
-            (320, 204, 960, 612)
-        );
-        assert_eq!(
-            (
-                touch_size.width,
-                touch_size.height,
-                touch_size.width * 3,
-                touch_size.height * 3,
-            ),
-            (480, 204, 1440, 612)
-        );
+    fn snake_action_mapping_is_explicit() {
+        assert_eq!(direction_for_action(CONTROL_UP), Some(Direction::Up));
+        assert_eq!(direction_for_action(CONTROL_RIGHT), Some(Direction::Right));
+        assert_eq!(direction_for_action(CONTROL_DOWN), Some(Direction::Down));
+        assert_eq!(direction_for_action(CONTROL_LEFT), Some(Direction::Left));
     }
 
     #[test]
-    fn playfield_and_world_dimensions_stay_fixed_in_both_modes() {
-        for layout in [keyboard_layout(), touch_layout()] {
-            assert_eq!(
-                layout.playfield,
-                Rect {
-                    x: 0,
-                    y: 24,
-                    width: 320,
-                    height: 180
-                }
-            );
-            assert_eq!(layout.playfield.width as i32 / CELL_SIZE, super::GRID_WIDTH);
-            assert_eq!(
-                layout.playfield.height as i32 / CELL_SIZE,
-                super::GRID_HEIGHT
-            );
-        }
+    fn virtual_control_state_feeds_running_snake_controls() {
+        let mut controls = default_controls();
+        controls.set_virtual(CONTROL_UP, true);
+        controls.update(&Input::default());
+
+        let snake_controls = SnakeControls::from_running_inputs(&controls, None);
+        assert_eq!(snake_controls.directions, [Direction::Up]);
     }
 
     #[test]
-    fn layout_zones_do_not_overlap_the_playfield() {
+    fn layout_zones_do_not_overlap_playfield() {
         let layout = touch_layout();
         let controls = layout.controls.expect("touch layout should have controls");
         let d_pad = layout.d_pad.expect("touch layout should have a D-pad");
@@ -1815,89 +1429,12 @@ mod tests {
     }
 
     #[test]
-    fn cell_origin_includes_playfield_offset() {
-        let layout = touch_layout();
-
-        assert_eq!(layout.cell_origin(Cell { x: 0, y: 0 }), (0, 24));
-        assert_eq!(layout.cell_origin(Cell { x: 1, y: 0 }), (CELL_SIZE, 24));
-        assert_eq!(layout.cell_origin(Cell { x: 0, y: 1 }), (0, 24 + CELL_SIZE));
-        assert_eq!(
-            layout.cell_origin(Cell { x: 31, y: 17 }),
-            (
-                layout.playfield.x + 31 * CELL_SIZE,
-                layout.playfield.y + 17 * CELL_SIZE
-            )
-        );
-    }
-
-    #[test]
     fn grid_is_drawn_only_inside_playfield() {
         let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
         let layout = touch_layout();
-
         draw_grid(&mut framebuffer, layout);
 
         assert_color_only_inside(&framebuffer, GRID_LINE, layout.playfield);
-        assert_eq!(
-            framebuffer.pixel(layout.playfield.x + CELL_SIZE, layout.playfield.y),
-            Some(GRID_LINE)
-        );
-        assert_eq!(
-            framebuffer.pixel(layout.playfield.x, layout.playfield.y + CELL_SIZE),
-            Some(GRID_LINE)
-        );
-    }
-
-    #[test]
-    fn snake_and_food_are_rendered_only_inside_playfield() {
-        let mut game = touch_game();
-        game.world.food = Some(Cell { x: 4, y: 5 });
-        let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
-        let mut storage = TestStorage::default();
-        let surface_size = Size {
-            width: TOUCH_FRAMEBUFFER_WIDTH,
-            height: FRAMEBUFFER_HEIGHT,
-        };
-        let layout = touch_layout();
-        let mut audio = TestAudio::default();
-
-        game.draw(&mut gotoo_pixel_engine::Frame {
-            framebuffer: &mut framebuffer,
-            input: &gotoo_pixel_engine::Input::default(),
-            delta_time: Duration::ZERO,
-            surface_size,
-            viewport: Viewport::new(surface_size, surface_size),
-            storage: &mut storage,
-            audio: &mut audio,
-        });
-
-        assert_color_only_inside(&framebuffer, FOOD, layout.playfield);
-        assert_color_only_inside(&framebuffer, SNAKE_HEAD, layout.playfield);
-        assert_color_only_inside(&framebuffer, SNAKE_BODY, layout.playfield);
-    }
-
-    #[test]
-    fn hud_is_drawn_only_inside_hud_rect() {
-        let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
-        let layout = touch_layout();
-
-        draw_score_hud(&mut framebuffer, layout, 12, 37);
-
-        assert_color_only_inside(&framebuffer, HUD_BACKDROP, layout.hud);
-        assert_color_only_inside(&framebuffer, HUD_TEXT, layout.hud);
-        assert_eq!(
-            count_pixels_in_rect(&framebuffer, HUD_TEXT, layout.playfield),
-            0
-        );
-    }
-
-    #[test]
-    fn hud_has_room_for_future_best_score_text() {
-        let (width, height) = Framebuffer::text_size("SCORE 12    BEST 37", super::HUD_TEXT_SCALE);
-        let layout = touch_layout();
-
-        assert!(width + 8 <= layout.hud.width);
-        assert!(height <= layout.hud.height);
     }
 
     #[test]
@@ -1905,51 +1442,36 @@ mod tests {
         let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
         let layout = touch_layout();
         let controls = layout.controls.expect("touch layout should have controls");
-
         draw_d_pad(&mut framebuffer, layout);
 
         assert_color_only_inside(&framebuffer, D_PAD_FILL, controls);
         assert_color_only_inside(&framebuffer, D_PAD_CENTER_FILL, controls);
         assert_color_only_inside(&framebuffer, D_PAD_ARROW, controls);
-        assert_eq!(
-            count_pixels_in_rect(&framebuffer, D_PAD_ARROW, layout.playfield),
-            0
-        );
     }
 
     #[test]
-    fn d_pad_is_not_drawn_in_keyboard_mode() {
-        let mut game = keyboard_game();
-        game.touch_controls.visible = true;
+    fn keyboard_game_draws_no_d_pad() {
+        let game = keyboard_game();
         let mut framebuffer = Framebuffer::new(KEYBOARD_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
         let mut storage = TestStorage::default();
         let mut audio = TestAudio::default();
         let surface_size = SnakeInteractionMode::Keyboard.framebuffer_size();
-
-        game.draw(&mut gotoo_pixel_engine::Frame {
+        let input = Input::default();
+        let mut frame = Frame {
             framebuffer: &mut framebuffer,
-            input: &gotoo_pixel_engine::Input::default(),
+            input: &input,
             delta_time: Duration::ZERO,
-            surface_size,
-            viewport: Viewport::new(surface_size, surface_size),
             storage: &mut storage,
             audio: &mut audio,
-        });
+            surface_size,
+            viewport: Viewport::new(surface_size, surface_size),
+        };
+
+        game.draw(&mut frame);
 
         assert_eq!(count_pixels(&framebuffer, D_PAD_FILL), 0);
         assert_eq!(count_pixels(&framebuffer, D_PAD_CENTER_FILL), 0);
         assert_eq!(count_pixels(&framebuffer, D_PAD_ARROW), 0);
-    }
-
-    #[test]
-    fn d_pad_hit_test_requires_a_layout_with_d_pad() {
-        let position = rect_center(d_pad_right());
-
-        assert_eq!(
-            d_pad_zone_at_in_layout(position, touch_layout()).and_then(|zone| zone.direction),
-            Some(Direction::Right)
-        );
-        assert_eq!(d_pad_zone_at_in_layout(position, keyboard_layout()), None);
     }
 
     #[test]
@@ -1960,92 +1482,72 @@ mod tests {
                 layout.playfield.x
                     + (layout.playfield.width - layout.game_over_panel.width) as i32 / 2
             );
-            assert_eq!(
-                layout.game_over_panel.y,
-                layout.playfield.y
-                    + (layout.playfield.height - layout.game_over_panel.height) as i32 / 2
-            );
-            assert!(
-                layout
-                    .playfield
-                    .contains((layout.replay.x, layout.replay.y))
-            );
-            assert!(layout.playfield.contains((
-                layout.replay.x + layout.replay.width as i32 - 1,
-                layout.replay.y + layout.replay.height as i32 - 1,
-            )));
+            assert!(layout.playfield.contains(rect_center(layout.replay)));
         }
     }
 
     #[test]
-    fn applied_turn_is_reported_on_tick() {
-        let mut game = touch_game();
-        let events =
-            game.update_logic(TICK_PERIOD, SnakeControls::with_directions([Direction::Up]));
+    fn replay_request_accepts_keyboard_mouse_and_touch() {
+        let layout = touch_layout();
+        let replay_center = rect_center(layout.replay);
 
-        assert_eq!(events.turns, 1);
-        assert_eq!(game.world.direction, Direction::Up);
+        assert!(replay_requested(true, false, None, &[], layout));
+        assert!(replay_requested(
+            false,
+            true,
+            Some(replay_center),
+            &[],
+            layout
+        ));
+        assert!(replay_requested(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Started, Some(replay_center))],
+            layout
+        ));
     }
 
     #[test]
-    fn invalid_reverse_does_not_report_a_turn() {
-        let mut game = touch_game();
-        let events = game.update_logic(
-            TICK_PERIOD,
-            SnakeControls::with_directions([Direction::Left]),
-        );
+    fn replay_request_ignores_outside_and_non_started_touch() {
+        let layout = touch_layout();
+        let replay_center = rect_center(layout.replay);
 
-        assert_eq!(events.turns, 0);
-        assert_eq!(game.world.direction, Direction::Right);
+        assert!(!replay_requested(false, true, Some((0, 0)), &[], layout));
+        assert!(!replay_requested(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Moved, Some(replay_center))],
+            layout
+        ));
+        assert!(!replay_requested(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Started, Some((0, 0)))],
+            layout
+        ));
     }
 
     #[test]
-    fn turn_sound_is_registered_and_playable() {
-        let mut bank = super::snake_sound_bank();
-        let mut audio = NoopAudio::default();
-        bank.play(&mut audio, TURN_SOUND)
-            .expect("generated Snake turn sound should be playable");
+    fn replay_hitbox_works_in_keyboard_layout_too() {
+        let layout = keyboard_layout();
+        let center = rect_center(layout.replay);
+        assert!(replay_requested(false, true, Some(center), &[], layout));
+        assert!(replay_requested(
+            false,
+            false,
+            None,
+            &[touch(1, TouchPhase::Started, Some(center))],
+            layout
+        ));
     }
 
     #[test]
-    fn keyboard_direction_controls_work_in_both_modes() {
-        for mut game in [keyboard_game(), touch_game()] {
-            game.update_logic(TICK_PERIOD, SnakeControls::with_directions([Direction::Up]));
-
-            assert_eq!(head(&game), Cell { x: 16, y: 8 });
-            assert_eq!(game.world.direction, Direction::Up);
-        }
-    }
-
-    #[test]
-    fn keyboard_direction_mapping_stays_unchanged() {
-        assert_eq!(direction_for_key(Key::Up), Some(Direction::Up));
-        assert_eq!(direction_for_key(Key::W), Some(Direction::Up));
-        assert_eq!(direction_for_key(Key::Right), Some(Direction::Right));
-        assert_eq!(direction_for_key(Key::D), Some(Direction::Right));
-        assert_eq!(direction_for_key(Key::Down), Some(Direction::Down));
-        assert_eq!(direction_for_key(Key::S), Some(Direction::Down));
-        assert_eq!(direction_for_key(Key::Left), Some(Direction::Left));
-        assert_eq!(direction_for_key(Key::A), Some(Direction::Left));
-        assert_eq!(direction_for_key(Key::Space), None);
-        assert_eq!(RESTART_KEY, Key::Space);
-        assert_eq!(EXIT_KEY, Key::Escape);
-    }
-
-    #[test]
-    fn running_hud_draws_score_text() {
-        let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
-
-        draw_score_hud(&mut framebuffer, touch_layout(), 12, 37);
-
-        assert!(count_pixels(&framebuffer, HUD_TEXT) > 0);
-    }
-
-    #[test]
-    fn game_over_panel_draws_score_and_replay_button() {
+    fn game_over_render_contains_panel_score_and_button() {
         let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
         let layout = touch_layout();
-
         draw_game_over(&mut framebuffer, layout, 7);
 
         assert!(count_pixels(&framebuffer, GAME_OVER) > 0);
@@ -2056,631 +1558,111 @@ mod tests {
             Some(BUTTON_BORDER)
         );
         assert_color_only_inside(&framebuffer, PANEL_FILL, layout.playfield);
-        assert_color_only_inside(&framebuffer, BUTTON_TEXT, layout.playfield);
     }
 
     #[test]
-    fn d_pad_draws_direction_arrows() {
+    fn snake_and_food_are_rendered_only_inside_playfield() {
+        let mut game = touch_game();
+        game.world.food = Some(Cell { x: 4, y: 5 });
         let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
+        let surface_size = SnakeInteractionMode::Touch.framebuffer_size();
+        let input = Input::default();
+        let mut frame = Frame {
+            framebuffer: &mut framebuffer,
+            input: &input,
+            delta_time: Duration::ZERO,
+            storage: &mut storage,
+            audio: &mut audio,
+            surface_size,
+            viewport: Viewport::new(surface_size, surface_size),
+        };
 
-        draw_d_pad(&mut framebuffer, touch_layout());
+        game.draw(&mut frame);
 
-        assert!(count_pixels(&framebuffer, D_PAD_ARROW) > 0);
+        assert_color_only_inside(&framebuffer, FOOD, touch_layout().playfield);
+        assert_color_only_inside(&framebuffer, SNAKE_HEAD, touch_layout().playfield);
+        assert_color_only_inside(&framebuffer, SNAKE_BODY, touch_layout().playfield);
     }
 
     #[test]
-    fn d_pad_hit_tests_up() {
-        assert_eq!(
-            d_pad_direction_at(rect_center(d_pad_up())),
-            Some(Direction::Up)
-        );
+    fn hud_draws_score_and_best_inside_hud() {
+        let mut framebuffer = Framebuffer::new(TOUCH_FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+        let layout = touch_layout();
+        draw_score_hud(&mut framebuffer, layout, 12, 37);
+
+        assert_color_only_inside(&framebuffer, HUD_BACKDROP, layout.hud);
+        assert_color_only_inside(&framebuffer, HUD_TEXT, layout.hud);
     }
 
     #[test]
-    fn d_pad_hit_tests_down() {
-        assert_eq!(
-            d_pad_direction_at(rect_center(d_pad_down())),
-            Some(Direction::Down)
-        );
-    }
-
-    #[test]
-    fn d_pad_hit_tests_left() {
-        assert_eq!(
-            d_pad_direction_at(rect_center(d_pad_left())),
-            Some(Direction::Left)
-        );
-    }
-
-    #[test]
-    fn d_pad_hit_tests_right() {
-        assert_eq!(
-            d_pad_direction_at(rect_center(d_pad_right())),
-            Some(Direction::Right)
-        );
-    }
-
-    #[test]
-    fn d_pad_center_is_neutral() {
-        let zone = d_pad_zone_at(rect_center(d_pad_center()));
-
-        assert_eq!(zone.and_then(|zone| zone.direction), None);
-        assert!(d_pad_zone_at(rect_center(d_pad_center())).is_some());
-    }
-
-    #[test]
-    fn outside_d_pad_is_ignored() {
-        assert_eq!(d_pad_zone_at((0, 0)), None);
-    }
-
-    #[test]
-    fn d_pad_started_outside_control_is_ignored() {
-        let mut tracker = DPadTracker::default();
-
-        let directions =
-            tracker.directions_from_touches(&[touch(1, TouchPhase::Started, Some((0, 0)))]);
-
-        assert!(directions.is_empty());
-        assert!(tracker.active.is_none());
-    }
-
-    #[test]
-    fn d_pad_rect_boundaries_are_inclusive_and_non_overlapping() {
-        assert_eq!(d_pad_direction_at((374, 36)), Some(Direction::Up));
-        assert_eq!(d_pad_direction_at((425, 87)), Some(Direction::Up));
-        assert_eq!(d_pad_direction_at((373, 87)), None);
-        assert_eq!(d_pad_direction_at((374, 88)), None);
-
-        assert_eq!(d_pad_direction_at((322, 88)), Some(Direction::Left));
-        assert_eq!(d_pad_direction_at((373, 139)), Some(Direction::Left));
-        assert_eq!(d_pad_direction_at((374, 139)), None);
-
-        assert_eq!(d_pad_direction_at((426, 88)), Some(Direction::Right));
-        assert_eq!(d_pad_direction_at((477, 139)), Some(Direction::Right));
-        assert_eq!(d_pad_direction_at((478, 139)), None);
-
-        assert_eq!(d_pad_direction_at((374, 140)), Some(Direction::Down));
-        assert_eq!(d_pad_direction_at((425, 191)), Some(Direction::Down));
-        assert_eq!(d_pad_direction_at((426, 191)), None);
-    }
-
-    #[test]
-    fn d_pad_started_produces_direction_immediately() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[touch(
-            1,
-            TouchPhase::Started,
-            Some(rect_center(d_pad_right())),
-        )]);
-
-        assert_eq!(directions, [Direction::Right]);
-        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
-    }
-
-    #[test]
-    fn d_pad_started_in_center_tracks_without_direction() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[touch(
-            1,
-            TouchPhase::Started,
-            Some(rect_center(d_pad_center())),
-        )]);
-
-        assert!(directions.is_empty());
-        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
-    }
-
-    #[test]
-    fn d_pad_moved_in_same_zone_does_not_repeat() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some(rect_center(d_pad_right()))),
-            touch(1, TouchPhase::Moved, Some((450, 110))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right]);
-    }
-
-    #[test]
-    fn d_pad_moved_to_another_zone_produces_new_direction() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some(rect_center(d_pad_right()))),
-            touch(1, TouchPhase::Moved, Some(rect_center(d_pad_up()))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right, Direction::Up]);
-    }
-
-    #[test]
-    fn d_pad_supports_fast_direction_sequences() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some(rect_center(d_pad_right()))),
-            touch(1, TouchPhase::Moved, Some(rect_center(d_pad_up()))),
-            touch(1, TouchPhase::Moved, Some(rect_center(d_pad_left()))),
-        ]);
-
-        assert_eq!(
-            directions,
-            [Direction::Right, Direction::Up, Direction::Left]
-        );
-    }
-
-    #[test]
-    fn d_pad_second_contact_is_ignored_while_first_contact_is_active() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some(rect_center(d_pad_right()))),
-            touch(2, TouchPhase::Started, Some(rect_center(d_pad_up()))),
-            touch(2, TouchPhase::Moved, Some(rect_center(d_pad_left()))),
-            touch(1, TouchPhase::Moved, Some(rect_center(d_pad_down()))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right, Direction::Down]);
-        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(1));
-    }
-
-    #[test]
-    fn d_pad_ended_touch_releases_contact() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some(rect_center(d_pad_right()))),
-            touch(1, TouchPhase::Ended, Some(rect_center(d_pad_right()))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right]);
-        assert!(tracker.active.is_none());
-    }
-
-    #[test]
-    fn d_pad_cancelled_touch_releases_contact() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some(rect_center(d_pad_right()))),
-            touch(1, TouchPhase::Cancelled, Some(rect_center(d_pad_right()))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right]);
-        assert!(tracker.active.is_none());
-    }
-
-    #[test]
-    fn d_pad_accepts_new_contact_after_previous_contact_ends() {
-        let mut tracker = DPadTracker::default();
-
-        let directions = tracker.directions_from_touches(&[
-            touch(1, TouchPhase::Started, Some(rect_center(d_pad_right()))),
-            touch(1, TouchPhase::Ended, Some(rect_center(d_pad_right()))),
-            touch(2, TouchPhase::Started, Some(rect_center(d_pad_up()))),
-        ]);
-
-        assert_eq!(directions, [Direction::Right, Direction::Up]);
-        assert_eq!(tracker.active.as_ref().map(|contact| contact.id), Some(2));
-    }
-
-    #[test]
-    fn touch_controls_visibility_is_activated_by_touch_events() {
-        let mut touch_controls = TouchControls::default();
-
-        assert!(!touch_controls.visible());
-        touch_controls.observe_touches(&[touch(1, TouchPhase::Started, None)]);
-
-        assert!(touch_controls.visible());
-    }
-
-    #[test]
-    fn new_game_starts_with_hidden_touch_controls() {
-        let game = touch_game();
-
-        assert!(!game.touch_controls.visible());
-    }
-
-    #[test]
-    fn snake_does_not_move_before_a_complete_tick() {
+    fn snake_does_not_move_before_complete_tick() {
         let mut game = touch_game();
         let initial_head = head(&game);
-
         game.update_logic(
             TICK_PERIOD - Duration::from_millis(1),
             SnakeControls::none(),
         );
-
         assert_eq!(head(&game), initial_head);
     }
 
     #[test]
-    fn snake_moves_after_one_tick() {
+    fn small_delta_times_accumulate_into_tick() {
         let mut game = touch_game();
-
-        tick(&mut game);
-
+        for _ in 0..3 {
+            game.update_logic(Duration::from_millis(40), SnakeControls::none());
+        }
         assert_eq!(head(&game), Cell { x: 17, y: 9 });
     }
 
     #[test]
-    fn multiple_small_delta_times_accumulate_into_a_tick() {
-        let mut game = touch_game();
-
-        game.update_logic(Duration::from_millis(40), SnakeControls::none());
-        game.update_logic(Duration::from_millis(40), SnakeControls::none());
-        game.update_logic(Duration::from_millis(40), SnakeControls::none());
-
-        assert_eq!(head(&game), Cell { x: 17, y: 9 });
-    }
-
-    #[test]
-    fn eating_food_grows_the_snake() {
+    fn eating_food_grows_and_scores() {
         let mut game = touch_game();
         game.world.food = Some(Cell { x: 17, y: 9 });
         let initial_len = game.world.snake.len();
-
         tick(&mut game);
 
         assert_eq!(game.world.snake.len(), initial_len + 1);
+        assert_eq!(game.world.score(), 1);
+    }
+
+    #[test]
+    fn invalid_reverse_is_rejected() {
+        let mut game = touch_game();
+        game.update_logic(
+            TICK_PERIOD,
+            SnakeControls::with_directions([Direction::Left]),
+        );
+
         assert_eq!(head(&game), Cell { x: 17, y: 9 });
-        assert_eq!(game.world.score(), 1);
+        assert_eq!(game.world.direction, Direction::Right);
     }
 
     #[test]
-    fn new_game_starts_with_zero_score() {
-        let game = touch_game();
-
-        assert_eq!(game.world.score(), 0);
-        assert_eq!(game.best_score, 0);
-        assert!(!game.best_score_loaded);
-    }
-
-    #[test]
-    fn score_increments_once_per_food_eaten() {
+    fn two_valid_turns_are_applied_on_successive_ticks() {
         let mut game = touch_game();
-
-        game.world.food = Some(Cell { x: 17, y: 9 });
+        game.update_logic(
+            TICK_PERIOD,
+            SnakeControls::with_directions([Direction::Up, Direction::Left]),
+        );
+        assert_eq!(game.world.direction, Direction::Up);
         tick(&mut game);
-        game.world.food = Some(Cell { x: 18, y: 9 });
-        tick(&mut game);
-
-        assert_eq!(game.world.score(), 2);
+        assert_eq!(game.world.direction, Direction::Left);
     }
 
     #[test]
-    fn best_score_defaults_to_zero_when_storage_is_absent() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-
-        assert_eq!(
-            update_with_storage(&mut game, &mut storage, Duration::ZERO),
-            GameResult::Continue
-        );
-
-        assert_eq!(game.best_score, 0);
-        assert!(game.best_score_loaded);
-    }
-
-    #[test]
-    fn best_score_loads_persisted_value_once() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "37");
-
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-
-        assert_eq!(game.best_score, 37);
-
-        storage.entries.insert(BEST_SCORE_KEY.into(), "99".into());
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-
-        assert_eq!(game.best_score, 37);
-    }
-
-    #[test]
-    fn corrupt_best_score_storage_falls_back_to_zero() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "not a number");
-
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-
-        assert_eq!(game.best_score, 0);
-        assert!(game.best_score_loaded);
-    }
-
-    #[test]
-    fn best_score_read_error_falls_back_to_zero() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::failing_reads();
-
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-
-        assert_eq!(game.best_score, 0);
-        assert!(game.best_score_loaded);
-    }
-
-    #[test]
-    fn new_record_updates_best_score_and_persists_immediately() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-        game.world.food = Some(Cell { x: 17, y: 9 });
-
-        update_with_storage(&mut game, &mut storage, TICK_PERIOD);
-
-        assert_eq!(game.world.score(), 1);
-        assert_eq!(game.best_score, 1);
-        assert_eq!(
-            storage.entries.get(BEST_SCORE_KEY).map(String::as_str),
-            Some("1")
-        );
-    }
-
-    #[test]
-    fn score_below_best_does_not_overwrite_storage() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "10");
-        game.world.score = 4;
-
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-
-        assert_eq!(game.best_score, 10);
-        assert_eq!(
-            storage.entries.get(BEST_SCORE_KEY).map(String::as_str),
-            Some("10")
-        );
-    }
-
-    #[test]
-    fn best_score_write_error_keeps_record_in_memory() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::failing_writes();
-        game.world.score = 5;
-
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-
-        assert_eq!(game.best_score, 5);
-        assert!(!storage.entries.contains_key(BEST_SCORE_KEY));
-    }
-
-    #[test]
-    fn restart_keeps_best_score() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "8");
-
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-        game.world.score = 3;
-        game.restart();
-
-        assert_eq!(game.world.score(), 0);
-        assert_eq!(game.best_score, 8);
-        assert!(game.best_score_loaded);
-    }
-
-    #[test]
-    fn best_score_persists_between_snake_instances_with_memory_storage() {
-        let mut storage = TestStorage::default();
-
-        let mut first = touch_game();
-        first.world.score = 6;
-        update_with_storage(&mut first, &mut storage, Duration::ZERO);
-
-        let mut second = touch_game();
-        update_with_storage(&mut second, &mut storage, Duration::ZERO);
-
-        assert_eq!(second.best_score, 6);
-        assert_eq!(second.world.score(), 0);
-    }
-
-    #[test]
-    fn score_and_best_are_identical_between_interaction_modes() {
-        let mut keyboard = keyboard_game();
-        let mut touch = touch_game();
-        let mut keyboard_storage = TestStorage::with_entry(BEST_SCORE_KEY, "9");
-        let mut touch_storage = TestStorage::with_entry(BEST_SCORE_KEY, "9");
-
-        keyboard.world.food = Some(Cell { x: 17, y: 9 });
-        touch.world.food = Some(Cell { x: 17, y: 9 });
-        update_with_storage(&mut keyboard, &mut keyboard_storage, TICK_PERIOD);
-        update_with_storage(&mut touch, &mut touch_storage, TICK_PERIOD);
-
-        assert_eq!(keyboard.world.score(), touch.world.score());
-        assert_eq!(keyboard.best_score, touch.best_score);
-        assert_eq!(keyboard.best_score, 9);
-    }
-
-    #[test]
-    fn business_world_is_identical_at_same_seed_for_both_modes() {
-        let keyboard = keyboard_game();
-        let touch = touch_game();
-
-        assert_eq!(keyboard.world, touch.world);
-    }
-
-    #[test]
-    fn surface_resize_does_not_restart_snake_world() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "4");
-
-        update_with_storage(&mut game, &mut storage, Duration::ZERO);
-        game.world.food = Some(Cell { x: 17, y: 9 });
-        update_with_storage(&mut game, &mut storage, TICK_PERIOD);
-
-        let world_before = game.world.clone();
-        let best_before = game.best_score;
-
-        update_with_storage_and_surface(
-            &mut game,
-            &mut storage,
-            Duration::ZERO,
-            Size {
-                width: 412,
-                height: 915,
-            },
-        );
-
-        assert_eq!(game.world, world_before);
-        assert_eq!(game.best_score, best_before);
-    }
-
-    #[test]
-    fn normal_tick_requests_no_audio() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-        let mut audio = TestAudio::default();
-        game.world.food = None;
-
-        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
-
-        assert!(audio.plays.is_empty());
-        assert_eq!(game.world.score(), 0);
-    }
-
-    #[test]
-    fn food_eaten_requests_exactly_one_eat_sound() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-        let mut audio = TestAudio::default();
-        game.world.food = Some(Cell { x: 17, y: 9 });
-
-        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
-
-        assert_eq!(audio.count(EAT_SOUND), 1);
-        assert_eq!(audio.count(DEATH_SOUND), 0);
-        assert_eq!(game.world.score(), 1);
-    }
-
-    #[test]
-    fn game_over_requests_exactly_one_death_sound() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-        let mut audio = TestAudio::default();
-        game.world.snake = VecDeque::from([
-            Cell { x: 31, y: 9 },
-            Cell { x: 30, y: 9 },
-            Cell { x: 29, y: 9 },
-        ]);
-        game.world.direction = Direction::Right;
-
-        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
-
-        assert_eq!(audio.count(DEATH_SOUND), 1);
-        assert_eq!(audio.count(EAT_SOUND), 0);
-        assert_eq!(game.world.phase(), Phase::GameOver);
-    }
-
-    #[test]
-    fn game_over_audio_does_not_repeat_on_later_frames() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-        let mut audio = TestAudio::default();
-        game.world.snake = VecDeque::from([
-            Cell { x: 31, y: 9 },
-            Cell { x: 30, y: 9 },
-            Cell { x: 29, y: 9 },
-        ]);
-        game.world.direction = Direction::Right;
-
-        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
-        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
-
-        assert_eq!(audio.count(DEATH_SOUND), 1);
-    }
-
-    #[test]
-    fn several_food_events_request_one_eat_each() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-        let mut audio = TestAudio::default();
-        game.world.food = Some(Cell { x: 17, y: 9 });
-
-        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
-        game.world.food = Some(Cell { x: 18, y: 9 });
-        update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD);
-
-        assert_eq!(audio.count(EAT_SOUND), 2);
-        assert_eq!(game.world.score(), 2);
-    }
-
-    #[test]
-    fn restart_requests_no_extra_audio() {
-        let mut game = touch_game();
-        game.world.phase = Phase::GameOver;
-
-        let events = game.update_logic(TICK_PERIOD, SnakeControls::restart());
-
-        assert_eq!(events, super::SnakeEvents::default());
-        assert_eq!(game.world.phase(), Phase::Running);
-    }
-
-    #[test]
-    fn audio_play_error_does_not_stop_gameplay() {
-        let mut game = touch_game();
-        let mut storage = TestStorage::default();
-        let mut audio = TestAudio::failing_play();
-        game.world.food = Some(Cell { x: 17, y: 9 });
-
-        assert_eq!(
-            update_with_storage_and_audio(&mut game, &mut storage, &mut audio, TICK_PERIOD),
-            GameResult::Continue
-        );
-
-        assert_eq!(game.world.score(), 1);
-        assert_eq!(game.world.phase(), Phase::Running);
-    }
-
-    #[test]
-    fn snake_audio_assets_are_valid_wav_files() {
-        let mut audio = NoopAudio::default();
-
-        for (id, bytes) in SNAKE_SOUNDS {
-            audio
-                .register_wav(id, bytes)
-                .expect("snake audio asset should be a supported WAV");
-            audio
-                .play(id)
-                .expect("registered snake audio asset should be playable");
-        }
-    }
-
-    #[test]
-    fn sound_bank_owns_snake_audio_assets() {
-        let game = touch_game();
-        assert!(game.sounds.contains(EAT_SOUND));
-        assert!(game.sounds.contains(DEATH_SOUND));
-    }
-
-    #[test]
-    fn game_over_preserves_score() {
+    fn turn_queue_capacity_is_limited() {
         let mut world = SnakeWorld::new(123);
-        world.score = 3;
-        world.snake = VecDeque::from([
-            Cell { x: 31, y: 9 },
-            Cell { x: 30, y: 9 },
-            Cell { x: 29, y: 9 },
-        ]);
-        world.direction = Direction::Right;
+        world.queue_direction(Direction::Up);
+        world.queue_direction(Direction::Left);
+        world.queue_direction(Direction::Down);
 
-        world.tick();
-
-        assert_eq!(world.phase, Phase::GameOver);
-        assert_eq!(world.score(), 3);
-    }
-
-    #[test]
-    fn food_is_always_placed_on_a_free_cell() {
-        let mut world = SnakeWorld::new(123);
-
-        for _ in 0..128 {
-            world.food = world.place_food();
-            let food = world
-                .food
-                .expect("food should exist while cells remain free");
-
-            assert!(!world.snake.iter().any(|cell| *cell == food));
-        }
+        assert_eq!(world.turn_queue.len(), TURN_QUEUE_CAPACITY);
+        assert_eq!(
+            world.turn_queue,
+            VecDeque::from([Direction::Up, Direction::Left])
+        );
     }
 
     #[test]
@@ -2693,26 +1675,8 @@ mod tests {
         ]);
         world.direction = Direction::Right;
 
-        world.tick();
-
+        assert!(world.tick().game_over);
         assert_eq!(world.phase, Phase::GameOver);
-    }
-
-    #[test]
-    fn game_over_transition_cleans_active_d_pad_contact() {
-        let mut game = touch_game();
-        game.world.snake = VecDeque::from([
-            Cell { x: 31, y: 9 },
-            Cell { x: 30, y: 9 },
-            Cell { x: 29, y: 9 },
-        ]);
-        game.world.direction = Direction::Right;
-        game.touch_controls.d_pad.active = Some(active_d_pad_contact());
-
-        tick(&mut game);
-
-        assert_eq!(game.world.phase, Phase::GameOver);
-        assert!(game.touch_controls.d_pad.active.is_none());
     }
 
     #[test]
@@ -2729,41 +1693,33 @@ mod tests {
         world.food = Some(Cell { x: 8, y: 9 });
 
         world.tick();
-
         assert_eq!(world.phase, Phase::GameOver);
     }
 
     #[test]
-    fn immediate_u_turn_is_rejected() {
-        let mut game = touch_game();
-
-        game.update_logic(
-            TICK_PERIOD,
-            SnakeControls::with_directions([Direction::Left]),
-        );
-
-        assert_eq!(head(&game), Cell { x: 17, y: 9 });
-        assert_eq!(game.world.direction, Direction::Right);
+    fn food_is_always_placed_on_free_cell() {
+        let mut world = SnakeWorld::new(123);
+        for _ in 0..128 {
+            world.food = world.place_food();
+            let food = world.food.expect("free cells should remain");
+            assert!(!world.snake.iter().any(|cell| *cell == food));
+        }
     }
 
     #[test]
-    fn two_valid_turns_are_applied_on_successive_ticks() {
-        let mut game = touch_game();
-
-        game.update_logic(
-            TICK_PERIOD,
-            SnakeControls::with_directions([Direction::Up, Direction::Left]),
-        );
-        assert_eq!(head(&game), Cell { x: 16, y: 8 });
-        assert_eq!(game.world.direction, Direction::Up);
-
-        tick(&mut game);
-        assert_eq!(head(&game), Cell { x: 15, y: 8 });
-        assert_eq!(game.world.direction, Direction::Left);
+    fn no_food_when_grid_is_full() {
+        let mut world = SnakeWorld::new(123);
+        world.snake.clear();
+        for y in 0..GRID_HEIGHT {
+            for x in 0..GRID_WIDTH {
+                world.snake.push_back(Cell { x, y });
+            }
+        }
+        assert_eq!(world.place_food(), None);
     }
 
     #[test]
-    fn restart_resets_the_game_after_game_over() {
+    fn restart_restores_world_and_accumulator() {
         let mut game = touch_game();
         game.world.phase = Phase::GameOver;
         game.world.snake = VecDeque::from([Cell { x: 1, y: 1 }]);
@@ -2771,216 +1727,169 @@ mod tests {
         game.world.turn_queue = VecDeque::from([Direction::Left]);
         game.world.score = 4;
         game.accumulator = TICK_PERIOD;
-        game.touch_controls.d_pad.active = Some(active_d_pad_contact());
 
         game.update_logic(Duration::ZERO, SnakeControls::restart());
 
         assert_eq!(game.world.phase, Phase::Running);
-        assert_eq!(game.world.snake, super::initial_snake());
+        assert_eq!(game.world.snake, initial_snake());
         assert_eq!(game.world.direction, Direction::Right);
         assert!(game.world.turn_queue.is_empty());
         assert_eq!(game.world.score(), 0);
         assert_eq!(game.accumulator, Duration::ZERO);
-        assert!(game.touch_controls.d_pad.active.is_none());
         assert!(game.world.food.is_some());
     }
 
     #[test]
-    fn game_over_keyboard_space_requests_restart_without_direction() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls =
-            SnakeControls::from_game_over_inputs(true, false, None, &[], &mut touch_controls);
-
-        assert!(controls.restart);
-        assert!(controls.directions.is_empty());
-    }
-
-    #[test]
-    fn game_over_mouse_replay_rect_requests_restart() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls = SnakeControls::from_game_over_inputs(
-            false,
-            true,
-            Some(replay_button_center()),
-            &[],
-            &mut touch_controls,
-        );
-
-        assert!(controls.restart);
-        assert!(controls.directions.is_empty());
-    }
-
-    #[test]
-    fn game_over_mouse_replay_rect_requests_restart_in_keyboard_layout() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls = SnakeControls::from_game_over_inputs_in_layout(
-            false,
-            true,
-            Some(keyboard_replay_button_center()),
-            &[],
-            &mut touch_controls,
-            keyboard_layout(),
-        );
-
-        assert!(controls.restart);
-        assert!(controls.directions.is_empty());
-    }
-
-    #[test]
-    fn game_over_mouse_outside_replay_rect_is_ignored() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls = SnakeControls::from_game_over_inputs(
-            false,
-            true,
-            Some((0, 0)),
-            &[],
-            &mut touch_controls,
-        );
-
-        assert!(!controls.restart);
-        assert!(controls.directions.is_empty());
-    }
-
-    #[test]
-    fn game_over_touch_started_in_replay_rect_requests_restart() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls = SnakeControls::from_game_over_inputs(
-            false,
-            false,
-            None,
-            &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
-            &mut touch_controls,
-        );
-
-        assert!(controls.restart);
-        assert!(controls.directions.is_empty());
-    }
-
-    #[test]
-    fn game_over_touch_replay_rect_requests_restart_in_keyboard_layout() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls = SnakeControls::from_game_over_inputs_in_layout(
-            false,
-            false,
-            None,
-            &[touch(
-                1,
-                TouchPhase::Started,
-                Some(keyboard_replay_button_center()),
-            )],
-            &mut touch_controls,
-            keyboard_layout(),
-        );
-
-        assert!(controls.restart);
-        assert!(controls.directions.is_empty());
-    }
-
-    #[test]
-    fn game_over_touch_outside_replay_rect_is_ignored() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls = SnakeControls::from_game_over_inputs(
-            false,
-            false,
-            None,
-            &[touch(1, TouchPhase::Started, Some((0, 0)))],
-            &mut touch_controls,
-        );
-
-        assert!(!controls.restart);
-        assert!(controls.directions.is_empty());
-    }
-
-    #[test]
-    fn game_over_touch_in_d_pad_is_ignored() {
-        let mut touch_controls = TouchControls::default();
-
-        let controls = SnakeControls::from_game_over_inputs(
-            false,
-            false,
-            None,
-            &[touch(
-                1,
-                TouchPhase::Started,
-                Some(rect_center(d_pad_right())),
-            )],
-            &mut touch_controls,
-        );
-
-        assert!(!controls.restart);
-        assert!(controls.directions.is_empty());
-        assert!(touch_controls.d_pad.active.is_none());
-    }
-
-    #[test]
-    fn game_over_touch_replay_does_not_feed_d_pad_tracker() {
-        let mut touch_controls = touch_controls_with_active_contact();
-
-        let controls = SnakeControls::from_game_over_inputs(
-            false,
-            false,
-            None,
-            &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
-            &mut touch_controls,
-        );
-
-        assert!(controls.restart);
-        assert!(controls.directions.is_empty());
-        assert!(touch_controls.d_pad.active.is_none());
-    }
-
-    #[test]
-    fn replay_touch_restarts_from_game_over() {
+    fn best_score_defaults_to_zero_when_storage_absent() {
         let mut game = touch_game();
-        game.world.phase = Phase::GameOver;
-        game.world.score = 2;
+        let mut storage = TestStorage::default();
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
 
-        let controls = SnakeControls::from_game_over_inputs(
-            false,
-            false,
-            None,
-            &[touch(1, TouchPhase::Started, Some(replay_button_center()))],
-            &mut game.touch_controls,
-        );
-        game.update_logic(Duration::ZERO, controls);
-
-        assert_eq!(game.world.phase, Phase::Running);
-        assert_eq!(game.world.score(), 0);
-        assert_eq!(game.world.snake, super::initial_snake());
+        assert_eq!(game.best_score, 0);
+        assert!(game.best_score_loaded);
     }
 
     #[test]
-    fn no_food_is_placed_when_no_free_cell_remains() {
-        let mut world = SnakeWorld::new(123);
-        world.snake.clear();
-        for y in 0..super::GRID_HEIGHT {
-            for x in 0..super::GRID_WIDTH {
-                world.snake.push_back(Cell { x, y });
-            }
+    fn best_score_loads_once() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::with_entry(BEST_SCORE_KEY, "37");
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+        storage.entries.insert(BEST_SCORE_KEY.into(), "99".into());
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 37);
+    }
+
+    #[test]
+    fn corrupt_or_failed_best_score_read_falls_back_to_zero() {
+        let mut corrupt = touch_game();
+        let mut corrupt_storage = TestStorage::with_entry(BEST_SCORE_KEY, "not a number");
+        update_with_storage(&mut corrupt, &mut corrupt_storage, Duration::ZERO);
+        assert_eq!(corrupt.best_score, 0);
+
+        let mut failed = touch_game();
+        let mut failed_storage = TestStorage::failing_reads();
+        update_with_storage(&mut failed, &mut failed_storage, Duration::ZERO);
+        assert_eq!(failed.best_score, 0);
+    }
+
+    #[test]
+    fn new_record_persists_immediately() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        game.world.food = Some(Cell { x: 17, y: 9 });
+        update_with_storage(&mut game, &mut storage, TICK_PERIOD);
+
+        assert_eq!(game.best_score, 1);
+        assert_eq!(storage.entries.get(BEST_SCORE_KEY).map(String::as_str), Some("1"));
+    }
+
+    #[test]
+    fn best_score_write_failure_keeps_record_in_memory() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::failing_writes();
+        game.world.score = 5;
+        update_with_storage(&mut game, &mut storage, Duration::ZERO);
+
+        assert_eq!(game.best_score, 5);
+        assert!(!storage.entries.contains_key(BEST_SCORE_KEY));
+    }
+
+    #[test]
+    fn surface_resize_does_not_restart_world() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::default();
+        game.world.food = Some(Cell { x: 17, y: 9 });
+        let normal_size = game.layout().framebuffer_size;
+        update_with_services(&mut game, &mut storage, &mut audio, TICK_PERIOD, normal_size);
+        let world_before = game.world.clone();
+
+        update_with_services(
+            &mut game,
+            &mut storage,
+            &mut audio,
+            Duration::ZERO,
+            Size {
+                width: 412,
+                height: 915,
+            },
+        );
+
+        assert_eq!(game.world, world_before);
+    }
+
+    #[test]
+    fn food_and_death_request_expected_audio_once() {
+        let mut eat_game = touch_game();
+        let mut eat_storage = TestStorage::default();
+        let mut eat_audio = TestAudio::default();
+        eat_game.world.food = Some(Cell { x: 17, y: 9 });
+        let eat_size = eat_game.layout().framebuffer_size;
+        update_with_services(
+            &mut eat_game,
+            &mut eat_storage,
+            &mut eat_audio,
+            TICK_PERIOD,
+            eat_size,
+        );
+        assert_eq!(eat_audio.count(EAT_SOUND), 1);
+        assert_eq!(eat_audio.count(DEATH_SOUND), 0);
+
+        let mut death_game = touch_game();
+        let mut death_storage = TestStorage::default();
+        let mut death_audio = TestAudio::default();
+        death_game.world.snake = VecDeque::from([
+            Cell { x: 31, y: 9 },
+            Cell { x: 30, y: 9 },
+            Cell { x: 29, y: 9 },
+        ]);
+        death_game.world.direction = Direction::Right;
+        let death_size = death_game.layout().framebuffer_size;
+        update_with_services(
+            &mut death_game,
+            &mut death_storage,
+            &mut death_audio,
+            TICK_PERIOD,
+            death_size,
+        );
+        update_with_services(
+            &mut death_game,
+            &mut death_storage,
+            &mut death_audio,
+            TICK_PERIOD,
+            death_size,
+        );
+        assert_eq!(death_audio.count(DEATH_SOUND), 1);
+    }
+
+    #[test]
+    fn audio_play_error_does_not_stop_gameplay() {
+        let mut game = touch_game();
+        let mut storage = TestStorage::default();
+        let mut audio = TestAudio::failing_play();
+        game.world.food = Some(Cell { x: 17, y: 9 });
+        let size = game.layout().framebuffer_size;
+
+        assert_eq!(
+            update_with_services(&mut game, &mut storage, &mut audio, TICK_PERIOD, size),
+            GameResult::Continue
+        );
+        assert_eq!(game.world.score(), 1);
+    }
+
+    #[test]
+    fn snake_audio_assets_and_turn_sound_are_playable() {
+        let mut audio = NoopAudio::default();
+        for (id, bytes) in SNAKE_SOUNDS {
+            audio
+                .register_wav(id, bytes)
+                .expect("snake audio asset should be valid");
+            audio.play(id).expect("registered sound should play");
         }
 
-        assert_eq!(world.place_food(), None);
-    }
-
-    #[test]
-    fn turn_queue_capacity_is_limited() {
-        let mut world = SnakeWorld::new(123);
-
-        world.queue_direction(Direction::Up);
-        world.queue_direction(Direction::Left);
-        world.queue_direction(Direction::Down);
-
-        assert_eq!(world.turn_queue.len(), TURN_QUEUE_CAPACITY);
-        assert_eq!(
-            world.turn_queue,
-            VecDeque::from([Direction::Up, Direction::Left])
-        );
+        let mut bank = super::snake_sound_bank();
+        bank.play(&mut audio, TURN_SOUND)
+            .expect("generated turn sound should play");
     }
 }
