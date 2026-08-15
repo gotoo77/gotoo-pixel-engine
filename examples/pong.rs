@@ -3,8 +3,8 @@ mod game;
 
 use game::{FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, PongGame};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel, Rect,
-    run,
+    EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel,
+    Rect, run,
     ui::{
         MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
         menu_down_pressed, menu_up_pressed,
