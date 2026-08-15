@@ -1,0 +1,71 @@
+name: Temporary fullscreen residue fix
+
+on:
+  push:
+    branches:
+      - m5.7-fullscreen
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'trigger fullscreen residue fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: m5.7-fullscreen
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
+
+      - run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustup component add rustfmt clippy
+
+      - name: Remove stale decorated window during fullscreen transition
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/platform.rs')
+          s = p.read_text()
+          old = '''fn toggle_fullscreen(window: &Window) {
+    let fullscreen = if window.fullscreen().is_some() {
+        None
+    } else {
+        Some(Fullscreen::Borderless(None))
+    };
+    window.set_fullscreen(fullscreen);
+}
+'''
+          new = '''fn toggle_fullscreen(window: &Window) {
+    if window.fullscreen().is_some() {
+        window.set_fullscreen(None);
+        window.set_decorations(true);
+    } else {
+        window.set_decorations(false);
+        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+    }
+    window.request_redraw();
+}
+'''
+          if old not in s:
+              raise SystemExit('fullscreen toggle marker not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - run: cargo fmt --all -- --check
+      - run: cargo test --all-targets
+      - run: cargo clippy --all-targets -- -D warnings
+
+      - name: Commit fullscreen transition fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/platform.rs
+          git commit -m "avoid stale window decorations during fullscreen transition"
+          git push origin HEAD:m5.7-fullscreen
