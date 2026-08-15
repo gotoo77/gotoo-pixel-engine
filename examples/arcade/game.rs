@@ -2,7 +2,7 @@
 #[path = "../breakout.rs"]
 mod breakout;
 #[allow(dead_code)]
-#[path = "../pong.rs"]
+#[path = "../pong/game.rs"]
 mod pong;
 #[allow(dead_code)]
 #[path = "../snake/game.rs"]
@@ -23,7 +23,7 @@ use gotoo_pixel_engine::{
         draw_text_centered, standard_menu_controls,
     },
 };
-use pong::PongApp;
+use pong::PongGame;
 use snake::{SnakeGame, SnakeInteractionMode};
 use space_invaders::EnhancedSpaceInvadersGame;
 use tetris::TetrisGame;
@@ -359,8 +359,8 @@ fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>
         (ArcadeInteractionMode::Touch, 2) => {
             pause_game(EnhancedSpaceInvadersGame::new_touch(), mode)
         }
-        (ArcadeInteractionMode::Native, 3) => pause_game(PongApp::new(), mode),
-        (ArcadeInteractionMode::Touch, 3) => pause_game(PongApp::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 3) => pause_game(PongGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 3) => pause_game(PongGame::new_touch(), mode),
         (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutApp::new(), mode),
         (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutApp::new_touch(), mode),
         (_, _) => return None,
