@@ -240,7 +240,7 @@ impl PongGame {
         self.p1_controls.update(frame.input);
         self.p2_controls.update(frame.input);
 
-        let dt = frame.delta_time.as_secs_f32().min(0.05);
+        let dt = frame.delta_time.as_secs_f32();
         let p1_up =
             self.p1_controls.action(P1_UP).held() || self.touch_controls.action(P1_UP).held();
         let p1_down =

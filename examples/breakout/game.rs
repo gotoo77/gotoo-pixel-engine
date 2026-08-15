@@ -219,7 +219,7 @@ impl BreakoutGame {
             return GameResult::Continue;
         }
 
-        let dt = frame.delta_time.as_secs_f32().min(0.05);
+        let dt = frame.delta_time.as_secs_f32();
         self.update_paddle(dt);
 
         if self.controls.action(ACTION).pressed() && self.launch_ball() {
