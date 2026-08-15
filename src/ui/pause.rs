@@ -298,7 +298,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::{GamepadProfiles, NoopAudio, NoopStorage, Viewport};
+    use crate::{NoopAudio, NoopStorage, Viewport};
 
     #[derive(Default)]
     struct CountingGame {
@@ -323,11 +323,9 @@ mod tests {
         };
         let mut storage = NoopStorage;
         let mut audio = NoopAudio::default();
-        let mut gamepad_profiles = GamepadProfiles::default();
         let mut frame = Frame {
             framebuffer,
             input,
-            gamepad_profiles: &mut gamepad_profiles,
             delta_time: Duration::from_millis(16),
             storage: &mut storage,
             audio: &mut audio,
