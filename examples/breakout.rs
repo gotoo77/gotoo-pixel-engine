@@ -370,7 +370,7 @@ impl BreakoutApp {
             height: PADDLE_HEIGHT,
         };
         let ball = ball_rect(self.ball_x, self.ball_y);
-        if self.ball_vy > 0.0 && overlaps(ball, paddle) {
+        if self.ball_vy > 0.0 && ball.intersects(paddle) {
             self.ball_y = PADDLE_Y - BALL_SIZE as f32;
             self.ball_vy = -self.ball_vy.abs();
 
@@ -384,7 +384,7 @@ impl BreakoutApp {
         }
 
         if let Some(index) = self.bricks.iter().position(|brick| {
-            brick.active && overlaps(ball_rect(self.ball_x, self.ball_y), brick.rect)
+            brick.active && ball_rect(self.ball_x, self.ball_y).intersects(brick.rect)
         }) {
             let brick = self.bricks[index];
             self.bricks[index].active = false;
@@ -814,13 +814,6 @@ fn ball_rect(x: f32, y: f32) -> Rect {
     }
 }
 
-fn overlaps(a: Rect, b: Rect) -> bool {
-    a.x < b.x + b.width as i32
-        && a.x + a.width as i32 > b.x
-        && a.y < b.y + b.height as i32
-        && a.y + a.height as i32 > b.y
-}
-
 fn centered_paddle_x() -> f32 {
     (FRAMEBUFFER_WIDTH - PADDLE_WIDTH) as f32 / 2.0
 }
@@ -870,24 +863,20 @@ mod tests {
             width: 20,
             height: 10,
         };
-        assert!(overlaps(
-            Rect {
-                x: 12,
-                y: 12,
-                width: 4,
-                height: 4,
-            },
-            brick
-        ));
-        assert!(!overlaps(
-            Rect {
-                x: 30,
-                y: 12,
-                width: 4,
-                height: 4,
-            },
-            brick
-        ));
+        assert!(Rect {
+            x: 12,
+            y: 12,
+            width: 4,
+            height: 4,
+        }
+        .intersects(brick));
+        assert!(!Rect {
+            x: 30,
+            y: 12,
+            width: 4,
+            height: 4,
+        }
+        .intersects(brick));
     }
 
     #[test]
