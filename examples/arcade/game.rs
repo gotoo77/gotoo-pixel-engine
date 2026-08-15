@@ -1,5 +1,5 @@
 #[allow(dead_code)]
-#[path = "../breakout.rs"]
+#[path = "../breakout/game.rs"]
 mod breakout;
 #[allow(dead_code)]
 #[path = "../pong/game.rs"]
@@ -14,7 +14,7 @@ mod space_invaders;
 #[path = "../tetris/game.rs"]
 mod tetris;
 
-use breakout::BreakoutApp;
+use breakout::BreakoutGame;
 use gotoo_pixel_engine::{
     ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadId, GamepadProfile, Pixel,
     Rect, Size,
@@ -361,8 +361,8 @@ fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>
         }
         (ArcadeInteractionMode::Native, 3) => pause_game(PongGame::new(), mode),
         (ArcadeInteractionMode::Touch, 3) => pause_game(PongGame::new_touch(), mode),
-        (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutApp::new(), mode),
-        (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutApp::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutGame::new_touch(), mode),
         (_, _) => return None,
     };
     Some(game)
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn returning_to_catalog_arms_catalog_select_release_gate() {
         let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
-        app.active_game = Some(Box::new(BreakoutApp::new()));
+        app.active_game = Some(Box::new(BreakoutGame::new()));
 
         app.return_to_catalog();
 
