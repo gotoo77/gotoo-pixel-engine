@@ -1,66 +1,74 @@
 # gotoo-pixel-engine
 
-`gotoo-pixel-engine` est un moteur de jeu **pixel-first en Rust**,
-inspire par la philosophie de l'`olcPixelGameEngine`, concu pour apprendre,
-experimenter et construire de petits jeux en gardant le chemin complet lisible.
+`gotoo-pixel-engine` est un moteur de jeu **pixel-first en Rust**, inspiré par la
+philosophie de l'`olcPixelGameEngine`, conçu pour apprendre, expérimenter et
+construire de petits jeux en gardant le chemin complet lisible.
 
-Le projet ne cherche pas a devenir un moteur generaliste. Son objectif est une
+Le projet ne cherche pas à devenir un moteur généraliste. Son objectif reste une
 boucle simple :
 
 ```text
 initialiser
-    -> lire les entrees
-    -> mettre a jour l'etat du jeu
+    -> lire les entrées
+    -> mettre à jour l'état du jeu
     -> dessiner dans un framebuffer CPU
-    -> presenter le resultat
+    -> présenter le résultat
 ```
 
 Principe directeur :
 
 > Une abstraction entre dans le moteur parce qu'un jeu en a besoin, pas parce
-> qu'elle pourrait etre utile plus tard.
+> qu'elle pourrait être utile plus tard.
 
 Pas d'ECS, de scene graph, d'asset manager ou de framework UI tant qu'un besoin
-observe dans un jeu reel ne les justifie pas.
+observé dans plusieurs consommateurs réels ne les justifie pas.
 
-## Etat Actuel
+## État actuel
 
-Le moteur expose aujourd'hui une petite API publique suffisante pour ecrire un
-jeu pixel-first natif et Web/WASM sans manipuler directement `winit`, `wgpu`, le
-filesystem, le DOM ou l'audio plateforme.
+Le moteur expose aujourd'hui une API publique volontairement courte pour écrire
+un jeu pixel-first natif et Web/WASM sans manipuler directement `winit`, `wgpu`,
+le filesystem, le DOM, WebAudio ou les APIs gamepad plateforme.
 
-Capacites disponibles :
+Capacités disponibles :
 
 - framebuffer CPU RGBA8 ;
-- primitives de dessin : pixels, lignes, rectangles, cercles, remplissages ;
-- texte bitmap integre ;
+- primitives de dessin : pixels, lignes, rectangles, cercles et remplissages ;
+- texte bitmap intégré ;
 - clavier, souris et tactile brut ;
-- etats `pressed`, `held`, `released` pour les boutons ;
+- gamepad natif et Web avec boutons, D-pad et stick gauche normalisés ;
+- états `pressed`, `held`, `released` ;
+- `ControlMap` pour faire converger clavier, gamepad ciblé/global et contrôles virtuels ;
+- profils et calibration gamepad ;
 - timing par frame via `delta_time` ;
 - viewport conservant le ratio du framebuffer ;
-- mapping coherent surface -> viewport -> framebuffer pour souris/tactile ;
+- mapping cohérent surface -> viewport -> framebuffer pour souris/tactile ;
 - stockage local persistant natif/Web via `LocalStorage` ;
-- audio one-shot natif/Web via `Audio` ;
+- audio one-shot natif/Web via `Audio` et `SoundBank` ;
+- UI immediate-mode minimale : panneaux, texte centré, menus, contrôles virtuels et pause ;
 - backend natif via `winit`/`wgpu` ;
-- cible WebAssembly/WebGPU ;
-- deploiement Snake sur GitHub Pages.
+- cible WebAssembly/WebGPU.
 
-Snake est le premier jeu reel de validation. Il couvre actuellement :
+## Jeux consommateurs
 
-- monde Snake 32x18 avec score ;
-- HUD `SCORE n    BEST m` ;
-- BEST persistant localement ;
-- replay clavier/souris/tactile ;
-- layout clavier et layout tactile ;
-- D-pad tactile ;
-- audio `snake.eat` et `snake.death` ;
-- version native et version Web publiee.
+Le moteur est désormais exercé par plusieurs jeux réels :
 
-Version publique Snake :
+- Snake ;
+- Tetris ;
+- Space Invaders ;
+- Pong deux joueurs ;
+- Breakout ;
+- `GPE Arcade`, qui compose ces jeux dans un même runtime et sert aussi de test
+  architectural multi-jeux.
 
-<https://gotoo77.github.io/gotoo-pixel-engine/snake.html>
+Version publique de l'Arcade :
 
-## Exemple Minimal
+<https://gotoo77.github.io/gotoo-pixel-engine/>
+
+Les jeux restent également accessibles individuellement via les pages
+`snake.html`, `tetris.html`, `space_invaders.html`, `pong.html` et
+`breakout.html`.
+
+## Exemple minimal
 
 ```rust
 use gotoo_pixel_engine::{
@@ -116,60 +124,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 `Frame` contient aussi `storage`, `audio`, `surface_size` et `viewport`. Un jeu
 les utilise seulement lorsqu'il en a besoin.
 
-## Commandes Utiles
+## Commandes utiles
 
-Lancer la demo native :
+Lancer le sélecteur de jeux natif :
 
 ```bash
-cargo run
+./scripts/run-game
 ```
 
-Lancer Snake natif :
+Lancer directement un jeu :
 
 ```bash
 cargo run --example snake
+cargo run --example tetris
+cargo run --example space_invaders
+cargo run --example pong
+cargo run --example breakout
+cargo run --example arcade
 ```
 
-Construire Snake Web/WASM :
+Construire tous les entrypoints Web/WASM :
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo build --target wasm32-unknown-unknown --example snake_web
+./scripts/check-web.sh
 ```
 
-Generer `web/pkg` avec `wasm-bindgen` :
+Construire les paquets Web locaux avec `wasm-bindgen` :
 
 ```bash
-wasm-bindgen --target web \
-  --out-dir web/pkg \
-  target/wasm32-unknown-unknown/debug/examples/snake_web.wasm
+./scripts/build-web.sh
 ```
 
-Servir le dossier Web localement :
+Puis servir le dossier `web` :
 
 ```bash
-python3 -m http.server 8000 --directory web
+./scripts/serve-web.sh
 ```
-
-Puis ouvrir :
-
-- <http://127.0.0.1:8000/snake.html> pour Snake Web.
-
-La page `web/index.html` reste la page de demo Web historique ; elle necessite
-de generer `web/pkg/web_demo.js` a partir de l'exemple `web_demo`.
 
 ## Validation
 
-Commandes de validation courantes :
+Validation native complète :
 
 ```bash
-git diff --check
-cargo fmt --check
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
-cargo check --examples
-cargo build --target wasm32-unknown-unknown --example snake_web
+./scripts/check.sh
 ```
+
+Validation de tous les entrypoints Web :
+
+```bash
+./scripts/check-web.sh
+```
+
+La CI GitHub exécute les deux chemins séparément avant intégration. Le workflow
+GitHub Pages reste responsable de la construction release et du déploiement des
+jeux Web.
 
 Voir aussi [ROADMAP.md](ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) et
 [REFERENCES.md](REFERENCES.md).
