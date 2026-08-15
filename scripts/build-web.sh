@@ -19,6 +19,7 @@ build_web_example breakout_web
 build_web_example tetris_web
 build_web_example pong_web
 build_web_example space_invaders_web
+build_web_example arcade_web
 
 echo "==> build web_demo"
 cargo build --target wasm32-unknown-unknown --example web_demo
