@@ -84,10 +84,9 @@ dynamique, ni système de plugins.
 La calibration gamepad n'est plus une responsabilité de `Game`. Le runtime
 conserve un `GamepadProfile` par périphérique dans le sous-système `Input`, et les
 backends natif/Web utilisent cet état pour produire l'input normalisé. `Frame`
-n'ajoute pas de champ de calibration obligatoire ; il expose seulement les
-méthodes explicites `gamepad_profile`, `set_gamepad_profile` et
-`reset_gamepad_profile` pour les outils ou écrans de configuration qui ont un
-besoin réel de régler le périphérique.
+n'ajoute pas de champ de calibration obligatoire ; il expose uniquement
+`set_gamepad_profile`, l'opération publique effectivement utilisée par le probe
+et le menu standalone de Space Invaders pour régler le périphérique.
 
 ## Modules moteur
 
@@ -115,8 +114,8 @@ Frontière principale avec `winit`. Elle :
 - convertit clavier, souris et tactile vers `Input` ;
 - poll le backend gamepad ;
 - borne le `delta_time` de simulation et réinitialise le timing sur focus/resume ;
-- expose via `Frame` les opérations explicites de configuration d'un profil
-  gamepad sans faire porter cette responsabilité à `Game` ;
+- expose via `Frame::set_gamepad_profile` le réglage explicite requis par les
+  consommateurs de configuration sans faire porter cette responsabilité à `Game` ;
 - active l'audio après interaction utilisateur ;
 - injecte stockage et audio dans `Frame` ;
 - gère resize, focus et raccourcis plateforme.
@@ -309,9 +308,9 @@ Tetris, Space Invaders, Pong et Breakout ont ensuite validé d'autres besoins :
 menus, gamepad, tactile, audio, deux joueurs, collisions et feedback.
 
 Le probe gamepad et le menu standalone de Space Invaders sont les consommateurs
-concrets des opérations de réglage de `GamepadProfile`. Les autres jeux lisent
-simplement l'`Input` normalisé ; Arcade et `PauseGame` n'ont donc aucune raison de
-connaître ou relayer la calibration du périphérique.
+concrets de `Frame::set_gamepad_profile`. Les autres jeux lisent simplement
+l'`Input` normalisé ; Arcade et `PauseGame` n'ont donc aucune raison de connaître
+ou relayer la calibration du périphérique.
 
 `GPE Arcade` joue un rôle différent : il compose plusieurs jeux dans un même
 runtime. Il sert donc de test de cohérence des frontières entre « jeu
