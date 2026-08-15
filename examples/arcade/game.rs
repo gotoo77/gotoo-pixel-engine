@@ -16,11 +16,11 @@ mod tetris;
 
 use breakout::BreakoutApp;
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, GamepadId,
-    GamepadProfile, Key, Pixel, Rect, Size,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadId, GamepadProfile, Pixel,
+    Rect, Size,
     ui::{
         MenuState, PauseConfig, PauseGame, VirtualButton, VirtualPad, draw_menu_item, draw_panel,
-        draw_text_centered,
+        draw_text_centered, standard_menu_controls,
     },
 };
 use pong::PongApp;
@@ -342,19 +342,7 @@ impl Game for ArcadeApp {
 }
 
 fn catalog_controls() -> ControlMap {
-    let mut controls = ControlMap::new();
-    controls
-        .bind_key(CATALOG_UP, Key::Up)
-        .bind_key(CATALOG_UP, Key::W)
-        .bind_gamepad(CATALOG_UP, GamepadButton::DPadUp)
-        .bind_gamepad(CATALOG_UP, GamepadButton::LeftStickUp)
-        .bind_key(CATALOG_DOWN, Key::Down)
-        .bind_key(CATALOG_DOWN, Key::S)
-        .bind_gamepad(CATALOG_DOWN, GamepadButton::DPadDown)
-        .bind_gamepad(CATALOG_DOWN, GamepadButton::LeftStickDown)
-        .bind_key(CATALOG_SELECT, Key::Space)
-        .bind_gamepad(CATALOG_SELECT, GamepadButton::South);
-    controls
+    standard_menu_controls(CATALOG_UP, CATALOG_DOWN, CATALOG_SELECT)
 }
 
 fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>> {
