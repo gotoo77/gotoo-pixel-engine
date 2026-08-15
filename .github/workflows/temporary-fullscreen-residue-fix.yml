@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   fix:
-    if: github.event.head_commit.message == 'trigger fullscreen residue fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -33,7 +32,7 @@ jobs:
 
           p = Path('src/platform.rs')
           s = p.read_text()
-          old = '''fn toggle_fullscreen(window: &Window) {
+          old = """fn toggle_fullscreen(window: &Window) {
     let fullscreen = if window.fullscreen().is_some() {
         None
     } else {
@@ -41,8 +40,8 @@ jobs:
     };
     window.set_fullscreen(fullscreen);
 }
-'''
-          new = '''fn toggle_fullscreen(window: &Window) {
+"""
+          new = """fn toggle_fullscreen(window: &Window) {
     if window.fullscreen().is_some() {
         window.set_fullscreen(None);
         window.set_decorations(true);
@@ -52,18 +51,20 @@ jobs:
     }
     window.request_redraw();
 }
-'''
-          if old not in s:
-              raise SystemExit('fullscreen toggle marker not found')
-          p.write_text(s.replace(old, new, 1))
+"""
+          if old in s:
+              p.write_text(s.replace(old, new, 1))
           PY
 
       - run: cargo fmt --all -- --check
       - run: cargo test --all-targets
       - run: cargo clippy --all-targets -- -D warnings
 
-      - name: Commit fullscreen transition fix
+      - name: Commit fullscreen transition fix when needed
         run: |
+          if git diff --quiet -- src/platform.rs; then
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/platform.rs
