@@ -32,7 +32,6 @@ const FRAMEBUFFER_HEIGHT: u32 = 260;
 const CATALOG_UP: ActionId = ActionId::new("arcade.catalog.up");
 const CATALOG_DOWN: ActionId = ActionId::new("arcade.catalog.down");
 const CATALOG_SELECT: ActionId = ActionId::new("arcade.catalog.select");
-const CATALOG_EXIT: ActionId = ActionId::new("arcade.catalog.exit");
 const RETURN_TO_CATALOG: ActionId = ActionId::new("arcade.return_to_catalog");
 
 const GAME_LABELS: [&str; 5] = ["SNAKE", "TETRIS", "SPACE INVADERS", "PONG", "BREAKOUT"];
@@ -126,9 +125,6 @@ impl ArcadeApp {
             .update(frame.input, &mut self.catalog_controls);
         self.catalog_controls.update(frame.input);
 
-        if self.catalog_controls.action(CATALOG_EXIT).pressed() {
-            return GameResult::Exit;
-        }
         if self.catalog_controls.action(CATALOG_UP).pressed() {
             self.catalog_menu.select_previous();
         }
@@ -280,9 +276,7 @@ fn catalog_controls() -> ControlMap {
         .bind_gamepad(CATALOG_DOWN, GamepadButton::DPadDown)
         .bind_gamepad(CATALOG_DOWN, GamepadButton::LeftStickDown)
         .bind_key(CATALOG_SELECT, Key::Space)
-        .bind_gamepad(CATALOG_SELECT, GamepadButton::South)
-        .bind_key(CATALOG_EXIT, Key::Escape)
-        .bind_gamepad(CATALOG_EXIT, GamepadButton::East);
+        .bind_gamepad(CATALOG_SELECT, GamepadButton::South);
     controls
 }
 
