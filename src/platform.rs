@@ -12,7 +12,7 @@ use crate::gamepad::GamepadInputBackend;
 use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use crate::storage::{LocalStorage, platform_storage};
-use crate::{GamepadId, GamepadProfile, Size, Viewport};
+use crate::{GamepadProfiles, Size, Viewport};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
@@ -37,10 +37,6 @@ pub struct EngineConfig {
 
 pub trait Game {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult;
-
-    fn gamepad_profile(&self, _id: GamepadId) -> Option<GamepadProfile> {
-        None
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +48,7 @@ pub enum GameResult {
 pub struct Frame<'a> {
     pub framebuffer: &'a mut Framebuffer,
     pub input: &'a Input,
+    pub gamepad_profiles: &'a mut GamepadProfiles,
     /// Simulation time elapsed since the previous frame. The runtime bounds
     /// pathological stalls and resets its timing baseline across focus/resume
     /// transitions so games do not receive accumulated wall-clock downtime.
@@ -137,6 +134,7 @@ struct PlatformApp<G> {
     input: Input,
     modifiers: ModifiersState,
     gamepads: GamepadInputBackend,
+    gamepad_profiles: GamepadProfiles,
     storage: Box<dyn LocalStorage>,
     audio: Box<dyn PlatformAudio>,
     last_frame_at: Instant,
@@ -163,6 +161,7 @@ impl<G: Game> PlatformApp<G> {
             input: Input::default(),
             modifiers: ModifiersState::empty(),
             gamepads: GamepadInputBackend::default(),
+            gamepad_profiles: GamepadProfiles::default(),
             storage: platform_storage(),
             audio: platform_audio(),
             last_frame_at: now,
@@ -187,6 +186,7 @@ impl<G: Game> PlatformApp<G> {
             input: Input::default(),
             modifiers: ModifiersState::empty(),
             gamepads: GamepadInputBackend::default(),
+            gamepad_profiles: GamepadProfiles::default(),
             storage: platform_storage(),
             audio: platform_audio(),
             last_frame_at: now,
@@ -213,11 +213,8 @@ impl<G: Game> PlatformApp<G> {
             return;
         };
 
-        {
-            let game = &self.game;
-            self.gamepads
-                .poll(&mut self.input, |id| game.gamepad_profile(id));
-        }
+        self.gamepads
+            .poll(&mut self.input, &mut self.gamepad_profiles);
 
         let now = Instant::now();
         let raw_dt = now.duration_since(self.last_frame_at);
@@ -229,6 +226,7 @@ impl<G: Game> PlatformApp<G> {
         let mut frame = Frame {
             framebuffer: &mut self.framebuffer,
             input: &self.input,
+            gamepad_profiles: &mut self.gamepad_profiles,
             delta_time: dt,
             storage: self.storage.as_mut(),
             audio: self.audio.as_mut(),
