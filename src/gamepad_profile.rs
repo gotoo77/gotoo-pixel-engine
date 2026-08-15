@@ -133,21 +133,21 @@ impl Default for GamepadProfile {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct GamepadProfiles {
+#[derive(Debug, Default, Clone)]
+pub(crate) struct GamepadProfiles {
     profiles: HashMap<GamepadId, GamepadProfile>,
 }
 
 impl GamepadProfiles {
-    pub fn profile(&self, id: GamepadId) -> GamepadProfile {
+    pub(crate) fn profile(&self, id: GamepadId) -> GamepadProfile {
         self.profiles.get(&id).copied().unwrap_or_default()
     }
 
-    pub fn set_profile(&mut self, id: GamepadId, profile: GamepadProfile) {
+    pub(crate) fn set_profile(&mut self, id: GamepadId, profile: GamepadProfile) {
         self.profiles.insert(id, profile);
     }
 
-    pub fn reset_profile(&mut self, id: GamepadId) {
+    pub(crate) fn reset_profile(&mut self, id: GamepadId) {
         self.profiles.remove(&id);
     }
 
