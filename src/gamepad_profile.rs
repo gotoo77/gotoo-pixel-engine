@@ -147,10 +147,6 @@ impl GamepadProfiles {
         self.profiles.insert(id, profile);
     }
 
-    pub(crate) fn reset_profile(&mut self, id: GamepadId) {
-        self.profiles.remove(&id);
-    }
-
     pub(crate) fn remove_profile(&mut self, id: GamepadId) {
         self.profiles.remove(&id);
     }
@@ -216,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_profiles_are_device_scoped_and_resettable() {
+    fn runtime_profiles_are_device_scoped_and_removable() {
         let first = GamepadId::new(1);
         let second = GamepadId::new(2);
         let custom = GamepadProfile::standard().with_digital_threshold(0.65);
@@ -226,7 +222,7 @@ mod tests {
         assert_eq!(profiles.profile(first), custom);
         assert_eq!(profiles.profile(second), GamepadProfile::standard());
 
-        profiles.reset_profile(first);
+        profiles.remove_profile(first);
         assert_eq!(profiles.profile(first), GamepadProfile::standard());
     }
 }
