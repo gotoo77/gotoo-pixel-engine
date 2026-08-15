@@ -59,16 +59,8 @@ pub struct Frame<'a> {
 }
 
 impl Frame<'_> {
-    pub fn gamepad_profile(&self, id: GamepadId) -> GamepadProfile {
-        self.input.gamepad_profile(id)
-    }
-
     pub fn set_gamepad_profile(&mut self, id: GamepadId, profile: GamepadProfile) {
         self.input.set_gamepad_profile(id, profile);
-    }
-
-    pub fn reset_gamepad_profile(&mut self, id: GamepadId) {
-        self.input.reset_gamepad_profile(id);
     }
 }
 
