@@ -1,0 +1,74 @@
+name: Temporary Pong control strip validation
+
+on:
+  push:
+    branches:
+      - m5.3-pong-web
+    paths:
+      - .github/scripts/m5_3_pong_control_strip.py
+      - .github/workflows/m5-3-pong-control-strip.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v6
+        with:
+          ref: m5.3-pong-web
+
+      - name: Skip cleanup-triggered run
+        id: migration
+        run: |
+          if [ -f .github/scripts/m5_3_pong_control_strip.py ]; then
+            echo "apply=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "apply=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install native dependencies
+        if: steps.migration.outputs.apply == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
+
+      - name: Install Rust 1.97.1
+        if: steps.migration.outputs.apply == 'true'
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustup component add rustfmt clippy
+          rustup target add wasm32-unknown-unknown
+
+      - name: Move Pong controls below playfield
+        if: steps.migration.outputs.apply == 'true'
+        run: python .github/scripts/m5_3_pong_control_strip.py
+
+      - name: Format
+        if: steps.migration.outputs.apply == 'true'
+        run: cargo fmt --all
+
+      - name: Test
+        if: steps.migration.outputs.apply == 'true'
+        run: cargo test --all-targets
+
+      - name: Clippy
+        if: steps.migration.outputs.apply == 'true'
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check Pong WASM build
+        if: steps.migration.outputs.apply == 'true'
+        run: cargo build --target wasm32-unknown-unknown --example pong_web
+
+      - name: Commit layout fix
+        if: steps.migration.outputs.apply == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/pong.rs
+          git commit -m "move Pong touch controls below playfield"
+          git push origin HEAD:m5.3-pong-web
