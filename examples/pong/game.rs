@@ -1,8 +1,10 @@
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, GamepadId, Input, Key,
-    Pixel, Rect, SoundBank, SoundId, pcm16_mono_wav,
-    ui::{MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
-        menu_confirm_pressed, menu_down_pressed, menu_up_pressed},
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, GamepadId, Input,
+    Key, Pixel, Rect, SoundBank, SoundId, pcm16_mono_wav,
+    ui::{
+        MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
+        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
+    },
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 320;
@@ -161,7 +163,11 @@ impl PongGame {
     }
 
     pub(super) fn gamepad_connected(&self, player: usize) -> bool {
-        self.assigned_gamepads.get(player).copied().flatten().is_some()
+        self.assigned_gamepads
+            .get(player)
+            .copied()
+            .flatten()
+            .is_some()
     }
 
     pub(super) fn reset_match(&mut self) {
@@ -579,8 +585,7 @@ fn move_paddle(y: f32, up: bool, down: bool, dt: f32) -> f32 {
 fn bounce_from_paddle(vx: &mut f32, vy: &mut f32, ball_y: f32, paddle_y: f32, direction: f32) {
     let paddle_center = paddle_y + PADDLE_HEIGHT as f32 / 2.0;
     let ball_center = ball_y + BALL_SIZE as f32 / 2.0;
-    let offset =
-        ((ball_center - paddle_center) / (PADDLE_HEIGHT as f32 / 2.0)).clamp(-1.0, 1.0);
+    let offset = ((ball_center - paddle_center) / (PADDLE_HEIGHT as f32 / 2.0)).clamp(-1.0, 1.0);
     let angle = offset * MAX_BOUNCE_ANGLE;
     let speed = (vx.hypot(*vy) * 1.04).clamp(BALL_SPEED_X.hypot(BALL_SPEED_Y), BALL_SPEED_MAX);
 
