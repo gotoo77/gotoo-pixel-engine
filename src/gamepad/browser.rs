@@ -73,12 +73,7 @@ impl GamepadInputBackend {
             input.connect_gamepad(id, gamepad.id());
 
             if gamepad.mapping() == GamepadMappingType::Standard {
-                update_standard_gamepad(
-                    input,
-                    id,
-                    &gamepad,
-                    profile_for(id).unwrap_or_default(),
-                );
+                update_standard_gamepad(input, id, &gamepad, profile_for(id).unwrap_or_default());
             } else {
                 clear_gamepad(input, id);
             }

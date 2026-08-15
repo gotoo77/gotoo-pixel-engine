@@ -65,6 +65,7 @@ const RETURN_BUTTON: Rect = Rect {
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ArcadeInteractionMode {
     Native,
     Touch,
@@ -191,9 +192,8 @@ impl ArcadeApp {
                 ])
             }),
             return_controls: return_controls(),
-            return_pad: touch.then(|| {
-                VirtualPad::new([VirtualButton::new(RETURN_TO_CATALOG, RETURN_BUTTON)])
-            }),
+            return_pad: touch
+                .then(|| VirtualPad::new([VirtualButton::new(RETURN_TO_CATALOG, RETURN_BUTTON)])),
             active_game: None,
             waiting_for_launch_release: false,
         }
