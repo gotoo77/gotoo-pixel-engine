@@ -43,9 +43,9 @@ fn validate_storage_key(key: &str) -> Result<(), StorageError> {
     let portable = !key.is_empty()
         && key != "."
         && key != ".."
-        && key
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'));
+        && key.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        });
 
     if portable {
         Ok(())
