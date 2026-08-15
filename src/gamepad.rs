@@ -1,6 +1,4 @@
-use crate::{
-    AxisCalibration, GamepadButton, GamepadId, GamepadProfile, GamepadProfiles, Input,
-};
+use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, GamepadProfiles, Input};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
