@@ -1,0 +1,70 @@
+name: Temporary mobile Web validation
+
+on:
+  push:
+    branches:
+      - m5.8-mobile-web-polish
+
+jobs:
+  validate:
+    if: github.event.head_commit.message == 'trigger mobile web validation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: m5.8-mobile-web-polish
+
+      - run: git diff --check main...HEAD
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check web/audio-unlock.js
+          node --check web/fullscreen.js
+
+      - name: Exercise audio unlock helper
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const listeners = new Map();
+          let resumes = 0;
+
+          class FakeAudioContext {
+            constructor() { this.state = 'suspended'; }
+            resume() { resumes += 1; this.state = 'running'; return Promise.resolve(); }
+          }
+
+          global.window = { AudioContext: FakeAudioContext };
+          global.document = {
+            addEventListener(type, listener) { listeners.set(type, listener); },
+          };
+
+          eval(fs.readFileSync('web/audio-unlock.js', 'utf8'));
+          const context = new window.AudioContext();
+          listeners.get('pointerup')();
+
+          if (!(context instanceof FakeAudioContext)) throw new Error('wrapped constructor changed instance type');
+          if (resumes !== 1 || context.state !== 'running') throw new Error('user gesture did not resume AudioContext');
+          NODE
+
+      - name: Verify helper ordering on every Web page
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          pages = [
+              'web/index.html',
+              'web/snake.html',
+              'web/breakout.html',
+              'web/tetris.html',
+              'web/space_invaders.html',
+              'web/pong.html',
+          ]
+          for page in pages:
+              text = Path(page).read_text()
+              unlock = text.index('./audio-unlock.js')
+              wasm = text.index('type="module"')
+              assert unlock < wasm, f'{page}: audio unlock must load before WASM module'
+          PY
+
+      - name: Verify Pages packages the helper
+        run: grep -F 'cp web/audio-unlock.js dist/audio-unlock.js' .github/workflows/pages.yml
