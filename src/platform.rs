@@ -19,7 +19,9 @@ use winit::event::{ElementState, WindowEvent};
 #[cfg(target_arch = "wasm32")]
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+#[cfg(not(target_arch = "wasm32"))]
+use winit::window::Fullscreen;
 use winit::window::{Window, WindowId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +130,7 @@ struct PlatformApp<G> {
     renderer: Option<Renderer>,
     framebuffer: Framebuffer,
     input: Input,
+    modifiers: ModifiersState,
     gamepads: GamepadInputBackend,
     storage: Box<dyn LocalStorage>,
     audio: Box<dyn PlatformAudio>,
@@ -153,6 +156,7 @@ impl<G: Game> PlatformApp<G> {
             renderer: None,
             framebuffer,
             input: Input::default(),
+            modifiers: ModifiersState::empty(),
             gamepads: GamepadInputBackend::default(),
             storage: platform_storage(),
             audio: platform_audio(),
@@ -176,6 +180,7 @@ impl<G: Game> PlatformApp<G> {
             renderer: None,
             framebuffer,
             input: Input::default(),
+            modifiers: ModifiersState::empty(),
             gamepads: GamepadInputBackend::default(),
             storage: platform_storage(),
             audio: platform_audio(),
@@ -419,7 +424,19 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                     renderer.resize(size);
                 }
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
             WindowEvent::KeyboardInput { event, .. } => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if event.state == ElementState::Pressed
+                    && !event.repeat
+                    && is_fullscreen_shortcut(event.physical_key, self.modifiers)
+                {
+                    toggle_fullscreen(window);
+                    return;
+                }
+
                 let Some(key) = key_from_winit(event.physical_key) else {
                     return;
                 };
@@ -467,6 +484,26 @@ fn remember_non_zero_size(last_size: &mut Option<PhysicalSize<u32>>, size: Physi
     if size.width != 0 && size.height != 0 {
         *last_size = Some(size);
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_fullscreen_shortcut(key: PhysicalKey, modifiers: ModifiersState) -> bool {
+    matches!(key, PhysicalKey::Code(KeyCode::F11))
+        || (modifiers.alt_key()
+            && matches!(
+                key,
+                PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter)
+            ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn toggle_fullscreen(window: &Window) {
+    let fullscreen = if window.fullscreen().is_some() {
+        None
+    } else {
+        Some(Fullscreen::Borderless(None))
+    };
+    window.set_fullscreen(fullscreen);
 }
 
 fn key_from_winit(key: PhysicalKey) -> Option<Key> {
@@ -568,12 +605,28 @@ fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        EngineConfig, Key, MouseButton, TouchPhase, current_viewport, key_from_winit,
-        mouse_button_from_winit, remember_non_zero_size, surface_to_framebuffer_position,
-        touch_from_winit, touch_phase_from_winit, validate_config,
+        EngineConfig, Key, MouseButton, TouchPhase, current_viewport, is_fullscreen_shortcut,
+        key_from_winit, mouse_button_from_winit, remember_non_zero_size,
+        surface_to_framebuffer_position, touch_from_winit, touch_phase_from_winit, validate_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
-    use winit::keyboard::{KeyCode, PhysicalKey};
+    use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+
+    #[test]
+    fn recognizes_native_fullscreen_shortcuts() {
+        assert!(is_fullscreen_shortcut(
+            PhysicalKey::Code(KeyCode::F11),
+            ModifiersState::empty(),
+        ));
+        assert!(is_fullscreen_shortcut(
+            PhysicalKey::Code(KeyCode::Enter),
+            ModifiersState::ALT,
+        ));
+        assert!(!is_fullscreen_shortcut(
+            PhysicalKey::Code(KeyCode::Enter),
+            ModifiersState::empty(),
+        ));
+    }
 
     #[test]
     fn maps_minimal_keyboard_keys() {
