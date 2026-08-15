@@ -40,9 +40,10 @@ surface
 ```
 
 `PlatformApp` possède les ressources longue durée : fenêtre, renderer,
-framebuffer, input, backend gamepad, stockage, audio et horloges. À chaque
-redraw, il met à jour les périphériques, construit un `Frame`, appelle
-`Game::update`, puis présente le framebuffer.
+framebuffer, input, backend gamepad, stockage, audio et horloges. `Input` conserve
+aussi l'état runtime des profils de calibration par périphérique. À chaque
+redraw, le backend normalise les périphériques avec ces profils, `PlatformApp`
+construit un `Frame`, appelle `Game::update`, puis présente le framebuffer.
 
 ## `Game` et `Frame`
 
@@ -80,10 +81,13 @@ leur propre politique de suspension/stall.
 framework de capabilities. Il n'existe ni registre générique, ni conteneur
 dynamique, ni système de plugins.
 
-`Game::gamepad_profile()` existe actuellement comme point d'injection de profils
-de périphériques. Cette responsabilité est considérée comme provisoire : la
-composition Arcade a montré que la calibration est liée au périphérique/runtime
-plus qu'au gameplay lui-même.
+La calibration gamepad n'est plus une responsabilité de `Game`. Le runtime
+conserve un `GamepadProfile` par périphérique dans le sous-système `Input`, et les
+backends natif/Web utilisent cet état pour produire l'input normalisé. `Frame`
+n'ajoute pas de champ de calibration obligatoire ; il expose seulement les
+méthodes explicites `gamepad_profile`, `set_gamepad_profile` et
+`reset_gamepad_profile` pour les outils ou écrans de configuration qui ont un
+besoin réel de régler le périphérique.
 
 ## Modules moteur
 
@@ -111,6 +115,8 @@ Frontière principale avec `winit`. Elle :
 - convertit clavier, souris et tactile vers `Input` ;
 - poll le backend gamepad ;
 - borne le `delta_time` de simulation et réinitialise le timing sur focus/resume ;
+- expose via `Frame` les opérations explicites de configuration d'un profil
+  gamepad sans faire porter cette responsabilité à `Game` ;
 - active l'audio après interaction utilisateur ;
 - injecte stockage et audio dans `Frame` ;
 - gère resize, focus et raccourcis plateforme.
@@ -170,7 +176,10 @@ primitives avant d'envisager une bibliothèque Geometry2D plus large.
 - états `pressed`, `held`, `released` ;
 - événements connexion/déconnexion gamepad.
 
-La mutation appartient aux backends plateforme et reste crate-private.
+Le sous-système conserve également, de façon interne, le profil de calibration
+associé à chaque `GamepadId`. Cet état est une configuration runtime du
+périphérique et ne fait pas partie du snapshot observable utilisé par le gameplay.
+La mutation des états physiques reste réservée aux backends plateforme.
 
 ### `control.rs`
 
@@ -194,9 +203,11 @@ Backends gamepad :
 - natif : `gilrs` ;
 - Web : Gamepad API via `web-sys` pour les mappings standards.
 
-Les backends traduisent les périphériques vers le modèle `Input` commun. Le
-backend natif contient aussi les corrections nécessaires aux D-pad/hats observés
-sur du matériel réel.
+Les backends lisent le profil runtime associé au périphérique, normalisent les
+valeurs brutes puis alimentent le modèle `Input` commun. Le backend natif contient
+aussi les corrections nécessaires aux D-pad/hats observés sur du matériel réel.
+Le profil runtime est supprimé à la déconnexion pour éviter de réutiliser une
+calibration périmée si un identifiant de périphérique est recyclé.
 
 ### `gamepad_profile.rs`
 
@@ -207,8 +218,9 @@ Décrit la normalisation d'axes et le seuil numérique :
 - dead zone ;
 - threshold numérique.
 
-Le profil est un mécanisme de normalisation de périphérique, pas une abstraction
-de gameplay.
+`AxisCalibration` et `GamepadProfile` restent les types publics de description.
+Le store `GamepadId -> GamepadProfile` est interne au runtime d'input : il ne
+constitue ni un `DeviceManager`, ni un registre générique de configuration.
 
 ### `storage.rs`
 
@@ -295,6 +307,11 @@ gotoo-pixel-engine
 
 Tetris, Space Invaders, Pong et Breakout ont ensuite validé d'autres besoins :
 menus, gamepad, tactile, audio, deux joueurs, collisions et feedback.
+
+Le probe gamepad et le menu standalone de Space Invaders sont les consommateurs
+concrets des opérations de réglage de `GamepadProfile`. Les autres jeux lisent
+simplement l'`Input` normalisé ; Arcade et `PauseGame` n'ont donc aucune raison de
+connaître ou relayer la calibration du périphérique.
 
 `GPE Arcade` joue un rôle différent : il compose plusieurs jeux dans un même
 runtime. Il sert donc de test de cohérence des frontières entre « jeu
