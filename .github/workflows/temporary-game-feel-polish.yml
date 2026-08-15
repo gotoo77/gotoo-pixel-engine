@@ -31,6 +31,7 @@ jobs:
         run: |
           python3 scripts/temporary_game_feel_patch.py
           sed -i 's/let mut bank = snake_sound_bank();/let mut bank = super::snake_sound_bank();/' examples/snake/game.rs
+          sed -i 's/(self.line_clear_elapsed.as_millis() \/ LINE_CLEAR_BLINK.as_millis()) % 2 == 0/(self.line_clear_elapsed.as_millis() \/ LINE_CLEAR_BLINK.as_millis()).is_multiple_of(2)/' examples/tetris/game.rs
 
       - name: Format
         run: cargo fmt --all
