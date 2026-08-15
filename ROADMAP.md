@@ -133,36 +133,39 @@ une nouvelle couche de physique.
 Objectif : stabiliser ce que les consommateurs ont réellement démontré avant
 d'ajouter de nouvelles capacités moteur.
 
-### C1 — Garde-fous dépôt 🚧
+### C1 — Garde-fous dépôt ✅
 
 - CI native : format, tests, clippy warnings-as-errors, whitespace ;
 - CI Web : compilation de tous les entrypoints WASM ;
 - liste canonique des jeux Web partagée par les scripts ;
 - déploiement Pages conservé comme étape distincte.
 
-### C2 — Frontière uniforme des jeux 🚧
+### C2 — Frontière uniforme des jeux ✅
 
-Arcade doit composer des objets `Game` homogènes. Les jeux monolithiques doivent
-être séparés uniquement lorsque leur entrypoint standalone et leur cœur
-réutilisable sont aujourd'hui mélangés.
-
-Cible immédiate :
+Pong et Breakout séparent maintenant leur shell standalone de leur cœur
+réutilisable :
 
 ```text
-pong.rs
-pong/game.rs
+pong.rs              -> shell standalone
+pong/game.rs         -> PongGame
 
-breakout.rs
-breakout/game.rs
+breakout.rs          -> shell standalone
+breakout/game.rs     -> BreakoutGame
 ```
 
-Aucun framework de scènes ou système de plugins n'est justifié par ce besoin.
+Les entrypoints Web et GPE Arcade composent directement `PongGame` et
+`BreakoutGame`. Le menu standalone ne fuit donc plus dans les contextes de
+composition.
 
-### C3 — Réutilisation des primitives existantes 🚧
+Aucun framework de scènes ou système de plugins n'a été introduit pour obtenir
+cette frontière.
 
-- remplacer les copies locales d'AABB Pong/Breakout par `Rect::intersects()` ;
-- identifier les helpers moteur déjà présents mais contournés par les jeux ;
-- ne promouvoir aucune nouvelle primitive sans duplication stable démontrée.
+### C3 — Réutilisation des primitives existantes ✅
+
+- Pong et Breakout utilisent `Rect::intersects()` au lieu de copies locales
+  d'AABB ;
+- Pause et Arcade réutilisent la même politique minimale de navigation menu ;
+- aucune nouvelle couche de physique ou UI n'a été introduite.
 
 ### C4 — Politique de timing 🚧
 
