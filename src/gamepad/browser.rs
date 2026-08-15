@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use wasm_bindgen::JsCast;
 use web_sys::{Gamepad as WebGamepad, GamepadButton as WebGamepadButton, GamepadMappingType};
 
-use crate::{GamepadButton, GamepadId, GamepadProfile, Input};
+use super::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
 
 const STANDARD_BUTTONS: [(u32, GamepadButton); 12] = [
     (0, GamepadButton::South),
@@ -105,8 +105,8 @@ fn update_standard_gamepad(
         );
     }
 
-    let left_x = profile.left_stick_x.normalize(web_axis(gamepad, 0));
-    let left_y = profile.left_stick_y.normalize(web_axis(gamepad, 1));
+    let left_x = normalized_axis(gamepad, 0, profile.left_stick_x);
+    let left_y = normalized_axis(gamepad, 1, profile.left_stick_y);
     set_axis_buttons(
         input,
         id,
@@ -132,6 +132,10 @@ fn web_button_held(gamepad: &WebGamepad, index: u32, threshold: f32) -> bool {
         return false;
     };
     button.pressed() || button.value() >= f64::from(threshold.clamp(0.0, 1.0))
+}
+
+fn normalized_axis(gamepad: &WebGamepad, index: u32, calibration: AxisCalibration) -> f32 {
+    calibration.normalize(web_axis(gamepad, index))
 }
 
 fn web_axis(gamepad: &WebGamepad, index: u32) -> f32 {
