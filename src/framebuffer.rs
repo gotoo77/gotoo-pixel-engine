@@ -456,8 +456,7 @@ fn rounded_minor_step(minor_delta: i64, major_step: i64, major_delta: i64) -> i6
     debug_assert!(major_step >= 0 && major_step <= major_delta);
     debug_assert!(minor_delta >= 0 && minor_delta <= major_delta);
 
-    let numerator =
-        2 * i128::from(minor_delta) * i128::from(major_step) + i128::from(major_delta);
+    let numerator = 2 * i128::from(minor_delta) * i128::from(major_step) + i128::from(major_delta);
     let denominator = 2 * i128::from(major_delta);
 
     (numerator / denominator) as i64
@@ -735,6 +734,18 @@ mod tests {
         assert_eq!(
             drawn_pixels(&framebuffer, Pixel::WHITE),
             &[(0, 1), (1, 1), (2, 1)]
+        );
+    }
+
+    #[test]
+    fn draw_line_with_extreme_vertical_span_only_draws_visible_pixels() {
+        let mut framebuffer = Framebuffer::new(3, 3);
+
+        framebuffer.draw_line(1, i32::MIN, 1, i32::MAX, Pixel::WHITE);
+
+        assert_eq!(
+            drawn_pixels(&framebuffer, Pixel::WHITE),
+            &[(1, 0), (1, 1), (1, 2)]
         );
     }
 
