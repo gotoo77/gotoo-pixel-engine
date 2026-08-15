@@ -203,12 +203,29 @@ ordinaires continuent simplement à consommer un `Input` déjà normalisé. Aucu
 `DeviceManager`, registre de configuration ou système générique de périphériques
 n'a été introduit.
 
-### C6 — Dette locale Snake 🚧
+### C6 — Dette locale Snake ✅
 
-- supprimer les chemins tactiles uniquement présents pour les tests lorsqu'ils
-  dupliquent `VirtualPad` ;
-- découper le fichier du jeu si cela améliore la cohésion ;
-- conserver `SnakeWorld` indépendant du moteur.
+Le chemin tactile de Snake repose désormais sur une seule implémentation réelle :
+`VirtualPad`.
+
+- les anciens `TouchControls`, `DPadTracker`, contacts et zones compilés seulement
+  pour les tests ont été supprimés ;
+- les transitions tactiles, déplacements entre zones, multi-contact et reset
+  sont testés directement dans `VirtualPad` ;
+- les tests Snake vérifient uniquement le câblage de ses quatre actions vers le
+  D-pad, le replay et les règles propres au jeu ;
+- la logique pure de grille, serpent, nourriture, collisions et file de virages
+  est isolée dans `snake/world.rs`, sans dépendance au moteur ;
+- `snake/game.rs` conserve l'adaptation input, timing, layout, rendu, stockage et
+  audio.
+
+```text
+snake/game.rs   -> adaptation runtime / présentation
+snake/world.rs  -> modèle et règles de jeu purs
+```
+
+Aucun framework de scènes, système de monde ou abstraction moteur supplémentaire
+n'a été introduit pour ce découpage.
 
 ### C7 — Documentation 🚧
 
