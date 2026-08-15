@@ -32,26 +32,28 @@ jobs:
 
           p = Path('src/platform.rs')
           s = p.read_text()
-          old = """fn toggle_fullscreen(window: &Window) {
-    let fullscreen = if window.fullscreen().is_some() {
-        None
-    } else {
-        Some(Fullscreen::Borderless(None))
-    };
-    window.set_fullscreen(fullscreen);
-}
-"""
-          new = """fn toggle_fullscreen(window: &Window) {
-    if window.fullscreen().is_some() {
-        window.set_fullscreen(None);
-        window.set_decorations(true);
-    } else {
-        window.set_decorations(false);
-        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
-    }
-    window.request_redraw();
-}
-"""
+          old = (
+              'fn toggle_fullscreen(window: &Window) {\n'
+              '    let fullscreen = if window.fullscreen().is_some() {\n'
+              '        None\n'
+              '    } else {\n'
+              '        Some(Fullscreen::Borderless(None))\n'
+              '    };\n'
+              '    window.set_fullscreen(fullscreen);\n'
+              '}\n'
+          )
+          new = (
+              'fn toggle_fullscreen(window: &Window) {\n'
+              '    if window.fullscreen().is_some() {\n'
+              '        window.set_fullscreen(None);\n'
+              '        window.set_decorations(true);\n'
+              '    } else {\n'
+              '        window.set_decorations(false);\n'
+              '        window.set_fullscreen(Some(Fullscreen::Borderless(None)));\n'
+              '    }\n'
+              '    window.request_redraw();\n'
+              '}\n'
+          )
           if old in s:
               p.write_text(s.replace(old, new, 1))
           PY
