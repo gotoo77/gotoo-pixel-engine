@@ -26,6 +26,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
       - name: Integrate PauseGame into Arcade
         run: |
+          sed -i 's/NoopStorage::default()/NoopStorage/' src/ui/pause.rs
           python3 - <<'PY'
           from pathlib import Path
 
@@ -52,7 +53,6 @@ jobs:
               '            return_controls: return_controls(),\n            return_pad: touch\n                .then(|| VirtualPad::new([VirtualButton::new(RETURN_TO_CATALOG, PAUSE_BUTTON)])),\n',
               '',
           )
-
           replace(
               '''        if let Some(return_pad) = &mut self.return_pad {\n            return_pad.update(frame.input, &mut self.return_controls);\n        }\n        self.return_controls.update(frame.input);\n\n        if self.return_controls.action(RETURN_TO_CATALOG).pressed() {\n            self.return_to_catalog();\n            self.render_catalog(frame.framebuffer);\n            return GameResult::Continue;\n        }\n\n''',
               '',
@@ -69,16 +69,13 @@ jobs:
               '''        if let Some(return_pad) = &mut self.return_pad {\n            return_pad.reset(&mut self.return_controls);\n        }\n        if let Some(catalog_pad) = &mut self.catalog_pad {\n''',
               '        if let Some(catalog_pad) = &mut self.catalog_pad {\n',
           )
-
           start = s.index('fn return_controls() -> ControlMap {')
           end = s.index('\nfn build_game(', start)
           s = s[:start] + s[end + 1:]
-
           start = s.index('fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>> {')
           end = s.index('\n#[cfg(test)]', start)
           replacement = '''fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>> {\n    let game = match (mode, index) {\n        (ArcadeInteractionMode::Native, 0) => {\n            pause_game(SnakeGame::new(SnakeInteractionMode::Keyboard), mode)\n        }\n        (ArcadeInteractionMode::Touch, 0) => {\n            pause_game(SnakeGame::new(SnakeInteractionMode::Touch), mode)\n        }\n        (ArcadeInteractionMode::Native, 1) => pause_game(TetrisGame::new(), mode),\n        (ArcadeInteractionMode::Touch, 1) => pause_game(TetrisGame::new_touch(), mode),\n        (ArcadeInteractionMode::Native, 2) => {\n            pause_game(EnhancedSpaceInvadersGame::new(), mode)\n        }\n        (ArcadeInteractionMode::Touch, 2) => {\n            pause_game(EnhancedSpaceInvadersGame::new_touch(), mode)\n        }\n        (ArcadeInteractionMode::Native, 3) => pause_game(PongApp::new(), mode),\n        (ArcadeInteractionMode::Touch, 3) => pause_game(PongApp::new_touch(), mode),\n        (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutApp::new(), mode),\n        (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutApp::new_touch(), mode),\n        (_, _) => return None,\n    };\n    Some(game)\n}\n\nfn pause_game<G: Game + 'static>(game: G, mode: ArcadeInteractionMode) -> Box<dyn Game> {\n    let mut config = PauseConfig::new(mode.framebuffer_size());\n    if mode == ArcadeInteractionMode::Touch {\n        config = config.with_touch_button(PAUSE_BUTTON);\n    }\n    Box::new(PauseGame::new(game, config))\n}\n'''
           s = s[:start] + replacement + s[end:]
-
           s = s.replace('return_button_is_outside_every_touch_game_extent', 'pause_button_is_outside_every_touch_game_extent')
           replace(
               '''        assert!(arcade.catalog_pad.is_none());\n        assert!(arcade.return_pad.is_none());\n''',
@@ -89,7 +86,6 @@ jobs:
               '        assert!(arcade.catalog_pad.is_some());\n',
           )
           s = s.replace('touch_mode_has_catalog_and_return_virtual_pads', 'touch_mode_has_catalog_virtual_pad')
-
           p.write_text(s)
           PY
       - run: cargo fmt --all
