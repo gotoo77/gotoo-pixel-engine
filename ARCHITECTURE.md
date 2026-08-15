@@ -149,6 +149,19 @@ fournit :
 - texte bitmap ;
 - accès `as_rgba8` pour l'upload GPU.
 
+`draw_line` conserve la rasterisation visible de Bresenham mais ne parcourt pas
+les portions arbitrairement longues situées hors du framebuffer. Le rasteriseur
+calcule directement l'intervalle des pas de l'axe majeur qui peut être visible :
+une ligne x-major effectue au plus un nombre de pas proportionnel à la largeur du
+framebuffer, et une ligne y-major à sa hauteur. L'axe mineur est reconstruit à la
+même phase de rasterisation que le segment original, ce qui évite de modifier les
+pixels de bord en reclippant puis en relançant Bresenham depuis de nouvelles
+extrémités entières. Les produits intermédiaires utilisent `i128` pour rester
+sûrs jusque sur des coordonnées `i32::MIN` / `i32::MAX`.
+
+Ce durcissement reste local au framebuffer : il ne justifie ni bibliothèque de
+clipping générique ni nouvelle couche Geometry2D.
+
 Le framebuffer est volontairement un renderer logiciel simple, pas une API de
 scène.
 
