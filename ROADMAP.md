@@ -167,11 +167,22 @@ cette frontière.
 - Pause et Arcade réutilisent la même politique minimale de navigation menu ;
 - aucune nouvelle couche de physique ou UI n'a été introduite.
 
-### C4 — Politique de timing 🚧
+### C4 — Politique de timing ✅
 
-Les jeux appliquent aujourd'hui des stratégies différentes face aux gros
-`delta_time`. Définir un contrat moteur cohérent contre les pauses pathologiques
-sans introduire un système de temps généraliste.
+`Frame::delta_time` représente maintenant du temps de simulation borné, pas une
+dette de temps murale :
+
+- le runtime plafonne un frame de simulation à 100 ms ;
+- les transitions focus/resume réinitialisent la référence temporelle ;
+- le temps brut reste utilisé pour le diagnostic du frame time et des FPS ;
+- Pong et Breakout consomment le contrat commun au lieu d'appliquer leur propre
+  clamp ;
+- leurs substeps restent une stratégie de collision, pas une politique de
+  timing.
+
+Une suspension navigateur ou un stall long ne peut donc plus réinjecter plusieurs
+secondes de simulation d'un coup. Aucun `TimeSystem` ni paramétrage générique n'a
+été ajouté.
 
 ### C5 — Ownership de la calibration gamepad 🚧
 
@@ -201,7 +212,7 @@ Le moteur possède maintenant :
 - primitives de dessin, texte bitmap et `Rect` ;
 - clavier, souris, tactile et gamepad natif/Web ;
 - `ControlMap` et `VirtualPad` ;
-- timing par frame ;
+- timing de simulation borné par frame ;
 - viewport et mapping surface -> framebuffer ;
 - stockage local natif/Web ;
 - audio one-shot natif/Web ;
