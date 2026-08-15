@@ -96,6 +96,7 @@ struct ArcadeApp {
     return_controls: ControlMap,
     return_pad: VirtualPad,
     active_game: Option<Box<dyn Game>>,
+    waiting_for_launch_release: bool,
 }
 
 impl Default for ArcadeApp {
@@ -117,6 +118,7 @@ impl ArcadeApp {
             return_controls: return_controls(),
             return_pad: VirtualPad::new([VirtualButton::new(RETURN_TO_CATALOG, RETURN_BUTTON)]),
             active_game: None,
+            waiting_for_launch_release: false,
         }
     }
 
@@ -135,7 +137,7 @@ impl ArcadeApp {
             && let Some(index) = self.catalog_menu.selected()
         {
             self.launch(index);
-            frame.framebuffer.clear(BG);
+            self.render_catalog(frame.framebuffer);
             return GameResult::Continue;
         }
 
@@ -144,6 +146,18 @@ impl ArcadeApp {
     }
 
     fn update_active_game(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        if self.waiting_for_launch_release {
+            self.catalog_pad
+                .update(frame.input, &mut self.catalog_controls);
+            self.catalog_controls.update(frame.input);
+            if self.catalog_controls.action(CATALOG_SELECT).held() {
+                self.render_catalog(frame.framebuffer);
+                return GameResult::Continue;
+            }
+            self.waiting_for_launch_release = false;
+            self.catalog_pad.reset(&mut self.catalog_controls);
+        }
+
         self.return_pad
             .update(frame.input, &mut self.return_controls);
         self.return_controls.update(frame.input);
@@ -179,15 +193,16 @@ impl ArcadeApp {
             return;
         };
 
-        self.catalog_pad.reset(&mut self.catalog_controls);
         self.return_pad.reset(&mut self.return_controls);
         self.active_game = Some(game);
+        self.waiting_for_launch_release = true;
     }
 
     fn return_to_catalog(&mut self) {
         self.return_pad.reset(&mut self.return_controls);
         self.catalog_pad.reset(&mut self.catalog_controls);
         self.active_game = None;
+        self.waiting_for_launch_release = false;
     }
 
     fn render_catalog(&self, framebuffer: &mut gotoo_pixel_engine::Framebuffer) {
@@ -378,11 +393,14 @@ mod tests {
     fn launch_and_return_switch_between_catalog_and_game() {
         let mut arcade = ArcadeApp::new();
         assert!(arcade.active_game.is_none());
+        assert!(!arcade.waiting_for_launch_release);
 
         arcade.launch(0);
         assert!(arcade.active_game.is_some());
+        assert!(arcade.waiting_for_launch_release);
 
         arcade.return_to_catalog();
         assert!(arcade.active_game.is_none());
+        assert!(!arcade.waiting_for_launch_release);
     }
 }
