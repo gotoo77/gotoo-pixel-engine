@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[path = "pong/game.rs"]
 mod game;
 
