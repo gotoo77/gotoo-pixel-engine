@@ -3,20 +3,39 @@
 mod game;
 
 use game::{EnhancedSpaceInvadersGame, FRAMEBUFFER_HEIGHT, TOUCH_FRAMEBUFFER_WIDTH};
-use gotoo_pixel_engine::{EngineConfig, run};
+use gotoo_pixel_engine::{
+    EngineConfig, Rect, Size, run,
+    ui::{PauseConfig, PauseGame},
+};
 use wasm_bindgen::prelude::*;
+
+const PAUSE_BUTTON: Rect = Rect {
+    x: 270,
+    y: 4,
+    width: 92,
+    height: 24,
+};
 
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
+    let size = Size {
+        width: TOUCH_FRAMEBUFFER_WIDTH,
+        height: FRAMEBUFFER_HEIGHT,
+    };
+    let game = PauseGame::new(
+        EnhancedSpaceInvadersGame::new_touch(),
+        PauseConfig::new(size).with_touch_button(PAUSE_BUTTON),
+    );
+
     run(
         EngineConfig {
             title: "Space Invaders".into(),
-            framebuffer_width: TOUCH_FRAMEBUFFER_WIDTH,
-            framebuffer_height: FRAMEBUFFER_HEIGHT,
-            window_width: TOUCH_FRAMEBUFFER_WIDTH * 3,
-            window_height: FRAMEBUFFER_HEIGHT * 3,
+            framebuffer_width: size.width,
+            framebuffer_height: size.height,
+            window_width: size.width * 3,
+            window_height: size.height * 3,
         },
-        EnhancedSpaceInvadersGame::new_touch(),
+        game,
     )
     .map_err(|err| JsValue::from_str(&err.to_string()))
 }
