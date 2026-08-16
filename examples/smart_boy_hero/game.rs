@@ -48,9 +48,11 @@ const TRAP_ARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_arm");
 const TRAP_DISARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_disarm");
 const TRAP_TRIGGER_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_trigger");
 const SHOUT_SOUND: SoundId = SoundId::new("smart_boy_hero.shout");
+const ROCK_IMPACT_SOUND: SoundId = SoundId::new("smart_boy_hero.rock_impact");
 const ENEMY_KILL_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_kill");
 const ENEMY_ALERT_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_alert");
 const BOULDER_RELEASE_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_release");
+const BOULDER_ROLL_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_roll");
 const BOULDER_CRUSH_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_crush");
 const BOULDER_STOP_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_stop");
 const DEATH_SOUND: SoundId = SoundId::new("smart_boy_hero.death");
@@ -616,6 +618,7 @@ fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
             WorldEvent::BoulderCrushedEnemy { .. } => Some(BOULDER_CRUSH_SOUND),
             WorldEvent::BoulderStopped { .. } => Some(BOULDER_STOP_SOUND),
             WorldEvent::Shouted { .. } => Some(SHOUT_SOUND),
+            WorldEvent::RockImpacted { .. } => Some(ROCK_IMPACT_SOUND),
             WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
             WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
             WorldEvent::HeroDied => Some(DEATH_SOUND),
@@ -639,7 +642,7 @@ struct SfxBinding {
     sound: SoundId,
 }
 
-const REQUIRED_SFX: [SfxBinding; 18] = [
+const REQUIRED_SFX: [SfxBinding; 20] = [
     SfxBinding {
         key: "combat",
         sound: COMBAT_SOUND,
@@ -685,6 +688,10 @@ const REQUIRED_SFX: [SfxBinding; 18] = [
         sound: SHOUT_SOUND,
     },
     SfxBinding {
+        key: "rock_impact",
+        sound: ROCK_IMPACT_SOUND,
+    },
+    SfxBinding {
         key: "enemy_kill",
         sound: ENEMY_KILL_SOUND,
     },
@@ -695,6 +702,10 @@ const REQUIRED_SFX: [SfxBinding; 18] = [
     SfxBinding {
         key: "boulder_release",
         sound: BOULDER_RELEASE_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_roll",
+        sound: BOULDER_ROLL_SOUND,
     },
     SfxBinding {
         key: "boulder_crush",

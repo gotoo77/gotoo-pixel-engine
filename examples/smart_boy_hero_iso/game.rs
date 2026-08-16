@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use gotoo_pixel_engine::{
     Audio, AudioError, Frame, Framebuffer, Game, GameResult, GamepadButton, Image, ImageRegion,
-    Key, Pixel, SoundBank, SoundId,
+    Key, Pixel, PlaybackId, SoundBank, SoundId,
 };
 use include_dir::{Dir, include_dir};
 
@@ -11,7 +11,7 @@ use include_dir::{Dir, include_dir};
 mod world;
 use world::{
     BoulderState, Cell, Direction, EnemyIntent, GRID_HEIGHT, GRID_WIDTH, Phase, PlayerAction,
-    SmartBoyWorld, WorldEvent,
+    ROCK_HEARING_RADIUS, SmartBoyWorld, WorldEvent,
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 520;
@@ -19,6 +19,7 @@ pub const FRAMEBUFFER_HEIGHT: u32 = 320;
 
 const FIXED_STEP: Duration = Duration::from_millis(420);
 const FEEDBACK_DURATION: Duration = Duration::from_millis(620);
+const ROCK_FLIGHT_DURATION: Duration = Duration::from_millis(280);
 const TILE_WIDTH: i32 = 32;
 const TILE_HEIGHT: i32 = 16;
 const SPRITE_SIZE: u32 = 32;
@@ -39,9 +40,11 @@ const TRAP_ARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_arm");
 const TRAP_DISARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_disarm");
 const TRAP_TRIGGER_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_trigger");
 const SHOUT_SOUND: SoundId = SoundId::new("smart_boy_hero.shout");
+const ROCK_IMPACT_SOUND: SoundId = SoundId::new("smart_boy_hero.rock_impact");
 const ENEMY_KILL_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_kill");
 const ENEMY_ALERT_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_alert");
 const BOULDER_RELEASE_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_release");
+const BOULDER_ROLL_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_roll");
 const BOULDER_CRUSH_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_crush");
 const BOULDER_STOP_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_stop");
 const DEATH_SOUND: SoundId = SoundId::new("smart_boy_hero.death");
@@ -54,6 +57,9 @@ const MUTED: Pixel = Pixel::rgb(132, 144, 152);
 const GOLD: Pixel = Pixel::rgb(255, 218, 76);
 const POWER: Pixel = Pixel::rgb(255, 246, 104);
 const SHOUT_COLOR: Pixel = Pixel::rgb(217, 91, 255);
+const ROCK_COLOR: Pixel = Pixel::rgb(190, 222, 214);
+const ROCK_INVALID: Pixel = Pixel::rgb(255, 82, 82);
+const ROCK_VALID: Pixel = Pixel::rgb(91, 214, 255);
 const DANGER: Pixel = Pixel::rgb(255, 56, 68);
 const SMART: Pixel = Pixel::rgb(86, 240, 185);
 
@@ -97,6 +103,18 @@ struct TimedCell {
     elapsed: Duration,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TargetingState {
+    target: Cell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RockFlight {
+    from: Cell,
+    to: Cell,
+    elapsed: Duration,
+}
+
 pub struct SmartBoyHeroIsoGame {
     world: SmartBoyWorld,
     sprites: Image,
@@ -105,10 +123,14 @@ pub struct SmartBoyHeroIsoGame {
     hero_motion: Option<Motion>,
     enemy_motions: Vec<Option<Motion>>,
     boulder_motions: Vec<Option<Motion>>,
+    targeting: Option<TargetingState>,
+    rock_flight: Option<RockFlight>,
+    rock_impact: Option<TimedCell>,
     shout_pulse: Option<TimedCell>,
     kill_bursts: Vec<TimedCell>,
     smart_flash: Option<(usize, Duration)>,
     screen_shake: Duration,
+    boulder_roll_loop: Option<PlaybackId>,
     feedback_text: Option<(&'static str, Duration)>,
 }
 
@@ -125,10 +147,14 @@ impl SmartBoyHeroIsoGame {
             hero_motion: None,
             enemy_motions: Vec::new(),
             boulder_motions: Vec::new(),
+            targeting: None,
+            rock_flight: None,
+            rock_impact: None,
             shout_pulse: None,
             kill_bursts: Vec::new(),
             smart_flash: None,
             screen_shake: Duration::ZERO,
+            boulder_roll_loop: None,
             feedback_text: None,
         }
     }
@@ -139,6 +165,9 @@ impl SmartBoyHeroIsoGame {
         self.hero_motion = None;
         self.enemy_motions.clear();
         self.boulder_motions.clear();
+        self.targeting = None;
+        self.rock_flight = None;
+        self.rock_impact = None;
         self.shout_pulse = None;
         self.kill_bursts.clear();
         self.smart_flash = None;
@@ -146,28 +175,40 @@ impl SmartBoyHeroIsoGame {
         self.feedback_text = None;
     }
 
+    fn restart_with_audio(&mut self, audio: &mut dyn Audio) {
+        self.stop_boulder_roll(audio);
+        self.restart();
+    }
+
     fn update_running(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        if pressed(frame, Key::Escape, GamepadButton::Start) {
-            return GameResult::Exit;
-        }
         if pressed(frame, Key::R, GamepadButton::West) {
-            self.restart();
+            self.restart_with_audio(frame.audio);
             return GameResult::Continue;
         }
 
-        let mut events = Vec::new();
-        if let Some(action) = requested_action(frame) {
-            let hero_before = self.world.hero();
-            let report = self.world.apply(action);
-            if self.world.hero() != hero_before {
-                self.hero_motion = Some(Motion {
-                    from: hero_before,
-                    to: self.world.hero(),
-                    elapsed: Duration::ZERO,
-                });
-            }
-            events.extend(report.events);
+        if self.targeting.is_some() {
+            self.update_targeting(frame);
+            self.advance_transients(frame.delta_time);
+            return GameResult::Continue;
         }
+
+        if pressed(frame, Key::Escape, GamepadButton::Start) {
+            self.stop_boulder_roll(frame.audio);
+            return GameResult::Exit;
+        }
+
+        let mut events = Vec::new();
+        if let Some(target) = touch_rock_target(frame, &self.world) {
+            self.start_rock_flight(target);
+        } else if pressed(frame, Key::F, GamepadButton::RightShoulder) {
+            self.start_targeting();
+        } else if self.rock_flight.is_none()
+            && let Some(action) = requested_action(frame)
+        {
+            events.extend(self.capture_player_action(action));
+        }
+
+        events.extend(self.update_rock_flight(frame.delta_time));
 
         self.simulation_accumulator += frame.delta_time;
         while self.simulation_accumulator >= FIXED_STEP && self.world.phase() == Phase::Running {
@@ -191,10 +232,123 @@ impl SmartBoyHeroIsoGame {
         }
 
         self.capture_feedback(&events);
+        self.update_boulder_roll_audio(frame.audio, &events);
         play_sounds(&mut self.sounds, frame.audio, &events);
         self.advance_transients(frame.delta_time);
 
         GameResult::Continue
+    }
+
+    fn start_targeting(&mut self) {
+        self.targeting = Some(TargetingState {
+            target: initial_rock_target(&self.world),
+        });
+        self.feedback_text = Some(("ROCK?", Duration::ZERO));
+    }
+
+    fn update_targeting(&mut self, frame: &Frame<'_>) {
+        if pressed(frame, Key::Escape, GamepadButton::East) {
+            self.targeting = None;
+            self.feedback_text = Some(("CANCEL", Duration::ZERO));
+            return;
+        }
+
+        if let Some(cell) = touch_cell(frame) {
+            if self.world.can_throw_rock_to(cell) {
+                self.targeting = None;
+                self.start_rock_flight(cell);
+                return;
+            }
+            if let Some(targeting) = &mut self.targeting {
+                targeting.target = cell;
+            }
+        }
+
+        if let Some(direction) = target_direction(frame)
+            && let Some(targeting) = &mut self.targeting
+        {
+            let next = targeting.target.step(direction);
+            if next.is_inside() {
+                targeting.target = next;
+            }
+        }
+
+        if pressed(frame, Key::Space, GamepadButton::South)
+            && let Some(targeting) = self.targeting
+        {
+            if self.world.can_throw_rock_to(targeting.target) {
+                self.targeting = None;
+                self.start_rock_flight(targeting.target);
+            } else {
+                self.feedback_text = Some(("NOPE", Duration::ZERO));
+            }
+        }
+    }
+
+    fn start_rock_flight(&mut self, target: Cell) {
+        self.rock_flight = Some(RockFlight {
+            from: self.world.hero(),
+            to: target,
+            elapsed: Duration::ZERO,
+        });
+        self.feedback_text = Some(("THROW", Duration::ZERO));
+    }
+
+    fn update_rock_flight(&mut self, delta: Duration) -> Vec<WorldEvent> {
+        let Some(mut flight) = self.rock_flight else {
+            return Vec::new();
+        };
+        flight.elapsed += delta;
+        if flight.elapsed < ROCK_FLIGHT_DURATION {
+            self.rock_flight = Some(flight);
+            return Vec::new();
+        }
+
+        self.rock_flight = None;
+        let report = self.world.apply(PlayerAction::ThrowRock(flight.to));
+        report.events
+    }
+
+    fn update_boulder_roll_audio(&mut self, audio: &mut dyn Audio, events: &[WorldEvent]) {
+        for event in events {
+            match event {
+                WorldEvent::BoulderReleased { .. } => self.start_boulder_roll(audio),
+                WorldEvent::BoulderStopped { .. } => self.stop_boulder_roll(audio),
+                _ => {}
+            }
+        }
+    }
+
+    fn start_boulder_roll(&mut self, audio: &mut dyn Audio) {
+        if self.boulder_roll_loop.is_some() {
+            return;
+        }
+        match self.sounds.start_loop(audio, BOULDER_ROLL_SOUND) {
+            Ok(playback) => self.boulder_roll_loop = Some(playback),
+            Err(error) => eprintln!("Smart Boy Hero ISO audio error: {error}"),
+        }
+    }
+
+    fn stop_boulder_roll(&mut self, audio: &mut dyn Audio) {
+        let Some(playback) = self.boulder_roll_loop.take() else {
+            return;
+        };
+        if let Err(error) = self.sounds.stop_loop(audio, playback) {
+            eprintln!("Smart Boy Hero ISO audio error: {error}");
+        }
+    }
+
+    fn capture_player_action(&mut self, action: PlayerAction) -> Vec<WorldEvent> {
+        let hero_before = self.world.hero();
+        let report = self.world.apply(action);
+        if self.world.hero() != hero_before {
+            self.hero_motion = Some(Motion {
+                from: hero_before,
+                to: self.world.hero(),
+                elapsed: Duration::ZERO,
+            });
+        }
+        report.events
     }
 
     fn capture_enemy_motions(&mut self, previous_enemies: &[Cell]) {
@@ -244,6 +398,14 @@ impl SmartBoyHeroIsoGame {
                     });
                     self.feedback_text =
                         Some((if heard == 0 { "SHOUT" } else { "HEARD!" }, Duration::ZERO));
+                }
+                WorldEvent::RockImpacted { cell, heard } => {
+                    self.rock_impact = Some(TimedCell {
+                        cell,
+                        elapsed: Duration::ZERO,
+                    });
+                    self.feedback_text =
+                        Some((if heard == 0 { "CLACK" } else { "LURED!" }, Duration::ZERO));
                 }
                 WorldEvent::EnemyKilled { cell, .. } => self.kill_bursts.push(TimedCell {
                     cell,
@@ -311,6 +473,12 @@ impl SmartBoyHeroIsoGame {
             pulse.elapsed += delta;
             if pulse.elapsed >= FEEDBACK_DURATION {
                 self.shout_pulse = None;
+            }
+        }
+        if let Some(impact) = &mut self.rock_impact {
+            impact.elapsed += delta;
+            if impact.elapsed >= FEEDBACK_DURATION {
+                self.rock_impact = None;
             }
         }
         for burst in &mut self.kill_bursts {
@@ -408,6 +576,62 @@ fn requested_action(frame: &Frame<'_>) -> Option<PlayerAction> {
     }
 }
 
+fn target_direction(frame: &Frame<'_>) -> Option<Direction> {
+    if pressed(frame, Key::Up, GamepadButton::DPadUp) || frame.input.key(Key::W).pressed() {
+        Some(Direction::Up)
+    } else if pressed(frame, Key::Down, GamepadButton::DPadDown)
+        || frame.input.key(Key::S).pressed()
+    {
+        Some(Direction::Down)
+    } else if pressed(frame, Key::Left, GamepadButton::DPadLeft)
+        || frame.input.key(Key::A).pressed()
+    {
+        Some(Direction::Left)
+    } else if pressed(frame, Key::Right, GamepadButton::DPadRight)
+        || frame.input.key(Key::D).pressed()
+    {
+        Some(Direction::Right)
+    } else {
+        None
+    }
+}
+
+fn initial_rock_target(world: &SmartBoyWorld) -> Cell {
+    [
+        Direction::Right,
+        Direction::Up,
+        Direction::Down,
+        Direction::Left,
+    ]
+    .into_iter()
+    .map(|direction| world.hero().step(direction))
+    .find(|&cell| world.can_throw_rock_to(cell))
+    .unwrap_or(world.hero())
+}
+
+fn touch_rock_target(frame: &Frame<'_>, world: &SmartBoyWorld) -> Option<Cell> {
+    touch_cell(frame).filter(|&cell| world.can_throw_rock_to(cell))
+}
+
+fn touch_cell(frame: &Frame<'_>) -> Option<Cell> {
+    frame
+        .input
+        .touches()
+        .iter()
+        .filter(|touch| matches!(touch.phase, gotoo_pixel_engine::TouchPhase::Started))
+        .find_map(|touch| touch.position.and_then(cell_from_screen))
+}
+
+fn cell_from_screen((x, y): (i32, i32)) -> Option<Cell> {
+    let iso_x = (x - ORIGIN_X) as f32 / (TILE_WIDTH as f32 / 2.0);
+    let iso_y = (y - ORIGIN_Y) as f32 / (TILE_HEIGHT as f32 / 2.0);
+    let cell = Cell::new(
+        ((iso_x + iso_y) / 2.0).round() as i32,
+        ((iso_y - iso_x) / 2.0).round() as i32,
+    );
+    cell.is_inside().then_some(cell)
+}
+
 fn pressed(frame: &Frame<'_>, key: Key, button: GamepadButton) -> bool {
     frame.input.key(key).pressed() || frame.input.gamepad_button_any(button).pressed()
 }
@@ -432,8 +656,8 @@ fn draw_hud(
         TEXT,
     );
     framebuffer.draw_text(344, 8, "MOVE WASD/ARROWS", MUTED);
-    framebuffer.draw_text(344, 20, "SHOUT E  WAIT SPACE", MUTED);
-    framebuffer.draw_text(344, 32, "RETRY R  EXIT ESC", MUTED);
+    framebuffer.draw_text(344, 20, "SHOUT E  ROCK F", MUTED);
+    framebuffer.draw_text(344, 32, "WAIT SPACE  R/ESC", MUTED);
 
     if let Some((count, _)) = smart_flash {
         framebuffer.draw_text_scaled(192, 52, &format!("SMART x{count}"), 3, SMART);
@@ -625,12 +849,35 @@ fn draw_vfx(
     game: &SmartBoyHeroIsoGame,
     shake: (i32, i32),
 ) {
+    if let Some(targeting) = game.targeting {
+        draw_targeting_overlay(framebuffer, &game.world, targeting, shake);
+    }
+
     if let Some(pulse) = game.shout_pulse {
         let point = project_cell(pulse.cell, shake);
         let t = pulse.elapsed.as_secs_f32() / FEEDBACK_DURATION.as_secs_f32();
         let radius = (14.0 + t * 46.0) as u32;
         framebuffer.draw_circle(point.x as i32, point.y as i32 - 18, radius, SHOUT_COLOR);
         framebuffer.draw_circle(point.x as i32, point.y as i32 - 18, radius / 2, SHOUT_COLOR);
+    }
+
+    if let Some(flight) = game.rock_flight {
+        let t = (flight.elapsed.as_secs_f32() / ROCK_FLIGHT_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+        let from = project_cell(flight.from, shake);
+        let to = project_cell(flight.to, shake);
+        let arc = (1.0 - (2.0 * t - 1.0).abs()) * 28.0;
+        let x = from.x + (to.x - from.x) * t;
+        let y = from.y + (to.y - from.y) * t - arc;
+        framebuffer.fill_circle(x as i32, y as i32 - 16, 4, ROCK_COLOR);
+        framebuffer.draw_circle(x as i32, y as i32 - 16, 6, ROCK_COLOR);
+    }
+
+    if let Some(impact) = game.rock_impact {
+        let point = project_cell(impact.cell, shake);
+        let t = impact.elapsed.as_secs_f32() / FEEDBACK_DURATION.as_secs_f32();
+        let radius = (8.0 + t * 34.0) as u32;
+        framebuffer.draw_circle(point.x as i32, point.y as i32 - 12, radius, ROCK_COLOR);
+        framebuffer.draw_circle(point.x as i32, point.y as i32 - 12, radius / 2, ROCK_VALID);
     }
 
     for burst in &game.kill_bursts {
@@ -660,6 +907,63 @@ fn draw_vfx(
             DANGER,
         );
     }
+}
+
+fn draw_targeting_overlay(
+    framebuffer: &mut Framebuffer,
+    world: &SmartBoyWorld,
+    targeting: TargetingState,
+    shake: (i32, i32),
+) {
+    for y in 0..GRID_HEIGHT {
+        for x in 0..GRID_WIDTH {
+            let cell = Cell::new(x, y);
+            if world.can_throw_rock_to(cell) {
+                draw_cell_diamond(framebuffer, cell, shake, MUTED);
+            }
+        }
+    }
+
+    for y in 0..GRID_HEIGHT {
+        for x in 0..GRID_WIDTH {
+            let cell = Cell::new(x, y);
+            if manhattan(cell, targeting.target) <= ROCK_HEARING_RADIUS {
+                draw_cell_diamond(framebuffer, cell, shake, ROCK_COLOR);
+            }
+        }
+    }
+
+    for enemy in world.enemies() {
+        if manhattan(enemy.cell, targeting.target) <= ROCK_HEARING_RADIUS {
+            let point = project_cell(enemy.cell, shake);
+            framebuffer.draw_circle(point.x as i32, point.y as i32 - 22, 15, ROCK_VALID);
+        }
+    }
+
+    draw_cell_diamond(
+        framebuffer,
+        targeting.target,
+        shake,
+        if world.can_throw_rock_to(targeting.target) {
+            ROCK_VALID
+        } else {
+            ROCK_INVALID
+        },
+    );
+}
+
+fn draw_cell_diamond(framebuffer: &mut Framebuffer, cell: Cell, shake: (i32, i32), pixel: Pixel) {
+    let point = project_cell(cell, shake);
+    let x = point.x as i32;
+    let y = point.y as i32;
+    framebuffer.draw_line(x, y - TILE_HEIGHT / 2, x + TILE_WIDTH / 2, y, pixel);
+    framebuffer.draw_line(x + TILE_WIDTH / 2, y, x, y + TILE_HEIGHT / 2, pixel);
+    framebuffer.draw_line(x, y + TILE_HEIGHT / 2, x - TILE_WIDTH / 2, y, pixel);
+    framebuffer.draw_line(x - TILE_WIDTH / 2, y, x, y - TILE_HEIGHT / 2, pixel);
+}
+
+fn manhattan(a: Cell, b: Cell) -> i32 {
+    (a.x - b.x).abs() + (a.y - b.y).abs()
 }
 
 fn draw_sprite_at_cell(
@@ -769,6 +1073,7 @@ fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
             WorldEvent::BoulderCrushedEnemy { .. } => Some(BOULDER_CRUSH_SOUND),
             WorldEvent::BoulderStopped { .. } => Some(BOULDER_STOP_SOUND),
             WorldEvent::Shouted { .. } => Some(SHOUT_SOUND),
+            WorldEvent::RockImpacted { .. } => Some(ROCK_IMPACT_SOUND),
             WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
             WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
             WorldEvent::HeroDied => Some(DEATH_SOUND),
@@ -784,7 +1089,7 @@ struct SfxBinding {
     sound: SoundId,
 }
 
-const REQUIRED_SFX: [SfxBinding; 16] = [
+const REQUIRED_SFX: [SfxBinding; 18] = [
     SfxBinding {
         key: "combat",
         sound: COMBAT_SOUND,
@@ -822,6 +1127,10 @@ const REQUIRED_SFX: [SfxBinding; 16] = [
         sound: SHOUT_SOUND,
     },
     SfxBinding {
+        key: "rock_impact",
+        sound: ROCK_IMPACT_SOUND,
+    },
+    SfxBinding {
         key: "enemy_kill",
         sound: ENEMY_KILL_SOUND,
     },
@@ -832,6 +1141,10 @@ const REQUIRED_SFX: [SfxBinding; 16] = [
     SfxBinding {
         key: "boulder_release",
         sound: BOULDER_RELEASE_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_roll",
+        sound: BOULDER_ROLL_SOUND,
     },
     SfxBinding {
         key: "boulder_crush",
@@ -896,6 +1209,7 @@ fn smart_boy_sound_bank() -> Result<SoundBank, AudioError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gotoo_pixel_engine::NoopAudio;
 
     #[test]
     fn iso_projection_maps_grid_axes_to_diagonals() {
@@ -948,11 +1262,11 @@ mod tests {
     }
 
     #[test]
-    fn iso_slice_contains_five_walkers_boulder_and_core_props() {
+    fn iso_slice_contains_sandbox_walkers_boulder_and_core_props() {
         let world = SmartBoyWorld::iso_slice(INITIAL_SEED);
 
-        assert_eq!(world.enemies().len(), 5);
-        assert_eq!(world.doors().len(), 1);
+        assert_eq!(world.enemies().len(), 6);
+        assert_eq!(world.doors().len(), 0);
         assert_eq!(world.levers().len(), 1);
         assert_eq!(world.traps().len(), 3);
         assert_eq!(world.boulders().len(), 1);
@@ -982,6 +1296,10 @@ mod tests {
                 power: 9,
             },
             WorldEvent::WalkerSpottedHero,
+            WorldEvent::RockImpacted {
+                cell: Cell::new(6, 4),
+                heard: 3,
+            },
             WorldEvent::BoulderReleased {
                 cell: Cell::new(2, 4),
                 direction: Direction::Right,
@@ -1001,10 +1319,67 @@ mod tests {
             vec![
                 ENEMY_KILL_SOUND,
                 ENEMY_ALERT_SOUND,
+                ROCK_IMPACT_SOUND,
                 BOULDER_RELEASE_SOUND,
                 BOULDER_CRUSH_SOUND,
                 BOULDER_STOP_SOUND
             ]
         );
+        assert!(!sounds.contains(&BOULDER_ROLL_SOUND));
+    }
+
+    #[test]
+    fn rock_flight_emits_noise_only_after_landing() {
+        let mut game = SmartBoyHeroIsoGame::new();
+        let target = Cell::new(6, 4);
+
+        game.start_rock_flight(target);
+        let early = game.update_rock_flight(ROCK_FLIGHT_DURATION / 2);
+        assert!(early.is_empty());
+        assert!(game.rock_flight.is_some());
+
+        let landed = game.update_rock_flight(ROCK_FLIGHT_DURATION / 2);
+        assert_eq!(
+            landed
+                .iter()
+                .find(|event| matches!(event, WorldEvent::RockImpacted { .. })),
+            Some(&WorldEvent::RockImpacted {
+                cell: target,
+                heard: 3,
+            })
+        );
+        assert!(game.rock_flight.is_none());
+    }
+
+    #[test]
+    fn boulder_roll_loop_starts_once_and_stops() {
+        let mut game = SmartBoyHeroIsoGame::new();
+        let mut audio = NoopAudio::default();
+
+        game.start_boulder_roll(&mut audio);
+        let first = game.boulder_roll_loop;
+        assert!(first.is_some());
+
+        game.start_boulder_roll(&mut audio);
+        assert_eq!(game.boulder_roll_loop, first);
+
+        game.stop_boulder_roll(&mut audio);
+        assert!(game.boulder_roll_loop.is_none());
+    }
+
+    #[test]
+    fn restart_stops_active_boulder_roll_loop() {
+        let mut game = SmartBoyHeroIsoGame::new();
+        let mut audio = NoopAudio::default();
+
+        game.start_boulder_roll(&mut audio);
+        assert!(game.boulder_roll_loop.is_some());
+
+        game.restart_with_audio(&mut audio);
+
+        assert!(game.boulder_roll_loop.is_none());
+        assert!(game.targeting.is_none());
+        assert!(game.rock_flight.is_none());
+        assert!(game.rock_impact.is_none());
     }
 }

@@ -14,6 +14,7 @@ pub enum Key {
     A,
     D,
     E,
+    F,
     R,
     S,
     W,
@@ -360,7 +361,7 @@ impl Default for Input {
     }
 }
 
-const KEY_COUNT: usize = 12;
+const KEY_COUNT: usize = 13;
 const MOUSE_BUTTON_COUNT: usize = 3;
 const GAMEPAD_BUTTON_COUNT: usize = 16;
 
@@ -375,9 +376,10 @@ fn key_index(key: Key) -> usize {
         Key::A => 6,
         Key::D => 7,
         Key::E => 8,
-        Key::R => 9,
-        Key::S => 10,
-        Key::W => 11,
+        Key::F => 9,
+        Key::R => 10,
+        Key::S => 11,
+        Key::W => 12,
     }
 }
 

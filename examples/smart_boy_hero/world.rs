@@ -2,6 +2,8 @@ pub(super) const GRID_WIDTH: i32 = 12;
 pub(super) const GRID_HEIGHT: i32 = 8;
 pub(super) const LEVEL_COUNT: usize = 19;
 const SHOUT_RADIUS: i32 = 5;
+pub(super) const ROCK_THROW_RANGE: i32 = 6;
+pub(super) const ROCK_HEARING_RADIUS: i32 = 3;
 const BOULDER_STEPS_PER_TICK: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +98,7 @@ impl SmartBoyWorld {
                 self.shout(&mut report);
                 true
             }
+            PlayerAction::ThrowRock(target) => self.throw_rock(target, &mut report),
             PlayerAction::Move(direction) => self.try_move_hero(direction, &mut report),
         };
 
@@ -210,6 +213,14 @@ impl SmartBoyWorld {
     #[allow(dead_code)]
     pub(super) fn boulders(&self) -> &[Boulder] {
         &self.boulders
+    }
+
+    pub(super) fn can_throw_rock_to(&self, target: Cell) -> bool {
+        target.is_inside()
+            && target != self.hero
+            && self.hero.manhattan_distance(target) <= ROCK_THROW_RANGE
+            && !self.wall_at(target)
+            && self.closed_door_at(target).is_none()
     }
 
     fn try_move_hero(&mut self, direction: Direction, report: &mut TurnReport) -> bool {
@@ -334,12 +345,34 @@ impl SmartBoyWorld {
 
     fn shout(&mut self, report: &mut TurnReport) {
         let target = self.hero;
+        let heard = self.emit_noise(target, SHOUT_RADIUS);
+        report.events.push(WorldEvent::Shouted {
+            cell: target,
+            heard,
+        });
+    }
+
+    fn throw_rock(&mut self, target: Cell, report: &mut TurnReport) -> bool {
+        if !self.can_throw_rock_to(target) {
+            report.events.push(WorldEvent::Blocked);
+            return false;
+        }
+
+        let heard = self.emit_noise(target, ROCK_HEARING_RADIUS);
+        report.events.push(WorldEvent::RockImpacted {
+            cell: target,
+            heard,
+        });
+        true
+    }
+
+    fn emit_noise(&mut self, target: Cell, radius: i32) -> usize {
         let mut heard = 0;
         for enemy in &mut self.enemies {
             let EnemyKind::Walker { direction } = enemy.kind else {
                 continue;
             };
-            if enemy.cell.manhattan_distance(target) > SHOUT_RADIUS {
+            if enemy.cell.manhattan_distance(target) > radius {
                 continue;
             }
             enemy.intent = EnemyIntent::Investigate {
@@ -348,10 +381,7 @@ impl SmartBoyWorld {
             };
             heard += 1;
         }
-        report.events.push(WorldEvent::Shouted {
-            cell: target,
-            heard,
-        });
+        heard
     }
 
     fn walker_direction_for_turn(
@@ -774,6 +804,10 @@ pub(super) enum WorldEvent {
         cell: Cell,
         heard: usize,
     },
+    RockImpacted {
+        cell: Cell,
+        heard: usize,
+    },
     WalkerLostTarget,
     WalkerMoved,
     WalkerResumedPatrol,
@@ -790,6 +824,8 @@ pub(super) enum PlayerAction {
     Move(Direction),
     Wait,
     Shout,
+    #[allow(dead_code)]
+    ThrowRock(Cell),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -838,7 +874,7 @@ impl Cell {
         Self { x, y }
     }
 
-    fn step(self, direction: Direction) -> Self {
+    pub(super) fn step(self, direction: Direction) -> Self {
         let (dx, dy) = direction.offset();
         Self {
             x: self.x + dx,
@@ -846,7 +882,7 @@ impl Cell {
         }
     }
 
-    fn is_inside(self) -> bool {
+    pub(super) fn is_inside(self) -> bool {
         self.x >= 0 && self.y >= 0 && self.x < GRID_WIDTH && self.y < GRID_HEIGHT
     }
 
@@ -1417,47 +1453,31 @@ fn level_smart_way() -> Level {
 
 #[allow(dead_code)]
 fn level_iso_slice() -> Level {
-    let mut walls = horizontal_wall(1, &[2, 3, 4, 5, 6, 7, 8, 9]);
-    walls.extend(horizontal_wall(6, &[2, 3, 4, 5, 6, 7, 8, 9]));
-    walls.extend(cells(&[
-        (1, 2),
-        (1, 3),
-        (1, 4),
-        (1, 5),
-        (10, 2),
-        (10, 3),
-        (10, 5),
-        (4, 2),
-        (4, 5),
-        (8, 2),
-    ]));
+    let mut walls = horizontal_wall(0, &[]);
+    walls.extend(horizontal_wall(7, &[]));
+    walls.extend(vertical_wall(0, &[]));
+    walls.extend(vertical_wall(11, &[]));
+    walls.extend(cells(&[(4, 2), (4, 3), (6, 1), (9, 1), (3, 6), (6, 6)]));
 
     Level {
         timing: LevelTiming::SemiContinuous,
-        name: "ISO SLICE",
-        hero_start: Cell::new(3, 3),
-        hero_power: 24,
-        exit: Cell::new(10, 4),
+        name: "ORCHESTRATE",
+        hero_start: Cell::new(2, 3),
+        hero_power: 42,
+        exit: Cell::new(10, 5),
         walls,
-        doors: vec![Door {
-            cell: Cell::new(10, 4),
-            group: 1,
-            initially_open: true,
-        }],
-        levers: vec![pressure_plate(3, 5, 1)],
-        traps: vec![
-            group_trap(6, 3, 1),
-            group_trap(7, 4, 1),
-            group_trap(6, 5, 1),
-        ],
-        boulders: vec![boulder(2, 4, Direction::Right, 1)],
+        doors: vec![],
+        levers: vec![pressure_plate(2, 5, 1)],
+        traps: vec![active_trap(5, 2), group_trap(6, 3, 1), active_trap(8, 5)],
+        boulders: vec![boulder(1, 4, Direction::Right, 1)],
         bonuses: vec![],
         enemies: vec![
-            walker(7, 3, 9, Direction::Left),
-            walker(8, 4, 9, Direction::Left),
-            walker(7, 5, 9, Direction::Left),
-            walker(10, 4, 9, Direction::Up),
-            walker(6, 5, 9, Direction::Right),
+            walker(5, 3, 9, Direction::Right),
+            walker(7, 2, 9, Direction::Down),
+            walker(8, 2, 9, Direction::Left),
+            walker(9, 3, 9, Direction::Left),
+            walker(7, 5, 9, Direction::Up),
+            walker(9, 5, 9, Direction::Left),
         ],
     }
 }
@@ -1787,6 +1807,10 @@ mod tests {
 
     fn shout() -> PlayerAction {
         PlayerAction::Shout
+    }
+
+    fn throw_rock(cell: Cell) -> PlayerAction {
+        PlayerAction::ThrowRock(cell)
     }
 
     #[test]
@@ -2131,16 +2155,16 @@ mod tests {
     }
 
     #[test]
-    fn iso_slice_can_produce_boulder_multi_kill_after_shout_setup() {
+    fn iso_slice_can_produce_boulder_multi_kill_after_rock_setup() {
         let mut world = SmartBoyWorld::iso_slice(7);
         let mut boulder_chain = 0;
 
+        world.apply(throw_rock(Cell::new(7, 4)));
+        for _ in 0..3 {
+            world.update_tick();
+        }
         world.apply(down());
-        world.apply(right());
-        world.apply(shout());
         world.update_tick();
-        world.update_tick();
-        world.apply(left());
         world.apply(down());
         for _ in 0..8 {
             let report = world.update_tick();
@@ -2366,6 +2390,148 @@ mod tests {
                 patrol_direction: Direction::Right,
             }
         );
+    }
+
+    #[test]
+    fn rock_target_inside_range_is_accepted() {
+        let world = world_from(test_level(10));
+
+        assert!(world.can_throw_rock_to(Cell::new(4, 4)));
+    }
+
+    #[test]
+    fn rock_target_outside_range_is_rejected() {
+        let world = world_from(test_level(10));
+
+        assert!(!world.can_throw_rock_to(Cell::new(8, 5)));
+    }
+
+    #[test]
+    fn throw_rock_outside_range_does_not_consume_turn() {
+        let mut world = world_from(test_level(10));
+
+        let report = world.apply(throw_rock(Cell::new(8, 5)));
+
+        assert!(!report.turn_consumed);
+        assert!(report.events.contains(&WorldEvent::Blocked));
+        assert_eq!(world.turn_count(), 0);
+    }
+
+    #[test]
+    fn throw_rock_noise_comes_from_target_not_hero() {
+        let mut level = test_level(10);
+        level.enemies.push(walker(7, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        let report = world.apply(throw_rock(Cell::new(4, 1)));
+
+        assert!(report.events.contains(&WorldEvent::RockImpacted {
+            cell: Cell::new(4, 1),
+            heard: 1,
+        }));
+        assert_eq!(
+            world.enemies()[0].intent,
+            EnemyIntent::Investigate {
+                target: Cell::new(4, 1),
+                patrol_direction: Direction::Right,
+            }
+        );
+    }
+
+    #[test]
+    fn throw_rock_walker_outside_hearing_radius_ignores_impact() {
+        let mut level = test_level(10);
+        level.enemies.push(walker(8, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        let report = world.apply(throw_rock(Cell::new(4, 1)));
+
+        assert_eq!(
+            report
+                .events
+                .iter()
+                .find(|event| matches!(event, WorldEvent::RockImpacted { .. })),
+            Some(&WorldEvent::RockImpacted {
+                cell: Cell::new(4, 1),
+                heard: 0,
+            })
+        );
+        assert_eq!(world.enemies()[0].intent, EnemyIntent::Patrol);
+    }
+
+    #[test]
+    fn throw_rock_can_redirect_multiple_walkers() {
+        let mut level = test_level(10);
+        level.enemies.push(walker(6, 1, 9, Direction::Right));
+        level.enemies.push(walker(4, 3, 9, Direction::Left));
+        let mut world = world_from(level);
+
+        let report = world.apply(throw_rock(Cell::new(4, 1)));
+
+        assert!(report.events.contains(&WorldEvent::RockImpacted {
+            cell: Cell::new(4, 1),
+            heard: 2,
+        }));
+        assert!(world.enemies().iter().all(|enemy| matches!(
+            enemy.intent,
+            EnemyIntent::Investigate {
+                target: Cell { x: 4, y: 1 },
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn throw_rock_bfs_targets_rock_cell_deterministically() {
+        let mut level = semi_test_level(10);
+        level.walls.push(Cell::new(5, 1));
+        level.enemies.push(walker(6, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        world.apply(throw_rock(Cell::new(4, 1)));
+        for _ in 0..4 {
+            world.update_tick();
+        }
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(4, 1));
+        assert_eq!(world.enemies()[0].intent, EnemyIntent::Patrol);
+    }
+
+    #[test]
+    fn adjacent_hero_still_takes_priority_over_rock_target() {
+        let mut level = semi_test_level(10);
+        level.hero_start = Cell::new(4, 1);
+        level.enemies.push(walker(5, 1, 2, Direction::Right));
+        let mut world = world_from(level);
+
+        world.apply(throw_rock(Cell::new(7, 1)));
+        let report = world.update_tick();
+
+        assert!(report.events.contains(&WorldEvent::WalkerSpottedHero));
+        assert!(
+            report
+                .events
+                .contains(&WorldEvent::WalkerDestroyed { power: 2 })
+        );
+        assert!(world.enemies().is_empty());
+    }
+
+    #[test]
+    fn restart_restores_throw_rock_investigation_state() {
+        let mut world = SmartBoyWorld::iso_slice(42);
+        let initial = world.clone();
+
+        world.apply(throw_rock(Cell::new(6, 4)));
+        assert!(
+            world
+                .enemies()
+                .iter()
+                .any(|enemy| matches!(enemy.intent, EnemyIntent::Investigate { .. }))
+        );
+
+        world.restart();
+
+        assert_eq!(world, initial);
     }
 
     #[test]

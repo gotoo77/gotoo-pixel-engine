@@ -653,6 +653,57 @@ Critere de play-test:
 > le joueur pense-t-il "j'en ai ecrase 3, est-ce que je peux en mettre 5 dans
 > l'axe ?" ou seulement "j'ai trouve la solution du puzzle" ?
 
+Signal humain apres premier play-test Boulder:
+
+- la 2D iso change positivement la sensation de manipulation;
+- SHOUT + monde semi-continu + Walkers est plus vivant que le puzzle de Power
+  initial;
+- Boulder fournit le premier payoff mecanique vraiment lisible: ecraser un
+  groupe donne envie d'optimiser la catastrophe;
+- le multi-kill `SMART xN` est le premier feedback qui pousse naturellement a
+  recommencer pour faire mieux;
+- manque concret observe: le son de roulement continu est necessaire pour que
+  la masse paraisse lourde et dangereuse pendant toute sa course.
+
+Adaptation audio locale issue de ce besoin:
+
+- `boulder_release`, `boulder_crush` et `boulder_stop` restent des one-shots;
+- `boulder_roll` justifie une primitive moteur minimale `start_loop` /
+  `stop_loop`, car la duree depend de la course reelle du Boulder;
+- cette primitive ne constitue pas un systeme musique/mixer/spatial audio;
+- le consommateur concret est uniquement le Boulder SBH roulant.
+
+## Experience Candidate: THROW ROCK / Leurre Cible
+
+Hypothese:
+
+> un bruit cible a distance peut transformer la salle en espace
+> d'orchestration, parce que le joueur ne dit plus "venez vers moi", mais
+> "allez la-bas".
+
+Distinction avec SHOUT:
+
+- SHOUT: bruit immediat sur la cellule du heros, grand rayon, risque direct;
+- THROW ROCK: cellule ciblee dans une portee limitee, rayon sonore plus petit,
+  detourne les Walkers sans exposer directement le heros;
+- les deux reposent sur le meme concept local minimal de `NoiseStimulus`:
+  position + rayon;
+- le bruit gameplay reste separe du WAV joue par le renderer/audio.
+
+Playground d'orchestration:
+
+- une seule salle sandbox plutot que trois niveaux didactiques;
+- 5-7 Walkers, SHOUT, THROW ROCK, Boulder, pics, Power/combat direct;
+- un corridor Boulder lisible, plusieurs zones de regroupement, positions de
+  securite et chemins de contournement;
+- l'objectif n'est pas seulement de terminer, mais d'observer si le joueur
+  recommence volontairement pour fabriquer un meilleur multi-kill.
+
+Question a observer:
+
+> THROW ROCK donne-t-il une vraie liberte creative, ou devient-il seulement une
+> nouvelle cle de puzzle ?
+
 ## Comparatif
 
 | Proposition | Potentiel de fun | Cout | Risque |
