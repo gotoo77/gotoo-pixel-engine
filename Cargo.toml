@@ -3,6 +3,8 @@ name = "gotoo-pixel-engine"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97.1"
+license = "MIT"
+repository = "https://github.com/gotoo77/gotoo-pixel-engine"
 
 [dependencies]
 hound = "3.5.1"
