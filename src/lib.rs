@@ -4,6 +4,7 @@ mod control;
 pub mod framebuffer;
 mod gamepad;
 mod gamepad_profile;
+mod image;
 mod input;
 mod pixel;
 mod platform;
@@ -17,6 +18,7 @@ pub use audio_wav::pcm16_mono_wav;
 pub use control::{ActionId, ControlBinding, ControlMap};
 pub use framebuffer::Framebuffer;
 pub use gamepad_profile::{AxisCalibration, GamepadProfile};
+pub use image::{Image, ImageError, ImageRegion};
 pub use input::{
     ButtonState, GamepadButton, GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, Input, Key,
     MouseButton, Touch, TouchPhase,

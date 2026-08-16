@@ -49,6 +49,7 @@ const TRAP_DISARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_disarm");
 const TRAP_TRIGGER_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_trigger");
 const SHOUT_SOUND: SoundId = SoundId::new("smart_boy_hero.shout");
 const ENEMY_KILL_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_kill");
+const ENEMY_ALERT_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_alert");
 const DEATH_SOUND: SoundId = SoundId::new("smart_boy_hero.death");
 const VICTORY_SOUND: SoundId = SoundId::new("smart_boy_hero.victory");
 
@@ -610,6 +611,7 @@ fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
             WorldEvent::TrapTriggered => Some(TRAP_TRIGGER_SOUND),
             WorldEvent::Shouted { .. } => Some(SHOUT_SOUND),
             WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
+            WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
             WorldEvent::HeroDied => Some(DEATH_SOUND),
             WorldEvent::Won => Some(VICTORY_SOUND),
             WorldEvent::Blocked
@@ -629,7 +631,7 @@ struct SfxBinding {
     sound: SoundId,
 }
 
-const REQUIRED_SFX: [SfxBinding; 14] = [
+const REQUIRED_SFX: [SfxBinding; 15] = [
     SfxBinding {
         key: "combat",
         sound: COMBAT_SOUND,
@@ -677,6 +679,10 @@ const REQUIRED_SFX: [SfxBinding; 14] = [
     SfxBinding {
         key: "enemy_kill",
         sound: ENEMY_KILL_SOUND,
+    },
+    SfxBinding {
+        key: "enemy_alert",
+        sound: ENEMY_ALERT_SOUND,
     },
     SfxBinding {
         key: "death",
@@ -1805,6 +1811,7 @@ mod tests {
                 cell: Cell::new(2, 1),
                 power: 9,
             },
+            WorldEvent::WalkerSpottedHero,
             WorldEvent::HeroDied,
             WorldEvent::Won,
         ]);
@@ -1824,6 +1831,7 @@ mod tests {
                 TRAP_TRIGGER_SOUND,
                 SHOUT_SOUND,
                 ENEMY_KILL_SOUND,
+                ENEMY_ALERT_SOUND,
                 DEATH_SOUND,
                 VICTORY_SOUND,
             ]

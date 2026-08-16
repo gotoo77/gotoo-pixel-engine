@@ -30,6 +30,15 @@ impl SmartBoyWorld {
     pub(super) fn for_level(level_index: usize, seed: u32) -> Self {
         let level_index = level_index % LEVEL_COUNT;
         let level = build_level(level_index);
+        Self::from_level(level_index, level, seed)
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn iso_slice(seed: u32) -> Self {
+        Self::from_level(LEVEL_COUNT, level_iso_slice(), seed)
+    }
+
+    fn from_level(level_index: usize, level: Level, seed: u32) -> Self {
         let mut world = Self {
             level_index,
             phase: Phase::Running,
@@ -334,40 +343,73 @@ impl SmartBoyWorld {
         patrol_direction: Direction,
         report: &mut TurnReport,
     ) -> Option<Direction> {
+        if self.walker_detects_hero(index) {
+            let patrol_direction = self.enemies[index]
+                .intent
+                .patrol_direction()
+                .unwrap_or(patrol_direction);
+            let spotted = !matches!(self.enemies[index].intent, EnemyIntent::ChaseHero { .. });
+            self.enemies[index].intent = EnemyIntent::ChaseHero { patrol_direction };
+            if spotted {
+                report.events.push(WorldEvent::WalkerSpottedHero);
+            }
+            return self.step_to_target_or_resume(index, self.hero, patrol_direction, report);
+        }
+
         match self.enemies[index].intent {
             EnemyIntent::Patrol => Some(patrol_direction),
             EnemyIntent::Investigate {
                 target,
                 patrol_direction,
-            } => match self.step_toward(index, target) {
-                PathStep::Step(direction) => {
-                    self.enemies[index].kind = EnemyKind::Walker { direction };
-                    Some(direction)
-                }
-                PathStep::Arrived => {
-                    self.resume_patrol(index, patrol_direction, report);
-                    None
-                }
-                PathStep::Blocked => {
-                    self.resume_patrol(index, patrol_direction, report);
-                    report.events.push(WorldEvent::WalkerLostTarget);
-                    None
-                }
-            },
+            } => self.step_to_target_or_resume(index, target, patrol_direction, report),
+            EnemyIntent::ChaseHero { patrol_direction } => {
+                self.resume_patrol(index, patrol_direction, report);
+                None
+            }
         }
     }
 
     fn resolve_investigation_arrival(&mut self, index: usize, report: &mut TurnReport) {
-        let EnemyIntent::Investigate {
-            target,
-            patrol_direction,
-        } = self.enemies[index].intent
-        else {
-            return;
-        };
-        if self.enemies[index].cell == target {
-            self.resume_patrol(index, patrol_direction, report);
+        match self.enemies[index].intent {
+            EnemyIntent::Investigate {
+                target,
+                patrol_direction,
+            } if self.enemies[index].cell == target => {
+                self.resume_patrol(index, patrol_direction, report);
+            }
+            EnemyIntent::ChaseHero { patrol_direction } if !self.walker_detects_hero(index) => {
+                self.resume_patrol(index, patrol_direction, report);
+            }
+            _ => {}
         }
+    }
+
+    fn step_to_target_or_resume(
+        &mut self,
+        index: usize,
+        target: Cell,
+        patrol_direction: Direction,
+        report: &mut TurnReport,
+    ) -> Option<Direction> {
+        match self.step_toward(index, target) {
+            PathStep::Step(direction) => {
+                self.enemies[index].kind = EnemyKind::Walker { direction };
+                Some(direction)
+            }
+            PathStep::Arrived => {
+                self.resume_patrol(index, patrol_direction, report);
+                None
+            }
+            PathStep::Blocked => {
+                self.resume_patrol(index, patrol_direction, report);
+                report.events.push(WorldEvent::WalkerLostTarget);
+                None
+            }
+        }
+    }
+
+    fn walker_detects_hero(&self, index: usize) -> bool {
+        self.semi_continuous() && self.enemies[index].cell.manhattan_distance(self.hero) == 1
     }
 
     fn resume_patrol(
@@ -582,6 +624,7 @@ pub(super) enum WorldEvent {
     WalkerLostTarget,
     WalkerMoved,
     WalkerResumedPatrol,
+    WalkerSpottedHero,
     WalkerTurned,
     SmartChain { count: usize },
     Won,
@@ -678,6 +721,21 @@ pub(super) enum EnemyIntent {
         target: Cell,
         patrol_direction: Direction,
     },
+    ChaseHero {
+        patrol_direction: Direction,
+    },
+}
+
+impl EnemyIntent {
+    fn patrol_direction(self) -> Option<Direction> {
+        match self {
+            Self::Patrol => None,
+            Self::Investigate {
+                patrol_direction, ..
+            }
+            | Self::ChaseHero { patrol_direction } => Some(patrol_direction),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1167,6 +1225,50 @@ fn level_smart_way() -> Level {
     }
 }
 
+#[allow(dead_code)]
+fn level_iso_slice() -> Level {
+    let mut walls = horizontal_wall(1, &[2, 3, 4, 5, 6, 7, 8, 9]);
+    walls.extend(horizontal_wall(6, &[2, 3, 4, 5, 6, 7, 8, 9]));
+    walls.extend(cells(&[
+        (1, 2),
+        (1, 3),
+        (1, 4),
+        (1, 5),
+        (10, 2),
+        (10, 3),
+        (10, 5),
+        (4, 2),
+        (4, 5),
+        (8, 2),
+    ]));
+
+    Level {
+        timing: LevelTiming::SemiContinuous,
+        name: "ISO SLICE",
+        hero_start: Cell::new(3, 4),
+        hero_power: 24,
+        exit: Cell::new(10, 4),
+        walls,
+        doors: vec![Door {
+            cell: Cell::new(10, 4),
+            group: 1,
+            initially_open: false,
+        }],
+        levers: vec![pressure_plate(5, 4, 1)],
+        traps: vec![
+            group_trap(6, 3, 1),
+            group_trap(7, 4, 1),
+            group_trap(6, 5, 1),
+        ],
+        bonuses: vec![],
+        enemies: vec![
+            walker(8, 3, 9, Direction::Left),
+            walker(8, 4, 9, Direction::Left),
+            walker(8, 5, 9, Direction::Left),
+        ],
+    }
+}
+
 fn cells(points: &[(i32, i32)]) -> Vec<Cell> {
     points.iter().map(|&(x, y)| Cell::new(x, y)).collect()
 }
@@ -1591,6 +1693,87 @@ mod tests {
 
         assert_eq!(world.enemies()[0].cell, Cell::new(6, 1));
         assert_eq!(world.turn_count(), 3);
+    }
+
+    #[test]
+    fn adjacent_hero_is_detected_by_walker() {
+        let mut level = semi_test_level(10);
+        level.hero_start = Cell::new(2, 1);
+        level.enemies.push(walker(3, 1, 2, Direction::Up));
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert!(report.events.contains(&WorldEvent::WalkerSpottedHero));
+        assert!(
+            report
+                .events
+                .contains(&WorldEvent::WalkerDestroyed { power: 2 })
+        );
+        assert!(world.enemies().is_empty());
+        assert_eq!(world.hero_power(), 8);
+    }
+
+    #[test]
+    fn distant_walker_without_shout_keeps_patrolling() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(walker(5, 1, 2, Direction::Right));
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert!(!report.events.contains(&WorldEvent::WalkerSpottedHero));
+        assert_eq!(world.enemies()[0].intent, EnemyIntent::Patrol);
+        assert_eq!(world.enemies()[0].cell, Cell::new(6, 1));
+    }
+
+    #[test]
+    fn adjacent_hero_takes_priority_over_old_shout_target() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(walker(3, 1, 2, Direction::Up));
+        let mut world = world_from(level);
+
+        world.apply(shout());
+        world.apply(right());
+        let report = world.update_tick();
+
+        assert!(report.events.contains(&WorldEvent::WalkerSpottedHero));
+        assert!(
+            report
+                .events
+                .contains(&WorldEvent::WalkerDestroyed { power: 2 })
+        );
+        assert!(world.enemies().is_empty());
+        assert_eq!(world.hero(), Cell::new(2, 1));
+    }
+
+    #[test]
+    fn stale_chase_returns_to_patrol_without_ping_ponging() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(Enemy {
+            cell: Cell::new(5, 1),
+            power: 2,
+            kind: EnemyKind::Walker {
+                direction: Direction::Left,
+            },
+            intent: EnemyIntent::ChaseHero {
+                patrol_direction: Direction::Right,
+            },
+        });
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(5, 1));
+        assert_eq!(world.enemies()[0].intent, EnemyIntent::Patrol);
+        assert_eq!(
+            world.enemies()[0].kind,
+            EnemyKind::Walker {
+                direction: Direction::Right,
+            }
+        );
+        assert!(report.events.contains(&WorldEvent::WalkerResumedPatrol));
+        assert!(!report.events.contains(&WorldEvent::WalkerSpottedHero));
     }
 
     #[test]

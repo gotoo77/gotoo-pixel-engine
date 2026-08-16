@@ -516,6 +516,96 @@ Question de play-test:
 > le monde semi-continu transforme-t-il vraiment SHOUT en outil d'orchestration,
 > ou automatise-t-il simplement le meme puzzle ?
 
+Retour play-test qualitatif:
+
+- le monde semi-continu rend SBH nettement plus vivant;
+- SHOUT est plus amusant que le puzzle arithmetique pur;
+- attirer volontairement les Walkers dans les pieges semble etre une meilleure
+  direction centrale;
+- le tour par tour historique reste un checkpoint utile, mais n'est plus la
+  direction privilegiee pour le futur SBH.
+
+Limite apparue: un Walker semi-continu pouvait passer a cote du heros sans
+reagir, sauf si SHOUT avait ete utilise. Cela rendait SHOUT trop proche d'une
+"revelation d'existence" alors qu'il doit plutot manipuler l'attention.
+
+Correction locale retenue pour l'experience suivante:
+
+```text
+ChaseHero si le Walker est adjacent au heros
+    > Investigate(target) issu de SHOUT
+    > Patrol
+```
+
+La detection est volontairement limitee a l'adjacence et aux niveaux
+SemiContinuous. Les anciens niveaux tour par tour gardent leurs timings
+historiques. Il n'y a pas encore de cones de vision, de furtivite, de memoire
+avancee, de propagation sonore ou de framework IA.
+
+## Experience Candidate: Vertical Slice 2D Isometrique
+
+Statut 2026-08-16: une branche d'exploration teste une seule salle SBH rendue en
+2D isometrique stylisee, separee du prototype principal. L'objectif n'est pas de
+convertir la campagne, mais de comparer le meme coeur de gameplay avec une
+presentation plus lisible et plus sensorielle.
+
+Hypothese de fun:
+
+> une petite arene mecanique isometrique, animee et mieux juiciee permet-elle de
+> ressentir SHOUT + pieges comme un jouet systemique vivant plutot que comme un
+> puzzle de rectangles ?
+
+Architecture retenue:
+
+- grille logique orthogonale conservee;
+- projection uniquement graphique `world(x, y) -> screen(x, y)`;
+- simulation SemiContinuous conservee;
+- interpolation visuelle locale entre cases pendant le tick;
+- sprite sheet PNG embarque pour le slice;
+- tri de profondeur simple par `x + y`;
+- pas de renderer GPU de sprites;
+- pas de scene graph;
+- pas d'ECS;
+- pas d'AssetSource / AssetManager.
+
+Capacites GPE introduites car un consommateur concret existe maintenant:
+
+- `Image` RGBA8: necessaire pour les sprites SBH;
+- blit framebuffer RGBA avec alpha et clipping: necessaire pour dessiner les
+  sprites;
+- source rectangle: necessaire pour sprite sheet / animation;
+- decode PNG via une petite dependance dediee: necessaire pour un pipeline
+  Aseprite -> PNG -> Image RGBA.
+
+Friction asset confirmee:
+
+```text
+path logique
+    -> bytes embarques
+    -> decode PNG/WAV
+    -> Image/SoundBank
+```
+
+Audio et sprites demontrent maintenant que "path logique -> bytes" deviendra
+probablement une responsabilite moteur. La preference reste toutefois de ne pas
+creer `AssetSource` maintenant: les deux consommateurs actuels sont encore servis
+par des assets embarques, et aucun besoin concret de remplacement runtime,
+filesystem natif ou fetch Web n'a encore ete teste dans un jeu.
+
+Limites connues du slice:
+
+- assets placeholders coherents, pas direction artistique finale;
+- occlusion evitee par murs bas / salle simple;
+- pas de mouvement libre;
+- pas de pause tactique / Smart Vision;
+- feedback kill plus visible mais toujours sans loot ni economie;
+- pas encore de vrai "WOW mechanic" comme le boulet roulant.
+
+Question de play-test:
+
+> la 2D isometrique ameliore-t-elle suffisamment la perception de "petite arene
+> mecanique vivante" pour justifier son cout supplementaire ?
+
 ## Comparatif
 
 | Proposition | Potentiel de fun | Cout | Risque |
