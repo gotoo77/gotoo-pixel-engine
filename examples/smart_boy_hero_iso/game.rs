@@ -10,8 +10,8 @@ use include_dir::{Dir, include_dir};
 #[path = "../smart_boy_hero/world.rs"]
 mod world;
 use world::{
-    Cell, Direction, EnemyIntent, GRID_HEIGHT, GRID_WIDTH, Phase, PlayerAction, SmartBoyWorld,
-    WorldEvent,
+    BoulderState, Cell, Direction, EnemyIntent, GRID_HEIGHT, GRID_WIDTH, Phase, PlayerAction,
+    SmartBoyWorld, WorldEvent,
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 520;
@@ -41,6 +41,9 @@ const TRAP_TRIGGER_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_trigger");
 const SHOUT_SOUND: SoundId = SoundId::new("smart_boy_hero.shout");
 const ENEMY_KILL_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_kill");
 const ENEMY_ALERT_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_alert");
+const BOULDER_RELEASE_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_release");
+const BOULDER_CRUSH_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_crush");
+const BOULDER_STOP_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_stop");
 const DEATH_SOUND: SoundId = SoundId::new("smart_boy_hero.death");
 const VICTORY_SOUND: SoundId = SoundId::new("smart_boy_hero.victory");
 
@@ -70,6 +73,9 @@ enum SpriteFrame {
     Plate = 11,
     DoorClosed = 12,
     DoorOpen = 13,
+    Boulder0 = 14,
+    Boulder1 = 15,
+    Boulder2 = 16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -98,9 +104,11 @@ pub struct SmartBoyHeroIsoGame {
     simulation_accumulator: Duration,
     hero_motion: Option<Motion>,
     enemy_motions: Vec<Option<Motion>>,
+    boulder_motions: Vec<Option<Motion>>,
     shout_pulse: Option<TimedCell>,
     kill_bursts: Vec<TimedCell>,
     smart_flash: Option<(usize, Duration)>,
+    screen_shake: Duration,
     feedback_text: Option<(&'static str, Duration)>,
 }
 
@@ -116,9 +124,11 @@ impl SmartBoyHeroIsoGame {
             simulation_accumulator: Duration::ZERO,
             hero_motion: None,
             enemy_motions: Vec::new(),
+            boulder_motions: Vec::new(),
             shout_pulse: None,
             kill_bursts: Vec::new(),
             smart_flash: None,
+            screen_shake: Duration::ZERO,
             feedback_text: None,
         }
     }
@@ -128,9 +138,11 @@ impl SmartBoyHeroIsoGame {
         self.simulation_accumulator = Duration::ZERO;
         self.hero_motion = None;
         self.enemy_motions.clear();
+        self.boulder_motions.clear();
         self.shout_pulse = None;
         self.kill_bursts.clear();
         self.smart_flash = None;
+        self.screen_shake = Duration::ZERO;
         self.feedback_text = None;
     }
 
@@ -166,8 +178,15 @@ impl SmartBoyHeroIsoGame {
                 .iter()
                 .map(|enemy| enemy.cell)
                 .collect::<Vec<_>>();
+            let previous_boulders = self
+                .world
+                .boulders()
+                .iter()
+                .map(|boulder| boulder.cell)
+                .collect::<Vec<_>>();
             let report = self.world.update_tick();
             self.capture_enemy_motions(&previous_enemies);
+            self.capture_boulder_motions(&previous_boulders);
             events.extend(report.events);
         }
 
@@ -195,6 +214,26 @@ impl SmartBoyHeroIsoGame {
             .collect();
     }
 
+    fn capture_boulder_motions(&mut self, previous_boulders: &[Cell]) {
+        self.boulder_motions = self
+            .world
+            .boulders()
+            .iter()
+            .enumerate()
+            .map(|(index, boulder)| {
+                let from = previous_boulders
+                    .get(index)
+                    .copied()
+                    .unwrap_or(boulder.cell);
+                (from != boulder.cell).then_some(Motion {
+                    from,
+                    to: boulder.cell,
+                    elapsed: Duration::ZERO,
+                })
+            })
+            .collect();
+    }
+
     fn capture_feedback(&mut self, events: &[WorldEvent]) {
         for event in events {
             match *event {
@@ -213,6 +252,26 @@ impl SmartBoyHeroIsoGame {
                 WorldEvent::SmartChain { count } => {
                     self.smart_flash = Some((count, Duration::ZERO));
                     self.feedback_text = Some(("SMART!", Duration::ZERO));
+                }
+                WorldEvent::BoulderReleased { .. } => {
+                    self.feedback_text = Some(("RUN!", Duration::ZERO));
+                    self.screen_shake = Duration::from_millis(120);
+                }
+                WorldEvent::BoulderCrushedEnemy { chain, .. } => {
+                    self.feedback_text = Some(("CRUSH!", Duration::ZERO));
+                    self.screen_shake = Duration::from_millis(if chain >= 3 { 360 } else { 220 });
+                }
+                WorldEvent::BoulderStopped { .. } => {
+                    self.feedback_text = Some(("THUD!", Duration::ZERO));
+                    self.screen_shake = self.screen_shake.max(Duration::from_millis(160));
+                }
+                WorldEvent::BoulderSmartChain { count } => {
+                    self.smart_flash = Some((count, Duration::ZERO));
+                    self.feedback_text = Some(if count >= 4 {
+                        ("GENIUS!", Duration::ZERO)
+                    } else {
+                        ("SMART!", Duration::ZERO)
+                    });
                 }
                 WorldEvent::TrapTriggered => self.feedback_text = Some(("SNAP!", Duration::ZERO)),
                 WorldEvent::WalkerSpottedHero => {
@@ -233,6 +292,14 @@ impl SmartBoyHeroIsoGame {
             }
         }
         for motion_slot in &mut self.enemy_motions {
+            if let Some(motion) = motion_slot.as_mut() {
+                motion.elapsed += delta;
+                if motion.elapsed >= FIXED_STEP {
+                    *motion_slot = None;
+                }
+            }
+        }
+        for motion_slot in &mut self.boulder_motions {
             if let Some(motion) = motion_slot.as_mut() {
                 motion.elapsed += delta;
                 if motion.elapsed >= FIXED_STEP {
@@ -263,17 +330,43 @@ impl SmartBoyHeroIsoGame {
                 self.feedback_text = None;
             }
         }
+        self.screen_shake = self.screen_shake.saturating_sub(delta);
     }
 
     fn draw(&self, framebuffer: &mut Framebuffer) {
         framebuffer.clear(BG);
+        let shake = self.shake_offset();
         draw_hud(
             framebuffer,
             &self.world,
             self.feedback_text,
             self.smart_flash,
         );
-        draw_room(framebuffer, &self.world, &self.sprites, self);
+        draw_room(framebuffer, &self.world, &self.sprites, self, shake);
+    }
+
+    fn shake_offset(&self) -> (i32, i32) {
+        if self.screen_shake.is_zero() {
+            return (0, 0);
+        }
+        let ticks = (self.screen_shake.as_millis() / 28) as i32;
+        let amplitude = if self.screen_shake > Duration::from_millis(220) {
+            4
+        } else {
+            2
+        };
+        let x = match ticks.rem_euclid(4) {
+            0 => amplitude,
+            1 => -amplitude,
+            2 => amplitude / 2,
+            _ => -amplitude / 2,
+        };
+        let y = if ticks % 2 == 0 {
+            amplitude / 2
+        } else {
+            -amplitude / 2
+        };
+        (x, y)
     }
 }
 
@@ -354,14 +447,21 @@ fn draw_room(
     world: &SmartBoyWorld,
     sprites: &Image,
     game: &SmartBoyHeroIsoGame,
+    shake: (i32, i32),
 ) {
     for y in 0..GRID_HEIGHT {
         for x in 0..GRID_WIDTH {
-            draw_sprite_at_cell(framebuffer, sprites, SpriteFrame::Floor, Cell::new(x, y));
+            draw_sprite_at_cell(
+                framebuffer,
+                sprites,
+                SpriteFrame::Floor,
+                Cell::new(x, y),
+                shake,
+            );
         }
     }
 
-    draw_low_objects(framebuffer, world, sprites);
+    draw_low_objects(framebuffer, world, sprites, shake);
 
     let mut drawables = Vec::new();
     for &wall in world.walls() {
@@ -379,13 +479,19 @@ fn draw_room(
             cell: enemy.cell,
         });
     }
+    for (index, boulder) in world.boulders().iter().enumerate() {
+        drawables.push(Drawable::Boulder {
+            index,
+            cell: boulder.cell,
+        });
+    }
     drawables.push(Drawable::Hero(world.hero()));
     drawables.sort_by_key(|drawable| drawable.depth_key());
 
     for drawable in drawables {
         match drawable {
             Drawable::Wall(cell) => {
-                draw_sprite_at_cell(framebuffer, sprites, SpriteFrame::Wall, cell)
+                draw_sprite_at_cell(framebuffer, sprites, SpriteFrame::Wall, cell, shake)
             }
             Drawable::Door { cell, open } => draw_sprite_at_cell(
                 framebuffer,
@@ -396,18 +502,27 @@ fn draw_room(
                     SpriteFrame::DoorClosed
                 },
                 cell,
+                shake,
             ),
             Drawable::Enemy { index, cell } => {
-                draw_enemy(framebuffer, world, sprites, game, index, cell)
+                draw_enemy(framebuffer, world, sprites, game, index, cell, shake)
             }
-            Drawable::Hero(cell) => draw_hero(framebuffer, sprites, game, cell),
+            Drawable::Boulder { index, cell } => {
+                draw_boulder(framebuffer, world, sprites, game, index, cell, shake)
+            }
+            Drawable::Hero(cell) => draw_hero(framebuffer, sprites, game, cell, shake),
         }
     }
 
-    draw_vfx(framebuffer, sprites, game);
+    draw_vfx(framebuffer, sprites, game, shake);
 }
 
-fn draw_low_objects(framebuffer: &mut Framebuffer, world: &SmartBoyWorld, sprites: &Image) {
+fn draw_low_objects(
+    framebuffer: &mut Framebuffer,
+    world: &SmartBoyWorld,
+    sprites: &Image,
+    shake: (i32, i32),
+) {
     for (index, trap) in world.traps().iter().enumerate() {
         draw_sprite_at_cell(
             framebuffer,
@@ -418,10 +533,11 @@ fn draw_low_objects(framebuffer: &mut Framebuffer, world: &SmartBoyWorld, sprite
                 SpriteFrame::TrapInactive
             },
             trap.cell,
+            shake,
         );
     }
     for lever in world.levers() {
-        draw_sprite_at_cell(framebuffer, sprites, SpriteFrame::Plate, lever.cell);
+        draw_sprite_at_cell(framebuffer, sprites, SpriteFrame::Plate, lever.cell, shake);
     }
 }
 
@@ -432,6 +548,7 @@ fn draw_enemy(
     game: &SmartBoyHeroIsoGame,
     index: usize,
     cell: Cell,
+    shake: (i32, i32),
 ) {
     let Some(enemy) = world.enemies().get(index) else {
         return;
@@ -439,6 +556,7 @@ fn draw_enemy(
     let point = motion_point(
         cell,
         game.enemy_motions.get(index).and_then(|motion| *motion),
+        shake,
     );
     let frame = match enemy.intent {
         EnemyIntent::Patrol => SpriteFrame::WalkerPatrol,
@@ -448,13 +566,42 @@ fn draw_enemy(
     draw_centered_text(framebuffer, point, &enemy.power.to_string(), POWER, -34);
 }
 
+fn draw_boulder(
+    framebuffer: &mut Framebuffer,
+    world: &SmartBoyWorld,
+    sprites: &Image,
+    game: &SmartBoyHeroIsoGame,
+    index: usize,
+    cell: Cell,
+    shake: (i32, i32),
+) {
+    let Some(boulder) = world.boulders().get(index) else {
+        return;
+    };
+    let point = motion_point(
+        cell,
+        game.boulder_motions.get(index).and_then(|motion| *motion),
+        shake,
+    );
+    let frame = match boulder.state {
+        BoulderState::Ready | BoulderState::Stopped => SpriteFrame::Boulder0,
+        BoulderState::Rolling { .. } => match world.turn_count() % 3 {
+            0 => SpriteFrame::Boulder0,
+            1 => SpriteFrame::Boulder1,
+            _ => SpriteFrame::Boulder2,
+        },
+    };
+    draw_sprite_at_point(framebuffer, sprites, frame, point);
+}
+
 fn draw_hero(
     framebuffer: &mut Framebuffer,
     sprites: &Image,
     game: &SmartBoyHeroIsoGame,
     cell: Cell,
+    shake: (i32, i32),
 ) {
-    let point = motion_point(cell, game.hero_motion);
+    let point = motion_point(cell, game.hero_motion, shake);
     let frame = if game.shout_pulse.is_some() {
         SpriteFrame::HeroShout
     } else if game.hero_motion.is_some() {
@@ -472,9 +619,14 @@ fn draw_hero(
     );
 }
 
-fn draw_vfx(framebuffer: &mut Framebuffer, sprites: &Image, game: &SmartBoyHeroIsoGame) {
+fn draw_vfx(
+    framebuffer: &mut Framebuffer,
+    sprites: &Image,
+    game: &SmartBoyHeroIsoGame,
+    shake: (i32, i32),
+) {
     if let Some(pulse) = game.shout_pulse {
-        let point = project_cell(pulse.cell);
+        let point = project_cell(pulse.cell, shake);
         let t = pulse.elapsed.as_secs_f32() / FEEDBACK_DURATION.as_secs_f32();
         let radius = (14.0 + t * 46.0) as u32;
         framebuffer.draw_circle(point.x as i32, point.y as i32 - 18, radius, SHOUT_COLOR);
@@ -482,10 +634,16 @@ fn draw_vfx(framebuffer: &mut Framebuffer, sprites: &Image, game: &SmartBoyHeroI
     }
 
     for burst in &game.kill_bursts {
-        let point = project_cell(burst.cell);
+        let point = project_cell(burst.cell, shake);
         let t = burst.elapsed.as_secs_f32() / FEEDBACK_DURATION.as_secs_f32();
         let offset = (t * 18.0) as i32;
-        draw_sprite_at_cell(framebuffer, sprites, SpriteFrame::TrapTriggered, burst.cell);
+        draw_sprite_at_cell(
+            framebuffer,
+            sprites,
+            SpriteFrame::TrapTriggered,
+            burst.cell,
+            shake,
+        );
         draw_sprite_at_point(
             framebuffer,
             sprites,
@@ -509,8 +667,9 @@ fn draw_sprite_at_cell(
     sprites: &Image,
     frame: SpriteFrame,
     cell: Cell,
+    shake: (i32, i32),
 ) {
-    draw_sprite_at_point(framebuffer, sprites, frame, project_cell(cell));
+    draw_sprite_at_point(framebuffer, sprites, frame, project_cell(cell, shake));
 }
 
 fn draw_sprite_at_point(
@@ -543,24 +702,24 @@ fn draw_centered_text(
     );
 }
 
-fn motion_point(cell: Cell, motion: Option<Motion>) -> ScreenPoint {
+fn motion_point(cell: Cell, motion: Option<Motion>, shake: (i32, i32)) -> ScreenPoint {
     if let Some(motion) = motion {
         let t = (motion.elapsed.as_secs_f32() / FIXED_STEP.as_secs_f32()).clamp(0.0, 1.0);
-        let from = project_cell(motion.from);
-        let to = project_cell(motion.to);
+        let from = project_cell(motion.from, shake);
+        let to = project_cell(motion.to, shake);
         ScreenPoint {
             x: from.x + (to.x - from.x) * t,
             y: from.y + (to.y - from.y) * t,
         }
     } else {
-        project_cell(cell)
+        project_cell(cell, shake)
     }
 }
 
-fn project_cell(cell: Cell) -> ScreenPoint {
+fn project_cell(cell: Cell, shake: (i32, i32)) -> ScreenPoint {
     ScreenPoint {
-        x: (ORIGIN_X + (cell.x - cell.y) * TILE_WIDTH / 2) as f32,
-        y: (ORIGIN_Y + (cell.x + cell.y) * TILE_HEIGHT / 2) as f32,
+        x: (ORIGIN_X + shake.0 + (cell.x - cell.y) * TILE_WIDTH / 2) as f32,
+        y: (ORIGIN_Y + shake.1 + (cell.x + cell.y) * TILE_HEIGHT / 2) as f32,
     }
 }
 
@@ -569,6 +728,7 @@ enum Drawable {
     Wall(Cell),
     Door { cell: Cell, open: bool },
     Enemy { index: usize, cell: Cell },
+    Boulder { index: usize, cell: Cell },
     Hero(Cell),
 }
 
@@ -578,6 +738,7 @@ impl Drawable {
             Self::Wall(cell)
             | Self::Door { cell, .. }
             | Self::Enemy { cell, .. }
+            | Self::Boulder { cell, .. }
             | Self::Hero(cell) => cell,
         };
         (cell.x + cell.y, cell.y)
@@ -604,6 +765,9 @@ fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
             WorldEvent::TrapArmed => Some(TRAP_ARM_SOUND),
             WorldEvent::TrapDisarmed => Some(TRAP_DISARM_SOUND),
             WorldEvent::TrapTriggered => Some(TRAP_TRIGGER_SOUND),
+            WorldEvent::BoulderReleased { .. } => Some(BOULDER_RELEASE_SOUND),
+            WorldEvent::BoulderCrushedEnemy { .. } => Some(BOULDER_CRUSH_SOUND),
+            WorldEvent::BoulderStopped { .. } => Some(BOULDER_STOP_SOUND),
             WorldEvent::Shouted { .. } => Some(SHOUT_SOUND),
             WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
             WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
@@ -620,7 +784,7 @@ struct SfxBinding {
     sound: SoundId,
 }
 
-const REQUIRED_SFX: [SfxBinding; 13] = [
+const REQUIRED_SFX: [SfxBinding; 16] = [
     SfxBinding {
         key: "combat",
         sound: COMBAT_SOUND,
@@ -664,6 +828,18 @@ const REQUIRED_SFX: [SfxBinding; 13] = [
     SfxBinding {
         key: "enemy_alert",
         sound: ENEMY_ALERT_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_release",
+        sound: BOULDER_RELEASE_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_crush",
+        sound: BOULDER_CRUSH_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_stop",
+        sound: BOULDER_STOP_SOUND,
     },
     SfxBinding {
         key: "death",
@@ -723,9 +899,9 @@ mod tests {
 
     #[test]
     fn iso_projection_maps_grid_axes_to_diagonals() {
-        let origin = project_cell(Cell::new(0, 0));
-        let right = project_cell(Cell::new(1, 0));
-        let down = project_cell(Cell::new(0, 1));
+        let origin = project_cell(Cell::new(0, 0), (0, 0));
+        let right = project_cell(Cell::new(1, 0), (0, 0));
+        let down = project_cell(Cell::new(0, 1), (0, 0));
 
         assert!(right.x > origin.x);
         assert!(right.y > origin.y);
@@ -742,6 +918,10 @@ mod tests {
                 index: 0,
                 cell: Cell::new(1, 1),
             },
+            Drawable::Boulder {
+                index: 0,
+                cell: Cell::new(3, 3),
+            },
         ];
 
         drawables.sort_by_key(|drawable| drawable.depth_key());
@@ -753,7 +933,7 @@ mod tests {
                 cell: Cell::new(1, 1)
             }
         );
-        assert_eq!(drawables[2], Drawable::Wall(Cell::new(4, 4)));
+        assert_eq!(drawables[3], Drawable::Wall(Cell::new(4, 4)));
     }
 
     #[test]
@@ -763,18 +943,19 @@ mod tests {
         ))
         .expect("sprite sheet should decode");
 
-        assert_eq!(image.width(), SPRITE_SIZE * 14);
+        assert_eq!(image.width(), SPRITE_SIZE * 17);
         assert_eq!(image.height(), SPRITE_HEIGHT);
     }
 
     #[test]
-    fn iso_slice_contains_three_walkers_and_core_props() {
+    fn iso_slice_contains_five_walkers_boulder_and_core_props() {
         let world = SmartBoyWorld::iso_slice(INITIAL_SEED);
 
-        assert_eq!(world.enemies().len(), 3);
+        assert_eq!(world.enemies().len(), 5);
         assert_eq!(world.doors().len(), 1);
         assert_eq!(world.levers().len(), 1);
         assert_eq!(world.traps().len(), 3);
+        assert_eq!(world.boulders().len(), 1);
         assert!(world.semi_continuous());
     }
 
@@ -801,8 +982,29 @@ mod tests {
                 power: 9,
             },
             WorldEvent::WalkerSpottedHero,
+            WorldEvent::BoulderReleased {
+                cell: Cell::new(2, 4),
+                direction: Direction::Right,
+            },
+            WorldEvent::BoulderCrushedEnemy {
+                cell: Cell::new(4, 4),
+                power: 9,
+                chain: 2,
+            },
+            WorldEvent::BoulderStopped {
+                cell: Cell::new(9, 4),
+            },
         ]);
 
-        assert_eq!(sounds, vec![ENEMY_KILL_SOUND, ENEMY_ALERT_SOUND]);
+        assert_eq!(
+            sounds,
+            vec![
+                ENEMY_KILL_SOUND,
+                ENEMY_ALERT_SOUND,
+                BOULDER_RELEASE_SOUND,
+                BOULDER_CRUSH_SOUND,
+                BOULDER_STOP_SOUND
+            ]
+        );
     }
 }

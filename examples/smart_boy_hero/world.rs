@@ -2,6 +2,7 @@ pub(super) const GRID_WIDTH: i32 = 12;
 pub(super) const GRID_HEIGHT: i32 = 8;
 pub(super) const LEVEL_COUNT: usize = 19;
 const SHOUT_RADIUS: i32 = 5;
+const BOULDER_STEPS_PER_TICK: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SmartBoyWorld {
@@ -17,6 +18,7 @@ pub(super) struct SmartBoyWorld {
     latched_traps_active: Vec<bool>,
     traps_active: Vec<bool>,
     pressure_plates_active: Vec<bool>,
+    boulders: Vec<Boulder>,
     turn_count: u32,
     seed: u32,
     rng: MysteryRng,
@@ -51,6 +53,7 @@ impl SmartBoyWorld {
             latched_traps_active: vec![false; level.traps.len()],
             traps_active: vec![false; level.traps.len()],
             pressure_plates_active: vec![false; level.levers.len()],
+            boulders: level.boulders.clone(),
             turn_count: 0,
             level,
             seed,
@@ -63,7 +66,11 @@ impl SmartBoyWorld {
     }
 
     pub(super) fn restart(&mut self) {
-        *self = Self::for_level(self.level_index, self.seed);
+        if self.level_index == LEVEL_COUNT {
+            *self = Self::iso_slice(self.seed);
+        } else {
+            *self = Self::for_level(self.level_index, self.seed);
+        }
     }
 
     pub(super) fn next_level(&mut self) {
@@ -200,6 +207,11 @@ impl SmartBoyWorld {
         self.traps_active.get(index).copied().unwrap_or(false)
     }
 
+    #[allow(dead_code)]
+    pub(super) fn boulders(&self) -> &[Boulder] {
+        &self.boulders
+    }
+
     fn try_move_hero(&mut self, direction: Direction, report: &mut TurnReport) -> bool {
         let target = self.hero.step(direction);
         if !target.is_inside() || self.wall_at(target) || self.closed_door_at(target).is_some() {
@@ -248,6 +260,11 @@ impl SmartBoyWorld {
     }
 
     fn run_world_turn(&mut self, report: &mut TurnReport) {
+        self.run_boulder_turn(report);
+        if self.phase != Phase::Running {
+            return;
+        }
+
         let mut index = 0;
         let mut trap_kills = 0;
         while index < self.enemies.len() {
@@ -558,6 +575,19 @@ impl SmartBoyWorld {
                 _ => {}
             }
         }
+
+        for boulder in &mut self.boulders {
+            if boulder.state != BoulderState::Ready {
+                continue;
+            }
+            if pressure_groups.contains(&boulder.group) {
+                boulder.state = BoulderState::Rolling { kills: 0 };
+                report.events.push(WorldEvent::BoulderReleased {
+                    cell: boulder.cell,
+                    direction: boulder.direction,
+                });
+            }
+        }
     }
 
     fn wall_at(&self, cell: Cell) -> bool {
@@ -596,6 +626,98 @@ impl SmartBoyWorld {
             .enumerate()
             .position(|(index, enemy)| index != except && enemy.cell == cell)
     }
+
+    fn run_boulder_turn(&mut self, report: &mut TurnReport) {
+        let mut index = 0;
+        while index < self.boulders.len() {
+            let BoulderState::Rolling { mut kills } = self.boulders[index].state else {
+                index += 1;
+                continue;
+            };
+
+            for _ in 0..BOULDER_STEPS_PER_TICK {
+                let target = self.boulders[index]
+                    .cell
+                    .step(self.boulders[index].direction);
+
+                if !target.is_inside()
+                    || self.wall_at(target)
+                    || self.closed_door_at(target).is_some()
+                    || self.boulder_blocks_at(target, index)
+                {
+                    self.boulders[index].state = BoulderState::Stopped;
+                    report.events.push(WorldEvent::BoulderStopped {
+                        cell: self.boulders[index].cell,
+                    });
+                    break;
+                }
+
+                self.boulders[index].cell = target;
+                report
+                    .events
+                    .push(WorldEvent::BoulderMoved { cell: target });
+
+                if target == self.hero {
+                    self.phase = Phase::Dead;
+                    self.boulders[index].state = BoulderState::Stopped;
+                    report.events.push(WorldEvent::HeroDied);
+                    report
+                        .events
+                        .push(WorldEvent::BoulderStopped { cell: target });
+                    return;
+                }
+
+                let crushed = self.remove_enemies_at(target);
+                if !crushed.is_empty() {
+                    kills += crushed.len();
+                    self.boulders[index].state = BoulderState::Rolling { kills };
+                    for power in crushed {
+                        report.events.push(WorldEvent::EnemyKilled {
+                            cell: target,
+                            power,
+                        });
+                        report.events.push(WorldEvent::BoulderCrushedEnemy {
+                            cell: target,
+                            power,
+                            chain: kills,
+                        });
+                    }
+                    if kills >= 2 {
+                        report
+                            .events
+                            .push(WorldEvent::BoulderSmartChain { count: kills });
+                    }
+                }
+            }
+
+            if matches!(self.boulders[index].state, BoulderState::Rolling { .. }) {
+                self.boulders[index].state = BoulderState::Rolling { kills };
+            }
+
+            index += 1;
+        }
+    }
+
+    fn remove_enemies_at(&mut self, cell: Cell) -> Vec<i32> {
+        let mut powers = Vec::new();
+        let mut index = 0;
+        while index < self.enemies.len() {
+            if self.enemies[index].cell == cell {
+                powers.push(self.enemies[index].power);
+                self.enemies.remove(index);
+            } else {
+                index += 1;
+            }
+        }
+        powers
+    }
+
+    fn boulder_blocks_at(&self, cell: Cell, except: usize) -> bool {
+        self.boulders
+            .iter()
+            .enumerate()
+            .any(|(index, boulder)| index != except && boulder.cell == cell)
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -608,11 +730,21 @@ pub(super) struct TurnReport {
 pub(super) enum WorldEvent {
     Blocked,
     Waited,
-    CombatWon { power: i32 },
-    WalkerDestroyed { power: i32 },
-    EnemyKilled { cell: Cell, power: i32 },
+    CombatWon {
+        power: i32,
+    },
+    WalkerDestroyed {
+        power: i32,
+    },
+    EnemyKilled {
+        cell: Cell,
+        power: i32,
+    },
     HeroDied,
-    BonusCollected { amount: i32, mystery: bool },
+    BonusCollected {
+        amount: i32,
+        mystery: bool,
+    },
     PressurePlateOn,
     PressurePlateOff,
     DoorOpened,
@@ -620,13 +752,36 @@ pub(super) enum WorldEvent {
     TrapArmed,
     TrapDisarmed,
     TrapTriggered,
-    Shouted { cell: Cell, heard: usize },
+    BoulderReleased {
+        cell: Cell,
+        direction: Direction,
+    },
+    BoulderMoved {
+        cell: Cell,
+    },
+    BoulderCrushedEnemy {
+        cell: Cell,
+        power: i32,
+        chain: usize,
+    },
+    BoulderStopped {
+        cell: Cell,
+    },
+    BoulderSmartChain {
+        count: usize,
+    },
+    Shouted {
+        cell: Cell,
+        heard: usize,
+    },
     WalkerLostTarget,
     WalkerMoved,
     WalkerResumedPatrol,
     WalkerSpottedHero,
     WalkerTurned,
-    SmartChain { count: usize },
+    SmartChain {
+        count: usize,
+    },
     Won,
 }
 
@@ -784,6 +939,21 @@ pub(super) struct Trap {
     initially_active: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Boulder {
+    pub(super) cell: Cell,
+    group: u8,
+    pub(super) direction: Direction,
+    pub(super) state: BoulderState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BoulderState {
+    Ready,
+    Rolling { kills: usize },
+    Stopped,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Level {
     timing: LevelTiming,
@@ -795,6 +965,7 @@ struct Level {
     doors: Vec<Door>,
     levers: Vec<Lever>,
     traps: Vec<Trap>,
+    boulders: Vec<Boulder>,
     bonuses: Vec<Bonus>,
     enemies: Vec<Enemy>,
 }
@@ -844,6 +1015,7 @@ fn level_seriously() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![guard(3, 4, 3), guard(3, 2, 15)],
     }
@@ -862,6 +1034,7 @@ fn level_math_is_hard() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![fixed_bonus(2, 1, 6)],
         enemies: vec![guard(4, 3, 10)],
     }
@@ -881,6 +1054,7 @@ fn level_pay_the_price() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![guard(3, 3, 4), guard(7, 3, 5)],
     }
@@ -900,6 +1074,7 @@ fn level_order_matters() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![fixed_bonus(3, 2, 5)],
         enemies: vec![guard(3, 3, 2), guard(6, 4, 8)],
     }
@@ -919,6 +1094,7 @@ fn level_just_leave() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![guard(5, 4, 99)],
     }
@@ -939,6 +1115,7 @@ fn level_hes_moving() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(5, 4, 9, Direction::Up)],
     }
@@ -959,6 +1136,7 @@ fn level_wait_for_it() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(5, 3, 9, Direction::Down)],
     }
@@ -980,6 +1158,7 @@ fn level_let_him_come() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![fixed_bonus(6, 4, 4)],
         enemies: vec![walker(5, 4, 4, Direction::Left), guard(7, 4, 9)],
     }
@@ -1001,6 +1180,7 @@ fn level_lucky_boy() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![fixed_bonus(5, 2, 3), mystery_bonus(5, 5, 2, 8)],
         enemies: vec![guard(8, 2, 8), guard(8, 5, 8)],
     }
@@ -1026,6 +1206,7 @@ fn level_smart_boy() -> Level {
         }],
         levers: vec![lever(2, 2, 1)],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![
             fixed_bonus(4, 5, 4),
             fixed_bonus(5, 2, 5),
@@ -1058,6 +1239,7 @@ fn level_living_plate_a() -> Level {
         }],
         levers: vec![pressure_plate(4, 2, 1)],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(3, 2, 99, Direction::Right)],
     }
@@ -1081,6 +1263,7 @@ fn level_living_plate_b() -> Level {
         }],
         levers: vec![pressure_plate(5, 2, 1)],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(3, 2, 99, Direction::Right)],
     }
@@ -1104,6 +1287,7 @@ fn level_living_plate_c() -> Level {
         }],
         levers: vec![lever(2, 2, 1), pressure_plate(5, 2, 1)],
         traps: vec![],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(4, 2, 99, Direction::Right)],
     }
@@ -1120,6 +1304,7 @@ fn level_watch_your_step() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![active_trap(3, 4)],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![],
     }
@@ -1139,6 +1324,7 @@ fn level_set_the_trap() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(1, 3, 1)],
         traps: vec![group_trap(6, 4, 1)],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(9, 4, 9, Direction::Left)],
     }
@@ -1158,6 +1344,7 @@ fn level_clockwork() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(2, 4, 1)],
         traps: vec![group_trap(6, 4, 1)],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(8, 4, 9, Direction::Left)],
     }
@@ -1177,6 +1364,7 @@ fn level_come_here() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![active_trap(6, 4)],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![walker(9, 4, 9, Direction::Up)],
     }
@@ -1196,6 +1384,7 @@ fn level_group_therapy() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(5, 2, 1)],
         traps: vec![group_trap(7, 3, 1), group_trap(8, 3, 1)],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![
             walker(8, 3, 9, Direction::Up),
@@ -1217,6 +1406,7 @@ fn level_smart_way() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(5, 3, 1)],
         traps: vec![group_trap(6, 2, 1), group_trap(6, 4, 1)],
+        boulders: vec![],
         bonuses: vec![],
         enemies: vec![
             walker(7, 2, 7, Direction::Up),
@@ -1245,26 +1435,29 @@ fn level_iso_slice() -> Level {
     Level {
         timing: LevelTiming::SemiContinuous,
         name: "ISO SLICE",
-        hero_start: Cell::new(3, 4),
+        hero_start: Cell::new(3, 3),
         hero_power: 24,
         exit: Cell::new(10, 4),
         walls,
         doors: vec![Door {
             cell: Cell::new(10, 4),
             group: 1,
-            initially_open: false,
+            initially_open: true,
         }],
-        levers: vec![pressure_plate(5, 4, 1)],
+        levers: vec![pressure_plate(3, 5, 1)],
         traps: vec![
             group_trap(6, 3, 1),
             group_trap(7, 4, 1),
             group_trap(6, 5, 1),
         ],
+        boulders: vec![boulder(2, 4, Direction::Right, 1)],
         bonuses: vec![],
         enemies: vec![
-            walker(8, 3, 9, Direction::Left),
+            walker(7, 3, 9, Direction::Left),
             walker(8, 4, 9, Direction::Left),
-            walker(8, 5, 9, Direction::Left),
+            walker(7, 5, 9, Direction::Left),
+            walker(10, 4, 9, Direction::Up),
+            walker(6, 5, 9, Direction::Right),
         ],
     }
 }
@@ -1372,6 +1565,15 @@ fn group_trap(x: i32, y: i32, group: u8) -> Trap {
     }
 }
 
+fn boulder(x: i32, y: i32, direction: Direction, group: u8) -> Boulder {
+    Boulder {
+        cell: Cell::new(x, y),
+        group,
+        direction,
+        state: BoulderState::Ready,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MysteryRng {
     state: u32,
@@ -1415,6 +1617,7 @@ mod tests {
             doors: vec![],
             levers: vec![],
             traps: vec![],
+            boulders: vec![],
             bonuses: vec![],
             enemies: vec![],
         }
@@ -1439,6 +1642,7 @@ mod tests {
             latched_traps_active: vec![false; level.traps.len()],
             traps_active: vec![false; level.traps.len()],
             pressure_plates_active: vec![false; level.levers.len()],
+            boulders: level.boulders.clone(),
             turn_count: 0,
             seed: 123,
             rng: MysteryRng::new(123),
@@ -1693,6 +1897,261 @@ mod tests {
 
         assert_eq!(world.enemies()[0].cell, Cell::new(6, 1));
         assert_eq!(world.turn_count(), 3);
+    }
+
+    #[test]
+    fn boulder_ready_does_not_move() {
+        let mut level = semi_test_level(10);
+        level.boulders.push(boulder(2, 1, Direction::Right, 1));
+        let mut world = world_from(level);
+
+        world.update_tick();
+
+        assert_eq!(world.boulders()[0].cell, Cell::new(2, 1));
+        assert_eq!(world.boulders()[0].state, BoulderState::Ready);
+    }
+
+    #[test]
+    fn pressure_plate_releases_ready_boulder() {
+        let mut level = semi_test_level(10);
+        level.levers.push(pressure_plate(2, 1, 1));
+        level.boulders.push(boulder(4, 1, Direction::Right, 1));
+        let mut world = world_from(level);
+
+        let report = world.apply(right());
+
+        assert!(report.events.contains(&WorldEvent::BoulderReleased {
+            cell: Cell::new(4, 1),
+            direction: Direction::Right,
+        }));
+        assert_eq!(
+            world.boulders()[0].state,
+            BoulderState::Rolling { kills: 0 }
+        );
+    }
+
+    #[test]
+    fn rolling_boulder_moves_deterministically() {
+        let mut level = semi_test_level(10);
+        level.boulders.push(Boulder {
+            cell: Cell::new(2, 1),
+            group: 1,
+            direction: Direction::Right,
+            state: BoulderState::Rolling { kills: 0 },
+        });
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert_eq!(world.boulders()[0].cell, Cell::new(5, 1));
+        assert!(report.events.contains(&WorldEvent::BoulderMoved {
+            cell: Cell::new(3, 1),
+        }));
+        assert!(report.events.contains(&WorldEvent::BoulderMoved {
+            cell: Cell::new(4, 1),
+        }));
+        assert!(report.events.contains(&WorldEvent::BoulderMoved {
+            cell: Cell::new(5, 1),
+        }));
+    }
+
+    #[test]
+    fn rolling_boulder_stops_at_wall() {
+        let mut level = semi_test_level(10);
+        level.walls.push(Cell::new(4, 1));
+        level.boulders.push(Boulder {
+            cell: Cell::new(3, 1),
+            group: 1,
+            direction: Direction::Right,
+            state: BoulderState::Rolling { kills: 0 },
+        });
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert_eq!(world.boulders()[0].cell, Cell::new(3, 1));
+        assert_eq!(world.boulders()[0].state, BoulderState::Stopped);
+        assert!(report.events.contains(&WorldEvent::BoulderStopped {
+            cell: Cell::new(3, 1),
+        }));
+    }
+
+    #[test]
+    fn rolling_boulder_kills_walker_and_continues() {
+        let mut level = semi_test_level(10);
+        level.walls.push(Cell::new(3, 0));
+        level.enemies.push(walker(3, 1, 9, Direction::Up));
+        level.boulders.push(Boulder {
+            cell: Cell::new(2, 1),
+            group: 1,
+            direction: Direction::Right,
+            state: BoulderState::Rolling { kills: 0 },
+        });
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert!(world.enemies().is_empty());
+        assert_eq!(world.boulders()[0].cell, Cell::new(5, 1));
+        assert_eq!(
+            world.boulders()[0].state,
+            BoulderState::Rolling { kills: 1 }
+        );
+        assert!(report.events.contains(&WorldEvent::EnemyKilled {
+            cell: Cell::new(3, 1),
+            power: 9,
+        }));
+        assert!(report.events.contains(&WorldEvent::BoulderCrushedEnemy {
+            cell: Cell::new(3, 1),
+            power: 9,
+            chain: 1,
+        }));
+    }
+
+    #[test]
+    fn rolling_boulder_can_crush_multiple_walkers_across_one_run() {
+        let mut level = semi_test_level(10);
+        level.walls.extend(cells(&[(3, 0), (4, 0), (4, 2)]));
+        level.enemies.push(walker(3, 1, 9, Direction::Up));
+        level.enemies.push(walker(4, 1, 9, Direction::Up));
+        level.boulders.push(Boulder {
+            cell: Cell::new(2, 1),
+            group: 1,
+            direction: Direction::Right,
+            state: BoulderState::Rolling { kills: 0 },
+        });
+        let mut world = world_from(level);
+
+        let first = world.update_tick();
+
+        assert_eq!(world.enemies().len(), 0);
+        assert_eq!(world.boulders()[0].cell, Cell::new(5, 1));
+        assert!(first.events.contains(&WorldEvent::BoulderCrushedEnemy {
+            cell: Cell::new(3, 1),
+            power: 9,
+            chain: 1,
+        }));
+        assert!(first.events.contains(&WorldEvent::BoulderCrushedEnemy {
+            cell: Cell::new(4, 1),
+            power: 9,
+            chain: 2,
+        }));
+        assert!(
+            first
+                .events
+                .contains(&WorldEvent::BoulderSmartChain { count: 2 })
+        );
+    }
+
+    #[test]
+    fn rolling_boulder_kills_hero_on_trajectory() {
+        let mut level = semi_test_level(10);
+        level.hero_start = Cell::new(3, 1);
+        level.boulders.push(Boulder {
+            cell: Cell::new(2, 1),
+            group: 1,
+            direction: Direction::Right,
+            state: BoulderState::Rolling { kills: 0 },
+        });
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert_eq!(world.phase(), Phase::Dead);
+        assert!(report.events.contains(&WorldEvent::HeroDied));
+        assert_eq!(world.boulders()[0].cell, Cell::new(3, 1));
+        assert_eq!(world.boulders()[0].state, BoulderState::Stopped);
+    }
+
+    #[test]
+    fn rolling_boulder_emits_one_kill_per_crushed_enemy() {
+        let mut level = semi_test_level(10);
+        level.walls.push(Cell::new(3, 0));
+        level.enemies.push(walker(3, 1, 9, Direction::Up));
+        level.boulders.push(Boulder {
+            cell: Cell::new(2, 1),
+            group: 1,
+            direction: Direction::Right,
+            state: BoulderState::Rolling { kills: 0 },
+        });
+        let mut world = world_from(level);
+
+        let first = world.update_tick();
+        let second = world.update_tick();
+
+        assert_eq!(
+            first
+                .events
+                .iter()
+                .filter(|event| matches!(event, WorldEvent::EnemyKilled { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            second
+                .events
+                .iter()
+                .filter(|event| matches!(event, WorldEvent::EnemyKilled { .. }))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn restart_restores_iso_boulder_state() {
+        let mut world = SmartBoyWorld::iso_slice(42);
+        let initial = world.clone();
+
+        world.apply(down());
+        world.apply(down());
+        world.update_tick();
+        assert_ne!(world.boulders()[0].state, initial.boulders()[0].state);
+
+        world.restart();
+
+        assert_eq!(world, initial);
+    }
+
+    #[test]
+    fn same_ticks_produce_same_boulder_result() {
+        let mut first = SmartBoyWorld::iso_slice(7);
+        let mut second = SmartBoyWorld::iso_slice(7);
+
+        for world in [&mut first, &mut second] {
+            world.apply(shout());
+            world.update_tick();
+            world.apply(down());
+            world.apply(down());
+            world.update_tick();
+            world.update_tick();
+            world.update_tick();
+        }
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn iso_slice_can_produce_boulder_multi_kill_after_shout_setup() {
+        let mut world = SmartBoyWorld::iso_slice(7);
+        let mut boulder_chain = 0;
+
+        world.apply(down());
+        world.apply(right());
+        world.apply(shout());
+        world.update_tick();
+        world.update_tick();
+        world.apply(left());
+        world.apply(down());
+        for _ in 0..8 {
+            let report = world.update_tick();
+            for event in report.events {
+                if let WorldEvent::BoulderSmartChain { count } = event {
+                    boulder_chain = boulder_chain.max(count);
+                }
+            }
+        }
+
+        assert!(boulder_chain >= 2, "expected boulder SMART x2 or better");
     }
 
     #[test]

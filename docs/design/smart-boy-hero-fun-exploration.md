@@ -606,6 +606,53 @@ Question de play-test:
 > la 2D isometrique ameliore-t-elle suffisamment la perception de "petite arene
 > mecanique vivante" pour justifier son cout supplementaire ?
 
+Retour play-test qualitatif:
+
+- meme avec des placeholders, l'isometrique augmente fortement l'interet et la
+  sensation de jeu;
+- la direction `2D isometrique + SemiContinuous + SHOUT + pieges systemiques`
+  devient la direction d'exploration principale;
+- le feedback audio/combat reste encore trop pauvre pour soutenir le spectacle;
+- le prochain test doit mesurer un vrai moment de payoff, pas seulement une
+  meilleure presentation du puzzle.
+
+## Experience Candidate: Boulder Roulant
+
+Statut 2026-08-16: premiere experience explicitement orientee "WOW mechanic".
+Le Boulder n'est pas encore une mecanique definitive; il sert a verifier si SBH
+peut produire un spectacle systemique rejouable.
+
+Hypothese testee:
+
+> plusieurs ennemis manipules par SHOUT + destruction spectaculaire dans une
+> meme trajectoire peuvent produire l'envie de rejouer la salle pour optimiser le
+> multi-kill.
+
+Modele local:
+
+```text
+Boulder Ready
+    -> pression/declencheur existant
+    -> Rolling en ligne droite
+    -> ecrase Walkers et heros sur sa trajectoire
+    -> Stopped sur mur / limite / obstacle bloquant
+```
+
+Choix limites:
+
+- pas de physique generale;
+- pas de Rigidbody;
+- pas de destructible environment;
+- pas de nouvelle famille de pieges;
+- pas de score, loot, XP ou recharge SHOUT;
+- pas de loop audio de roulement;
+- feedback `SMART xN` local a la course du Boulder.
+
+Critere de play-test:
+
+> le joueur pense-t-il "j'en ai ecrase 3, est-ce que je peux en mettre 5 dans
+> l'axe ?" ou seulement "j'ai trouve la solution du puzzle" ?
+
 ## Comparatif
 
 | Proposition | Potentiel de fun | Cout | Risque |

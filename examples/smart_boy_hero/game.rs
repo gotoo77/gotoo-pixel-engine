@@ -50,6 +50,9 @@ const TRAP_TRIGGER_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_trigger");
 const SHOUT_SOUND: SoundId = SoundId::new("smart_boy_hero.shout");
 const ENEMY_KILL_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_kill");
 const ENEMY_ALERT_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_alert");
+const BOULDER_RELEASE_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_release");
+const BOULDER_CRUSH_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_crush");
+const BOULDER_STOP_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_stop");
 const DEATH_SOUND: SoundId = SoundId::new("smart_boy_hero.death");
 const VICTORY_SOUND: SoundId = SoundId::new("smart_boy_hero.victory");
 
@@ -609,6 +612,9 @@ fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
             WorldEvent::TrapArmed => Some(TRAP_ARM_SOUND),
             WorldEvent::TrapDisarmed => Some(TRAP_DISARM_SOUND),
             WorldEvent::TrapTriggered => Some(TRAP_TRIGGER_SOUND),
+            WorldEvent::BoulderReleased { .. } => Some(BOULDER_RELEASE_SOUND),
+            WorldEvent::BoulderCrushedEnemy { .. } => Some(BOULDER_CRUSH_SOUND),
+            WorldEvent::BoulderStopped { .. } => Some(BOULDER_STOP_SOUND),
             WorldEvent::Shouted { .. } => Some(SHOUT_SOUND),
             WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
             WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
@@ -616,6 +622,8 @@ fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
             WorldEvent::Won => Some(VICTORY_SOUND),
             WorldEvent::Blocked
             | WorldEvent::Waited
+            | WorldEvent::BoulderMoved { .. }
+            | WorldEvent::BoulderSmartChain { .. }
             | WorldEvent::WalkerLostTarget
             | WorldEvent::WalkerMoved
             | WorldEvent::WalkerResumedPatrol
@@ -631,7 +639,7 @@ struct SfxBinding {
     sound: SoundId,
 }
 
-const REQUIRED_SFX: [SfxBinding; 15] = [
+const REQUIRED_SFX: [SfxBinding; 18] = [
     SfxBinding {
         key: "combat",
         sound: COMBAT_SOUND,
@@ -683,6 +691,18 @@ const REQUIRED_SFX: [SfxBinding; 15] = [
     SfxBinding {
         key: "enemy_alert",
         sound: ENEMY_ALERT_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_release",
+        sound: BOULDER_RELEASE_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_crush",
+        sound: BOULDER_CRUSH_SOUND,
+    },
+    SfxBinding {
+        key: "boulder_stop",
+        sound: BOULDER_STOP_SOUND,
     },
     SfxBinding {
         key: "death",
@@ -1803,6 +1823,18 @@ mod tests {
             WorldEvent::TrapArmed,
             WorldEvent::TrapDisarmed,
             WorldEvent::TrapTriggered,
+            WorldEvent::BoulderReleased {
+                cell: Cell::new(2, 4),
+                direction: Direction::Right,
+            },
+            WorldEvent::BoulderCrushedEnemy {
+                cell: Cell::new(4, 4),
+                power: 9,
+                chain: 1,
+            },
+            WorldEvent::BoulderStopped {
+                cell: Cell::new(10, 4),
+            },
             WorldEvent::Shouted {
                 cell: Cell::new(1, 1),
                 heard: 2,
@@ -1829,6 +1861,9 @@ mod tests {
                 TRAP_ARM_SOUND,
                 TRAP_DISARM_SOUND,
                 TRAP_TRIGGER_SOUND,
+                BOULDER_RELEASE_SOUND,
+                BOULDER_CRUSH_SOUND,
+                BOULDER_STOP_SOUND,
                 SHOUT_SOUND,
                 ENEMY_KILL_SOUND,
                 ENEMY_ALERT_SOUND,
