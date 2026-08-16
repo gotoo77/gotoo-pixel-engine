@@ -150,13 +150,28 @@ fn register_decoded_wav(
     id: SoundId,
     bytes: &[u8],
 ) -> Result<(), AudioError> {
-    if sounds.contains_key(&id) {
-        return Ok(());
+    let sound = decode_wav(bytes)?;
+    if let Some(existing) = sounds.get(&id) {
+        return ensure_same_sound(id, existing, &sound);
     }
 
-    let sound = decode_wav(bytes)?;
     sounds.insert(id, sound);
     Ok(())
+}
+
+fn ensure_same_sound(
+    id: SoundId,
+    existing: &DecodedSound,
+    candidate: &DecodedSound,
+) -> Result<(), AudioError> {
+    if existing == candidate {
+        Ok(())
+    } else {
+        Err(AudioError::new(format!(
+            "sound '{}' is already registered with different audio data",
+            id.as_str()
+        )))
+    }
 }
 
 fn decode_wav(bytes: &[u8]) -> Result<DecodedSound, AudioError> {
@@ -287,13 +302,16 @@ mod web {
 
     use web_sys::{AudioBuffer, AudioContext, AudioContextState};
 
-    use super::{Audio, AudioError, DecodedSound, PlatformAudio, SoundId, decode_wav};
+    use super::{
+        Audio, AudioError, DecodedSound, PlatformAudio, SoundId, decode_wav, ensure_same_sound,
+    };
 
     #[derive(Default)]
     pub(crate) struct WebAudio {
         context: Option<AudioContext>,
         unavailable: bool,
         sounds: HashMap<SoundId, AudioBuffer>,
+        decoded_sounds: HashMap<SoundId, DecodedSound>,
     }
 
     impl WebAudio {
@@ -353,14 +371,15 @@ mod web {
 
     impl Audio for WebAudio {
         fn register_wav(&mut self, id: SoundId, bytes: &[u8]) -> Result<(), AudioError> {
-            if self.sounds.contains_key(&id) {
-                return Ok(());
+            let sound = decode_wav(bytes)?;
+            if let Some(existing) = self.decoded_sounds.get(&id) {
+                return ensure_same_sound(id, existing, &sound);
             }
 
-            let sound = decode_wav(bytes)?;
             let context = self.context()?;
             let buffer = Self::create_buffer(&context, &sound)?;
             self.sounds.insert(id, buffer);
+            self.decoded_sounds.insert(id, sound);
             Ok(())
         }
 
@@ -427,6 +446,10 @@ mod tests {
         82, 73, 70, 70, 40, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0,
         68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, 100, 97, 116, 97, 4, 0, 0, 0, 0, 0, 255, 127,
     ];
+    const DIFFERENT_VALID_WAV: &[u8] = &[
+        82, 73, 70, 70, 40, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0,
+        68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, 100, 97, 116, 97, 4, 0, 0, 0, 0, 0, 0, 0,
+    ];
     const INVALID_WAV: &[u8] = b"not a wav";
 
     #[test]
@@ -463,15 +486,29 @@ mod tests {
     }
 
     #[test]
-    fn noop_audio_registration_is_idempotent() {
+    fn noop_audio_registration_is_idempotent_for_same_sound() {
         let mut audio = NoopAudio::default();
 
         audio
             .register_wav(TEST_SOUND, VALID_WAV)
             .expect("first register should succeed");
         audio
-            .register_wav(TEST_SOUND, INVALID_WAV)
-            .expect("same id should already be cached");
+            .register_wav(TEST_SOUND, VALID_WAV)
+            .expect("same id and sound should remain idempotent");
+    }
+
+    #[test]
+    fn noop_audio_rejects_same_id_with_different_sound() {
+        let mut audio = NoopAudio::default();
+
+        audio
+            .register_wav(TEST_SOUND, VALID_WAV)
+            .expect("first register should succeed");
+        let error = audio
+            .register_wav(TEST_SOUND, DIFFERENT_VALID_WAV)
+            .expect_err("same id with different audio data should be rejected");
+
+        assert!(error.to_string().contains("different audio data"));
     }
 
     #[test]
@@ -517,7 +554,6 @@ mod tests {
     fn sound_bank_reports_unknown_asset() {
         let mut audio = NoopAudio::default();
         let mut bank = SoundBank::new();
-
         assert!(bank.play(&mut audio, TEST_SOUND).is_err());
     }
 }

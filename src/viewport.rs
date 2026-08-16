@@ -33,12 +33,19 @@ impl Rect {
             return false;
         }
 
-        let self_max_x = self.x + self.width as i32;
-        let self_max_y = self.y + self.height as i32;
-        let other_max_x = other.x + other.width as i32;
-        let other_max_y = other.y + other.height as i32;
+        let self_min_x = i64::from(self.x);
+        let self_min_y = i64::from(self.y);
+        let self_max_x = self_min_x + i64::from(self.width);
+        let self_max_y = self_min_y + i64::from(self.height);
+        let other_min_x = i64::from(other.x);
+        let other_min_y = i64::from(other.y);
+        let other_max_x = other_min_x + i64::from(other.width);
+        let other_max_y = other_min_y + i64::from(other.height);
 
-        self.x < other_max_x && self_max_x > other.x && self.y < other_max_y && self_max_y > other.y
+        self_min_x < other_max_x
+            && self_max_x > other_min_x
+            && self_min_y < other_max_y
+            && self_max_y > other_min_y
     }
 }
 
@@ -342,5 +349,41 @@ mod tests {
         assert!(rect.contains((39, 59)));
         assert!(!rect.contains((40, 59)));
         assert!(!rect.contains((39, 60)));
+    }
+
+    #[test]
+    fn rect_intersection_handles_positive_i32_edge_without_overflow() {
+        let left = Rect {
+            x: i32::MAX - 1,
+            y: 0,
+            width: 2,
+            height: 2,
+        };
+        let right = Rect {
+            x: i32::MAX,
+            y: 0,
+            width: 1,
+            height: 2,
+        };
+
+        assert!(left.intersects(right));
+    }
+
+    #[test]
+    fn rect_intersection_handles_large_unsigned_extents_without_overflow() {
+        let wide = Rect {
+            x: i32::MIN,
+            y: -1,
+            width: u32::MAX,
+            height: 2,
+        };
+        let edge = Rect {
+            x: i32::MAX - 1,
+            y: -1,
+            width: 1,
+            height: 2,
+        };
+
+        assert!(wide.intersects(edge));
     }
 }

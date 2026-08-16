@@ -65,3 +65,21 @@ fn rect_intersects_exposes_aabb_semantics_to_games() {
         .intersects(paddle)
     );
 }
+
+#[test]
+fn rect_intersects_remains_safe_at_public_coordinate_limits() {
+    let near_max = Rect {
+        x: i32::MAX - 1,
+        y: i32::MIN,
+        width: 2,
+        height: 2,
+    };
+    let max_edge = Rect {
+        x: i32::MAX,
+        y: i32::MIN,
+        width: 1,
+        height: 1,
+    };
+
+    assert!(near_max.intersects(max_edge));
+}

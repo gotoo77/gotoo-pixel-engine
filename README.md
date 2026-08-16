@@ -184,9 +184,18 @@ Validation de tous les entrypoints Web :
 ./scripts/check-web.sh
 ```
 
-La CI GitHub exécute les deux chemins séparément avant intégration. Le workflow
-GitHub Pages reste responsable de la construction release et du déploiement des
-jeux Web.
+La CI GitHub compile tous les entrypoints Web puis exécute également
+`build-web.sh` avec la version verrouillée de `wasm-bindgen-cli`, afin qu'une PR
+valide aussi le packaging JavaScript/WASM réellement requis par les pages Web.
+Le workflow GitHub Pages reste responsable de la construction release et du
+déploiement.
+
+## Licence
+
+Le code propre à `gotoo-pixel-engine` est distribué sous licence MIT. Voir
+[`LICENSE`](LICENSE). Les références externes, inspirations et éventuels ports
+restent documentés séparément dans [`REFERENCES.md`](REFERENCES.md), avec leurs
+propres obligations de licence et de provenance.
 
 Voir aussi [ROADMAP.md](ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) et
 [REFERENCES.md](REFERENCES.md).
