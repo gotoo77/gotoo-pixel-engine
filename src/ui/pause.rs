@@ -1,9 +1,12 @@
 use crate::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, GamepadId,
-    GamepadProfile, Input, Key, Pixel, Rect, Size,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, Pixel,
+    Rect, Size,
 };
 
-use super::{MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered};
+use super::{
+    MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
+    standard_menu_controls,
+};
 
 const PAUSE_TOGGLE: ActionId = ActionId::new("ui.pause.toggle");
 const PAUSE_UP: ActionId = ActionId::new("ui.pause.up");
@@ -280,27 +283,13 @@ impl<G: Game> Game for PauseGame<G> {
             PauseState::ResumeGate => self.update_resume_gate(frame),
         }
     }
-
-    fn gamepad_profile(&self, id: GamepadId) -> Option<GamepadProfile> {
-        self.game.gamepad_profile(id)
-    }
 }
 
 fn pause_controls() -> ControlMap {
-    let mut controls = ControlMap::new();
+    let mut controls = standard_menu_controls(PAUSE_UP, PAUSE_DOWN, PAUSE_CONFIRM);
     controls
         .bind_key(PAUSE_TOGGLE, Key::Escape)
-        .bind_gamepad(PAUSE_TOGGLE, GamepadButton::Start)
-        .bind_key(PAUSE_UP, Key::Up)
-        .bind_key(PAUSE_UP, Key::W)
-        .bind_gamepad(PAUSE_UP, GamepadButton::DPadUp)
-        .bind_gamepad(PAUSE_UP, GamepadButton::LeftStickUp)
-        .bind_key(PAUSE_DOWN, Key::Down)
-        .bind_key(PAUSE_DOWN, Key::S)
-        .bind_gamepad(PAUSE_DOWN, GamepadButton::DPadDown)
-        .bind_gamepad(PAUSE_DOWN, GamepadButton::LeftStickDown)
-        .bind_key(PAUSE_CONFIRM, Key::Space)
-        .bind_gamepad(PAUSE_CONFIRM, GamepadButton::South);
+        .bind_gamepad(PAUSE_TOGGLE, GamepadButton::Start);
     controls
 }
 

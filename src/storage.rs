@@ -39,6 +39,23 @@ impl LocalStorage for NoopStorage {
     }
 }
 
+fn validate_storage_key(key: &str) -> Result<(), StorageError> {
+    let portable = !key.is_empty()
+        && key != "."
+        && key != ".."
+        && key.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        });
+
+    if portable {
+        Ok(())
+    } else {
+        Err(StorageError::new(
+            "local storage keys may contain only ASCII letters, digits, '.', '_' and '-'",
+        ))
+    }
+}
+
 pub(crate) fn platform_storage() -> Box<dyn LocalStorage> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -59,7 +76,7 @@ mod native {
 
     use directories::ProjectDirs;
 
-    use super::{LocalStorage, StorageError};
+    use super::{LocalStorage, StorageError, validate_storage_key};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) struct FileLocalStorage {
@@ -119,24 +136,8 @@ mod native {
     }
 
     fn storage_file_name(key: &str) -> Result<String, StorageError> {
-        let mut file_name = String::new();
-
-        for character in key.chars() {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
-                file_name.push(character);
-            } else {
-                file_name.push('_');
-            }
-        }
-
-        if file_name.is_empty() || file_name == "." || file_name == ".." {
-            return Err(StorageError::new(
-                "local storage key is not usable as a file name",
-            ));
-        }
-
-        file_name.push_str(".txt");
-        Ok(file_name)
+        validate_storage_key(key)?;
+        Ok(format!("{key}.txt"))
     }
 
     #[cfg(test)]
@@ -160,13 +161,16 @@ mod native {
         use crate::LocalStorage;
 
         #[test]
-        fn storage_file_name_sanitizes_keys() {
+        fn storage_file_name_accepts_only_portable_keys() {
             assert_eq!(
                 storage_file_name("gotoo-pixel-engine.snake.best_score.v1"),
                 Ok("gotoo-pixel-engine.snake.best_score.v1.txt".into())
             );
-            assert_eq!(storage_file_name("../bad/key"), Ok(".._bad_key.txt".into()));
+            assert!(storage_file_name("../bad/key").is_err());
+            assert!(storage_file_name("a?b").is_err());
             assert!(storage_file_name("").is_err());
+            assert!(storage_file_name(".").is_err());
+            assert!(storage_file_name("..").is_err());
         }
 
         #[test]
@@ -223,19 +227,21 @@ mod native {
 mod web {
     use wasm_bindgen::JsValue;
 
-    use super::{LocalStorage, StorageError};
+    use super::{LocalStorage, StorageError, validate_storage_key};
 
     #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct WebLocalStorage;
 
     impl LocalStorage for WebLocalStorage {
         fn get(&mut self, key: &str) -> Result<Option<String>, StorageError> {
+            validate_storage_key(key)?;
             local_storage()?.get_item(key).map_err(|err| {
                 StorageError::new(js_error_message("failed to read localStorage", err))
             })
         }
 
         fn set(&mut self, key: &str, value: &str) -> Result<(), StorageError> {
+            validate_storage_key(key)?;
             local_storage()?.set_item(key, value).map_err(|err| {
                 StorageError::new(js_error_message("failed to write localStorage", err))
             })

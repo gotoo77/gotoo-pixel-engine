@@ -56,6 +56,11 @@ impl Game for GamepadInputProbe {
                 .with_digital_threshold(self.profile.digital_threshold + 0.05);
         }
 
+        let gamepad_ids = frame.input.gamepad_ids().collect::<Vec<_>>();
+        for id in gamepad_ids.iter().copied() {
+            frame.set_gamepad_profile(id, self.profile);
+        }
+
         for event in frame.input.gamepad_connection_events() {
             match event {
                 GamepadConnectionEvent::Connected(info) => {
@@ -67,7 +72,7 @@ impl Game for GamepadInputProbe {
             }
         }
 
-        for id in frame.input.gamepad_ids() {
+        for id in gamepad_ids {
             for (button, label) in BUTTONS {
                 let state = frame.input.gamepad_button(id, button);
                 if state.pressed() {
@@ -81,10 +86,6 @@ impl Game for GamepadInputProbe {
 
         render_probe(frame.framebuffer, frame.input, self.profile);
         GameResult::Continue
-    }
-
-    fn gamepad_profile(&self, _id: GamepadId) -> Option<GamepadProfile> {
-        Some(self.profile)
     }
 }
 

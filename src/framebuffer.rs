@@ -52,32 +52,40 @@ impl Framebuffer {
             return;
         }
 
-        let mut x0 = i64::from(x0);
-        let mut y0 = i64::from(y0);
+        let x0 = i64::from(x0);
+        let y0 = i64::from(y0);
         let x1 = i64::from(x1);
         let y1 = i64::from(y1);
-
         let dx = (x1 - x0).abs();
-        let dy = -(y1 - y0).abs();
+        let dy = (y1 - y0).abs();
+
+        if dx == 0 && dy == 0 {
+            self.draw_i64(x0, y0, pixel);
+            return;
+        }
+
         let sx = if x0 < x1 { 1 } else { -1 };
         let sy = if y0 < y1 { 1 } else { -1 };
-        let mut error = dx + dy;
 
-        loop {
-            self.draw_i64(x0, y0, pixel);
+        if dx >= dy {
+            let Some((first_step, last_step)) = visible_major_steps(x0, x1, self.width) else {
+                return;
+            };
 
-            if x0 == x1 && y0 == y1 {
-                break;
+            for step in first_step..=last_step {
+                let x = x0 + sx * step;
+                let y = y0 + sy * rounded_minor_step(dy, step, dx);
+                self.draw_i64(x, y, pixel);
             }
+        } else {
+            let Some((first_step, last_step)) = visible_major_steps(y0, y1, self.height) else {
+                return;
+            };
 
-            let doubled_error = error * 2;
-            if doubled_error >= dy {
-                error += dy;
-                x0 += sx;
-            }
-            if doubled_error <= dx {
-                error += dx;
-                y0 += sy;
+            for step in first_step..=last_step {
+                let x = x0 + sx * rounded_minor_step(dx, step, dy);
+                let y = y0 + sy * step;
+                self.draw_i64(x, y, pixel);
             }
         }
     }
@@ -426,6 +434,34 @@ impl Framebuffer {
     }
 }
 
+fn visible_major_steps(start: i64, end: i64, limit: u32) -> Option<(i64, i64)> {
+    if limit == 0 {
+        return None;
+    }
+
+    let total_steps = (end - start).abs();
+    let max_coordinate = i64::from(limit) - 1;
+
+    let (first_step, last_step) = if start <= end {
+        ((-start).max(0), (max_coordinate - start).min(total_steps))
+    } else {
+        ((start - max_coordinate).max(0), start.min(total_steps))
+    };
+
+    (first_step <= last_step).then_some((first_step, last_step))
+}
+
+fn rounded_minor_step(minor_delta: i64, major_step: i64, major_delta: i64) -> i64 {
+    debug_assert!(major_delta > 0);
+    debug_assert!(major_step >= 0 && major_step <= major_delta);
+    debug_assert!(minor_delta >= 0 && minor_delta <= major_delta);
+
+    let numerator = 2 * i128::from(minor_delta) * i128::from(major_step) + i128::from(major_delta);
+    let denominator = 2 * i128::from(major_delta);
+
+    (numerator / denominator) as i64
+}
+
 fn rect_bounds(x: i32, y: i32, width: u32, height: u32) -> Option<(i64, i64, i64, i64)> {
     if width == 0 || height == 0 {
         return None;
@@ -674,6 +710,54 @@ mod tests {
         assert_eq!(
             drawn_pixels(&framebuffer, Pixel::WHITE),
             &[(0, 0), (1, 0), (2, 0)]
+        );
+    }
+
+    #[test]
+    fn draw_line_clipping_preserves_bresenham_phase() {
+        let mut framebuffer = Framebuffer::new(3, 3);
+
+        framebuffer.draw_line(-2, -1, 4, 2, Pixel::WHITE);
+
+        assert_eq!(
+            drawn_pixels(&framebuffer, Pixel::WHITE),
+            &[(0, 0), (1, 1), (2, 1)]
+        );
+    }
+
+    #[test]
+    fn draw_line_with_extreme_horizontal_span_only_draws_visible_pixels() {
+        let mut framebuffer = Framebuffer::new(3, 3);
+
+        framebuffer.draw_line(i32::MIN, 1, i32::MAX, 1, Pixel::WHITE);
+
+        assert_eq!(
+            drawn_pixels(&framebuffer, Pixel::WHITE),
+            &[(0, 1), (1, 1), (2, 1)]
+        );
+    }
+
+    #[test]
+    fn draw_line_with_extreme_vertical_span_only_draws_visible_pixels() {
+        let mut framebuffer = Framebuffer::new(3, 3);
+
+        framebuffer.draw_line(1, i32::MIN, 1, i32::MAX, Pixel::WHITE);
+
+        assert_eq!(
+            drawn_pixels(&framebuffer, Pixel::WHITE),
+            &[(1, 0), (1, 1), (1, 2)]
+        );
+    }
+
+    #[test]
+    fn draw_line_with_extreme_diagonal_span_only_draws_visible_pixels() {
+        let mut framebuffer = Framebuffer::new(3, 3);
+
+        framebuffer.draw_line(i32::MIN, i32::MIN, i32::MAX, i32::MAX, Pixel::WHITE);
+
+        assert_eq!(
+            drawn_pixels(&framebuffer, Pixel::WHITE),
+            &[(0, 0), (1, 1), (2, 2)]
         );
     }
 

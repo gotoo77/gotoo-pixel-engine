@@ -2,11 +2,11 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+source scripts/web-examples.sh
 
-echo "==> snake_web"
-cargo build --target wasm32-unknown-unknown --example snake_web
-
-echo "==> web_demo"
-cargo build --target wasm32-unknown-unknown --example web_demo
+for example in web_demo "${GPE_WEB_GAME_EXAMPLES[@]}"; do
+    echo "==> ${example}"
+    cargo build --target wasm32-unknown-unknown --example "${example}"
+done
 
 echo "==> OK"

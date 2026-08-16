@@ -330,4 +330,27 @@ mod tests {
 
         assert!(pad.visible());
     }
+
+    #[test]
+    fn reset_releases_active_virtual_actions() {
+        let mut pad = pad();
+        let mut controls = ControlMap::new();
+
+        pad.update_touches(
+            &[Touch {
+                id: 1,
+                phase: TouchPhase::Started,
+                position: Some((5, 5)),
+            }],
+            &mut controls,
+        );
+        controls.update(&Input::default());
+        assert!(controls.action(LEFT).held());
+
+        pad.reset(&mut controls);
+        controls.update(&Input::default());
+
+        assert!(controls.action(LEFT).released());
+        assert!(!controls.action(LEFT).held());
+    }
 }

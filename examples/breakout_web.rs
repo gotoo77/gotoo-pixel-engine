@@ -1,8 +1,8 @@
 #[allow(dead_code)]
-#[path = "breakout.rs"]
+#[path = "breakout/game.rs"]
 mod breakout;
 
-use breakout::{BreakoutApp, FRAMEBUFFER_HEIGHT, TOUCH_FRAMEBUFFER_WIDTH};
+use breakout::{BreakoutGame, FRAMEBUFFER_HEIGHT, TOUCH_FRAMEBUFFER_WIDTH};
 use gotoo_pixel_engine::{EngineConfig, run};
 use wasm_bindgen::prelude::*;
 
@@ -16,7 +16,7 @@ pub fn start() -> Result<(), JsValue> {
             window_width: TOUCH_FRAMEBUFFER_WIDTH * 3,
             window_height: FRAMEBUFFER_HEIGHT * 3,
         },
-        BreakoutApp::new_touch(),
+        BreakoutGame::new_touch(),
     )
     .map_err(|err| JsValue::from_str(&err.to_string()))
 }

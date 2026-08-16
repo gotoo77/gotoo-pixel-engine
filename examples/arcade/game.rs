@@ -1,8 +1,8 @@
 #[allow(dead_code)]
-#[path = "../breakout.rs"]
+#[path = "../breakout/game.rs"]
 mod breakout;
 #[allow(dead_code)]
-#[path = "../pong.rs"]
+#[path = "../pong/game.rs"]
 mod pong;
 #[allow(dead_code)]
 #[path = "../snake/game.rs"]
@@ -14,16 +14,15 @@ mod space_invaders;
 #[path = "../tetris/game.rs"]
 mod tetris;
 
-use breakout::BreakoutApp;
+use breakout::BreakoutGame;
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, GamepadId,
-    GamepadProfile, Key, Pixel, Rect, Size,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, Pixel, Rect, Size,
     ui::{
         MenuState, PauseConfig, PauseGame, VirtualButton, VirtualPad, draw_menu_item, draw_panel,
-        draw_text_centered,
+        draw_text_centered, standard_menu_controls,
     },
 };
-use pong::PongApp;
+use pong::PongGame;
 use snake::{SnakeGame, SnakeInteractionMode};
 use space_invaders::EnhancedSpaceInvadersGame;
 use tetris::TetrisGame;
@@ -333,28 +332,10 @@ impl Game for ArcadeApp {
             self.update_catalog(frame)
         }
     }
-
-    fn gamepad_profile(&self, id: GamepadId) -> Option<GamepadProfile> {
-        self.active_game
-            .as_ref()
-            .and_then(|game| game.gamepad_profile(id))
-    }
 }
 
 fn catalog_controls() -> ControlMap {
-    let mut controls = ControlMap::new();
-    controls
-        .bind_key(CATALOG_UP, Key::Up)
-        .bind_key(CATALOG_UP, Key::W)
-        .bind_gamepad(CATALOG_UP, GamepadButton::DPadUp)
-        .bind_gamepad(CATALOG_UP, GamepadButton::LeftStickUp)
-        .bind_key(CATALOG_DOWN, Key::Down)
-        .bind_key(CATALOG_DOWN, Key::S)
-        .bind_gamepad(CATALOG_DOWN, GamepadButton::DPadDown)
-        .bind_gamepad(CATALOG_DOWN, GamepadButton::LeftStickDown)
-        .bind_key(CATALOG_SELECT, Key::Space)
-        .bind_gamepad(CATALOG_SELECT, GamepadButton::South);
-    controls
+    standard_menu_controls(CATALOG_UP, CATALOG_DOWN, CATALOG_SELECT)
 }
 
 fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>> {
@@ -371,10 +352,10 @@ fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>
         (ArcadeInteractionMode::Touch, 2) => {
             pause_game(EnhancedSpaceInvadersGame::new_touch(), mode)
         }
-        (ArcadeInteractionMode::Native, 3) => pause_game(PongApp::new(), mode),
-        (ArcadeInteractionMode::Touch, 3) => pause_game(PongApp::new_touch(), mode),
-        (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutApp::new(), mode),
-        (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutApp::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 3) => pause_game(PongGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 3) => pause_game(PongGame::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutGame::new_touch(), mode),
         (_, _) => return None,
     };
     Some(game)
@@ -399,7 +380,7 @@ mod tests {
     #[test]
     fn returning_to_catalog_arms_catalog_select_release_gate() {
         let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
-        app.active_game = Some(Box::new(BreakoutApp::new()));
+        app.active_game = Some(Box::new(BreakoutGame::new()));
 
         app.return_to_catalog();
 

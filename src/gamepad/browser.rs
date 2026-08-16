@@ -45,10 +45,7 @@ pub(crate) struct GamepadInputBackend {
 }
 
 impl GamepadInputBackend {
-    pub(crate) fn poll<F>(&mut self, input: &mut Input, mut profile_for: F)
-    where
-        F: FnMut(GamepadId) -> Option<GamepadProfile>,
-    {
+    pub(crate) fn poll(&mut self, input: &mut Input) {
         let Some(window) = web_sys::window() else {
             return;
         };
@@ -73,7 +70,8 @@ impl GamepadInputBackend {
             input.connect_gamepad(id, gamepad.id());
 
             if gamepad.mapping() == GamepadMappingType::Standard {
-                update_standard_gamepad(input, id, &gamepad, profile_for(id).unwrap_or_default());
+                let profile = input.gamepad_profile(id);
+                update_standard_gamepad(input, id, &gamepad, profile);
             } else {
                 clear_gamepad(input, id);
             }
@@ -86,6 +84,7 @@ impl GamepadInputBackend {
             .collect::<Vec<_>>();
         for id in disconnected {
             input.disconnect_gamepad(id);
+            input.remove_gamepad_profile(id);
         }
         self.connected = seen;
     }

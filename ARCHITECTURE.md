@@ -2,28 +2,29 @@
 
 ## Philosophie
 
-Le moteur doit rester suffisamment petit pour qu'un developpeur puisse suivre le
-chemin complet entre son code de jeu et le pixel affiche, l'entree recue, la
-valeur sauvegardee ou le son joue.
+Le moteur doit rester suffisamment petit pour qu'un développeur puisse suivre le
+chemin complet entre son code de jeu et le pixel affiché, l'entrée reçue, la
+valeur sauvegardée ou le son joué.
 
-L'architecture actuelle privilegie :
+L'architecture actuelle privilégie :
 
 - une API publique courte ;
 - un framebuffer CPU comme primitive centrale ;
-- des frontieres plateforme explicites ;
-- des backends natif/Web caches au jeu ;
-- des abstractions ajoutees seulement apres besoin observe.
+- des frontières plateforme explicites ;
+- des backends natif/Web cachés au jeu ;
+- des abstractions ajoutées seulement après besoin observé ;
+- la réutilisation des primitives déjà présentes avant d'en ajouter de nouvelles.
 
-## Flux Principal
+## Flux principal
 
 ```text
 OS / navigateur
         ↓
-winit / evenements
+winit / événements
         ↓
 PlatformApp
         ↓
-Input / timing / capabilities
+Input + gamepad + timing + capabilities
         ↓
 Frame
         ↓
@@ -38,14 +39,21 @@ wgpu
 surface
 ```
 
-`PlatformApp` possede les ressources longues durees : fenetre, renderer,
-framebuffer, input, stockage, audio et horloges. A chaque redraw, il construit
-un `Frame`, appelle `Game::update`, puis demande au renderer de presenter le
-framebuffer.
+`PlatformApp` possède les ressources longue durée : fenêtre, renderer,
+framebuffer, input, backend gamepad, stockage, audio et horloges. `Input` conserve
+aussi l'état runtime des profils de calibration par périphérique. À chaque
+redraw, le backend normalise les périphériques avec ces profils, `PlatformApp`
+construit un `Frame`, appelle `Game::update`, puis présente le framebuffer.
 
-## Frame
+## `Game` et `Frame`
 
-`Frame` est l'agregat explicite des ressources disponibles pendant une frame :
+`Game` reste le contrat central :
+
+```text
+Game::update(&mut self, &mut Frame) -> GameResult
+```
+
+`Frame` agrège explicitement les ressources disponibles pendant une frame :
 
 ```text
 Frame
@@ -58,34 +66,59 @@ Frame
  └── audio
 ```
 
-`storage` et `audio` peuvent etre decrits comme des capabilities injectees dans
-la frame, mais il ne s'agit pas d'un framework de capabilities. Il n'existe pas
-de registre generique, de conteneur dynamique ou de systeme de plugins. Chaque
-champ reste explicite et justifie par un besoin de jeu deja rencontre.
+`delta_time` représente du temps de simulation fourni par le runtime, pas une
+dette de temps murale. Le runtime plafonne un frame de simulation à 100 ms et
+réinitialise sa référence temporelle lors des transitions focus/resume. Une
+suspension navigateur ou un stall long ne peut donc pas injecter plusieurs
+secondes de simulation dans la frame suivante.
 
-## Modules
+Le temps brut entre deux frames reste utilisé pour le diagnostic du frame time
+et des FPS. Les jeux peuvent conserver des substeps lorsqu'ils en ont besoin
+pour leurs collisions ou leur intégration locale, mais ils n'ont pas à définir
+leur propre politique de suspension/stall.
+
+`storage` et `audio` sont des capabilities injectées, mais il ne s'agit pas d'un
+framework de capabilities. Il n'existe ni registre générique, ni conteneur
+dynamique, ni système de plugins.
+
+La calibration gamepad n'est plus une responsabilité de `Game`. Le runtime
+conserve un `GamepadProfile` par périphérique dans le sous-système `Input`, et les
+backends natif/Web utilisent cet état pour produire l'input normalisé. `Frame`
+n'ajoute pas de champ de calibration obligatoire ; il expose uniquement
+`set_gamepad_profile`, l'opération publique effectivement utilisée par le probe
+et le menu standalone de Space Invaders pour régler le périphérique.
+
+## Modules moteur
 
 ### `lib.rs`
 
-Surface publique du crate. Reexporte les types utiles aux jeux :
+Surface publique du crate. Elle réexporte notamment :
 
 - `run`, `EngineConfig`, `Game`, `Frame`, `GameResult` ;
 - `Pixel`, `Framebuffer` ;
 - `Input`, `Key`, `MouseButton`, `Touch`, `TouchPhase`, `ButtonState` ;
+- `GamepadId`, `GamepadButton`, informations de connexion ;
+- `ActionId`, `ControlBinding`, `ControlMap` ;
+- `AxisCalibration`, `GamepadProfile` ;
 - `Size`, `Rect`, `Viewport` ;
 - `LocalStorage`, `NoopStorage` ;
-- `Audio`, `SoundId`, `NoopAudio`.
+- `Audio`, `SoundBank`, `SoundId`, `NoopAudio` ;
+- les primitives UI minimales via `ui`.
 
 ### `platform.rs`
 
-Frontiere principale avec `winit`. Elle :
+Frontière principale avec `winit`. Elle :
 
-- cree la fenetre et la boucle d'evenements ;
+- crée la fenêtre et la boucle d'événements ;
 - initialise le renderer ;
-- convertit les evenements clavier/souris/tactile vers `Input` ;
-- active l'audio sur interaction utilisateur ;
-- injecte `LocalStorage` et `Audio` dans `Frame` ;
-- gere le resize et la perte de focus.
+- convertit clavier, souris et tactile vers `Input` ;
+- poll le backend gamepad ;
+- borne le `delta_time` de simulation et réinitialise le timing sur focus/resume ;
+- expose via `Frame::set_gamepad_profile` le réglage explicite requis par les
+  consommateurs de configuration sans faire porter cette responsabilité à `Game` ;
+- active l'audio après interaction utilisateur ;
+- injecte stockage et audio dans `Frame` ;
+- gère resize, focus et raccourcis plateforme.
 
 Le jeu ne manipule pas directement `winit`.
 
@@ -93,56 +126,113 @@ Le jeu ne manipule pas directement `winit`.
 
 Responsable du chemin GPU :
 
-- creation surface/device/queue `wgpu` ;
-- texture GPU du framebuffer CPU ;
+- création surface/device/queue `wgpu` ;
+- texture GPU correspondant au framebuffer CPU ;
 - upload RGBA8 ;
-- shader WGSL de presentation ;
+- shader WGSL de présentation ;
 - conservation sRGB lorsque la surface le permet, encodage shader sinon ;
-- application du viewport GPU ;
-- presentation de la surface.
+- application du viewport ;
+- présentation de la surface.
 
 Le renderer reste interne.
 
 ### `framebuffer.rs`
 
-Primitive publique pixel-first. Stocke les pixels en RGBA8 contigu et fournit :
+Primitive publique pixel-first. Elle stocke les pixels en RGBA8 contigu et
+fournit :
 
 - effacement ;
-- pixel borne ;
+- accès pixel borné ;
 - lignes ;
 - rectangles ;
 - cercles ;
 - texte bitmap ;
-- acces `as_rgba8` pour l'upload GPU.
+- accès `as_rgba8` pour l'upload GPU.
 
-Les primitives ignorent ou clippent les coordonnees hors framebuffer.
+`draw_line` conserve la rasterisation visible de Bresenham mais ne parcourt pas
+les portions arbitrairement longues situées hors du framebuffer. Le rasteriseur
+calcule directement l'intervalle des pas de l'axe majeur qui peut être visible :
+une ligne x-major effectue au plus un nombre de pas proportionnel à la largeur du
+framebuffer, et une ligne y-major à sa hauteur. L'axe mineur est reconstruit à la
+même phase de rasterisation que le segment original, ce qui évite de modifier les
+pixels de bord en reclippant puis en relançant Bresenham depuis de nouvelles
+extrémités entières. Les produits intermédiaires utilisent `i128` pour rester
+sûrs jusque sur des coordonnées `i32::MIN` / `i32::MAX`.
 
-### `input.rs`
+Ce durcissement reste local au framebuffer : il ne justifie ni bibliothèque de
+clipping générique ni nouvelle couche Geometry2D.
 
-Etat public de lecture des entrees :
-
-- clavier minimal ;
-- souris minimale ;
-- tactile brut par evenements de frame ;
-- etats `pressed`, `held`, `released`.
-
-La mutation de l'input est crate-private et appartient a la plateforme.
+Le framebuffer est volontairement un renderer logiciel simple, pas une API de
+scène.
 
 ### `viewport.rs`
 
-Primitive publique de presentation logique :
+Expose `Size`, `Rect` et `Viewport`.
 
-- `Size` ;
-- `Rect` ;
-- `Viewport`.
+`Viewport::new(surface_size, framebuffer_size)` conserve le ratio logique du
+framebuffer et calcule letterboxing/pillarboxing. Le même viewport sert au rendu
+et au mapping souris/tactile.
 
-`Viewport::new(surface_size, framebuffer_size)` conserve le ratio du framebuffer,
-calcule un rectangle de presentation et produit du letterboxing ou pillarboxing
-si necessaire. Le mapping `map_surface_position` transforme une position de
-surface en coordonnees framebuffer. Une position situee dans les bandes hors
-viewport retourne `None`.
+`Rect` contient également les petites opérations géométriques déjà démontrées,
+notamment `contains()` et `intersects()`. La règle est de réutiliser ces
+primitives avant d'envisager une bibliothèque Geometry2D plus large.
 
-Le meme viewport est utilise par le rendu et par la conversion souris/tactile.
+### `input.rs`
+
+État public en lecture des entrées :
+
+- clavier minimal ;
+- souris ;
+- tactile brut par événements de frame ;
+- gamepads connectés ;
+- états `pressed`, `held`, `released` ;
+- événements connexion/déconnexion gamepad.
+
+Le sous-système conserve également, de façon interne, le profil de calibration
+associé à chaque `GamepadId`. Cet état est une configuration runtime du
+périphérique et ne fait pas partie du snapshot observable utilisé par le gameplay.
+La mutation des états physiques reste réservée aux backends plateforme.
+
+### `control.rs`
+
+`ControlMap` fait converger plusieurs sources physiques vers des actions de jeu :
+
+```text
+Key ------------------┐
+Gamepad any ----------┼──> ActionId -> ButtonState
+Gamepad device -------┤
+Virtual/touch --------┘
+```
+
+Cette abstraction est utilisée par plusieurs jeux et par l'UI. Elle ne cherche
+pas à gérer profils utilisateurs, remapping persistant ou système de commandes
+générique tant qu'un besoin concret ne les impose pas.
+
+### `gamepad.rs` / `gamepad/browser.rs`
+
+Backends gamepad :
+
+- natif : `gilrs` ;
+- Web : Gamepad API via `web-sys` pour les mappings standards.
+
+Les backends lisent le profil runtime associé au périphérique, normalisent les
+valeurs brutes puis alimentent le modèle `Input` commun. Le backend natif contient
+aussi les corrections nécessaires aux D-pad/hats observés sur du matériel réel.
+Le profil runtime est supprimé à la déconnexion pour éviter de réutiliser une
+calibration périmée si un identifiant de périphérique est recyclé.
+
+### `gamepad_profile.rs`
+
+Décrit la normalisation d'axes et le seuil numérique :
+
+- centre éventuellement asymétrique ;
+- inversion d'axe ;
+- dead zone ;
+- threshold numérique.
+
+`AxisCalibration` et `GamepadProfile` restent les types publics de description.
+Le store `GamepadId -> GamepadProfile` est interne au runtime d'input : il ne
+constitue ni un `DeviceManager`, ni un registre générique de configuration.
 
 ### `storage.rs`
 
@@ -155,13 +245,8 @@ Game
        web: window.localStorage
 ```
 
-Le backend natif utilise `directories` pour choisir un repertoire utilisateur
-approprie, puis un fichier texte par cle. Le backend Web utilise
-`localStorage`. `NoopStorage` permet les tests ou l'absence de persistance.
-
-Les erreurs sont retournees au jeu mais ne doivent pas empecher le moteur de
-fonctionner. Snake les ignore volontairement pour garder `BEST = 0` ou conserver
-la valeur memoire.
+`NoopStorage` permet les tests. Les erreurs sont retournées au jeu mais ne font
+pas tomber le runtime par défaut.
 
 ### `audio.rs`
 
@@ -174,90 +259,122 @@ Game
        web: WebAudio
 ```
 
-L'API publique permet d'enregistrer un WAV embarque par `SoundId`, puis de le
-jouer. Le sous-ensemble accepte est volontairement reduit : PCM 16-bit,
-mono/stereo, 44100 ou 48000 Hz.
+`SoundBank` garde les WAV du jeu et les enregistre paresseusement dans le backend.
+Le sous-ensemble accepté reste volontairement restreint à des WAV PCM 16-bit
+mono/stéréo en 44100 ou 48000 Hz.
 
-Le backend Web cree ou reprend un `AudioContext` et doit etre active apres une
-interaction utilisateur, conformement aux contraintes navigateur. Le jeu ne
-connait pas WebAudio. `NoopAudio` permet les tests.
+Le moteur ne fournit pas encore de mixer public, streaming ou pipeline d'assets.
 
-Les erreurs audio sont non bloquantes pour le jeu.
+### `ui`
 
-## Frontieres Plateforme
+UI immediate-mode minimale, introduite uniquement après duplication observée :
+
+- panneaux ;
+- texte centré ;
+- items de menu ;
+- `MenuState` ;
+- helpers de navigation ;
+- `VirtualPad` ;
+- wrapper `PauseGame`.
+
+Ce module n'est pas un framework UI généraliste. Il n'existe pas d'arbre de
+widgets, de callbacks, de système de focus ou de thème générique.
+
+`VirtualPad` possède les tests de sa propre mécanique tactile : cycle des
+contacts, déplacements entre boutons, multi-contact, ordre des actions et reset.
+Les jeux consommateurs testent leur câblage vers leurs actions, pas une seconde
+implémentation locale de cette mécanique.
+
+## Frontières plateforme
 
 Native :
 
-- fenetre/evenements : `winit` ;
+- fenêtre/événements : `winit` ;
 - rendu : `wgpu` ;
+- gamepad : `gilrs` ;
 - stockage : filesystem via `directories` ;
 - audio : `rodio`/`cpal`.
 
 Web/WASM :
 
-- point d'entree : `wasm-bindgen` ;
-- fenetre/canvas/evenements : `winit` web ;
+- point d'entrée : `wasm-bindgen` ;
+- fenêtre/canvas/événements : `winit` Web ;
 - rendu : `wgpu` WebGPU ;
-- stockage : `localStorage` via `web-sys` ;
-- audio : WebAudio via `web-sys`.
+- gamepad : Gamepad API via `web-sys` ;
+- stockage : `localStorage` ;
+- audio : WebAudio.
 
-Ces details restent dans le moteur ou dans les points d'entree Web. Le code de
-jeu ne contient pas de `cfg(wasm32)`, d'acces DOM, de filesystem, de `rodio` ou
-de `web_sys`.
+Le code de jeu ne contient normalement pas de `cfg(wasm32)`, d'accès DOM, de
+filesystem, de `rodio`, `gilrs` ou `web_sys`.
 
-## Snake Comme Validation
+## Consommateurs architecturaux
 
-Snake a servi de premier test architectural complet.
+Snake a validé la séparation initiale, désormais matérialisée localement par deux
+fichiers aux responsabilités distinctes :
 
 ```text
-SnakeWorld
-    metier pur
-    grille, serpent, nourriture, score, collisions, directions
+examples/snake/world.rs
+    SnakeWorld, grille, serpent, nourriture, collisions, file de virages
+    aucune dépendance à gotoo-pixel-engine
 
-SnakeGame
-    adaptation/presentation
-    input clavier/tactile, layout, HUD, replay, BEST, audio
+examples/snake/game.rs
+    adaptation input, timing, layout, HUD, rendu, stockage, audio
 
 gotoo-pixel-engine
-    plateforme, rendu, input, viewport, storage, audio
+    plateforme, rendu, input, viewport, stockage, audio
 ```
 
-`SnakeWorld` ne connait ni le framebuffer, ni le viewport, ni le stockage, ni
-l'audio, ni les controles tactiles. Les inputs convergent vers des directions,
-puis vers `SnakeWorld::queue_direction`.
+Le tactile de Snake passe par le `VirtualPad` partagé. Snake teste son câblage des
+zones vers ses quatre actions et ses règles propres ; la mécanique générique de
+contacts tactiles est testée dans `VirtualPad` lui-même. Aucun `WorldSystem`,
+scene framework ou autre abstraction moteur n'a été créé pour ce découpage.
 
-Cette separation est le niveau d'abstraction souhaite a ce stade : assez nette
-pour tester le moteur, pas assez generale pour justifier un ECS, une UI ou un
-asset manager.
+Tetris, Space Invaders, Pong et Breakout ont ensuite validé d'autres besoins :
+menus, gamepad, tactile, audio, deux joueurs, collisions et feedback.
 
-## Politique D'abstraction
+Le probe gamepad et le menu standalone de Space Invaders sont les consommateurs
+concrets de `Frame::set_gamepad_profile`. Les autres jeux lisent simplement
+l'`Input` normalisé ; Arcade et `PauseGame` n'ont donc aucune raison de connaître
+ou relayer la calibration du périphérique.
 
-Une abstraction importante doit repondre a au moins un de ces criteres :
+`GPE Arcade` joue un rôle différent : il compose plusieurs jeux dans un même
+runtime. Il sert donc de test de cohérence des frontières entre « jeu
+réutilisable » et « entrypoint standalone ». Les incohérences qu'il révèle sont
+des candidats prioritaires à la consolidation locale avant toute nouvelle
+abstraction moteur.
 
-- elle elimine une duplication observee ;
-- elle materialise une frontiere technique reelle ;
-- elle est necessaire a une fonctionnalite demandee par un jeu ;
-- elle permet de tester une responsabilite autrement difficile a isoler ;
-- elle apporte un benefice mesure.
+## Politique d'abstraction
 
-« Cela pourrait etre utile plus tard » n'est pas un critere suffisant.
+Une abstraction importante doit répondre à au moins un de ces critères :
 
-## Dependances
+- elle élimine une duplication observée ;
+- elle matérialise une frontière technique réelle ;
+- elle est nécessaire à une fonctionnalité demandée par un jeu ;
+- elle permet de tester une responsabilité autrement difficile à isoler ;
+- elle apporte un bénéfice mesuré.
 
-Une dependance doit resoudre un probleme non specifique au moteur mieux que nous
-ne le ferions raisonnablement nous-memes.
+Une abstraction déjà entrée dans le moteur doit également être utilisée par ses
+consommateurs. Si plusieurs jeux la contournent, il faut vérifier soit sa
+découvrabilité, soit son placement, soit sa pertinence.
 
-Les briques pedagogiquement centrales restent implementees dans le projet :
-framebuffer, primitives CPU, boucle moteur et mapping logique. Les frontieres
-specialisees utilisent des crates ou APIs dediees lorsque cela evite une
-implementation fragile : `wgpu`, `winit`, `directories`, `rodio`, Web APIs.
+« Cela pourrait être utile plus tard » n'est pas un critère suffisant.
+
+## Dépendances
+
+Une dépendance doit résoudre un problème non spécifique au moteur mieux que nous
+ne le ferions raisonnablement nous-mêmes.
+
+Les briques pédagogiquement centrales restent implémentées dans le projet :
+framebuffer, primitives CPU, boucle moteur, mapping logique et contrôles. Les
+frontières spécialisées utilisent des crates ou APIs dédiées lorsqu'une
+implémentation maison serait surtout fragile : `wgpu`, `winit`, `gilrs`,
+`directories`, `rodio`, Web APIs.
 
 ## Unsafe
 
 `unsafe` n'est pas interdit, mais doit rester exceptionnel :
 
-- perimetre minimal ;
-- justification documentee ;
-- API sure autour de la zone concernee ;
-- absence d'`unsafe` preferee lorsqu'une solution sure reste simple et assez
-  performante.
+- périmètre minimal ;
+- justification documentée ;
+- API sûre autour de la zone concernée ;
+- solution sûre préférée lorsqu'elle reste simple et suffisamment performante.
