@@ -1,6 +1,7 @@
 pub(super) const GRID_WIDTH: i32 = 12;
 pub(super) const GRID_HEIGHT: i32 = 8;
-pub(super) const LEVEL_COUNT: usize = 16;
+pub(super) const LEVEL_COUNT: usize = 19;
+const SHOUT_RADIUS: i32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SmartBoyWorld {
@@ -75,6 +76,10 @@ impl SmartBoyWorld {
                 report.events.push(WorldEvent::Waited);
                 true
             }
+            PlayerAction::Shout => {
+                self.shout(&mut report);
+                true
+            }
             PlayerAction::Move(direction) => self.try_move_hero(direction, &mut report),
         };
 
@@ -84,6 +89,30 @@ impl SmartBoyWorld {
             return report;
         }
 
+        if self.semi_continuous() {
+            return report;
+        }
+
+        self.turn_count += 1;
+
+        if self.phase == Phase::Running {
+            self.run_world_turn(&mut report);
+            self.refresh_triggered_systems(&mut report);
+        }
+
+        report
+    }
+
+    pub(super) fn update_tick(&mut self) -> TurnReport {
+        if self.phase != Phase::Running {
+            return TurnReport::default();
+        }
+
+        let mut report = TurnReport {
+            turn_consumed: true,
+            events: Vec::new(),
+        };
+        self.refresh_triggered_systems(&mut report);
         self.turn_count += 1;
 
         if self.phase == Phase::Running {
@@ -120,6 +149,10 @@ impl SmartBoyWorld {
 
     pub(super) fn turn_count(&self) -> u32 {
         self.turn_count
+    }
+
+    pub(super) fn semi_continuous(&self) -> bool {
+        matches!(self.level.timing, LevelTiming::SemiContinuous)
     }
 
     pub(super) fn walls(&self) -> &[Cell] {
@@ -182,6 +215,10 @@ impl SmartBoyWorld {
             self.enemies.remove(enemy_index);
             self.hero = target;
             report.events.push(WorldEvent::CombatWon { power });
+            report.events.push(WorldEvent::EnemyKilled {
+                cell: target,
+                power,
+            });
             self.resolve_hero_entered_cell(target, report);
         } else {
             self.phase = Phase::Dead;
@@ -203,8 +240,14 @@ impl SmartBoyWorld {
 
     fn run_world_turn(&mut self, report: &mut TurnReport) {
         let mut index = 0;
+        let mut trap_kills = 0;
         while index < self.enemies.len() {
             let EnemyKind::Walker { direction } = self.enemies[index].kind else {
+                index += 1;
+                continue;
+            };
+
+            let Some(direction) = self.walker_direction_for_turn(index, direction, report) else {
                 index += 1;
                 continue;
             };
@@ -214,8 +257,10 @@ impl SmartBoyWorld {
                 let power = self.enemies[index].power;
                 if self.hero_power > power {
                     self.hero_power -= power;
+                    let cell = self.enemies[index].cell;
                     self.enemies.remove(index);
                     report.events.push(WorldEvent::WalkerDestroyed { power });
+                    report.events.push(WorldEvent::EnemyKilled { cell, power });
                     continue;
                 }
 
@@ -235,17 +280,139 @@ impl SmartBoyWorld {
                 report.events.push(WorldEvent::WalkerTurned);
             } else {
                 if self.active_trap_at(target).is_some() {
+                    let power = self.enemies[index].power;
                     self.enemies[index].cell = target;
                     self.enemies.remove(index);
                     report.events.push(WorldEvent::TrapTriggered);
+                    report.events.push(WorldEvent::EnemyKilled {
+                        cell: target,
+                        power,
+                    });
+                    trap_kills += 1;
                     continue;
                 }
                 self.enemies[index].cell = target;
+                self.resolve_investigation_arrival(index, report);
                 report.events.push(WorldEvent::WalkerMoved);
             }
 
             index += 1;
         }
+
+        if trap_kills >= 2 {
+            report
+                .events
+                .push(WorldEvent::SmartChain { count: trap_kills });
+        }
+    }
+
+    fn shout(&mut self, report: &mut TurnReport) {
+        let target = self.hero;
+        let mut heard = 0;
+        for enemy in &mut self.enemies {
+            let EnemyKind::Walker { direction } = enemy.kind else {
+                continue;
+            };
+            if enemy.cell.manhattan_distance(target) > SHOUT_RADIUS {
+                continue;
+            }
+            enemy.intent = EnemyIntent::Investigate {
+                target,
+                patrol_direction: direction,
+            };
+            heard += 1;
+        }
+        report.events.push(WorldEvent::Shouted {
+            cell: target,
+            heard,
+        });
+    }
+
+    fn walker_direction_for_turn(
+        &mut self,
+        index: usize,
+        patrol_direction: Direction,
+        report: &mut TurnReport,
+    ) -> Option<Direction> {
+        match self.enemies[index].intent {
+            EnemyIntent::Patrol => Some(patrol_direction),
+            EnemyIntent::Investigate {
+                target,
+                patrol_direction,
+            } => match self.step_toward(index, target) {
+                PathStep::Step(direction) => {
+                    self.enemies[index].kind = EnemyKind::Walker { direction };
+                    Some(direction)
+                }
+                PathStep::Arrived => {
+                    self.resume_patrol(index, patrol_direction, report);
+                    None
+                }
+                PathStep::Blocked => {
+                    self.resume_patrol(index, patrol_direction, report);
+                    report.events.push(WorldEvent::WalkerLostTarget);
+                    None
+                }
+            },
+        }
+    }
+
+    fn resolve_investigation_arrival(&mut self, index: usize, report: &mut TurnReport) {
+        let EnemyIntent::Investigate {
+            target,
+            patrol_direction,
+        } = self.enemies[index].intent
+        else {
+            return;
+        };
+        if self.enemies[index].cell == target {
+            self.resume_patrol(index, patrol_direction, report);
+        }
+    }
+
+    fn resume_patrol(
+        &mut self,
+        index: usize,
+        patrol_direction: Direction,
+        report: &mut TurnReport,
+    ) {
+        self.enemies[index].intent = EnemyIntent::Patrol;
+        self.enemies[index].kind = EnemyKind::Walker {
+            direction: patrol_direction,
+        };
+        report.events.push(WorldEvent::WalkerResumedPatrol);
+    }
+
+    fn step_toward(&self, enemy_index: usize, target: Cell) -> PathStep {
+        let start = self.enemies[enemy_index].cell;
+        if start == target {
+            return PathStep::Arrived;
+        }
+
+        let mut queue = std::collections::VecDeque::from([(start, None)]);
+        let mut visited = vec![start];
+        while let Some((cell, first_step)) = queue.pop_front() {
+            for direction in directions_toward(cell, target) {
+                let next = cell.step(direction);
+                if !next.is_inside()
+                    || visited.contains(&next)
+                    || self.wall_at(next)
+                    || self.closed_door_at(next).is_some()
+                    || (next != target && self.enemy_at_except(next, enemy_index).is_some())
+                {
+                    continue;
+                }
+
+                let first_step = first_step.unwrap_or(direction);
+                if next == target {
+                    return PathStep::Step(first_step);
+                }
+                visited.push(next);
+                queue.push_back((next, Some(first_step)));
+            }
+        }
+
+        PathStep::Blocked
     }
 
     fn collect_at(&mut self, cell: Cell, report: &mut TurnReport) {
@@ -401,6 +568,7 @@ pub(super) enum WorldEvent {
     Waited,
     CombatWon { power: i32 },
     WalkerDestroyed { power: i32 },
+    EnemyKilled { cell: Cell, power: i32 },
     HeroDied,
     BonusCollected { amount: i32, mystery: bool },
     PressurePlateOn,
@@ -410,8 +578,12 @@ pub(super) enum WorldEvent {
     TrapArmed,
     TrapDisarmed,
     TrapTriggered,
+    Shouted { cell: Cell, heard: usize },
+    WalkerLostTarget,
     WalkerMoved,
+    WalkerResumedPatrol,
     WalkerTurned,
+    SmartChain { count: usize },
     Won,
 }
 
@@ -419,6 +591,7 @@ pub(super) enum WorldEvent {
 pub(super) enum PlayerAction {
     Move(Direction),
     Wait,
+    Shout,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -478,6 +651,10 @@ impl Cell {
     fn is_inside(self) -> bool {
         self.x >= 0 && self.y >= 0 && self.x < GRID_WIDTH && self.y < GRID_HEIGHT
     }
+
+    fn manhattan_distance(self, other: Self) -> i32 {
+        (self.x - other.x).abs() + (self.y - other.y).abs()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -485,12 +662,29 @@ pub(super) struct Enemy {
     pub(super) cell: Cell,
     pub(super) power: i32,
     pub(super) kind: EnemyKind,
+    pub(super) intent: EnemyIntent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EnemyKind {
     Guard,
     Walker { direction: Direction },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EnemyIntent {
+    Patrol,
+    Investigate {
+        target: Cell,
+        patrol_direction: Direction,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PathStep {
+    Arrived,
+    Step(Direction),
+    Blocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -534,6 +728,7 @@ pub(super) struct Trap {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Level {
+    timing: LevelTiming,
     name: &'static str,
     hero_start: Cell,
     hero_power: i32,
@@ -544,6 +739,12 @@ struct Level {
     traps: Vec<Trap>,
     bonuses: Vec<Bonus>,
     enemies: Vec<Enemy>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LevelTiming {
+    TurnBased,
+    SemiContinuous,
 }
 
 fn build_level(index: usize) -> Level {
@@ -564,6 +765,9 @@ fn build_level(index: usize) -> Level {
         13 => level_watch_your_step(),
         14 => level_set_the_trap(),
         15 => level_clockwork(),
+        16 => level_come_here(),
+        17 => level_group_therapy(),
+        18 => level_smart_way(),
         _ => unreachable!("level index is wrapped by LEVEL_COUNT"),
     }
 }
@@ -573,6 +777,7 @@ fn level_seriously() -> Level {
     walls.extend(cells(&[(7, 0), (7, 1), (7, 6), (7, 7)]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "SERIOUSLY?",
         hero_start: Cell::new(1, 3),
         hero_power: 10,
@@ -590,6 +795,7 @@ fn level_math_is_hard() -> Level {
     let walls = vertical_wall(4, &[3]);
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "MATH IS HARD",
         hero_start: Cell::new(1, 3),
         hero_power: 5,
@@ -608,6 +814,7 @@ fn level_pay_the_price() -> Level {
     walls.extend(vertical_wall(7, &[3]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "PAY THE PRICE",
         hero_start: Cell::new(1, 3),
         hero_power: 10,
@@ -626,6 +833,7 @@ fn level_order_matters() -> Level {
     walls.extend(cells(&[(2, 2), (3, 1), (4, 2), (2, 3), (4, 3)]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "ORDER MATTERS",
         hero_start: Cell::new(1, 4),
         hero_power: 6,
@@ -644,6 +852,7 @@ fn level_just_leave() -> Level {
     walls.extend(cells(&[(5, 2), (5, 3), (5, 5), (9, 1), (9, 2)]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "JUST LEAVE",
         hero_start: Cell::new(1, 4),
         hero_power: 9,
@@ -663,6 +872,7 @@ fn level_hes_moving() -> Level {
     walls.extend(cells(&[(5, 1), (5, 6)]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "HE'S MOVING",
         hero_start: Cell::new(1, 4),
         hero_power: 8,
@@ -682,6 +892,7 @@ fn level_wait_for_it() -> Level {
     walls.extend(cells(&[(5, 1), (5, 6)]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "WAIT FOR IT",
         hero_start: Cell::new(3, 4),
         hero_power: 7,
@@ -702,6 +913,7 @@ fn level_let_him_come() -> Level {
     walls.extend(cells(&[(5, 1), (5, 6)]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "LET HIM COME",
         hero_start: Cell::new(3, 4),
         hero_power: 12,
@@ -722,6 +934,7 @@ fn level_lucky_boy() -> Level {
     walls.extend(horizontal_wall(4, &[0, 1, 2, 9, 10, 11]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "LUCKY BOY?",
         hero_start: Cell::new(1, 4),
         hero_power: 6,
@@ -742,6 +955,7 @@ fn level_smart_boy() -> Level {
     walls.extend(horizontal_wall(6, &[1, 2, 3, 4, 5]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "SMART BOY",
         hero_start: Cell::new(1, 5),
         hero_power: 8,
@@ -773,6 +987,7 @@ fn level_living_plate_a() -> Level {
     walls.push(Cell::new(5, 2));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "THING DID IT",
         hero_start: Cell::new(3, 4),
         hero_power: 9,
@@ -795,6 +1010,7 @@ fn level_living_plate_b() -> Level {
     walls.push(Cell::new(6, 2));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "HOLD THE DOOR",
         hero_start: Cell::new(4, 4),
         hero_power: 9,
@@ -817,6 +1033,7 @@ fn level_living_plate_c() -> Level {
     walls.extend(cells(&[(3, 2), (6, 2)]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "TWO SMART WAYS",
         hero_start: Cell::new(5, 4),
         hero_power: 9,
@@ -836,6 +1053,7 @@ fn level_living_plate_c() -> Level {
 
 fn level_watch_your_step() -> Level {
     Level {
+        timing: LevelTiming::TurnBased,
         name: "WATCH YOUR STEP",
         hero_start: Cell::new(1, 4),
         hero_power: 9,
@@ -854,6 +1072,7 @@ fn level_set_the_trap() -> Level {
     walls.extend(horizontal_wall(5, &[]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "SET THE TRAP",
         hero_start: Cell::new(1, 4),
         hero_power: 5,
@@ -872,6 +1091,7 @@ fn level_clockwork() -> Level {
     walls.extend(horizontal_wall(5, &[]));
 
     Level {
+        timing: LevelTiming::TurnBased,
         name: "CLOCKWORK",
         hero_start: Cell::new(1, 4),
         hero_power: 12,
@@ -882,6 +1102,68 @@ fn level_clockwork() -> Level {
         traps: vec![group_trap(6, 4, 1)],
         bonuses: vec![],
         enemies: vec![walker(8, 4, 9, Direction::Left)],
+    }
+}
+
+fn level_come_here() -> Level {
+    let mut walls = horizontal_wall(3, &[5, 6, 7]);
+    walls.extend(horizontal_wall(5, &[5, 6, 7]));
+
+    Level {
+        timing: LevelTiming::SemiContinuous,
+        name: "COME HERE",
+        hero_start: Cell::new(3, 4),
+        hero_power: 5,
+        exit: Cell::new(10, 4),
+        walls,
+        doors: vec![],
+        levers: vec![],
+        traps: vec![active_trap(6, 4)],
+        bonuses: vec![],
+        enemies: vec![walker(9, 4, 9, Direction::Up)],
+    }
+}
+
+fn level_group_therapy() -> Level {
+    let mut walls = horizontal_wall(2, &[5]);
+    walls.extend(horizontal_wall(4, &[]));
+
+    Level {
+        timing: LevelTiming::SemiContinuous,
+        name: "GROUP THERAPY",
+        hero_start: Cell::new(5, 3),
+        hero_power: 5,
+        exit: Cell::new(10, 3),
+        walls,
+        doors: vec![],
+        levers: vec![pressure_plate(5, 2, 1)],
+        traps: vec![group_trap(7, 3, 1), group_trap(8, 3, 1)],
+        bonuses: vec![],
+        enemies: vec![
+            walker(8, 3, 9, Direction::Up),
+            walker(9, 3, 9, Direction::Down),
+        ],
+    }
+}
+
+fn level_smart_way() -> Level {
+    let walls = vertical_wall(7, &[2, 4]);
+
+    Level {
+        timing: LevelTiming::SemiContinuous,
+        name: "SMART WAY",
+        hero_start: Cell::new(4, 3),
+        hero_power: 20,
+        exit: Cell::new(10, 3),
+        walls,
+        doors: vec![],
+        levers: vec![pressure_plate(5, 3, 1)],
+        traps: vec![group_trap(6, 2, 1), group_trap(6, 4, 1)],
+        bonuses: vec![],
+        enemies: vec![
+            walker(7, 2, 7, Direction::Up),
+            walker(7, 4, 7, Direction::Down),
+        ],
     }
 }
 
@@ -908,6 +1190,7 @@ fn guard(x: i32, y: i32, power: i32) -> Enemy {
         cell: Cell::new(x, y),
         power,
         kind: EnemyKind::Guard,
+        intent: EnemyIntent::Patrol,
     }
 }
 
@@ -916,6 +1199,28 @@ fn walker(x: i32, y: i32, power: i32, direction: Direction) -> Enemy {
         cell: Cell::new(x, y),
         power,
         kind: EnemyKind::Walker { direction },
+        intent: EnemyIntent::Patrol,
+    }
+}
+
+fn directions_toward(cell: Cell, target: Cell) -> [Direction; 4] {
+    let horizontal = if target.x < cell.x {
+        Direction::Left
+    } else {
+        Direction::Right
+    };
+    let vertical = if target.y < cell.y {
+        Direction::Up
+    } else {
+        Direction::Down
+    };
+    let opposite_horizontal = horizontal.opposite();
+    let opposite_vertical = vertical.opposite();
+
+    if (target.x - cell.x).abs() >= (target.y - cell.y).abs() {
+        [horizontal, vertical, opposite_vertical, opposite_horizontal]
+    } else {
+        [vertical, horizontal, opposite_horizontal, opposite_vertical]
     }
 }
 
@@ -999,6 +1304,7 @@ mod tests {
 
     fn test_level(hero_power: i32) -> Level {
         Level {
+            timing: LevelTiming::TurnBased,
             name: "TEST",
             hero_start: Cell::new(1, 1),
             hero_power,
@@ -1010,6 +1316,12 @@ mod tests {
             bonuses: vec![],
             enemies: vec![],
         }
+    }
+
+    fn semi_test_level(hero_power: i32) -> Level {
+        let mut level = test_level(hero_power);
+        level.timing = LevelTiming::SemiContinuous;
+        level
     }
 
     fn world_from(level: Level) -> SmartBoyWorld {
@@ -1167,6 +1479,10 @@ mod tests {
         PlayerAction::Wait
     }
 
+    fn shout() -> PlayerAction {
+        PlayerAction::Shout
+    }
+
     #[test]
     fn hero_wins_when_power_is_greater_than_enemy_power() {
         let mut level = test_level(5);
@@ -1249,6 +1565,32 @@ mod tests {
         world.apply(PlayerAction::Wait);
 
         assert_eq!(world.enemies()[0].cell, Cell::new(4, 1));
+    }
+
+    #[test]
+    fn semi_continuous_tick_moves_walker_without_player_action() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(walker(3, 1, 2, Direction::Right));
+        let mut world = world_from(level);
+
+        world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(4, 1));
+        assert_eq!(world.turn_count(), 1);
+    }
+
+    #[test]
+    fn semi_continuous_patrol_evolves_over_multiple_ticks() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(walker(3, 1, 2, Direction::Right));
+        let mut world = world_from(level);
+
+        world.update_tick();
+        world.update_tick();
+        world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(6, 1));
+        assert_eq!(world.turn_count(), 3);
     }
 
     #[test]
@@ -1346,6 +1688,198 @@ mod tests {
         assert!(!world.door_open(0));
         assert!(off.events.contains(&WorldEvent::PressurePlateOff));
         assert!(off.events.contains(&WorldEvent::DoorClosed));
+    }
+
+    #[test]
+    fn shout_outside_radius_is_ignored_by_walkers() {
+        let mut level = test_level(10);
+        level.enemies.push(walker(8, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        let report = world.apply(shout());
+
+        assert_eq!(world.enemies()[0].intent, EnemyIntent::Patrol);
+        assert!(report.events.contains(&WorldEvent::Shouted {
+            cell: Cell::new(1, 1),
+            heard: 0,
+        }));
+    }
+
+    #[test]
+    fn shout_inside_radius_switches_walker_to_investigate() {
+        let mut level = test_level(10);
+        level.enemies.push(walker(5, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        let report = world.apply(shout());
+
+        assert!(report.events.contains(&WorldEvent::Shouted {
+            cell: Cell::new(1, 1),
+            heard: 1,
+        }));
+        assert_eq!(
+            world.enemies()[0].intent,
+            EnemyIntent::Investigate {
+                target: Cell::new(1, 1),
+                patrol_direction: Direction::Right,
+            }
+        );
+    }
+
+    #[test]
+    fn investigating_walker_progresses_deterministically_toward_target() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(walker(5, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        world.apply(shout());
+        world.apply(down());
+        world.update_tick();
+        world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(3, 1));
+        assert_eq!(
+            world.enemies()[0].intent,
+            EnemyIntent::Investigate {
+                target: Cell::new(1, 1),
+                patrol_direction: Direction::Right,
+            }
+        );
+    }
+
+    #[test]
+    fn investigating_walker_resumes_patrol_after_reaching_target_cell() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(walker(3, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        world.apply(shout());
+        world.apply(down());
+        world.update_tick();
+        world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(1, 1));
+        assert_eq!(world.enemies()[0].intent, EnemyIntent::Patrol);
+        assert_eq!(
+            world.enemies()[0].kind,
+            EnemyKind::Walker {
+                direction: Direction::Right,
+            }
+        );
+    }
+
+    #[test]
+    fn investigating_walker_abandons_unreachable_target() {
+        let mut level = semi_test_level(10);
+        level.walls.extend(vertical_wall(2, &[]));
+        level.enemies.push(walker(3, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        world.apply(shout());
+        let report = world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(3, 1));
+        assert_eq!(world.enemies()[0].intent, EnemyIntent::Patrol);
+        assert!(report.events.contains(&WorldEvent::WalkerLostTarget));
+    }
+
+    #[test]
+    fn shout_changes_trajectory_while_world_lives() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(walker(5, 1, 9, Direction::Up));
+        let mut world = world_from(level);
+
+        world.apply(shout());
+        world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(4, 1));
+        assert_eq!(
+            world.enemies()[0].kind,
+            EnemyKind::Walker {
+                direction: Direction::Left,
+            }
+        );
+    }
+
+    #[test]
+    fn semi_continuous_plate_and_trap_react_to_walker_ticks() {
+        let mut level = semi_test_level(10);
+        level.hero_start = Cell::new(1, 3);
+        level.levers.push(pressure_plate(3, 1, 7));
+        level.traps.push(group_trap(4, 1, 7));
+        level.enemies.push(walker(2, 1, 9, Direction::Right));
+        let mut world = world_from(level);
+
+        let armed = world.update_tick();
+        assert!(world.trap_active(0));
+        assert!(armed.events.contains(&WorldEvent::PressurePlateOn));
+        assert!(armed.events.contains(&WorldEvent::TrapArmed));
+
+        let killed = world.update_tick();
+        assert!(world.enemies().is_empty());
+        assert!(killed.events.contains(&WorldEvent::TrapTriggered));
+        assert_eq!(
+            killed
+                .events
+                .iter()
+                .filter(|event| matches!(event, WorldEvent::EnemyKilled { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn same_ticks_and_inputs_produce_identical_semi_continuous_result() {
+        let mut first = SmartBoyWorld::for_level(16, 0xB0A);
+        let mut second = SmartBoyWorld::for_level(16, 0xB0A);
+
+        for world in [&mut first, &mut second] {
+            world.apply(right());
+            world.apply(right());
+            world.apply(shout());
+            world.update_tick();
+            world.update_tick();
+            world.apply(up());
+            world.update_tick();
+        }
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn shout_does_not_change_static_guards() {
+        let mut level = test_level(10);
+        level.enemies.push(guard(3, 1, 9));
+        let mut world = world_from(level);
+        let initial = world.enemies()[0].clone();
+
+        let report = world.apply(shout());
+
+        assert_eq!(world.enemies()[0], initial);
+        assert!(report.events.contains(&WorldEvent::Shouted {
+            cell: Cell::new(1, 1),
+            heard: 0,
+        }));
+    }
+
+    #[test]
+    fn restart_restores_investigation_state() {
+        let mut world = SmartBoyWorld::for_level(16, 42);
+        let initial = world.clone();
+
+        world.apply(right());
+        world.apply(right());
+        world.apply(shout());
+        assert!(
+            world
+                .enemies()
+                .iter()
+                .any(|enemy| matches!(enemy.intent, EnemyIntent::Investigate { .. }))
+        );
+
+        world.restart();
+
+        assert_eq!(world, initial);
     }
 
     #[test]
@@ -1508,7 +2042,7 @@ mod tests {
 
     #[test]
     fn interaction_levels_do_not_have_static_bypass_to_exit() {
-        for index in [0, 1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 14, 15] {
+        for index in [0, 1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18] {
             assert!(
                 !trivial_exit_reachable(index),
                 "level {} has a trivial static path to exit",
@@ -1894,6 +2428,101 @@ mod tests {
         );
         assert_eq!(paid.phase(), Phase::Won);
         assert_eq!(paid.hero_power(), 3);
+    }
+
+    #[test]
+    fn shout_a_teaches_luring_a_walker_into_a_trap() {
+        let mut world = SmartBoyWorld::for_level(16, 0xB0A);
+        world.apply(right());
+        world.apply(right());
+        world.apply(shout());
+
+        world.update_tick();
+        world.apply(up());
+        world.update_tick();
+        world.apply(right());
+        world.update_tick();
+
+        for action in [right(), down(), right(), right(), right()] {
+            world.apply(action);
+        }
+
+        assert_eq!(world.phase(), Phase::Won);
+        assert_eq!(world.hero_power(), 5);
+    }
+
+    #[test]
+    fn shout_b_allows_one_shout_to_create_a_double_trap_kill() {
+        let mut world = SmartBoyWorld::for_level(17, 0xB0A);
+
+        world.apply(up());
+        world.apply(shout());
+        let report = world.update_tick();
+
+        assert!(world.enemies().is_empty());
+        assert!(report.events.contains(&WorldEvent::SmartChain { count: 2 }));
+        assert_eq!(
+            report
+                .events
+                .iter()
+                .filter(|event| matches!(event, WorldEvent::EnemyKilled { .. }))
+                .count(),
+            2
+        );
+        assert_eq!(
+            report
+                .events
+                .iter()
+                .filter(|event| matches!(event, WorldEvent::SmartChain { .. }))
+                .count(),
+            1
+        );
+
+        for action in [down(), right(), right(), right(), right(), right()] {
+            world.apply(action);
+        }
+        assert_eq!(world.phase(), Phase::Won);
+    }
+
+    #[test]
+    fn shout_c_allows_costly_direct_route_or_power_preserving_smart_route() {
+        let mut direct = SmartBoyWorld::for_level(18, 0xB0A);
+        for action in [
+            up(),
+            right(),
+            right(),
+            right(),
+            right(),
+            down(),
+            right(),
+            right(),
+        ] {
+            direct.apply(action);
+        }
+        assert_eq!(direct.phase(), Phase::Won);
+        assert_eq!(direct.hero_power(), 13);
+
+        let mut smart = SmartBoyWorld::for_level(18, 0xB0A);
+        smart.apply(right());
+        smart.apply(shout());
+        smart.update_tick();
+        smart.apply(left());
+        smart.update_tick();
+        for action in [
+            up(),
+            right(),
+            right(),
+            right(),
+            right(),
+            down(),
+            right(),
+            right(),
+        ] {
+            smart.apply(action);
+        }
+
+        assert_eq!(smart.phase(), Phase::Won);
+        assert_eq!(smart.hero_power(), 20);
     }
 
     #[test]

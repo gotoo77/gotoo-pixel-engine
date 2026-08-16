@@ -10,8 +10,8 @@ use include_dir::{Dir, include_dir};
 #[path = "world.rs"]
 mod world;
 use world::{
-    Bonus, BonusKind, Cell, Direction, Enemy, EnemyKind, GRID_HEIGHT, GRID_WIDTH, LEVEL_COUNT,
-    LeverKind, Phase, PlayerAction, SmartBoyWorld, WorldEvent,
+    Bonus, BonusKind, Cell, Direction, Enemy, EnemyIntent, EnemyKind, GRID_HEIGHT, GRID_WIDTH,
+    LEVEL_COUNT, LeverKind, Phase, PlayerAction, SmartBoyWorld, WorldEvent,
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 320;
@@ -26,12 +26,14 @@ const BOARD_Y: i32 = 44;
 const BOARD_WIDTH: u32 = GRID_WIDTH as u32 * CELL_SIZE as u32;
 const BOARD_HEIGHT: u32 = GRID_HEIGHT as u32 * CELL_SIZE as u32;
 const FEEDBACK_DURATION: Duration = Duration::from_millis(480);
+const FIXED_STEP: Duration = Duration::from_millis(420);
 
 const MOVE_UP: ActionId = ActionId::new("smart_boy_hero.up");
 const MOVE_RIGHT: ActionId = ActionId::new("smart_boy_hero.right");
 const MOVE_DOWN: ActionId = ActionId::new("smart_boy_hero.down");
 const MOVE_LEFT: ActionId = ActionId::new("smart_boy_hero.left");
 const WAIT: ActionId = ActionId::new("smart_boy_hero.wait");
+const SHOUT: ActionId = ActionId::new("smart_boy_hero.shout");
 const RETRY: ActionId = ActionId::new("smart_boy_hero.retry");
 const PAUSE: ActionId = ActionId::new("smart_boy_hero.pause");
 
@@ -45,6 +47,8 @@ const DOOR_CLOSE_SOUND: SoundId = SoundId::new("smart_boy_hero.door_close");
 const TRAP_ARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_arm");
 const TRAP_DISARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_disarm");
 const TRAP_TRIGGER_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_trigger");
+const SHOUT_SOUND: SoundId = SoundId::new("smart_boy_hero.shout");
+const ENEMY_KILL_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_kill");
 const DEATH_SOUND: SoundId = SoundId::new("smart_boy_hero.death");
 const VICTORY_SOUND: SoundId = SoundId::new("smart_boy_hero.victory");
 
@@ -110,6 +114,7 @@ struct Layout {
     down: Option<Rect>,
     left: Option<Rect>,
     wait: Option<Rect>,
+    shout: Option<Rect>,
     retry: Option<Rect>,
     pause: Option<Rect>,
 }
@@ -169,12 +174,17 @@ impl Layout {
                 None
             },
             wait: if touch {
-                Some(rect(334, 174, 62, 38))
+                Some(rect(334, 164, 62, 28))
+            } else {
+                None
+            },
+            shout: if touch {
+                Some(rect(408, 164, 62, 28))
             } else {
                 None
             },
             retry: if touch {
-                Some(rect(408, 174, 62, 38))
+                Some(rect(371, 198, 62, 20))
             } else {
                 None
             },
@@ -227,6 +237,7 @@ pub struct SmartBoyHeroGame {
     feedback: Vec<WorldEvent>,
     feedback_timer: Duration,
     pending_audio_events: Vec<WorldEvent>,
+    simulation_accumulator: Duration,
 }
 
 impl SmartBoyHeroGame {
@@ -253,6 +264,7 @@ impl SmartBoyHeroGame {
             feedback: Vec::new(),
             feedback_timer: Duration::ZERO,
             pending_audio_events: Vec::new(),
+            simulation_accumulator: Duration::ZERO,
         }
     }
 
@@ -270,7 +282,7 @@ impl SmartBoyHeroGame {
         self.ui_state = UiState::ResumeGate;
     }
 
-    fn update_running(&mut self) {
+    fn update_running(&mut self, delta: Duration) {
         if self.controls.action(PAUSE).pressed() {
             self.open_pause_menu();
             return;
@@ -281,13 +293,25 @@ impl SmartBoyHeroGame {
             return;
         }
 
-        let Some(action) = requested_action(&self.controls) else {
-            return;
-        };
+        let mut events = Vec::new();
 
-        let report = self.world.apply(action);
-        if !report.events.is_empty() {
-            self.feedback = report.events;
+        if let Some(action) = requested_action(&self.controls) {
+            let report = self.world.apply(action);
+            events.extend(report.events);
+        }
+
+        if self.world.semi_continuous() {
+            self.simulation_accumulator += delta;
+            while self.simulation_accumulator >= FIXED_STEP && self.world.phase() == Phase::Running
+            {
+                self.simulation_accumulator -= FIXED_STEP;
+                let report = self.world.update_tick();
+                events.extend(report.events);
+            }
+        }
+
+        if !events.is_empty() {
+            self.feedback = events;
             self.pending_audio_events = self.feedback.clone();
             self.feedback_timer = FEEDBACK_DURATION;
         }
@@ -306,8 +330,7 @@ impl SmartBoyHeroGame {
 
         if self.world.phase() == Phase::Won && self.controls.action(WAIT).pressed() {
             self.world.next_level();
-            self.feedback.clear();
-            self.feedback_timer = Duration::ZERO;
+            self.clear_transient_state();
         }
     }
 
@@ -414,6 +437,7 @@ impl SmartBoyHeroGame {
         self.feedback.clear();
         self.feedback_timer = Duration::ZERO;
         self.pending_audio_events.clear();
+        self.simulation_accumulator = Duration::ZERO;
         if let Some(virtual_pad) = &mut self.virtual_pad {
             virtual_pad.reset(&mut self.controls);
         }
@@ -421,7 +445,7 @@ impl SmartBoyHeroGame {
 
     fn pause_input_held(&self) -> bool {
         [
-            MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT, WAIT, RETRY, PAUSE,
+            MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT, WAIT, SHOUT, RETRY, PAUSE,
         ]
         .into_iter()
         .any(|action| self.controls.action(action).held())
@@ -444,7 +468,7 @@ impl SmartBoyHeroGame {
         let layout = self.layout();
         framebuffer.clear(BG);
         draw_hud(framebuffer, layout, &self.world);
-        draw_board(framebuffer, layout, &self.world);
+        draw_board(framebuffer, layout, &self.world, &self.feedback);
         draw_side_panel(framebuffer, layout, &self.world, &self.feedback);
 
         if self.virtual_pad.is_some() {
@@ -475,7 +499,7 @@ impl Game for SmartBoyHeroGame {
             UiState::Running => {
                 self.tick_feedback(frame.delta_time);
                 match self.world.phase() {
-                    Phase::Running => self.update_running(),
+                    Phase::Running => self.update_running(frame.delta_time),
                     Phase::Dead | Phase::Won => self.update_finished(),
                 }
                 let events = std::mem::take(&mut self.pending_audio_events);
@@ -523,6 +547,8 @@ fn controls() -> ControlMap {
         .bind_gamepad(MOVE_LEFT, GamepadButton::LeftStickLeft)
         .bind_key(WAIT, Key::Space)
         .bind_gamepad(WAIT, GamepadButton::South)
+        .bind_key(SHOUT, Key::E)
+        .bind_gamepad(SHOUT, GamepadButton::North)
         .bind_key(RETRY, Key::R)
         .bind_gamepad(RETRY, GamepadButton::West)
         .bind_key(PAUSE, Key::Escape)
@@ -538,6 +564,7 @@ fn virtual_pad_for_mode(mode: SmartBoyHeroMode) -> Option<VirtualPad> {
         VirtualButton::new(MOVE_DOWN, layout.down?),
         VirtualButton::new(MOVE_LEFT, layout.left?),
         VirtualButton::new(WAIT, layout.wait?),
+        VirtualButton::new(SHOUT, layout.shout?),
         VirtualButton::new(RETRY, layout.retry?),
         VirtualButton::new(PAUSE, layout.pause?),
     ]))
@@ -553,6 +580,12 @@ fn requested_action(controls: &ControlMap) -> Option<PlayerAction> {
     .into_iter()
     .find(|(action, _)| controls.action(*action).pressed())
     .map(|(_, direction)| PlayerAction::Move(direction))
+    .or_else(|| {
+        controls
+            .action(SHOUT)
+            .pressed()
+            .then_some(PlayerAction::Shout)
+    })
     .or_else(|| {
         controls
             .action(WAIT)
@@ -575,12 +608,17 @@ fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
             WorldEvent::TrapArmed => Some(TRAP_ARM_SOUND),
             WorldEvent::TrapDisarmed => Some(TRAP_DISARM_SOUND),
             WorldEvent::TrapTriggered => Some(TRAP_TRIGGER_SOUND),
+            WorldEvent::Shouted { .. } => Some(SHOUT_SOUND),
+            WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
             WorldEvent::HeroDied => Some(DEATH_SOUND),
             WorldEvent::Won => Some(VICTORY_SOUND),
             WorldEvent::Blocked
             | WorldEvent::Waited
+            | WorldEvent::WalkerLostTarget
             | WorldEvent::WalkerMoved
+            | WorldEvent::WalkerResumedPatrol
             | WorldEvent::WalkerTurned => None,
+            WorldEvent::SmartChain { .. } => None,
         })
         .collect()
 }
@@ -591,7 +629,7 @@ struct SfxBinding {
     sound: SoundId,
 }
 
-const REQUIRED_SFX: [SfxBinding; 12] = [
+const REQUIRED_SFX: [SfxBinding; 14] = [
     SfxBinding {
         key: "combat",
         sound: COMBAT_SOUND,
@@ -631,6 +669,14 @@ const REQUIRED_SFX: [SfxBinding; 12] = [
     SfxBinding {
         key: "trap_trigger",
         sound: TRAP_TRIGGER_SOUND,
+    },
+    SfxBinding {
+        key: "shout",
+        sound: SHOUT_SOUND,
+    },
+    SfxBinding {
+        key: "enemy_kill",
+        sound: ENEMY_KILL_SOUND,
     },
     SfxBinding {
         key: "death",
@@ -750,7 +796,12 @@ fn draw_hud(framebuffer: &mut Framebuffer, layout: Layout, world: &SmartBoyWorld
     framebuffer.draw_text_scaled(202, 8, &format!("POWER {}", world.hero_power()), 2, HERO);
 }
 
-fn draw_board(framebuffer: &mut Framebuffer, layout: Layout, world: &SmartBoyWorld) {
+fn draw_board(
+    framebuffer: &mut Framebuffer,
+    layout: Layout,
+    world: &SmartBoyWorld,
+    feedback: &[WorldEvent],
+) {
     framebuffer.fill_rect(
         layout.board.x,
         layout.board.y,
@@ -805,6 +856,9 @@ fn draw_board(framebuffer: &mut Framebuffer, layout: Layout, world: &SmartBoyWor
             world.trap_active(index),
         );
     }
+
+    draw_shout_feedback(framebuffer, layout, feedback);
+    draw_enemy_kill_feedback(framebuffer, layout, feedback);
 
     for bonus in world.bonuses() {
         draw_bonus(framebuffer, layout.cell_rect(bonus.cell), *bonus);
@@ -863,12 +917,12 @@ fn draw_side_panel(
         if world.phase() == Phase::Won {
             "SPC NEXT"
         } else {
-            "WAIT SPC"
+            "SHOUT E"
         },
         TEXT,
     );
-    framebuffer.draw_text(layout.side.x + 6, layout.side.y + 184, "R RETRY", TEXT);
-    framebuffer.draw_text(layout.side.x + 6, layout.side.y + 195, "ESC MENU", TEXT);
+    framebuffer.draw_text(layout.side.x + 6, layout.side.y + 184, "WAIT SPC", TEXT);
+    framebuffer.draw_text(layout.side.x + 6, layout.side.y + 195, "R RETRY", TEXT);
 }
 
 fn feedback_line(events: &[WorldEvent]) -> (&'static str, Pixel, Option<&'static str>) {
@@ -903,9 +957,33 @@ fn feedback_line(events: &[WorldEvent]) -> (&'static str, Pixel, Option<&'static
     }
     if events
         .iter()
+        .any(|event| matches!(event, WorldEvent::SmartChain { count: 2 }))
+    {
+        return ("SMART x2", WIN, None);
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::SmartChain { .. }))
+    {
+        return ("SMART!", WIN, None);
+    }
+    if events
+        .iter()
         .any(|event| matches!(event, WorldEvent::TrapTriggered))
     {
         return ("SNAP", DANGER, None);
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::Shouted { heard: 0, .. }))
+    {
+        return ("SHOUT", MUTED, Some("NO HEAR"));
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::Shouted { .. }))
+    {
+        return ("SHOUT", WIN, Some("HEARD"));
     }
     if events
         .iter()
@@ -972,15 +1050,18 @@ fn draw_touch_controls(
         );
     }
 
-    let (left, right, wait, retry) = match ui_state {
+    let (left, right, wait, shout, retry) = match ui_state {
         UiState::Running => (
             "<",
             ">",
             if phase == Phase::Won { "NEXT" } else { "WAIT" },
+            "SHOUT",
             "RETRY",
         ),
-        UiState::LevelSelect => ("PREV", "NEXT", "PLAY", "BACK"),
-        UiState::PauseMenu | UiState::Controls | UiState::ResumeGate => ("<", ">", "OK", "BACK"),
+        UiState::LevelSelect => ("PREV", "NEXT", "PLAY", "", "BACK"),
+        UiState::PauseMenu | UiState::Controls | UiState::ResumeGate => {
+            ("<", ">", "OK", "", "BACK")
+        }
     };
 
     for (rect, label) in [
@@ -989,8 +1070,12 @@ fn draw_touch_controls(
         (layout.right, right),
         (layout.down, "V"),
         (layout.wait, wait),
+        (layout.shout, shout),
         (layout.retry, retry),
     ] {
+        if label.is_empty() {
+            continue;
+        }
         if let Some(rect) = rect {
             framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, PANEL);
             framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, TOUCH_ACCENT);
@@ -1137,11 +1222,11 @@ fn draw_controls_screen(framebuffer: &mut Framebuffer, layout: Layout) {
     for (line, text) in [
         "MOVE   ARROWS/WASD",
         "WAIT   SPACE / SOUTH",
+        "SHOUT  E / NORTH",
         "RETRY  R / WEST",
         "PAUSE  ESC / START",
         "MENU   UP DOWN SPACE",
         "LEVEL  LEFT RIGHT",
-        "TOUCH  BUTTONS",
     ]
     .into_iter()
     .enumerate()
@@ -1329,6 +1414,36 @@ fn draw_trap(framebuffer: &mut Framebuffer, rect: Rect, active: bool) {
     }
 }
 
+fn draw_shout_feedback(framebuffer: &mut Framebuffer, layout: Layout, events: &[WorldEvent]) {
+    let Some(cell) = events.iter().find_map(|event| match *event {
+        WorldEvent::Shouted { cell, .. } => Some(cell),
+        _ => None,
+    }) else {
+        return;
+    };
+    let rect = layout.cell_rect(cell);
+    let cx = rect.x + rect.width as i32 / 2;
+    let cy = rect.y + rect.height as i32 / 2;
+    framebuffer.draw_circle(cx, cy, 9, WIN);
+    framebuffer.draw_circle(cx, cy, 24, WIN);
+    framebuffer.draw_circle(cx, cy, 42, MUTED);
+}
+
+fn draw_enemy_kill_feedback(framebuffer: &mut Framebuffer, layout: Layout, events: &[WorldEvent]) {
+    for cell in events.iter().filter_map(|event| match *event {
+        WorldEvent::EnemyKilled { cell, .. } => Some(cell),
+        _ => None,
+    }) {
+        let rect = layout.cell_rect(cell);
+        let cx = rect.x + rect.width as i32 / 2;
+        let cy = rect.y + rect.height as i32 / 2;
+        framebuffer.draw_circle(cx, cy, 8, DANGER);
+        for (dx, dy) in [(-9, 0), (9, 0), (0, -9), (0, 9), (-6, -6), (6, 6)] {
+            framebuffer.draw_line(cx, cy, cx + dx, cy + dy, WIN);
+        }
+    }
+}
+
 fn draw_bonus(framebuffer: &mut Framebuffer, rect: Rect, bonus: Bonus) {
     let (label, color) = match bonus.kind {
         BonusKind::Fixed(amount) => (format!("+{amount}"), BONUS),
@@ -1389,6 +1504,16 @@ fn draw_enemy(framebuffer: &mut Framebuffer, rect: Rect, enemy: &Enemy) {
                 Pixel::BLACK,
             );
             draw_walker_direction(framebuffer, rect, direction);
+            if matches!(enemy.intent, EnemyIntent::Investigate { .. }) {
+                framebuffer.fill_circle(rect.x + rect.width as i32 - 4, rect.y + 4, 3, WIN);
+                framebuffer.draw_line(
+                    rect.x + rect.width as i32 - 4,
+                    rect.y + 9,
+                    rect.x + rect.width as i32 - 4,
+                    rect.y + 14,
+                    Pixel::BLACK,
+                );
+            }
         }
     }
 }
@@ -1486,6 +1611,15 @@ mod tests {
         held_actions: &[ActionId],
         audio: &mut dyn Audio,
     ) -> GameResult {
+        run_frame_with_audio_delta(game, held_actions, audio, Duration::from_millis(16))
+    }
+
+    fn run_frame_with_audio_delta(
+        game: &mut SmartBoyHeroGame,
+        held_actions: &[ActionId],
+        audio: &mut dyn Audio,
+        delta_time: Duration,
+    ) -> GameResult {
         game.controls.clear_virtual();
         for &action in held_actions {
             game.controls.set_virtual(action, true);
@@ -1498,13 +1632,22 @@ mod tests {
         let mut frame = Frame {
             framebuffer: &mut framebuffer,
             input: &input,
-            delta_time: Duration::from_millis(16),
+            delta_time,
             storage: &mut storage,
             audio,
             surface_size: size,
             viewport: Viewport::new(size, size),
         };
         game.update(&mut frame)
+    }
+
+    fn run_frame_delta(
+        game: &mut SmartBoyHeroGame,
+        held_actions: &[ActionId],
+        delta_time: Duration,
+    ) -> GameResult {
+        let mut audio = NoopAudio::default();
+        run_frame_with_audio_delta(game, held_actions, &mut audio, delta_time)
     }
 
     fn run_frame(game: &mut SmartBoyHeroGame, held_actions: &[ActionId]) -> GameResult {
@@ -1550,7 +1693,7 @@ mod tests {
     fn touch_mode_has_virtual_controls_for_all_actions() {
         let game = SmartBoyHeroGame::new_touch();
         let pad = game.virtual_pad.expect("touch mode should have a pad");
-        assert_eq!(pad.buttons().len(), 7);
+        assert_eq!(pad.buttons().len(), 8);
     }
 
     #[test]
@@ -1654,6 +1797,14 @@ mod tests {
             WorldEvent::TrapArmed,
             WorldEvent::TrapDisarmed,
             WorldEvent::TrapTriggered,
+            WorldEvent::Shouted {
+                cell: Cell::new(1, 1),
+                heard: 2,
+            },
+            WorldEvent::EnemyKilled {
+                cell: Cell::new(2, 1),
+                power: 9,
+            },
             WorldEvent::HeroDied,
             WorldEvent::Won,
         ]);
@@ -1671,6 +1822,8 @@ mod tests {
                 TRAP_ARM_SOUND,
                 TRAP_DISARM_SOUND,
                 TRAP_TRIGGER_SOUND,
+                SHOUT_SOUND,
+                ENEMY_KILL_SOUND,
                 DEATH_SOUND,
                 VICTORY_SOUND,
             ]
@@ -1741,6 +1894,37 @@ mod tests {
     }
 
     #[test]
+    fn pause_menu_freezes_semi_continuous_simulation() {
+        let mut game = SmartBoyHeroGame::new();
+        game.load_level(16);
+        tap(&mut game, PAUSE);
+
+        let walker_cell = game.world.enemies()[0].cell;
+        run_frame_delta(&mut game, &[], FIXED_STEP * 3);
+
+        assert_eq!(game.ui_state, UiState::PauseMenu);
+        assert_eq!(game.world.enemies()[0].cell, walker_cell);
+        assert_eq!(game.world.turn_count(), 0);
+    }
+
+    #[test]
+    fn restart_clears_semi_continuous_accumulator() {
+        let mut game = SmartBoyHeroGame::new();
+        game.load_level(16);
+
+        run_frame_delta(&mut game, &[], FIXED_STEP - Duration::from_millis(10));
+        assert!(game.simulation_accumulator > Duration::ZERO);
+
+        run_frame_delta(&mut game, &[RETRY], Duration::from_millis(16));
+        assert_eq!(game.simulation_accumulator, Duration::ZERO);
+
+        let walker_cell = game.world.enemies()[0].cell;
+        run_frame_delta(&mut game, &[], Duration::from_millis(20));
+        assert_eq!(game.world.enemies()[0].cell, walker_cell);
+        assert_eq!(game.world.turn_count(), 0);
+    }
+
+    #[test]
     fn resume_gate_prevents_confirm_from_leaking_into_gameplay() {
         let mut game = SmartBoyHeroGame::new();
 
@@ -1779,6 +1963,9 @@ mod tests {
             (13, "WATCH YOUR STEP"),
             (14, "SET THE TRAP"),
             (15, "CLOCKWORK"),
+            (16, "COME HERE"),
+            (17, "GROUP THERAPY"),
+            (18, "SMART WAY"),
         ] {
             let mut game = SmartBoyHeroGame::new();
             game.ui_state = UiState::LevelSelect;

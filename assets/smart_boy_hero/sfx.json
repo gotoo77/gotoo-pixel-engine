@@ -9,6 +9,8 @@
   "trap_arm": "assets/smart_boy_hero/sfx/trap_arm.wav",
   "trap_disarm": "assets/smart_boy_hero/sfx/trap_disarm.wav",
   "trap_trigger": "assets/smart_boy_hero/sfx/trap_trigger.wav",
+  "shout": "assets/smart_boy_hero/sfx/shout.wav",
+  "enemy_kill": "assets/smart_boy_hero/sfx/enemy_kill.wav",
   "death": "assets/smart_boy_hero/sfx/death.wav",
   "victory": "assets/smart_boy_hero/sfx/victory.wav"
 }

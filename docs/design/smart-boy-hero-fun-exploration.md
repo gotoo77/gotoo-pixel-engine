@@ -427,6 +427,95 @@ d'un outil qu'il utilise sur le monde, ou seulement comme d'un obstacle rouge a
 eviter ? Si la reaction reste "j'evite la case dangereuse", la famille pieges
 ne repond pas encore a la question du jouet systemique minimal.
 
+## Experience Candidate: SHOUT / Leurre Sonore
+
+Statut 2026-08-16: une experience locale SBH est en cours pour tester une
+capacite minimale de manipulation ennemie. Elle ne valide pas la forme finale du
+leurre, ni une economie de charges, ni une migration temps reel.
+
+Regle testee:
+
+```text
+SHOUT a la position du heros
+    -> Walkers compatibles dans un rayon simple
+    -> investigate(target_cell)
+    -> patrol
+```
+
+`target_cell` est la case depuis laquelle le cri a ete emis. Les Guards restent
+statiques pour l'instant. Si un Walker ne trouve pas de route vers la cible, il
+abandonne proprement et reprend sa patrouille.
+
+Hypothese de fun:
+
+> si le joueur peut volontairement attirer les ennemis, les pieges cessent
+> d'etre seulement des verrous de timing et deviennent des outils.
+
+Variables volontairement non testees dans cette premiere passe:
+
+- caillou lance ou cible libre;
+- leurre pose;
+- plusieurs types de bruit;
+- recharge par kill;
+- IA avancee;
+
+Niveaux experimentaux:
+
+- COME HERE: appeler un Walker vers un piege.
+- GROUP THERAPY: utiliser une plaque et un seul cri pour provoquer un double
+  kill.
+- SMART WAY: comparer route brute couteuse en Power et route smart par
+  manipulation + piege.
+
+Variable de design future: SHOUT est gratuit ou tres disponible maintenant pour
+ne pas melanger le test de manipulation avec une economie de ressources. Si le
+plaisir est confirme, les charges de SHOUT ou leur recharge par kill indirect
+pourraient devenir une piste separee.
+
+Question de play-test:
+
+> SHOUT ouvre-t-il plusieurs decisions plausibles de position/timing, ou devient-il
+> simplement une nouvelle cle dans une serrure de puzzle ?
+
+## Experience Candidate: Monde Semi-Continu
+
+Statut 2026-08-16: une experience locale SBH teste un monde semi-continu a
+fixed timestep sur les niveaux SHOUT uniquement. Les niveaux historiques restent
+tour par tour pour conserver le checkpoint jouable et eviter une conversion de
+campagne prematuree.
+
+Regle testee:
+
+```text
+render frames
+    -> accumulateur local SBH
+    -> world.update_tick()
+    -> Walkers / plaques / pieges continuent sans action joueur
+```
+
+Objectif de fun:
+
+> verifier si SHOUT + pieges deviennent plus naturels lorsque les Walkers
+> continuent a vivre pendant que le joueur observe et se repositionne.
+
+Choix volontairement limites:
+
+- pas de migration temps reel complete;
+- pas de mouvement libre pixel-perfect;
+- pas de pause tactique / Smart Vision;
+- pas de recharge SHOUT par kill;
+- pas de loot ou economie de kill;
+- pas de scheduler moteur generique.
+
+Le kill recoit uniquement une gratification immediate supplementaire: son
+distinct et burst visuel primitif. Le probleme plus profond de recompense
+systemique du kill reste ouvert.
+
+Question de play-test:
+
+> le monde semi-continu transforme-t-il vraiment SHOUT en outil d'orchestration,
+> ou automatise-t-il simplement le meme puzzle ?
+
 ## Comparatif
 
 | Proposition | Potentiel de fun | Cout | Risque |
@@ -440,6 +529,7 @@ ne repond pas encore a la question du jouet systemique minimal.
 | Fake Ad Deal | Eleve mais lateral | Moyen | Eleve |
 | Audio Systemique | Moyen/Eleve | Faible/Moyen | Moyen |
 | Pieges | Tres eleve | Moyen | Moyen/Eleve |
+| SHOUT / Leurre Sonore | Tres eleve | Moyen | Moyen |
 
 ## Top 3
 
@@ -477,9 +567,20 @@ l'orchestration du plateau plutot que d'un nouveau verbe direct ?
   resoudre ?
 - Quelle part de solutions alternatives veut-on accepter dans des micro-niveaux
   tres lisibles ?
+- Un leurre centre sur le heros suffit-il, ou faut-il rapidement une cible libre
+  comme un caillou lance ?
+- SHOUT doit-il rester gratuit, avoir des charges, ou etre recharge par kill
+  indirect ?
+- Le tour par tour suffit-il encore lorsque le joueur manipule activement les
+  ennemis, ou faut-il tester un monde semi-continu a fixed timestep ?
+- Une fois le monde vivant, faut-il ajouter une pause tactique / Smart Vision,
+  ou le rythme lent suffit-il a la lisibilite ?
+- Le feedback audiovisuel suffit-il a rendre un kill satisfaisant sans loot, ou
+  faut-il une recompense mecanique locale ?
 
 ## Non-Engagement
 
-Cette exploration ne valide pas l'implementation de Shove, Pieges, Power Spend,
-RNG a Choix, Fake Ad Deal, Audio Systemique ou toute autre piste. Elle documente
-des options et leurs risques pour garder une trace de conception.
+Cette exploration ne valide pas l'implementation definitive de Shove, Pieges,
+SHOUT, Power Spend, RNG a Choix, Fake Ad Deal, Audio Systemique ou toute autre
+piste. Elle documente des options et leurs risques pour garder une trace de
+conception.
