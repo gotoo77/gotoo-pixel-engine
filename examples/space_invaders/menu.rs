@@ -295,7 +295,7 @@ impl SpaceInvadersMenu {
         draw_control_row(framebuffer, 50, "MOVE LEFT", "LEFT / A");
         draw_control_row(framebuffer, 62, "MOVE RIGHT", "RIGHT / D");
         draw_control_row(framebuffer, 74, "FIRE", "SPACE");
-        draw_control_row(framebuffer, 86, "QUIT", "ESC");
+        draw_control_row(framebuffer, 86, "PAUSE", "ESC");
 
         framebuffer.draw_text(18, 104, "GAMEPAD", ACCENT);
         draw_control_row(framebuffer, 118, "DEVICE", &self.gamepad.name);
@@ -311,7 +311,7 @@ impl SpaceInvadersMenu {
         );
         draw_control_row(framebuffer, 142, "MOVE", "DPAD / LEFT STICK");
         draw_control_row(framebuffer, 154, "FIRE", "SOUTH");
-        draw_control_row(framebuffer, 166, "BACK", "EAST");
+        draw_control_row(framebuffer, 166, "PAUSE", "START");
 
         for (index, (label, y)) in [("GAMEPAD SETUP", 182), ("BACK", 198)]
             .into_iter()

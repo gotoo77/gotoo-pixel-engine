@@ -5,26 +5,22 @@ mod menu;
 
 use game::{EnhancedSpaceInvadersGame, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Game, GameResult, GamepadProfile, Key, run,
+    EngineConfig, EngineError, Frame, Game, GameResult, GamepadProfile, Key, Size, run,
+    ui::{PauseConfig, PauseGame},
 };
 use menu::{MenuAction, SpaceInvadersMenu};
 
 struct SpaceInvadersApp {
-    game: EnhancedSpaceInvadersGame,
+    game: Option<PauseGame<EnhancedSpaceInvadersGame>>,
     menu: SpaceInvadersMenu,
-    playing: bool,
     gamepad_profile: GamepadProfile,
 }
 
 impl SpaceInvadersApp {
     fn new() -> Self {
-        let mut game = EnhancedSpaceInvadersGame::new();
-        game.controls_mut().clear_virtual();
-
         Self {
-            game,
+            game: None,
             menu: SpaceInvadersMenu::new(),
-            playing: false,
             gamepad_profile: GamepadProfile::standard(),
         }
     }
@@ -35,14 +31,26 @@ impl SpaceInvadersApp {
             frame.set_gamepad_profile(id, self.gamepad_profile);
         }
     }
+
+    fn start_game(&mut self) {
+        let mut game = EnhancedSpaceInvadersGame::new();
+        game.controls_mut().clear_virtual();
+        self.game = Some(PauseGame::new(
+            game,
+            PauseConfig::new(Size {
+                width: FRAMEBUFFER_WIDTH,
+                height: FRAMEBUFFER_HEIGHT,
+            }),
+        ));
+    }
 }
 
 impl Game for SpaceInvadersApp {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.apply_gamepad_profile(frame);
 
-        if self.playing {
-            return self.game.update(frame);
+        if let Some(game) = &mut self.game {
+            return game.update(frame);
         }
 
         if frame.input.key(Key::Escape).pressed() {
@@ -50,7 +58,7 @@ impl Game for SpaceInvadersApp {
         }
 
         match self.menu.update(frame.input) {
-            Some(MenuAction::Play) => self.playing = true,
+            Some(MenuAction::Play) => self.start_game(),
             Some(MenuAction::Quit) => return GameResult::Exit,
             Some(MenuAction::DecreaseGamepadThreshold) => {
                 self.gamepad_profile = self

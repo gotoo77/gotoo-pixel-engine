@@ -4,10 +4,10 @@ mod game;
 use game::{SnakeGame, SnakeInteractionMode};
 use gotoo_pixel_engine::{
     EngineConfig, EngineError, Frame, Game, GameResult, GamepadButton, GamepadId, Input, Key,
-    Pixel, Rect, run,
+    Pixel, Rect, Size, run,
     ui::{
-        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
-        menu_down_pressed, menu_up_pressed,
+        MenuState, PauseConfig, PauseGame, draw_menu_item, draw_panel, draw_text_centered,
+        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
     },
 };
 
@@ -23,19 +23,17 @@ enum Page {
 }
 
 struct SnakeApp {
-    game: SnakeGame,
+    game: Option<PauseGame<SnakeGame>>,
     page: Page,
     menu: MenuState,
-    playing: bool,
 }
 
 impl SnakeApp {
     fn new() -> Self {
         Self {
-            game: SnakeGame::new(SnakeInteractionMode::Keyboard),
+            game: None,
             page: Page::Main,
             menu: MenuState::new(3),
-            playing: false,
         }
     }
 
@@ -59,7 +57,7 @@ impl SnakeApp {
         }
         if menu_confirm_pressed(input) {
             match self.menu.selected() {
-                Some(0) => self.playing = true,
+                Some(0) => self.game = Some(paused_snake()),
                 Some(1) => self.page = Page::Controls,
                 Some(2) => return GameResult::Exit,
                 _ => {}
@@ -169,28 +167,29 @@ impl SnakeApp {
             ACCENT,
         );
 
-        framebuffer.draw_text(44, 52, "KEYBOARD", ACCENT);
-        draw_control_row(framebuffer, 66, "MOVE", "ARROWS / WASD");
-        draw_control_row(framebuffer, 80, "REPLAY", "SPACE");
-        draw_control_row(framebuffer, 94, "QUIT", "ESC");
+        framebuffer.draw_text(44, 48, "KEYBOARD", ACCENT);
+        draw_control_row(framebuffer, 62, "MOVE", "ARROWS / WASD");
+        draw_control_row(framebuffer, 76, "REPLAY", "SPACE");
+        draw_control_row(framebuffer, 90, "PAUSE", "ESC");
 
-        framebuffer.draw_text(44, 116, "GAMEPAD", ACCENT);
+        framebuffer.draw_text(44, 108, "GAMEPAD", ACCENT);
         draw_control_row(
             framebuffer,
-            130,
+            122,
             "DEVICE",
             &gamepad_display_name(frame.input),
         );
-        draw_control_row(framebuffer, 144, "MOVE", "DPAD / LEFT STICK");
-        draw_control_row(framebuffer, 158, "REPLAY", "SOUTH / START");
+        draw_control_row(framebuffer, 136, "MOVE", "DPAD / LEFT STICK");
+        draw_control_row(framebuffer, 150, "REPLAY", "SOUTH");
+        draw_control_row(framebuffer, 164, "PAUSE", "START");
 
         draw_text_centered(
             framebuffer,
             Rect {
                 x: 38,
-                y: 176,
+                y: 180,
                 width: 244,
-                height: 12,
+                height: 10,
             },
             "SPACE/SOUTH OR EAST TO GO BACK",
             1,
@@ -201,8 +200,8 @@ impl SnakeApp {
 
 impl Game for SnakeApp {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        if self.playing {
-            return self.game.update(frame);
+        if let Some(game) = &mut self.game {
+            return game.update(frame);
         }
 
         let result = self.update_menu(frame);
@@ -212,6 +211,18 @@ impl Game for SnakeApp {
         self.render_menu(frame);
         GameResult::Continue
     }
+}
+
+fn paused_snake() -> PauseGame<SnakeGame> {
+    let mode = SnakeInteractionMode::Keyboard;
+    let size = mode.framebuffer_size();
+    PauseGame::new(
+        SnakeGame::new(mode),
+        PauseConfig::new(Size {
+            width: size.width,
+            height: size.height,
+        }),
+    )
 }
 
 fn draw_control_row(

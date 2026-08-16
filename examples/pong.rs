@@ -4,11 +4,11 @@ mod game;
 
 use game::{FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, PongGame};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel,
-    Rect, run,
+    EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key,
+    Pixel, Rect, Size, run,
     ui::{
-        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
-        menu_down_pressed, menu_up_pressed,
+        MenuState, PauseConfig, PauseGame, draw_menu_item, draw_panel, draw_text_centered,
+        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
     },
 };
 
@@ -26,8 +26,7 @@ enum Page {
 struct PongApp {
     page: Page,
     main_menu: MenuState,
-    playing: bool,
-    game: PongGame,
+    game: Option<PauseGame<PongGame>>,
 }
 
 impl PongApp {
@@ -35,14 +34,11 @@ impl PongApp {
         Self {
             page: Page::Main,
             main_menu: MenuState::new(3),
-            playing: false,
-            game: PongGame::new(),
+            game: None,
         }
     }
 
     fn update_menu(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        self.game.sync_gamepads(frame.input);
-
         if frame.input.key(Key::Escape).pressed() {
             return GameResult::Exit;
         }
@@ -57,10 +53,7 @@ impl PongApp {
                 }
                 if menu_confirm_pressed(frame.input) {
                     match self.main_menu.selected() {
-                        Some(0) => {
-                            self.game.reset_match();
-                            self.playing = true;
-                        }
+                        Some(0) => self.game = Some(paused_pong()),
                         Some(1) => self.page = Page::Controls,
                         Some(2) => return GameResult::Exit,
                         _ => {}
@@ -78,7 +71,7 @@ impl PongApp {
                 {
                     self.page = Page::Main;
                 }
-                self.render_controls(frame.framebuffer);
+                self.render_controls(frame.framebuffer, frame.input);
             }
         }
 
@@ -132,15 +125,15 @@ impl PongApp {
         }
     }
 
-    fn render_controls(&self, framebuffer: &mut Framebuffer) {
+    fn render_controls(&self, framebuffer: &mut Framebuffer, input: &Input) {
         framebuffer.clear(BG);
         draw_panel(
             framebuffer,
             Rect {
                 x: 36,
-                y: 22,
+                y: 18,
                 width: 248,
-                height: 136,
+                height: 144,
             },
             BG,
             BORDER,
@@ -149,7 +142,7 @@ impl PongApp {
             framebuffer,
             Rect {
                 x: 48,
-                y: 34,
+                y: 30,
                 width: 224,
                 height: 16,
             },
@@ -157,12 +150,12 @@ impl PongApp {
             1,
             ACCENT,
         );
-        framebuffer.draw_text(58, 64, "P1  W/S", FG);
-        framebuffer.draw_text(58, 78, "P2  UP/DOWN", FG);
+        framebuffer.draw_text(58, 56, "P1  W/S", FG);
+        framebuffer.draw_text(58, 70, "P2  UP/DOWN", FG);
         framebuffer.draw_text(
             58,
-            100,
-            if self.game.gamepad_connected(0) {
+            92,
+            if gamepad_connected(input, 0) {
                 "P1 PAD CONNECTED"
             } else {
                 "P1 PAD NONE"
@@ -171,19 +164,20 @@ impl PongApp {
         );
         framebuffer.draw_text(
             58,
-            114,
-            if self.game.gamepad_connected(1) {
+            106,
+            if gamepad_connected(input, 1) {
                 "P2 PAD CONNECTED"
             } else {
                 "P2 PAD NONE"
             },
             FG,
         );
+        framebuffer.draw_text(58, 124, "PAUSE  ESC / START", FG);
         draw_text_centered(
             framebuffer,
             Rect {
                 x: 48,
-                y: 136,
+                y: 144,
                 width: 224,
                 height: 12,
             },
@@ -196,12 +190,26 @@ impl PongApp {
 
 impl Game for PongApp {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        if self.playing {
-            self.game.update(frame)
+        if let Some(game) = &mut self.game {
+            game.update(frame)
         } else {
             self.update_menu(frame)
         }
     }
+}
+
+fn paused_pong() -> PauseGame<PongGame> {
+    PauseGame::new(
+        PongGame::new(),
+        PauseConfig::new(Size {
+            width: FRAMEBUFFER_WIDTH,
+            height: FRAMEBUFFER_HEIGHT,
+        }),
+    )
+}
+
+fn gamepad_connected(input: &Input, player: usize) -> bool {
+    input.gamepad_ids().nth(player).is_some()
 }
 
 fn main() -> Result<(), EngineError> {

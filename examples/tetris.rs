@@ -3,10 +3,10 @@ mod game;
 
 use game::{FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, TetrisGame};
 use gotoo_pixel_engine::{
-    EngineConfig, EngineError, Frame, Game, GameResult, Key, Pixel, Rect, run,
+    EngineConfig, EngineError, Frame, Game, GameResult, Key, Pixel, Rect, Size, run,
     ui::{
-        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
-        menu_down_pressed, menu_up_pressed,
+        MenuState, PauseConfig, PauseGame, draw_menu_item, draw_panel, draw_text_centered,
+        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
     },
 };
 
@@ -16,17 +16,15 @@ const ACCENT: Pixel = Pixel::rgb(80, 220, 230);
 const BORDER: Pixel = Pixel::rgb(112, 126, 138);
 
 struct TetrisApp {
-    game: TetrisGame,
+    game: Option<PauseGame<TetrisGame>>,
     menu: MenuState,
-    playing: bool,
 }
 
 impl TetrisApp {
     fn new() -> Self {
         Self {
-            game: TetrisGame::new(),
+            game: None,
             menu: MenuState::new(2),
-            playing: false,
         }
     }
 
@@ -42,7 +40,7 @@ impl TetrisApp {
         }
         if menu_confirm_pressed(frame.input) {
             match self.menu.selected() {
-                Some(0) => self.playing = true,
+                Some(0) => self.game = Some(paused_tetris()),
                 Some(1) => return GameResult::Exit,
                 _ => {}
             }
@@ -55,12 +53,22 @@ impl TetrisApp {
 
 impl Game for TetrisApp {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        if self.playing {
-            self.game.update(frame)
+        if let Some(game) = &mut self.game {
+            game.update(frame)
         } else {
             self.update_menu(frame)
         }
     }
+}
+
+fn paused_tetris() -> PauseGame<TetrisGame> {
+    PauseGame::new(
+        TetrisGame::new(),
+        PauseConfig::new(Size {
+            width: FRAMEBUFFER_WIDTH,
+            height: FRAMEBUFFER_HEIGHT,
+        }),
+    )
 }
 
 fn render_menu(frame: &mut Frame<'_>, menu: MenuState) {
