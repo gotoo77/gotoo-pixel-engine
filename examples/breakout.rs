@@ -5,10 +5,10 @@ mod game;
 use game::{BreakoutGame, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH};
 use gotoo_pixel_engine::{
     EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel,
-    Rect, run,
+    Rect, Size, run,
     ui::{
-        MenuState, draw_menu_item, draw_panel, draw_text_centered, menu_confirm_pressed,
-        menu_down_pressed, menu_up_pressed,
+        MenuState, PauseConfig, PauseGame, draw_menu_item, draw_panel, draw_text_centered,
+        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
     },
 };
 
@@ -26,8 +26,7 @@ enum Page {
 struct BreakoutApp {
     page: Page,
     menu: MenuState,
-    playing: bool,
-    game: BreakoutGame,
+    game: Option<PauseGame<BreakoutGame>>,
 }
 
 impl BreakoutApp {
@@ -35,8 +34,7 @@ impl BreakoutApp {
         Self {
             page: Page::Main,
             menu: MenuState::new(3),
-            playing: false,
-            game: BreakoutGame::new(),
+            game: None,
         }
     }
 
@@ -55,10 +53,7 @@ impl BreakoutApp {
                 }
                 if menu_confirm_pressed(frame.input) {
                     match self.menu.selected() {
-                        Some(0) => {
-                            self.game.restart_round();
-                            self.playing = true;
-                        }
+                        Some(0) => self.game = Some(paused_breakout()),
                         Some(1) => self.page = Page::Controls,
                         Some(2) => return GameResult::Exit,
                         _ => {}
@@ -136,9 +131,9 @@ impl BreakoutApp {
             framebuffer,
             Rect {
                 x: 34,
-                y: 24,
+                y: 20,
                 width: 252,
-                height: 132,
+                height: 140,
             },
             BG,
             BORDER,
@@ -147,7 +142,7 @@ impl BreakoutApp {
             framebuffer,
             Rect {
                 x: 48,
-                y: 38,
+                y: 32,
                 width: 224,
                 height: 16,
             },
@@ -155,14 +150,15 @@ impl BreakoutApp {
             1,
             ACCENT,
         );
-        framebuffer.draw_text(58, 68, "KEYBOARD  LEFT/RIGHT OR A/D", FG);
-        framebuffer.draw_text(58, 86, "GAMEPAD   DPAD / LEFT STICK", FG);
-        framebuffer.draw_text(58, 104, "ACTION    SPACE / SOUTH", FG);
+        framebuffer.draw_text(58, 60, "KEYBOARD  LEFT/RIGHT OR A/D", FG);
+        framebuffer.draw_text(58, 78, "GAMEPAD   DPAD / LEFT STICK", FG);
+        framebuffer.draw_text(58, 96, "ACTION    SPACE / SOUTH", FG);
+        framebuffer.draw_text(58, 114, "PAUSE     ESC / START", FG);
         draw_text_centered(
             framebuffer,
             Rect {
                 x: 48,
-                y: 132,
+                y: 140,
                 width: 224,
                 height: 12,
             },
@@ -175,12 +171,22 @@ impl BreakoutApp {
 
 impl Game for BreakoutApp {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        if self.playing {
-            self.game.update(frame)
+        if let Some(game) = &mut self.game {
+            game.update(frame)
         } else {
             self.update_menu(frame)
         }
     }
+}
+
+fn paused_breakout() -> PauseGame<BreakoutGame> {
+    PauseGame::new(
+        BreakoutGame::new(),
+        PauseConfig::new(Size {
+            width: FRAMEBUFFER_WIDTH,
+            height: FRAMEBUFFER_HEIGHT,
+        }),
+    )
 }
 
 fn main() -> Result<(), EngineError> {
