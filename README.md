@@ -63,6 +63,7 @@ Le moteur est désormais exercé par plusieurs jeux réels :
 - Space Invaders ;
 - Pong deux joueurs ;
 - Breakout ;
+- Smart Boy Hero ;
 - `GPE Arcade`, qui compose ces jeux dans un même runtime et sert aussi de test
   architectural multi-jeux.
 
@@ -72,7 +73,7 @@ Version publique de l'Arcade :
 
 Les jeux restent également accessibles individuellement via les pages
 `snake.html`, `tetris.html`, `space_invaders.html`, `pong.html` et
-`breakout.html`.
+`breakout.html`, ainsi que `smart_boy_hero.html`.
 
 ## Exemple minimal
 
@@ -148,6 +149,7 @@ cargo run --example tetris
 cargo run --example space_invaders
 cargo run --example pong
 cargo run --example breakout
+cargo run --example smart_boy_hero
 cargo run --example arcade
 ```
 

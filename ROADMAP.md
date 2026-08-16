@@ -61,7 +61,8 @@ Le moteur est désormais exercé par :
 - Space Invaders ;
 - Pong deux joueurs ;
 - Breakout ;
-- GPE Arcade, qui compose les cinq jeux dans un même runtime.
+- Smart Boy Hero ;
+- GPE Arcade, qui compose ces jeux dans un même runtime.
 
 Cette phase a validé plusieurs abstractions qui possèdent maintenant plusieurs
 consommateurs réels.
@@ -301,6 +302,7 @@ ou ludique concret apparaît.
 
 Pas d'ECS actuellement.
 
-Snake, Tetris, Space Invaders, Pong, Breakout et Arcade ne le justifient pas.
+Snake, Tetris, Space Invaders, Pong, Breakout, Smart Boy Hero et Arcade ne le
+justifient pas.
 Une décision ECS ne serait défendable qu'à partir d'une duplication ou friction
 observée sur plusieurs jeux plus complexes.

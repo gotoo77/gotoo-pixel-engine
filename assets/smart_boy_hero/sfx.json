@@ -1,0 +1,14 @@
+{
+  "combat": "assets/smart_boy_hero/sfx/combat.wav",
+  "bonus": "assets/smart_boy_hero/sfx/bonus.wav",
+  "mystery_bonus": "assets/smart_boy_hero/sfx/mystery_bonus.wav",
+  "pressure_plate_on": "assets/smart_boy_hero/sfx/plate_on.wav",
+  "pressure_plate_off": "assets/smart_boy_hero/sfx/plate_off.wav",
+  "door_open": "assets/smart_boy_hero/sfx/door_open.wav",
+  "door_close": "assets/smart_boy_hero/sfx/door_close.wav",
+  "trap_arm": "assets/smart_boy_hero/sfx/trap_arm.wav",
+  "trap_disarm": "assets/smart_boy_hero/sfx/trap_disarm.wav",
+  "trap_trigger": "assets/smart_boy_hero/sfx/trap_trigger.wav",
+  "death": "assets/smart_boy_hero/sfx/death.wav",
+  "victory": "assets/smart_boy_hero/sfx/victory.wav"
+}

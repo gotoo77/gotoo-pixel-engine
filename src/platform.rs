@@ -536,6 +536,7 @@ fn key_from_winit(key: PhysicalKey) -> Option<Key> {
         PhysicalKey::Code(KeyCode::ArrowRight) => Some(Key::Right),
         PhysicalKey::Code(KeyCode::KeyA) => Some(Key::A),
         PhysicalKey::Code(KeyCode::KeyD) => Some(Key::D),
+        PhysicalKey::Code(KeyCode::KeyR) => Some(Key::R),
         PhysicalKey::Code(KeyCode::KeyS) => Some(Key::S),
         PhysicalKey::Code(KeyCode::KeyW) => Some(Key::W),
         _ => None,
@@ -679,6 +680,10 @@ mod tests {
         assert_eq!(
             key_from_winit(PhysicalKey::Code(KeyCode::KeyW)),
             Some(Key::W)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::KeyR)),
+            Some(Key::R)
         );
         assert_eq!(key_from_winit(PhysicalKey::Code(KeyCode::F1)), None);
     }

@@ -8,7 +8,9 @@ repository = "https://github.com/gotoo77/gotoo-pixel-engine"
 
 [dependencies]
 hound = "3.5.1"
+include_dir = "0.7.4"
 pollster = "1.0.1"
+serde_json = "1.0.145"
 wgpu = "30.0.0"
 winit = "0.30.13"
 
@@ -54,6 +56,11 @@ crate-type = ["cdylib"]
 [[example]]
 name = "space_invaders_web"
 path = "examples/space_invaders_web.rs"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "smart_boy_hero_web"
+path = "examples/smart_boy_hero_web.rs"
 crate-type = ["cdylib"]
 
 [[example]]
