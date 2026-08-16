@@ -48,5 +48,11 @@ jobs:
       - name: Add wasm target
         run: rustup target add wasm32-unknown-unknown
 
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
+
       - name: Validate Web targets
         run: ./scripts/check-web.sh
+
+      - name: Validate Web packaging
+        run: ./scripts/build-web.sh
