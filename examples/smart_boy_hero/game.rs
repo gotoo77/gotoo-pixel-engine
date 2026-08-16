@@ -47,7 +47,10 @@ const DOOR_CLOSE_SOUND: SoundId = SoundId::new("smart_boy_hero.door_close");
 const TRAP_ARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_arm");
 const TRAP_DISARM_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_disarm");
 const TRAP_TRIGGER_SOUND: SoundId = SoundId::new("smart_boy_hero.trap_trigger");
-const SHOUT_SOUND: SoundId = SoundId::new("smart_boy_hero.shout");
+const SHOUT_SOUND_1: SoundId = SoundId::new("smart_boy_hero.shout_1");
+const SHOUT_SOUND_2: SoundId = SoundId::new("smart_boy_hero.shout_2");
+const SHOUT_SOUND_3: SoundId = SoundId::new("smart_boy_hero.shout_3");
+const SHOUT_SOUNDS: [SoundId; 3] = [SHOUT_SOUND_1, SHOUT_SOUND_2, SHOUT_SOUND_3];
 const ROCK_IMPACT_SOUND: SoundId = SoundId::new("smart_boy_hero.rock_impact");
 const ENEMY_KILL_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_kill");
 const ENEMY_ALERT_SOUND: SoundId = SoundId::new("smart_boy_hero.enemy_alert");
@@ -55,12 +58,19 @@ const BOULDER_RELEASE_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_rele
 const BOULDER_ROLL_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_roll");
 const BOULDER_CRUSH_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_crush");
 const BOULDER_STOP_SOUND: SoundId = SoundId::new("smart_boy_hero.boulder_stop");
-const DEATH_SOUND: SoundId = SoundId::new("smart_boy_hero.death");
+const KEY_PICKUP_SOUND: SoundId = SoundId::new("smart_boy_hero.key_pickup");
+const KEY_UNLOCK_SOUND: SoundId = SoundId::new("smart_boy_hero.key_unlock");
+const DEATH_SOUND_1: SoundId = SoundId::new("smart_boy_hero.death_1");
+const DEATH_SOUND_2: SoundId = SoundId::new("smart_boy_hero.death_2");
+const DEATH_SOUND_3: SoundId = SoundId::new("smart_boy_hero.death_3");
+const DEATH_SOUNDS: [SoundId; 3] = [DEATH_SOUND_1, DEATH_SOUND_2, DEATH_SOUND_3];
 const VICTORY_SOUND: SoundId = SoundId::new("smart_boy_hero.victory");
 
 const PAUSE_MENU_ITEMS: usize = 5;
 const LEVEL_SELECT_ITEMS: usize = 2;
 const SFX_ASSET_PREFIX: &str = "assets/smart_boy_hero/";
+const SHOUT_SFX_KEY: &str = "shout";
+const DEATH_SFX_KEY: &str = "death";
 const SFX_CONFIG_JSON: &str = include_str!("../../assets/smart_boy_hero/sfx.json");
 static SMART_BOY_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/smart_boy_hero");
 
@@ -244,6 +254,7 @@ pub struct SmartBoyHeroGame {
     feedback_timer: Duration,
     pending_audio_events: Vec<WorldEvent>,
     simulation_accumulator: Duration,
+    sfx_rng: u32,
 }
 
 impl SmartBoyHeroGame {
@@ -271,6 +282,7 @@ impl SmartBoyHeroGame {
             feedback_timer: Duration::ZERO,
             pending_audio_events: Vec::new(),
             simulation_accumulator: Duration::ZERO,
+            sfx_rng: INITIAL_SEED ^ 0xA11D_10ED,
         }
     }
 
@@ -465,9 +477,32 @@ impl SmartBoyHeroGame {
     }
 
     fn play_sounds(&mut self, audio: &mut dyn Audio, events: &[WorldEvent]) {
-        for sound in sounds_for_events(events) {
+        for sound in self.sounds_for_events(events) {
             let _ = self.sounds.play(audio, sound);
         }
+    }
+
+    fn sounds_for_events(&mut self, events: &[WorldEvent]) -> Vec<SoundId> {
+        events
+            .iter()
+            .filter_map(|event| {
+                let (shout_sound, death_sound) = match event {
+                    WorldEvent::Shouted { .. } => (self.next_variant_sound(SHOUT_SOUNDS), None),
+                    WorldEvent::HeroDied => {
+                        (SHOUT_SOUNDS[0], Some(self.next_variant_sound(DEATH_SOUNDS)))
+                    }
+                    _ => (SHOUT_SOUNDS[0], None),
+                };
+                sound_for_event(event, shout_sound, death_sound.unwrap_or(DEATH_SOUNDS[0]))
+            })
+            .collect()
+    }
+
+    fn next_variant_sound(&mut self, sounds: [SoundId; 3]) -> SoundId {
+        self.sfx_rng ^= self.sfx_rng << 13;
+        self.sfx_rng ^= self.sfx_rng >> 17;
+        self.sfx_rng ^= self.sfx_rng << 5;
+        sounds[self.sfx_rng as usize % sounds.len()]
     }
 
     fn draw(&self, framebuffer: &mut Framebuffer) {
@@ -600,40 +635,53 @@ fn requested_action(controls: &ControlMap) -> Option<PlayerAction> {
     })
 }
 
+#[cfg(test)]
 fn sounds_for_events(events: &[WorldEvent]) -> Vec<SoundId> {
     events
         .iter()
-        .filter_map(|event| match *event {
-            WorldEvent::CombatWon { .. } | WorldEvent::WalkerDestroyed { .. } => Some(COMBAT_SOUND),
-            WorldEvent::BonusCollected { mystery: false, .. } => Some(BONUS_SOUND),
-            WorldEvent::BonusCollected { mystery: true, .. } => Some(MYSTERY_BONUS_SOUND),
-            WorldEvent::PressurePlateOn => Some(PRESSURE_PLATE_ON_SOUND),
-            WorldEvent::PressurePlateOff => Some(PRESSURE_PLATE_OFF_SOUND),
-            WorldEvent::DoorOpened => Some(DOOR_OPEN_SOUND),
-            WorldEvent::DoorClosed => Some(DOOR_CLOSE_SOUND),
-            WorldEvent::TrapArmed => Some(TRAP_ARM_SOUND),
-            WorldEvent::TrapDisarmed => Some(TRAP_DISARM_SOUND),
-            WorldEvent::TrapTriggered => Some(TRAP_TRIGGER_SOUND),
-            WorldEvent::BoulderReleased { .. } => Some(BOULDER_RELEASE_SOUND),
-            WorldEvent::BoulderCrushedEnemy { .. } => Some(BOULDER_CRUSH_SOUND),
-            WorldEvent::BoulderStopped { .. } => Some(BOULDER_STOP_SOUND),
-            WorldEvent::Shouted { .. } => Some(SHOUT_SOUND),
-            WorldEvent::RockImpacted { .. } => Some(ROCK_IMPACT_SOUND),
-            WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
-            WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
-            WorldEvent::HeroDied => Some(DEATH_SOUND),
-            WorldEvent::Won => Some(VICTORY_SOUND),
-            WorldEvent::Blocked
-            | WorldEvent::Waited
-            | WorldEvent::BoulderMoved { .. }
-            | WorldEvent::BoulderSmartChain { .. }
-            | WorldEvent::WalkerLostTarget
-            | WorldEvent::WalkerMoved
-            | WorldEvent::WalkerResumedPatrol
-            | WorldEvent::WalkerTurned => None,
-            WorldEvent::SmartChain { .. } => None,
-        })
+        .filter_map(|event| sound_for_event(event, SHOUT_SOUNDS[0], DEATH_SOUNDS[0]))
         .collect()
+}
+
+fn sound_for_event(
+    event: &WorldEvent,
+    shout_sound: SoundId,
+    death_sound: SoundId,
+) -> Option<SoundId> {
+    match *event {
+        WorldEvent::CombatWon { .. } | WorldEvent::WalkerDestroyed { .. } => Some(COMBAT_SOUND),
+        WorldEvent::BonusCollected { mystery: false, .. } => Some(BONUS_SOUND),
+        WorldEvent::BonusCollected { mystery: true, .. } => Some(MYSTERY_BONUS_SOUND),
+        WorldEvent::PressurePlateOn => Some(PRESSURE_PLATE_ON_SOUND),
+        WorldEvent::PressurePlateOff => Some(PRESSURE_PLATE_OFF_SOUND),
+        WorldEvent::DoorOpened => Some(DOOR_OPEN_SOUND),
+        WorldEvent::DoorClosed => Some(DOOR_CLOSE_SOUND),
+        WorldEvent::TrapArmed => Some(TRAP_ARM_SOUND),
+        WorldEvent::TrapDisarmed => Some(TRAP_DISARM_SOUND),
+        WorldEvent::TrapTriggered => Some(TRAP_TRIGGER_SOUND),
+        WorldEvent::BoulderReleased { .. } => Some(BOULDER_RELEASE_SOUND),
+        WorldEvent::BoulderCrushedEnemy { .. } => Some(BOULDER_CRUSH_SOUND),
+        WorldEvent::BoulderStopped { .. } => Some(BOULDER_STOP_SOUND),
+        WorldEvent::Shouted { .. } => Some(shout_sound),
+        WorldEvent::RockImpacted { .. } => Some(ROCK_IMPACT_SOUND),
+        WorldEvent::EnemyKilled { .. } => Some(ENEMY_KILL_SOUND),
+        WorldEvent::CoreKeyAcquired => Some(KEY_PICKUP_SOUND),
+        WorldEvent::CoreGateUnlocked => Some(KEY_UNLOCK_SOUND),
+        WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
+        WorldEvent::HeroDied => Some(death_sound),
+        WorldEvent::Won => Some(VICTORY_SOUND),
+        WorldEvent::Blocked
+        | WorldEvent::Waited
+        | WorldEvent::CoreKeyDropped { .. }
+        | WorldEvent::LockedGateBlocked
+        | WorldEvent::BoulderMoved { .. }
+        | WorldEvent::BoulderSmartChain { .. }
+        | WorldEvent::WalkerLostTarget
+        | WorldEvent::WalkerMoved
+        | WorldEvent::WalkerResumedPatrol
+        | WorldEvent::WalkerTurned => None,
+        WorldEvent::SmartChain { .. } => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -684,10 +732,6 @@ const REQUIRED_SFX: [SfxBinding; 20] = [
         sound: TRAP_TRIGGER_SOUND,
     },
     SfxBinding {
-        key: "shout",
-        sound: SHOUT_SOUND,
-    },
-    SfxBinding {
         key: "rock_impact",
         sound: ROCK_IMPACT_SOUND,
     },
@@ -716,8 +760,12 @@ const REQUIRED_SFX: [SfxBinding; 20] = [
         sound: BOULDER_STOP_SOUND,
     },
     SfxBinding {
-        key: "death",
-        sound: DEATH_SOUND,
+        key: "key_pickup",
+        sound: KEY_PICKUP_SOUND,
+    },
+    SfxBinding {
+        key: "key_unlock",
+        sound: KEY_UNLOCK_SOUND,
     },
     SfxBinding {
         key: "victory",
@@ -738,25 +786,17 @@ impl SfxConfig {
             .as_object()
             .ok_or_else(|| AudioError::new("invalid SBH SFX JSON: root must be an object"))?;
 
-        let mut paths = Vec::with_capacity(REQUIRED_SFX.len());
+        let mut paths =
+            Vec::with_capacity(REQUIRED_SFX.len() + SHOUT_SOUNDS.len() + DEATH_SOUNDS.len());
         for binding in REQUIRED_SFX {
             let value = object.get(binding.key).ok_or_else(|| {
                 AudioError::new(format!("missing required SBH SFX entry '{}'", binding.key))
             })?;
-            let path = value.as_str().ok_or_else(|| {
-                AudioError::new(format!(
-                    "SBH SFX entry '{}' must be a file path string",
-                    binding.key
-                ))
-            })?;
-            if !path.to_ascii_lowercase().ends_with(".wav") {
-                return Err(AudioError::new(format!(
-                    "unsupported audio format for SBH SFX '{}': '{}'",
-                    binding.key, path
-                )));
-            }
+            let path = parse_sfx_path(binding.key, value)?;
             paths.push((binding.key, path.to_string()));
         }
+        parse_required_variant_sfx(object, SHOUT_SFX_KEY, SHOUT_SOUNDS.len(), &mut paths)?;
+        parse_required_variant_sfx(object, DEATH_SFX_KEY, DEATH_SOUNDS.len(), &mut paths)?;
 
         Ok(Self { paths })
     }
@@ -767,6 +807,72 @@ impl SfxConfig {
             .find(|(candidate, _)| *candidate == key)
             .map(|(_, path)| path.as_str())
     }
+
+    fn paths_for<'a>(&'a self, key: &'a str) -> impl Iterator<Item = &'a str> {
+        self.paths
+            .iter()
+            .filter(move |(candidate, _)| *candidate == key)
+            .map(|(_, path)| path.as_str())
+    }
+}
+
+fn parse_required_variant_sfx(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &'static str,
+    expected_len: usize,
+    paths: &mut Vec<(&'static str, String)>,
+) -> Result<(), AudioError> {
+    let value = object
+        .get(key)
+        .ok_or_else(|| AudioError::new(format!("missing required SBH SFX entry '{}'", key)))?;
+    let parsed = parse_sfx_path_list(key, value)?;
+    if parsed.len() != expected_len {
+        return Err(AudioError::new(format!(
+            "SBH SFX entry '{}' must contain exactly {} file paths",
+            key, expected_len
+        )));
+    }
+    for path in parsed {
+        paths.push((key, path.to_string()));
+    }
+    Ok(())
+}
+
+fn parse_sfx_path<'a>(key: &str, value: &'a serde_json::Value) -> Result<&'a str, AudioError> {
+    let path = value.as_str().ok_or_else(|| {
+        AudioError::new(format!(
+            "SBH SFX entry '{}' must be a file path string",
+            key
+        ))
+    })?;
+    validate_sfx_path_format(key, path)?;
+    Ok(path)
+}
+
+fn parse_sfx_path_list<'a>(
+    key: &str,
+    value: &'a serde_json::Value,
+) -> Result<Vec<&'a str>, AudioError> {
+    let values = value.as_array().ok_or_else(|| {
+        AudioError::new(format!(
+            "SBH SFX entry '{}' must be an array of file path strings",
+            key
+        ))
+    })?;
+    values
+        .iter()
+        .map(|value| parse_sfx_path(key, value))
+        .collect()
+}
+
+fn validate_sfx_path_format(key: &str, path: &str) -> Result<(), AudioError> {
+    if !path.to_ascii_lowercase().ends_with(".wav") {
+        return Err(AudioError::new(format!(
+            "unsupported audio format for SBH SFX '{}': '{}'",
+            key, path
+        )));
+    }
+    Ok(())
 }
 
 fn smart_boy_sound_bank() -> Result<SoundBank, AudioError> {
@@ -781,17 +887,30 @@ fn sound_bank_from_config(json: &str, assets: &Dir<'_>) -> Result<SoundBank, Aud
         let path = config
             .path_for(binding.key)
             .expect("required SFX entries were validated");
-        let asset_path = sbh_asset_relative_path(path)?;
-        let file = assets.get_file(asset_path).ok_or_else(|| {
-            AudioError::new(format!(
-                "SBH SFX file not found for '{}': '{}'",
-                binding.key, path
-            ))
-        })?;
-        bank.insert_wav(binding.sound, file.contents().to_vec())?;
+        insert_configured_wav(&mut bank, assets, binding.key, path, binding.sound)?;
+    }
+    for (path, sound) in config.paths_for(SHOUT_SFX_KEY).zip(SHOUT_SOUNDS) {
+        insert_configured_wav(&mut bank, assets, SHOUT_SFX_KEY, path, sound)?;
+    }
+    for (path, sound) in config.paths_for(DEATH_SFX_KEY).zip(DEATH_SOUNDS) {
+        insert_configured_wav(&mut bank, assets, DEATH_SFX_KEY, path, sound)?;
     }
 
     Ok(bank)
+}
+
+fn insert_configured_wav(
+    bank: &mut SoundBank,
+    assets: &Dir<'_>,
+    key: &str,
+    path: &str,
+    sound: SoundId,
+) -> Result<(), AudioError> {
+    let asset_path = sbh_asset_relative_path(path)?;
+    let file = assets.get_file(asset_path).ok_or_else(|| {
+        AudioError::new(format!("SBH SFX file not found for '{}': '{}'", key, path))
+    })?;
+    bank.insert_wav(sound, file.contents().to_vec())
 }
 
 fn sbh_asset_relative_path(path: &str) -> Result<&str, AudioError> {
@@ -1750,6 +1869,28 @@ mod tests {
             config.path_for("pressure_plate_on"),
             Some(plate_on_path.as_str())
         );
+        assert_eq!(
+            config
+                .paths_for(SHOUT_SFX_KEY)
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+            vec![
+                format!("{}sfx/smart1.wav", SFX_ASSET_PREFIX),
+                format!("{}sfx/smart2.wav", SFX_ASSET_PREFIX),
+                format!("{}sfx/smart3.wav", SFX_ASSET_PREFIX)
+            ]
+        );
+        assert_eq!(
+            config
+                .paths_for(DEATH_SFX_KEY)
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+            vec![
+                format!("{}sfx/death1.wav", SFX_ASSET_PREFIX),
+                format!("{}sfx/death2.wav", SFX_ASSET_PREFIX),
+                format!("{}sfx/death3.wav", SFX_ASSET_PREFIX)
+            ]
+        );
     }
 
     #[test]
@@ -1802,6 +1943,12 @@ mod tests {
         for binding in REQUIRED_SFX {
             assert!(bank.contains(binding.sound));
         }
+        for sound in SHOUT_SOUNDS {
+            assert!(bank.contains(sound));
+        }
+        for sound in DEATH_SOUNDS {
+            assert!(bank.contains(sound));
+        }
     }
 
     #[test]
@@ -1812,6 +1959,14 @@ mod tests {
         for binding in REQUIRED_SFX {
             bank.play(&mut audio, binding.sound)
                 .expect("configured SBH SFX should be valid playable WAV");
+        }
+        for sound in SHOUT_SOUNDS {
+            bank.play(&mut audio, sound)
+                .expect("configured SBH shout variant should be valid playable WAV");
+        }
+        for sound in DEATH_SOUNDS {
+            bank.play(&mut audio, sound)
+                .expect("configured SBH death variant should be valid playable WAV");
         }
     }
 
@@ -1855,6 +2010,8 @@ mod tests {
                 power: 9,
             },
             WorldEvent::WalkerSpottedHero,
+            WorldEvent::CoreKeyAcquired,
+            WorldEvent::CoreGateUnlocked,
             WorldEvent::HeroDied,
             WorldEvent::Won,
         ]);
@@ -1875,10 +2032,12 @@ mod tests {
                 BOULDER_RELEASE_SOUND,
                 BOULDER_CRUSH_SOUND,
                 BOULDER_STOP_SOUND,
-                SHOUT_SOUND,
+                SHOUT_SOUNDS[0],
                 ENEMY_KILL_SOUND,
                 ENEMY_ALERT_SOUND,
-                DEATH_SOUND,
+                KEY_PICKUP_SOUND,
+                KEY_UNLOCK_SOUND,
+                DEATH_SOUNDS[0],
                 VICTORY_SOUND,
             ]
         );
@@ -1917,11 +2076,11 @@ mod tests {
     }
 
     fn complete_sfx_json_with(key: &str, replacement: &str) -> String {
-        let mut object = serde_json::Map::new();
-        let config = SfxConfig::parse(SFX_CONFIG_JSON).expect("checked-in SFX JSON should parse");
-        for (entry, path) in config.paths {
-            object.insert(entry.to_string(), serde_json::Value::String(path));
-        }
+        let mut object = serde_json::from_str::<serde_json::Value>(SFX_CONFIG_JSON)
+            .expect("checked-in SFX JSON should parse")
+            .as_object()
+            .expect("checked-in SFX JSON should be an object")
+            .clone();
         object.insert(
             key.to_string(),
             serde_json::Value::String(replacement.to_string()),

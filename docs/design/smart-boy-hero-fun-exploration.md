@@ -704,6 +704,107 @@ Question a observer:
 > THROW ROCK donne-t-il une vraie liberte creative, ou devient-il seulement une
 > nouvelle cle de puzzle ?
 
+## Experience Candidate: First Adventure Chapter / The Clockwork Keep
+
+Statut 2026-08-16: experience locale sur la branche Adventure. Le V0
+tour-par-tour reste conserve par le tag `sbh-v0-turn-based`; cette branche n'a
+plus l'obligation de garder WAIT dans la nouvelle presentation iso.
+
+Hypothese:
+
+> les systemes actuels de SBH restent-ils amusants quand ils sont integres dans
+> un lieu continu, explorable, avec plusieurs situations interconnectees, plutot
+> que dans une salle-puzzle isolee ?
+
+Forme testee:
+
+- une seule map iso `THE CLOCKWORK KEEP` en 26x18;
+- quatre secteurs lisibles: entree avec side room/raccourci, trap workshop,
+  boulder yard, puis approche du core;
+- objectif HUD simple: atteindre le coeur;
+- consequence inter-zone minimale: levier de side room ouvrant un raccourci,
+  levier central ouvrant la porte du core, plaque de yard liberant le Boulder;
+- pas de nouvelle mecanique, pas de minimap, pas de checkpoint;
+- camera locale a SBH: projection grille -> iso brut -> offset camera -> ecran.
+
+Intentions de play-test:
+
+- le joueur ressent-il un lieu a explorer, ou seulement une salle plus grande ?
+- les routes imparfaites restent-elles recuperables sans restart immediat ?
+- le Boulder Yard donne-t-il envie d'optimiser une catastrophe plus elegante ?
+- la camera laisse-t-elle assez d'anticipation pour observer Walkers, pieges,
+  corridor Boulder et cibles ROCK ?
+- le restart complet devient-il penible si la duree approche 5-10 minutes ?
+
+Elagage local:
+
+- WAIT est retire de l'experience iso/adventure: plus de binding clavier/touch,
+  plus d'aide HUD, plus de branche d'entree vers `PlayerAction::Wait`;
+- `PlayerAction::Wait`, `WorldEvent::Waited` et les niveaux historiques qui
+  l'utilisent restent dans `world.rs`, car l'ancien exemple SBH et ses tests
+  consomment encore explicitement cette mecanique;
+- `LevelTiming` reste necessaire pour faire cohabiter niveaux historiques
+  tour-par-tour et niveaux semi-continus dans le monde partage;
+- suppression complete de WAIT demanderait une petite separation future entre
+  le monde legacy des 19 niveaux et le monde Adventure, ce qui serait un
+  refactor plus large que cette experience.
+
+Risque architectural observe:
+
+Le partage de `world.rs` garde une dette utile a court terme mais melange
+des objectifs differents: prototype historique de puzzles et aventure
+semi-continue. La separation minimale future serait un module local du type
+`adventure_world` ou `chapter_world` reutilisant les structs stables vraiment
+communes (`Cell`, `Direction`, entites), puis supprimant les contraintes WAIT /
+LevelSelect / niveaux lineaires du nouveau flux. A ne faire que si le chapitre
+Adventure est valide par play-test.
+
+## Experience Candidate: Adventure UX Pass / Key Warden
+
+Statut 2026-08-16: passe UX locale sur `THE CLOCKWORK KEEP`.
+
+Hypothese:
+
+> un objectif concret porte par un ennemi important peut donner une vraie
+> motivation d'exploration et de planification sans transformer la progression
+> en puzzle a solution unique.
+
+Changements testes:
+
+- camera avec dead zone: tant que Smart Boy reste dans la zone sure, le monde
+  reste stable; la camera ne deplace sa cible que lorsque le heros franchit une
+  marge d'environ 25 % du viewport;
+- smoothing local de camera sur environ 180 ms, sans effet sur les coordonnees
+  monde ni sur le ciblage ROCK;
+- les pieges controles du Keep commencent inactifs pour clarifier la chaine
+  actionneur -> mecanisme -> consequence;
+- les actionneurs recoivent un code visuel local: danger rouge pour trap,
+  bronze/orange pour Boulder, laiton/cle pour porte;
+- mort visuelle: Smart Boy passe par une courte animation locale puis un panneau
+  `GAME OVER` qui fige la simulation et propose retry/quit;
+- `Key Warden`: Walker distinct, Power eleve, porteur de `CLOCKWORK KEY`;
+- le Warden peut mourir par combat direct, piege ou Boulder; la meme cle tombe
+  au sol et doit etre ramassee par Smart Boy;
+- la porte du core devient une porte verrouillee visible avant la cle.
+
+Contraintes volontairement refusees:
+
+- pas d'inventaire generique;
+- pas de loot table;
+- pas de boss system;
+- pas de checkpoint;
+- pas de CameraSystem GPE;
+- pas de colored wiring generique.
+
+Questions de play-test:
+
+- la camera donne-t-elle enfin l'impression d'un monde stable ?
+- le Warden cree-t-il une envie de planifier une catastrophe plutot qu'une
+  simple obligation de combat ?
+- la porte verrouillee est-elle decouverte assez tot pour motiver l'exploration ?
+- le drop de cle reste-t-il lisible quand le Warden meurt hors champ ou sous un
+  Boulder ?
+
 ## Comparatif
 
 | Proposition | Potentiel de fun | Cout | Risque |

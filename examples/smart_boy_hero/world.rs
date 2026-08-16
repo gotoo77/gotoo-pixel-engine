@@ -21,6 +21,10 @@ pub(super) struct SmartBoyWorld {
     traps_active: Vec<bool>,
     pressure_plates_active: Vec<bool>,
     boulders: Vec<Boulder>,
+    core_key_cell: Option<Cell>,
+    has_core_key: bool,
+    core_gate: Option<Cell>,
+    core_gate_open: bool,
     turn_count: u32,
     seed: u32,
     rng: MysteryRng,
@@ -56,6 +60,10 @@ impl SmartBoyWorld {
             traps_active: vec![false; level.traps.len()],
             pressure_plates_active: vec![false; level.levers.len()],
             boulders: level.boulders.clone(),
+            core_key_cell: None,
+            has_core_key: false,
+            core_gate: (level_index == LEVEL_COUNT).then_some(Cell::new(21, 8)),
+            core_gate_open: false,
             turn_count: 0,
             level,
             seed,
@@ -174,6 +182,16 @@ impl SmartBoyWorld {
         matches!(self.level.timing, LevelTiming::SemiContinuous)
     }
 
+    #[allow(dead_code)]
+    pub(super) fn grid_width(&self) -> i32 {
+        self.level.width
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn grid_height(&self) -> i32 {
+        self.level.height
+    }
+
     pub(super) fn walls(&self) -> &[Cell] {
         &self.level.walls
     }
@@ -199,6 +217,14 @@ impl SmartBoyWorld {
     }
 
     pub(super) fn door_open(&self, index: usize) -> bool {
+        if self.core_gate.is_some_and(|gate| {
+            self.level
+                .doors
+                .get(index)
+                .is_some_and(|door| door.cell == gate)
+        }) {
+            return self.core_gate_open;
+        }
         self.doors_open.get(index).copied().unwrap_or(false)
     }
 
@@ -215,8 +241,58 @@ impl SmartBoyWorld {
         &self.boulders
     }
 
+    #[allow(dead_code)]
+    pub(super) fn core_key_cell(&self) -> Option<Cell> {
+        self.core_key_cell
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn has_core_key(&self) -> bool {
+        self.has_core_key
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn enemy_is_key_warden(&self, index: usize) -> bool {
+        self.enemies
+            .get(index)
+            .is_some_and(|enemy| matches!(enemy.role, EnemyRole::KeyWarden))
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn door_is_core_gate(&self, index: usize) -> bool {
+        self.core_gate.is_some_and(|gate| {
+            self.level
+                .doors
+                .get(index)
+                .is_some_and(|door| door.cell == gate)
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn lever_actuator(&self, index: usize) -> ActuatorKind {
+        let Some(lever) = self.level.levers.get(index) else {
+            return ActuatorKind::Door;
+        };
+        if self
+            .boulders
+            .iter()
+            .any(|boulder| boulder.group == lever.group)
+        {
+            ActuatorKind::Boulder
+        } else if self
+            .level
+            .traps
+            .iter()
+            .any(|trap| trap.group == Some(lever.group))
+        {
+            ActuatorKind::Trap
+        } else {
+            ActuatorKind::Door
+        }
+    }
+
     pub(super) fn can_throw_rock_to(&self, target: Cell) -> bool {
-        target.is_inside()
+        self.in_bounds(target)
             && target != self.hero
             && self.hero.manhattan_distance(target) <= ROCK_THROW_RANGE
             && !self.wall_at(target)
@@ -225,7 +301,21 @@ impl SmartBoyWorld {
 
     fn try_move_hero(&mut self, direction: Direction, report: &mut TurnReport) -> bool {
         let target = self.hero.step(direction);
-        if !target.is_inside() || self.wall_at(target) || self.closed_door_at(target).is_some() {
+        if !self.in_bounds(target) || self.wall_at(target) {
+            report.events.push(WorldEvent::Blocked);
+            return false;
+        }
+        if self.locked_core_gate_at(target) {
+            if self.has_core_key {
+                self.core_gate_open = true;
+                report.events.push(WorldEvent::CoreGateUnlocked);
+                report.events.push(WorldEvent::DoorOpened);
+            } else {
+                report.events.push(WorldEvent::LockedGateBlocked);
+                return false;
+            }
+        }
+        if self.closed_door_at(target).is_some() {
             report.events.push(WorldEvent::Blocked);
             return false;
         }
@@ -244,7 +334,7 @@ impl SmartBoyWorld {
         let power = self.enemies[enemy_index].power;
         if self.hero_power > power {
             self.hero_power -= power;
-            self.enemies.remove(enemy_index);
+            let enemy = self.enemies.remove(enemy_index);
             self.hero = target;
             report.events.push(WorldEvent::CombatWon { power });
             report.events.push(WorldEvent::EnemyKilled {
@@ -252,6 +342,10 @@ impl SmartBoyWorld {
                 power,
             });
             self.resolve_hero_entered_cell(target, report);
+            self.drop_core_key_if_warden(&enemy, target, report);
+            if self.phase == Phase::Running {
+                self.collect_core_key_at(target, report);
+            }
         } else {
             self.phase = Phase::Dead;
             report.events.push(WorldEvent::HeroDied);
@@ -295,9 +389,10 @@ impl SmartBoyWorld {
                 if self.hero_power > power {
                     self.hero_power -= power;
                     let cell = self.enemies[index].cell;
-                    self.enemies.remove(index);
+                    let enemy = self.enemies.remove(index);
                     report.events.push(WorldEvent::WalkerDestroyed { power });
                     report.events.push(WorldEvent::EnemyKilled { cell, power });
+                    self.drop_core_key_if_warden(&enemy, cell, report);
                     continue;
                 }
 
@@ -306,7 +401,7 @@ impl SmartBoyWorld {
                 return;
             }
 
-            if !target.is_inside()
+            if !self.in_bounds(target)
                 || self.wall_at(target)
                 || self.closed_door_at(target).is_some()
                 || self.enemy_at_except(target, index).is_some()
@@ -319,12 +414,13 @@ impl SmartBoyWorld {
                 if self.active_trap_at(target).is_some() {
                     let power = self.enemies[index].power;
                     self.enemies[index].cell = target;
-                    self.enemies.remove(index);
+                    let enemy = self.enemies.remove(index);
                     report.events.push(WorldEvent::TrapTriggered);
                     report.events.push(WorldEvent::EnemyKilled {
                         cell: target,
                         power,
                     });
+                    self.drop_core_key_if_warden(&enemy, target, report);
                     trap_kills += 1;
                     continue;
                 }
@@ -483,7 +579,7 @@ impl SmartBoyWorld {
         while let Some((cell, first_step)) = queue.pop_front() {
             for direction in directions_toward(cell, target) {
                 let next = cell.step(direction);
-                if !next.is_inside()
+                if !self.in_bounds(next)
                     || visited.contains(&next)
                     || self.wall_at(next)
                     || self.closed_door_at(next).is_some()
@@ -505,6 +601,8 @@ impl SmartBoyWorld {
     }
 
     fn collect_at(&mut self, cell: Cell, report: &mut TurnReport) {
+        self.collect_core_key_at(cell, report);
+
         if let Some(index) = self.bonuses.iter().position(|bonus| bonus.cell == cell) {
             let bonus = self.bonuses.remove(index);
             let amount = match bonus.kind {
@@ -541,6 +639,14 @@ impl SmartBoyWorld {
         }
         if opened {
             self.refresh_triggered_systems(report);
+        }
+    }
+
+    fn collect_core_key_at(&mut self, cell: Cell, report: &mut TurnReport) {
+        if self.core_key_cell == Some(cell) {
+            self.core_key_cell = None;
+            self.has_core_key = true;
+            report.events.push(WorldEvent::CoreKeyAcquired);
         }
     }
 
@@ -629,8 +735,19 @@ impl SmartBoyWorld {
             .doors
             .iter()
             .enumerate()
-            .find(|(index, door)| door.cell == cell && !self.doors_open[*index])
+            .find(|(index, door)| {
+                door.cell == cell
+                    && if self.core_gate == Some(cell) {
+                        !self.core_gate_open
+                    } else {
+                        !self.doors_open[*index]
+                    }
+            })
             .map(|(index, _)| index)
+    }
+
+    fn locked_core_gate_at(&self, cell: Cell) -> bool {
+        self.core_gate == Some(cell) && !self.core_gate_open
     }
 
     fn enemy_at(&self, cell: Cell) -> Option<usize> {
@@ -670,7 +787,7 @@ impl SmartBoyWorld {
                     .cell
                     .step(self.boulders[index].direction);
 
-                if !target.is_inside()
+                if !self.in_bounds(target)
                     || self.wall_at(target)
                     || self.closed_door_at(target).is_some()
                     || self.boulder_blocks_at(target, index)
@@ -701,7 +818,8 @@ impl SmartBoyWorld {
                 if !crushed.is_empty() {
                     kills += crushed.len();
                     self.boulders[index].state = BoulderState::Rolling { kills };
-                    for power in crushed {
+                    for enemy in crushed {
+                        let power = enemy.power;
                         report.events.push(WorldEvent::EnemyKilled {
                             cell: target,
                             power,
@@ -711,6 +829,7 @@ impl SmartBoyWorld {
                             power,
                             chain: kills,
                         });
+                        self.drop_core_key_if_warden(&enemy, target, report);
                     }
                     if kills >= 2 {
                         report
@@ -728,18 +847,57 @@ impl SmartBoyWorld {
         }
     }
 
-    fn remove_enemies_at(&mut self, cell: Cell) -> Vec<i32> {
-        let mut powers = Vec::new();
+    fn remove_enemies_at(&mut self, cell: Cell) -> Vec<Enemy> {
+        let mut removed = Vec::new();
         let mut index = 0;
         while index < self.enemies.len() {
             if self.enemies[index].cell == cell {
-                powers.push(self.enemies[index].power);
-                self.enemies.remove(index);
+                removed.push(self.enemies.remove(index));
             } else {
                 index += 1;
             }
         }
-        powers
+        removed
+    }
+
+    fn drop_core_key_if_warden(&mut self, enemy: &Enemy, cell: Cell, report: &mut TurnReport) {
+        if !matches!(enemy.role, EnemyRole::KeyWarden)
+            || self.has_core_key
+            || self.core_key_cell.is_some()
+        {
+            return;
+        }
+        let drop_cell = self.recoverable_core_key_cell(cell);
+        self.core_key_cell = Some(drop_cell);
+        report
+            .events
+            .push(WorldEvent::CoreKeyDropped { cell: drop_cell });
+    }
+
+    fn recoverable_core_key_cell(&self, preferred: Cell) -> Cell {
+        if self.can_drop_recoverable_core_key_at(preferred) {
+            return preferred;
+        }
+
+        [
+            Direction::Right,
+            Direction::Down,
+            Direction::Left,
+            Direction::Up,
+        ]
+        .into_iter()
+        .map(|direction| preferred.step(direction))
+        .find(|&cell| self.can_drop_recoverable_core_key_at(cell))
+        .unwrap_or(preferred)
+    }
+
+    fn can_drop_recoverable_core_key_at(&self, cell: Cell) -> bool {
+        self.in_bounds(cell)
+            && !self.wall_at(cell)
+            && self.closed_door_at(cell).is_none()
+            && self.active_trap_at(cell).is_none()
+            && self.enemy_at(cell).is_none()
+            && !self.boulders.iter().any(|boulder| boulder.cell == cell)
     }
 
     fn boulder_blocks_at(&self, cell: Cell, except: usize) -> bool {
@@ -747,6 +905,10 @@ impl SmartBoyWorld {
             .iter()
             .enumerate()
             .any(|(index, boulder)| index != except && boulder.cell == cell)
+    }
+
+    fn in_bounds(&self, cell: Cell) -> bool {
+        level_in_bounds(&self.level, cell)
     }
 }
 
@@ -775,6 +937,12 @@ pub(super) enum WorldEvent {
         amount: i32,
         mystery: bool,
     },
+    CoreKeyDropped {
+        cell: Cell,
+    },
+    CoreKeyAcquired,
+    LockedGateBlocked,
+    CoreGateUnlocked,
     PressurePlateOn,
     PressurePlateOff,
     DoorOpened,
@@ -882,10 +1050,6 @@ impl Cell {
         }
     }
 
-    pub(super) fn is_inside(self) -> bool {
-        self.x >= 0 && self.y >= 0 && self.x < GRID_WIDTH && self.y < GRID_HEIGHT
-    }
-
     fn manhattan_distance(self, other: Self) -> i32 {
         (self.x - other.x).abs() + (self.y - other.y).abs()
     }
@@ -896,13 +1060,27 @@ pub(super) struct Enemy {
     pub(super) cell: Cell,
     pub(super) power: i32,
     pub(super) kind: EnemyKind,
+    pub(super) role: EnemyRole,
     pub(super) intent: EnemyIntent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EnemyRole {
+    Normal,
+    KeyWarden,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EnemyKind {
     Guard,
     Walker { direction: Direction },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ActuatorKind {
+    Door,
+    Trap,
+    Boulder,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -992,6 +1170,8 @@ pub(super) enum BoulderState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Level {
+    width: i32,
+    height: i32,
     timing: LevelTiming,
     name: &'static str,
     hero_start: Cell,
@@ -1042,6 +1222,8 @@ fn level_seriously() -> Level {
     walls.extend(cells(&[(7, 0), (7, 1), (7, 6), (7, 7)]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "SERIOUSLY?",
         hero_start: Cell::new(1, 3),
@@ -1061,6 +1243,8 @@ fn level_math_is_hard() -> Level {
     let walls = vertical_wall(4, &[3]);
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "MATH IS HARD",
         hero_start: Cell::new(1, 3),
@@ -1081,6 +1265,8 @@ fn level_pay_the_price() -> Level {
     walls.extend(vertical_wall(7, &[3]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "PAY THE PRICE",
         hero_start: Cell::new(1, 3),
@@ -1101,6 +1287,8 @@ fn level_order_matters() -> Level {
     walls.extend(cells(&[(2, 2), (3, 1), (4, 2), (2, 3), (4, 3)]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "ORDER MATTERS",
         hero_start: Cell::new(1, 4),
@@ -1121,6 +1309,8 @@ fn level_just_leave() -> Level {
     walls.extend(cells(&[(5, 2), (5, 3), (5, 5), (9, 1), (9, 2)]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "JUST LEAVE",
         hero_start: Cell::new(1, 4),
@@ -1142,6 +1332,8 @@ fn level_hes_moving() -> Level {
     walls.extend(cells(&[(5, 1), (5, 6)]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "HE'S MOVING",
         hero_start: Cell::new(1, 4),
@@ -1163,6 +1355,8 @@ fn level_wait_for_it() -> Level {
     walls.extend(cells(&[(5, 1), (5, 6)]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "WAIT FOR IT",
         hero_start: Cell::new(3, 4),
@@ -1185,6 +1379,8 @@ fn level_let_him_come() -> Level {
     walls.extend(cells(&[(5, 1), (5, 6)]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "LET HIM COME",
         hero_start: Cell::new(3, 4),
@@ -1207,6 +1403,8 @@ fn level_lucky_boy() -> Level {
     walls.extend(horizontal_wall(4, &[0, 1, 2, 9, 10, 11]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "LUCKY BOY?",
         hero_start: Cell::new(1, 4),
@@ -1229,6 +1427,8 @@ fn level_smart_boy() -> Level {
     walls.extend(horizontal_wall(6, &[1, 2, 3, 4, 5]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "SMART BOY",
         hero_start: Cell::new(1, 5),
@@ -1262,6 +1462,8 @@ fn level_living_plate_a() -> Level {
     walls.push(Cell::new(5, 2));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "THING DID IT",
         hero_start: Cell::new(3, 4),
@@ -1286,6 +1488,8 @@ fn level_living_plate_b() -> Level {
     walls.push(Cell::new(6, 2));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "HOLD THE DOOR",
         hero_start: Cell::new(4, 4),
@@ -1310,6 +1514,8 @@ fn level_living_plate_c() -> Level {
     walls.extend(cells(&[(3, 2), (6, 2)]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "TWO SMART WAYS",
         hero_start: Cell::new(5, 4),
@@ -1331,6 +1537,8 @@ fn level_living_plate_c() -> Level {
 
 fn level_watch_your_step() -> Level {
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "WATCH YOUR STEP",
         hero_start: Cell::new(1, 4),
@@ -1351,6 +1559,8 @@ fn level_set_the_trap() -> Level {
     walls.extend(horizontal_wall(5, &[]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "SET THE TRAP",
         hero_start: Cell::new(1, 4),
@@ -1371,6 +1581,8 @@ fn level_clockwork() -> Level {
     walls.extend(horizontal_wall(5, &[]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
         name: "CLOCKWORK",
         hero_start: Cell::new(1, 4),
@@ -1391,6 +1603,8 @@ fn level_come_here() -> Level {
     walls.extend(horizontal_wall(5, &[5, 6, 7]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::SemiContinuous,
         name: "COME HERE",
         hero_start: Cell::new(3, 4),
@@ -1411,6 +1625,8 @@ fn level_group_therapy() -> Level {
     walls.extend(horizontal_wall(4, &[]));
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::SemiContinuous,
         name: "GROUP THERAPY",
         hero_start: Cell::new(5, 3),
@@ -1433,6 +1649,8 @@ fn level_smart_way() -> Level {
     let walls = vertical_wall(7, &[2, 4]);
 
     Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
         timing: LevelTiming::SemiContinuous,
         name: "SMART WAY",
         hero_start: Cell::new(4, 3),
@@ -1453,31 +1671,100 @@ fn level_smart_way() -> Level {
 
 #[allow(dead_code)]
 fn level_iso_slice() -> Level {
-    let mut walls = horizontal_wall(0, &[]);
-    walls.extend(horizontal_wall(7, &[]));
-    walls.extend(vertical_wall(0, &[]));
-    walls.extend(vertical_wall(11, &[]));
-    walls.extend(cells(&[(4, 2), (4, 3), (6, 1), (9, 1), (3, 6), (6, 6)]));
+    let width = 26;
+    let height = 18;
+    let mut walls = Vec::new();
+    for x in 0..width {
+        walls.push(Cell::new(x, 0));
+        walls.push(Cell::new(x, height - 1));
+    }
+    for y in 1..height - 1 {
+        walls.push(Cell::new(0, y));
+        walls.push(Cell::new(width - 1, y));
+    }
+    for y in 1..height - 1 {
+        if ![3, 8, 12].contains(&y) {
+            walls.push(Cell::new(7, y));
+        }
+        if ![8, 12].contains(&y) {
+            walls.push(Cell::new(13, y));
+        }
+        if y != 8 {
+            walls.push(Cell::new(21, y));
+        }
+    }
+    for x in 1..7 {
+        if x != 3 {
+            walls.push(Cell::new(x, 5));
+        }
+    }
+    for x in 1..13 {
+        if ![5, 8].contains(&x) {
+            walls.push(Cell::new(x, 13));
+        }
+    }
+    walls.extend(cells(&[
+        (4, 7),
+        (4, 11),
+        (9, 6),
+        (10, 6),
+        (11, 6),
+        (15, 5),
+        (16, 5),
+        (19, 11),
+        (23, 5),
+        (23, 12),
+    ]));
 
     Level {
+        width,
+        height,
         timing: LevelTiming::SemiContinuous,
-        name: "ORCHESTRATE",
-        hero_start: Cell::new(2, 3),
-        hero_power: 42,
-        exit: Cell::new(10, 5),
+        name: "THE CLOCKWORK KEEP",
+        hero_start: Cell::new(2, 9),
+        hero_power: 55,
+        exit: Cell::new(24, 8),
         walls,
-        doors: vec![],
-        levers: vec![pressure_plate(2, 5, 1)],
-        traps: vec![active_trap(5, 2), group_trap(6, 3, 1), active_trap(8, 5)],
-        boulders: vec![boulder(1, 4, Direction::Right, 1)],
-        bonuses: vec![],
+        doors: vec![
+            Door {
+                cell: Cell::new(7, 3),
+                group: 4,
+                initially_open: false,
+            },
+            Door {
+                cell: Cell::new(21, 8),
+                group: 2,
+                initially_open: false,
+            },
+        ],
+        levers: vec![
+            lever(5, 3, 4),
+            pressure_plate(10, 12, 1),
+            pressure_plate(15, 12, 5),
+        ],
+        traps: vec![
+            group_trap(9, 11, 1),
+            group_trap(11, 12, 1),
+            group_trap(10, 14, 1),
+            group_trap(17, 9, 1),
+        ],
+        boulders: vec![boulder(14, 8, Direction::Right, 5)],
+        bonuses: vec![fixed_bonus(3, 3, 12)],
         enemies: vec![
-            walker(5, 3, 9, Direction::Right),
-            walker(7, 2, 9, Direction::Down),
-            walker(8, 2, 9, Direction::Left),
-            walker(9, 3, 9, Direction::Left),
-            walker(7, 5, 9, Direction::Up),
-            walker(9, 5, 9, Direction::Left),
+            walker(5, 8, 8, Direction::Right),
+            walker(6, 10, 8, Direction::Left),
+            guard(6, 7, 14),
+            walker(9, 10, 9, Direction::Down),
+            walker(12, 14, 9, Direction::Left),
+            guard(12, 12, 16),
+            key_warden(17, 8, 34, Direction::Right),
+            walker(19, 8, 9, Direction::Left),
+            walker(20, 9, 9, Direction::Up),
+            walker(18, 10, 9, Direction::Right),
+            guard(17, 12, 18),
+            walker(23, 7, 10, Direction::Down),
+            guard(23, 9, 20),
+            walker(23, 10, 10, Direction::Up),
         ],
     }
 }
@@ -1500,11 +1787,16 @@ fn horizontal_wall(y: i32, openings: &[i32]) -> Vec<Cell> {
         .collect()
 }
 
+fn level_in_bounds(level: &Level, cell: Cell) -> bool {
+    cell.x >= 0 && cell.y >= 0 && cell.x < level.width && cell.y < level.height
+}
+
 fn guard(x: i32, y: i32, power: i32) -> Enemy {
     Enemy {
         cell: Cell::new(x, y),
         power,
         kind: EnemyKind::Guard,
+        role: EnemyRole::Normal,
         intent: EnemyIntent::Patrol,
     }
 }
@@ -1514,6 +1806,17 @@ fn walker(x: i32, y: i32, power: i32, direction: Direction) -> Enemy {
         cell: Cell::new(x, y),
         power,
         kind: EnemyKind::Walker { direction },
+        role: EnemyRole::Normal,
+        intent: EnemyIntent::Patrol,
+    }
+}
+
+fn key_warden(x: i32, y: i32, power: i32, direction: Direction) -> Enemy {
+    Enemy {
+        cell: Cell::new(x, y),
+        power,
+        kind: EnemyKind::Walker { direction },
+        role: EnemyRole::KeyWarden,
         intent: EnemyIntent::Patrol,
     }
 }
@@ -1628,6 +1931,8 @@ mod tests {
 
     fn test_level(hero_power: i32) -> Level {
         Level {
+            width: GRID_WIDTH,
+            height: GRID_HEIGHT,
             timing: LevelTiming::TurnBased,
             name: "TEST",
             hero_start: Cell::new(1, 1),
@@ -1663,6 +1968,10 @@ mod tests {
             traps_active: vec![false; level.traps.len()],
             pressure_plates_active: vec![false; level.levers.len()],
             boulders: level.boulders.clone(),
+            core_key_cell: None,
+            has_core_key: false,
+            core_gate: None,
+            core_gate_open: false,
             turn_count: 0,
             seed: 123,
             rng: MysteryRng::new(123),
@@ -1702,7 +2011,9 @@ mod tests {
                 Direction::Left,
             ] {
                 let next = cell.step(direction);
-                if !next.is_inside() || visited.contains(&next) || statically_blocked(&level, next)
+                if !level_in_bounds(&level, next)
+                    || visited.contains(&next)
+                    || statically_blocked(&level, next)
                 {
                     continue;
                 }
@@ -1739,7 +2050,7 @@ mod tests {
                 Direction::Left,
             ] {
                 let next = cell.step(direction);
-                if !next.is_inside()
+                if !level_in_bounds(level, next)
                     || forbidden.contains(&next)
                     || visited.contains(&next)
                     || statically_blocked(level, next)
@@ -1752,6 +2063,10 @@ mod tests {
         }
 
         false
+    }
+
+    fn static_exit_reachable(level: &Level) -> bool {
+        static_exit_reachable_avoiding_cells(level, &[])
     }
 
     fn exit_reachable_avoiding_cell(level: &Level, forbidden: Cell) -> bool {
@@ -1770,7 +2085,7 @@ mod tests {
                 Direction::Left,
             ] {
                 let next = cell.step(direction);
-                if !next.is_inside()
+                if !level_in_bounds(level, next)
                     || next == forbidden
                     || visited.contains(&next)
                     || level.walls.contains(&next)
@@ -1811,6 +2126,38 @@ mod tests {
 
     fn throw_rock(cell: Cell) -> PlayerAction {
         PlayerAction::ThrowRock(cell)
+    }
+
+    fn walk_to_iso_boulder_plate(world: &mut SmartBoyWorld) {
+        world.apply(up());
+        for _ in 0..12 {
+            world.apply(right());
+        }
+        for action in [down(), down(), down(), down(), right()] {
+            world.apply(action);
+        }
+    }
+
+    fn finish_iso_from_boulder_plate(world: &mut SmartBoyWorld) {
+        world.update_tick();
+        for _ in 0..4 {
+            world.apply(up());
+        }
+        for _ in 0..9 {
+            world.apply(right());
+        }
+    }
+
+    fn core_gate_world() -> SmartBoyWorld {
+        let mut level = test_level(20);
+        level.doors.push(Door {
+            cell: Cell::new(2, 1),
+            group: 9,
+            initially_open: false,
+        });
+        let mut world = world_from(level);
+        world.core_gate = Some(Cell::new(2, 1));
+        world
     }
 
     #[test]
@@ -2126,9 +2473,7 @@ mod tests {
         let mut world = SmartBoyWorld::iso_slice(42);
         let initial = world.clone();
 
-        world.apply(down());
-        world.apply(down());
-        world.update_tick();
+        walk_to_iso_boulder_plate(&mut world);
         assert_ne!(world.boulders()[0].state, initial.boulders()[0].state);
 
         world.restart();
@@ -2144,8 +2489,7 @@ mod tests {
         for world in [&mut first, &mut second] {
             world.apply(shout());
             world.update_tick();
-            world.apply(down());
-            world.apply(down());
+            walk_to_iso_boulder_plate(world);
             world.update_tick();
             world.update_tick();
             world.update_tick();
@@ -2159,13 +2503,8 @@ mod tests {
         let mut world = SmartBoyWorld::iso_slice(7);
         let mut boulder_chain = 0;
 
-        world.apply(throw_rock(Cell::new(7, 4)));
-        for _ in 0..3 {
-            world.update_tick();
-        }
-        world.apply(down());
-        world.update_tick();
-        world.apply(down());
+        world.apply(throw_rock(Cell::new(5, 9)));
+        walk_to_iso_boulder_plate(&mut world);
         for _ in 0..8 {
             let report = world.update_tick();
             for event in report.events {
@@ -2176,6 +2515,352 @@ mod tests {
         }
 
         assert!(boulder_chain >= 2, "expected boulder SMART x2 or better");
+    }
+
+    #[test]
+    fn iso_chapter_initial_state_blocks_trivial_core_route() {
+        let level = level_iso_slice();
+
+        assert!(!static_exit_reachable(&level));
+    }
+
+    #[test]
+    fn iso_chapter_controlled_traps_start_inactive() {
+        let world = SmartBoyWorld::iso_slice(7);
+
+        assert!((0..world.traps().len()).all(|index| !world.trap_active(index)));
+    }
+
+    #[test]
+    fn pressure_plate_transition_activates_controlled_trap() {
+        let mut level = semi_test_level(10);
+        level.levers.push(pressure_plate(2, 1, 7));
+        level.traps.push(group_trap(3, 1, 7));
+        let mut world = world_from(level);
+
+        assert!(!world.trap_active(0));
+        let report = world.apply(right());
+
+        assert!(world.trap_active(0));
+        assert!(report.events.contains(&WorldEvent::PressurePlateOn));
+        assert!(report.events.contains(&WorldEvent::TrapArmed));
+    }
+
+    #[test]
+    fn iso_chapter_reference_route_reaches_clockwork_core() {
+        let mut world = SmartBoyWorld::iso_slice(7);
+
+        walk_to_iso_boulder_plate(&mut world);
+        finish_iso_from_boulder_plate(&mut world);
+
+        assert_eq!(world.phase(), Phase::Won);
+        assert!(world.hero_power() > 0);
+    }
+
+    #[test]
+    fn iso_chapter_boulder_kill_then_walk_onto_dropped_key_acquires_it() {
+        let mut world = SmartBoyWorld::iso_slice(7);
+
+        walk_to_iso_boulder_plate(&mut world);
+        let drop = world.update_tick();
+        let key_cell = world
+            .core_key_cell()
+            .expect("Clockwork Keep Warden should drop a core key");
+
+        assert!(
+            drop.events
+                .contains(&WorldEvent::CoreKeyDropped { cell: key_cell })
+        );
+        assert!(!world.has_core_key());
+
+        for _ in 0..4 {
+            world.apply(up());
+        }
+        while world.hero() != key_cell {
+            let direction = if world.hero().x < key_cell.x {
+                Direction::Right
+            } else if world.hero().x > key_cell.x {
+                Direction::Left
+            } else if world.hero().y < key_cell.y {
+                Direction::Down
+            } else {
+                Direction::Up
+            };
+            let report = world.apply(PlayerAction::Move(direction));
+            if world.hero() == key_cell {
+                assert!(report.events.contains(&WorldEvent::CoreKeyAcquired));
+            }
+        }
+
+        assert!(world.has_core_key());
+        assert_eq!(world.core_key_cell(), None);
+    }
+
+    #[test]
+    fn iso_chapter_warden_initially_holds_progression_key() {
+        let world = SmartBoyWorld::iso_slice(7);
+        let warden = world
+            .enemies()
+            .iter()
+            .find(|enemy| matches!(enemy.role, EnemyRole::KeyWarden))
+            .expect("Clockwork Keep should contain a Key Warden");
+
+        assert_eq!(warden.cell, Cell::new(17, 8));
+        assert_eq!(warden.power, 34);
+        assert_eq!(world.core_key_cell(), None);
+        assert!(!world.has_core_key());
+        assert!(!world.door_open(1));
+    }
+
+    #[test]
+    fn direct_killing_key_warden_drops_and_acquires_key_on_entered_cell() {
+        let mut level = test_level(50);
+        level.enemies.push(key_warden(2, 1, 10, Direction::Right));
+        let mut world = world_from(level);
+
+        let report = world.apply(right());
+
+        assert!(report.events.contains(&WorldEvent::CoreKeyDropped {
+            cell: Cell::new(2, 1),
+        }));
+        assert!(report.events.contains(&WorldEvent::CoreKeyAcquired));
+        assert_eq!(world.hero(), Cell::new(2, 1));
+        assert!(world.enemy_at(Cell::new(2, 1)).is_none());
+        assert!(world.has_core_key());
+        assert_eq!(world.core_key_cell(), None);
+    }
+
+    #[test]
+    fn trap_killing_key_warden_drops_recoverable_key() {
+        let mut level = semi_test_level(10);
+        level.hero_start = Cell::new(1, 3);
+        level.traps.push(active_trap(3, 1));
+        level.enemies.push(key_warden(2, 1, 34, Direction::Right));
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+        let key_cell = world
+            .core_key_cell()
+            .expect("trap-killed Warden should drop the core key");
+
+        assert!(
+            report
+                .events
+                .contains(&WorldEvent::CoreKeyDropped { cell: key_cell })
+        );
+        assert_ne!(key_cell, Cell::new(3, 1));
+        assert!(world.active_trap_at(key_cell).is_none());
+        assert!(world.enemy_at(Cell::new(3, 1)).is_none());
+        assert!(!world.has_core_key());
+
+        for action in [right(), right(), right(), up()] {
+            world.apply(action);
+        }
+        let pickup = world.apply(up());
+
+        assert_eq!(world.hero(), key_cell);
+        assert!(pickup.events.contains(&WorldEvent::CoreKeyAcquired));
+        assert!(world.has_core_key());
+        assert_eq!(world.core_key_cell(), None);
+    }
+
+    #[test]
+    fn boulder_killing_key_warden_drops_recoverable_key() {
+        let mut level = semi_test_level(10);
+        level.hero_start = Cell::new(1, 3);
+        level.enemies.push(key_warden(3, 1, 34, Direction::Right));
+        level.boulders.push(Boulder {
+            cell: Cell::new(2, 1),
+            group: 1,
+            direction: Direction::Right,
+            state: BoulderState::Rolling { kills: 0 },
+        });
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+        let key_cell = world
+            .core_key_cell()
+            .expect("boulder-killed Warden should drop the core key");
+
+        assert!(
+            report
+                .events
+                .contains(&WorldEvent::CoreKeyDropped { cell: key_cell })
+        );
+        assert_ne!(key_cell, Cell::new(3, 1));
+        assert!(world.enemy_at(Cell::new(3, 1)).is_none());
+        assert!(
+            !world
+                .boulders()
+                .iter()
+                .any(|boulder| boulder.cell == key_cell)
+        );
+        assert!(!world.has_core_key());
+
+        for action in [right(), right(), right(), up()] {
+            world.apply(action);
+        }
+        let pickup = world.apply(up());
+
+        assert_eq!(world.hero(), key_cell);
+        assert!(pickup.events.contains(&WorldEvent::CoreKeyAcquired));
+        assert!(world.has_core_key());
+        assert_eq!(world.core_key_cell(), None);
+    }
+
+    #[test]
+    fn key_warden_corpse_never_blocks_drop_cell() {
+        let mut level = semi_test_level(10);
+        level.hero_start = Cell::new(1, 3);
+        level.traps.push(active_trap(3, 1));
+        level.enemies.push(key_warden(2, 1, 34, Direction::Right));
+        let mut world = world_from(level);
+
+        world.update_tick();
+        let key_cell = world
+            .core_key_cell()
+            .expect("Warden death should leave a key cell");
+
+        assert!(world.enemy_at(Cell::new(3, 1)).is_none());
+        assert!(world.enemy_at(key_cell).is_none());
+
+        for action in [right(), right(), right(), up()] {
+            world.apply(action);
+        }
+        let pickup = world.apply(up());
+
+        assert_eq!(world.hero(), key_cell);
+        assert!(pickup.events.contains(&WorldEvent::CoreKeyAcquired));
+        assert!(world.has_core_key());
+    }
+
+    #[test]
+    fn locked_core_gate_refuses_without_key_and_unlocks_with_key() {
+        let mut world = core_gate_world();
+
+        let locked = world.apply(right());
+        assert!(locked.events.contains(&WorldEvent::LockedGateBlocked));
+        assert_eq!(world.hero(), Cell::new(1, 1));
+        assert!(!world.door_open(0));
+
+        world.has_core_key = true;
+        let opened = world.apply(right());
+
+        assert!(opened.events.contains(&WorldEvent::CoreGateUnlocked));
+        assert!(opened.events.contains(&WorldEvent::DoorOpened));
+        assert_eq!(world.hero(), Cell::new(2, 1));
+        assert!(world.door_open(0));
+    }
+
+    #[test]
+    fn key_warden_drop_is_not_duplicated() {
+        let mut level = test_level(50);
+        level.enemies.push(key_warden(2, 1, 10, Direction::Right));
+        let mut world = world_from(level);
+
+        let first = world.apply(right());
+        world.apply(left());
+        let second = world.apply(right());
+
+        assert_eq!(
+            first
+                .events
+                .iter()
+                .filter(|event| matches!(event, WorldEvent::CoreKeyDropped { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            second
+                .events
+                .iter()
+                .filter(|event| matches!(event, WorldEvent::CoreKeyDropped { .. }))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn restart_restores_warden_key_and_core_gate() {
+        let mut world = SmartBoyWorld::iso_slice(7);
+
+        walk_to_iso_boulder_plate(&mut world);
+        finish_iso_from_boulder_plate(&mut world);
+        assert_eq!(world.phase(), Phase::Won);
+        assert!(world.has_core_key());
+        assert!(world.door_open(1));
+
+        world.restart();
+
+        assert_eq!(world.core_key_cell(), None);
+        assert!(!world.has_core_key());
+        assert!(!world.door_open(1));
+        assert!(
+            world
+                .enemies()
+                .iter()
+                .any(|enemy| matches!(enemy.role, EnemyRole::KeyWarden))
+        );
+    }
+
+    #[test]
+    fn iso_chapter_side_room_shortcut_persists_after_leaving() {
+        let mut world = SmartBoyWorld::iso_slice(7);
+
+        world.apply(right());
+        for _ in 0..6 {
+            world.apply(up());
+        }
+        world.apply(right());
+        world.apply(right());
+        assert!(world.door_open(0));
+
+        world.apply(left());
+        world.apply(down());
+
+        assert!(world.door_open(0));
+    }
+
+    #[test]
+    fn iso_chapter_enemy_death_persists_after_returning_to_entrance() {
+        let mut world = SmartBoyWorld::iso_slice(7);
+        let killed_cell = Cell::new(5, 8);
+
+        world.apply(up());
+        world.apply(right());
+        world.apply(right());
+        world.apply(right());
+        assert!(
+            !world
+                .enemies()
+                .iter()
+                .any(|enemy| enemy.cell == killed_cell)
+        );
+
+        world.apply(left());
+        world.apply(left());
+        world.update_tick();
+
+        assert!(
+            !world
+                .enemies()
+                .iter()
+                .any(|enemy| enemy.cell == killed_cell)
+        );
+    }
+
+    #[test]
+    fn iso_chapter_boulder_state_persists_after_leaving_yard() {
+        let mut world = SmartBoyWorld::iso_slice(7);
+
+        walk_to_iso_boulder_plate(&mut world);
+        assert_ne!(world.boulders()[0].state, BoulderState::Ready);
+
+        world.apply(left());
+        world.apply(down());
+        world.update_tick();
+
+        assert_ne!(world.boulders()[0].state, BoulderState::Ready);
     }
 
     #[test]
@@ -2239,6 +2924,7 @@ mod tests {
             kind: EnemyKind::Walker {
                 direction: Direction::Left,
             },
+            role: EnemyRole::Normal,
             intent: EnemyIntent::ChaseHero {
                 patrol_direction: Direction::Right,
             },
@@ -2521,7 +3207,7 @@ mod tests {
         let mut world = SmartBoyWorld::iso_slice(42);
         let initial = world.clone();
 
-        world.apply(throw_rock(Cell::new(6, 4)));
+        world.apply(throw_rock(Cell::new(5, 9)));
         assert!(
             world
                 .enemies()
@@ -3354,43 +4040,49 @@ mod tests {
     fn all_levels_fit_grid_and_have_one_start_and_exit() {
         for index in 0..LEVEL_COUNT {
             let level = build_level(index);
-            assert!(level.hero_start.is_inside());
-            assert!(level.exit.is_inside());
-            assert!(level.walls.iter().copied().all(Cell::is_inside));
+            assert!(level_in_bounds(&level, level.hero_start));
+            assert!(level_in_bounds(&level, level.exit));
+            assert!(
+                level
+                    .walls
+                    .iter()
+                    .copied()
+                    .all(|cell| level_in_bounds(&level, cell))
+            );
             assert!(
                 level
                     .doors
                     .iter()
                     .map(|door| door.cell)
-                    .all(Cell::is_inside)
+                    .all(|cell| level_in_bounds(&level, cell))
             );
             assert!(
                 level
                     .levers
                     .iter()
                     .map(|lever| lever.cell)
-                    .all(Cell::is_inside)
+                    .all(|cell| level_in_bounds(&level, cell))
             );
             assert!(
                 level
                     .traps
                     .iter()
                     .map(|trap| trap.cell)
-                    .all(Cell::is_inside)
+                    .all(|cell| level_in_bounds(&level, cell))
             );
             assert!(
                 level
                     .bonuses
                     .iter()
                     .map(|bonus| bonus.cell)
-                    .all(Cell::is_inside)
+                    .all(|cell| level_in_bounds(&level, cell))
             );
             assert!(
                 level
                     .enemies
                     .iter()
                     .map(|enemy| enemy.cell)
-                    .all(Cell::is_inside)
+                    .all(|cell| level_in_bounds(&level, cell))
             );
         }
     }

@@ -9,14 +9,24 @@
   "trap_arm": "assets/smart_boy_hero/sfx/trap_arm.wav",
   "trap_disarm": "assets/smart_boy_hero/sfx/trap_disarm.wav",
   "trap_trigger": "assets/smart_boy_hero/sfx/trap_trigger.wav",
-  "shout": "assets/smart_boy_hero/sfx/shout.wav",
+  "shout": [
+    "assets/smart_boy_hero/sfx/smart1.wav",
+    "assets/smart_boy_hero/sfx/smart2.wav",
+    "assets/smart_boy_hero/sfx/smart3.wav"
+  ],
   "rock_impact": "assets/smart_boy_hero/sfx/rock_impact.wav",
-  "enemy_kill": "assets/smart_boy_hero/sfx/enemy_kill.wav",
+  "enemy_kill": "assets/smart_boy_hero/sfx/666herohero-monster-death-grunt-131480.wav",
   "enemy_alert": "assets/smart_boy_hero/sfx/enemy_alert.wav",
   "boulder_release": "assets/smart_boy_hero/sfx/boulder_release.wav",
-  "boulder_roll": "assets/smart_boy_hero/sfx/boulder_roll.wav",
+  "boulder_roll": "assets/smart_boy_hero/sfx/rolling_boulder.wav",
   "boulder_crush": "assets/smart_boy_hero/sfx/boulder_crush.wav",
   "boulder_stop": "assets/smart_boy_hero/sfx/boulder_stop.wav",
-  "death": "assets/smart_boy_hero/sfx/death.wav",
+  "key_pickup": "assets/smart_boy_hero/sfx/litupsubway-key-collect-sfx-522219.wav",
+  "key_unlock": "assets/smart_boy_hero/sfx/freesound_community-unlock-the-door-1-46012.wav",
+  "death": [
+    "assets/smart_boy_hero/sfx/death1.wav",
+    "assets/smart_boy_hero/sfx/death2.wav",
+    "assets/smart_boy_hero/sfx/death3.wav"
+  ],
   "victory": "assets/smart_boy_hero/sfx/victory.wav"
 }
