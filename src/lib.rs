@@ -8,6 +8,7 @@ mod input;
 mod pixel;
 mod platform;
 mod renderer;
+mod sprite;
 mod storage;
 pub mod ui;
 mod viewport;
@@ -23,5 +24,6 @@ pub use input::{
 };
 pub use pixel::Pixel;
 pub use platform::{EngineConfig, EngineError, Frame, Game, GameResult, run};
+pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
 pub use viewport::{Rect, Size, Viewport};
