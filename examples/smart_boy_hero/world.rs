@@ -613,13 +613,12 @@ impl SmartBoyWorld {
         report: &mut TurnReport,
     ) -> Option<Direction> {
         let rat = self.enemies[index].cell;
-        if let Some(cat) = self.nearest_enemy_kind_cell(rat, EnemyKind::Cat) {
-            if rat.manhattan_distance(cat) <= RAT_FEAR_RADIUS {
-                if let Some(direction) = self.step_away_from(index, cat) {
-                    report.events.push(WorldEvent::RatScared);
-                    return Some(direction);
-                }
-            }
+        if let Some(cat) = self.nearest_enemy_kind_cell(rat, EnemyKind::Cat)
+            && rat.manhattan_distance(cat) <= RAT_FEAR_RADIUS
+            && let Some(direction) = self.step_away_from(index, cat)
+        {
+            report.events.push(WorldEvent::RatScared);
+            return Some(direction);
         }
 
         let food = self.nearest_food_cell(rat)?;
@@ -2063,6 +2062,7 @@ fn key_warden(x: i32, y: i32, power: i32, direction: Direction) -> Enemy {
     }
 }
 
+#[cfg(test)]
 fn rat(x: i32, y: i32) -> Enemy {
     Enemy {
         cell: Cell::new(x, y),
@@ -2073,6 +2073,7 @@ fn rat(x: i32, y: i32) -> Enemy {
     }
 }
 
+#[cfg(test)]
 fn cat(x: i32, y: i32) -> Enemy {
     Enemy {
         cell: Cell::new(x, y),
@@ -2118,6 +2119,7 @@ fn mystery_bonus(x: i32, y: i32, min: i32, max: i32) -> Bonus {
     }
 }
 
+#[cfg(test)]
 fn food(x: i32, y: i32) -> Food {
     Food {
         cell: Cell::new(x, y),
@@ -2156,6 +2158,7 @@ fn group_trap(x: i32, y: i32, group: u8) -> Trap {
     }
 }
 
+#[cfg(test)]
 fn pit(x: i32, y: i32) -> Pit {
     Pit {
         cell: Cell::new(x, y),
