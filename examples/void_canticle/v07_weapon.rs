@@ -114,28 +114,6 @@ fn render_relic(framebuffer: &mut Framebuffer, relic: RelicDrop) {
     framebuffer.fill_rect(x - 3, y - 1, 7, 3, POWER_RELIC_LIGHT);
 }
 
-pub fn run_v07() -> Result<(), EngineError> {
-    let (window_width, window_height) = window_size();
-    run(
-        EngineConfig {
-            title: format!(
-                "Void Canticle {VC07_VERSION} [{BUILD_ID}] - Gotoo Pixel Engine"
-            ),
-            framebuffer_width: FRAMEBUFFER_WIDTH,
-            framebuffer_height: FRAMEBUFFER_HEIGHT,
-            window_width,
-            window_height,
-        },
-        PauseGame::new(
-            VoidCanticleV07::new(),
-            PauseConfig::new(Size {
-                width: FRAMEBUFFER_WIDTH,
-                height: FRAMEBUFFER_HEIGHT,
-            }),
-        ),
-    )
-}
-
 #[cfg(test)]
 mod v07_tests {
     use super::*;
