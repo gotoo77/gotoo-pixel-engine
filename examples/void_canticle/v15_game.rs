@@ -99,7 +99,7 @@ impl VoidCanticleV15 {
             .wrapping_add(1_013_904_223)
             ^ timing.rotate_left(7)
             ^ score.rotate_left(13)
-            ^ level.wrapping_mul(0x45D9_F3B);
+            ^ level.wrapping_mul(0x045D_9F3B);
         self.offer_nonce
     }
 
