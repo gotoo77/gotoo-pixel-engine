@@ -21,32 +21,15 @@ mod game {
                 pub(crate) mod v10 {
                     use super::*;
                     include!("void_canticle/v10_game.rs");
-
-                    pub(crate) fn run_v10_with_obs_mirror() -> Result<(), EngineError> {
-                        let (window_width, window_height) = window_size();
-                        run(
-                            EngineConfig {
-                                title: "Void Canticle - Gotoo Pixel Engine".to_string(),
-                                framebuffer_width: FRAMEBUFFER_WIDTH,
-                                framebuffer_height: FRAMEBUFFER_HEIGHT,
-                                window_width,
-                                window_height,
-                            },
-                            gotoo_pixel_engine::ObsMirrorGame::from_env(
-                                VoidCanticlePause::new(VoidCanticleV10::new()),
-                                FRAMEBUFFER_WIDTH,
-                                FRAMEBUFFER_HEIGHT,
-                            ),
-                        )
-                    }
+                    include!("void_canticle/v11_game.rs");
                 }
             }
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::run_v10_with_obs_mirror;
+    pub(crate) use legacy_base::v07::v09::v10::run_v11_with_obs_mirror;
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_v10_with_obs_mirror()
+    game::run_v11_with_obs_mirror()
 }
