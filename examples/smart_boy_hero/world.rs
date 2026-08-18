@@ -7,6 +7,9 @@ pub(super) const ROCK_HEARING_RADIUS: i32 = 3;
 const RAT_FEAR_RADIUS: i32 = 2;
 const BOULDER_STEPS_PER_TICK: usize = 3;
 
+mod level_spec;
+use level_spec::LevelSpec;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SmartBoyWorld {
     level_index: usize,
@@ -1898,31 +1901,12 @@ fn level_smart_way() -> Level {
 }
 
 fn level_smell_a_rat() -> Level {
-    let mut walls = vertical_wall(7, &[2, 4]);
-    walls.extend(cells(&[(4, 1), (6, 1), (6, 6)]));
-
-    Level {
-        width: GRID_WIDTH,
-        height: GRID_HEIGHT,
-        timing: LevelTiming::SemiContinuous,
-        name: "SMELL A RAT",
-        hero_start: Cell::new(1, 4),
-        hero_power: 6,
-        exit: Cell::new(10, 4),
-        walls,
-        doors: vec![Door {
-            cell: Cell::new(7, 4),
-            group: 1,
-            initially_open: false,
-        }],
-        levers: vec![pressure_plate(5, 2, 1)],
-        traps: vec![],
-        pits: vec![pit(5, 6)],
-        boulders: vec![],
-        foods: vec![food(5, 2)],
-        bonuses: vec![],
-        enemies: vec![rat(5, 5), rat(4, 6), cat(3, 6)],
-    }
+    LevelSpec::parse(include_str!(
+        "../../assets/smart_boy_hero/levels/smell_a_rat.json"
+    ))
+    .expect("SMELL A RAT JSON should parse")
+    .into_level()
+    .unwrap_or_else(|report| panic!("SMELL A RAT level spec is invalid:\n{report}"))
 }
 
 #[allow(dead_code)]
