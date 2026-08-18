@@ -1,11 +1,13 @@
 use gotoo_pixel_engine::{
     ActionId, ControlMap, EngineConfig, EngineError, Frame, Framebuffer, Game, GameResult,
-    GamepadButton, Key, MouseButton, Pixel, Size, SoundBank, SoundId, pcm16_mono_wav, run,
+    GamepadButton, Key, MouseButton, Pixel, Size, SoundBank, SoundId, Sprite, pcm16_mono_wav, run,
     ui::{PauseConfig, PauseGame},
 };
 
 const FRAMEBUFFER_WIDTH: u32 = 180;
 const FRAMEBUFFER_HEIGHT: u32 = 320;
+const GAME_VERSION: &str = "VC0.6";
+const BUILD_ID: &str = env!("GPE_BUILD_ID");
 
 const MOVE_LEFT: ActionId = ActionId::new("void_canticle.left");
 const MOVE_RIGHT: ActionId = ActionId::new("void_canticle.right");
@@ -34,10 +36,13 @@ const WRECK_MID: Pixel = Pixel::rgb(31, 34, 48);
 const WRECK_NEAR: Pixel = Pixel::rgb(43, 43, 55);
 const WRECK_LIGHT: Pixel = Pixel::rgb(76, 70, 72);
 const PILGRIM: Pixel = Pixel::rgb(225, 222, 205);
+const PILGRIM_DARK: Pixel = Pixel::rgb(86, 95, 118);
 const PILGRIM_CORE: Pixel = Pixel::rgb(245, 170, 70);
+const THRUSTER: Pixel = Pixel::rgb(255, 116, 70);
 const FOCUS_COLOR: Pixel = Pixel::rgb(255, 230, 155);
 const SHOT: Pixel = Pixel::rgb(245, 235, 180);
 const ENEMY: Pixel = Pixel::rgb(150, 78, 95);
+const ENEMY_DARK: Pixel = Pixel::rgb(67, 40, 58);
 const ENEMY_EYE: Pixel = Pixel::rgb(255, 110, 70);
 const ENEMY_SHOT: Pixel = Pixel::rgb(232, 80, 110);
 const ENEMY_SHOT_ALT: Pixel = Pixel::rgb(180, 105, 225);
@@ -201,21 +206,311 @@ struct SpawnSpec {
 }
 
 const WAVE: &[SpawnSpec] = &[
-    SpawnSpec { at: 0.45, base_x: 38.0, phase: 0.0, curve_amplitude: 22.0, first_shot: 2.05, pattern: ShotPattern::Aimed },
-    SpawnSpec { at: 0.78, base_x: 38.0, phase: 0.5, curve_amplitude: 22.0, first_shot: 2.20, pattern: ShotPattern::Aimed },
-    SpawnSpec { at: 1.11, base_x: 38.0, phase: 1.0, curve_amplitude: 22.0, first_shot: 2.35, pattern: ShotPattern::Aimed },
-    SpawnSpec { at: 2.50, base_x: 142.0, phase: 3.2, curve_amplitude: -24.0, first_shot: 1.75, pattern: ShotPattern::Fan3 },
-    SpawnSpec { at: 2.88, base_x: 142.0, phase: 3.7, curve_amplitude: -24.0, first_shot: 1.95, pattern: ShotPattern::Fan3 },
-    SpawnSpec { at: 4.55, base_x: 90.0, phase: 0.0, curve_amplitude: 50.0, first_shot: 1.35, pattern: ShotPattern::Fan3 },
-    SpawnSpec { at: 4.92, base_x: 90.0, phase: 1.6, curve_amplitude: 50.0, first_shot: 1.55, pattern: ShotPattern::Aimed },
-    SpawnSpec { at: 5.29, base_x: 90.0, phase: 3.2, curve_amplitude: 50.0, first_shot: 1.75, pattern: ShotPattern::Fan3 },
-    SpawnSpec { at: 7.25, base_x: 50.0, phase: 0.7, curve_amplitude: 31.0, first_shot: 1.15, pattern: ShotPattern::Fan5 },
-    SpawnSpec { at: 7.58, base_x: 130.0, phase: 3.8, curve_amplitude: -31.0, first_shot: 1.15, pattern: ShotPattern::Fan5 },
+    SpawnSpec {
+        at: 0.45,
+        base_x: 38.0,
+        phase: 0.0,
+        curve_amplitude: 22.0,
+        first_shot: 2.05,
+        pattern: ShotPattern::Aimed,
+    },
+    SpawnSpec {
+        at: 0.78,
+        base_x: 38.0,
+        phase: 0.5,
+        curve_amplitude: 22.0,
+        first_shot: 2.20,
+        pattern: ShotPattern::Aimed,
+    },
+    SpawnSpec {
+        at: 1.11,
+        base_x: 38.0,
+        phase: 1.0,
+        curve_amplitude: 22.0,
+        first_shot: 2.35,
+        pattern: ShotPattern::Aimed,
+    },
+    SpawnSpec {
+        at: 2.50,
+        base_x: 142.0,
+        phase: 3.2,
+        curve_amplitude: -24.0,
+        first_shot: 1.75,
+        pattern: ShotPattern::Fan3,
+    },
+    SpawnSpec {
+        at: 2.88,
+        base_x: 142.0,
+        phase: 3.7,
+        curve_amplitude: -24.0,
+        first_shot: 1.95,
+        pattern: ShotPattern::Fan3,
+    },
+    SpawnSpec {
+        at: 4.55,
+        base_x: 90.0,
+        phase: 0.0,
+        curve_amplitude: 50.0,
+        first_shot: 1.35,
+        pattern: ShotPattern::Fan3,
+    },
+    SpawnSpec {
+        at: 4.92,
+        base_x: 90.0,
+        phase: 1.6,
+        curve_amplitude: 50.0,
+        first_shot: 1.55,
+        pattern: ShotPattern::Aimed,
+    },
+    SpawnSpec {
+        at: 5.29,
+        base_x: 90.0,
+        phase: 3.2,
+        curve_amplitude: 50.0,
+        first_shot: 1.75,
+        pattern: ShotPattern::Fan3,
+    },
+    SpawnSpec {
+        at: 7.25,
+        base_x: 50.0,
+        phase: 0.7,
+        curve_amplitude: 31.0,
+        first_shot: 1.15,
+        pattern: ShotPattern::Fan5,
+    },
+    SpawnSpec {
+        at: 7.58,
+        base_x: 130.0,
+        phase: 3.8,
+        curve_amplitude: -31.0,
+        first_shot: 1.15,
+        pattern: ShotPattern::Fan5,
+    },
 ];
+
+struct Visuals {
+    pilgrim: Vec<Sprite>,
+    carrion: Vec<Sprite>,
+    bellkeeper: Vec<Sprite>,
+}
+
+impl Visuals {
+    fn new() -> Self {
+        let pilgrim_palette = [
+            ('P', PILGRIM),
+            ('D', PILGRIM_DARK),
+            ('C', PILGRIM_CORE),
+            ('F', THRUSTER),
+        ];
+        let carrion_palette = [('E', ENEMY), ('D', ENEMY_DARK), ('R', ENEMY_EYE)];
+        let bell_palette = [
+            ('B', BELL_METAL),
+            ('L', BELL_LIGHT),
+            ('K', BELL_DARK),
+            ('R', DANGER),
+        ];
+
+        Self {
+            pilgrim: vec![
+                sprite_from_ascii(
+                    &[
+                        ".....PPP.......",
+                        "....PDDDP......",
+                        "...PDDDDDPP....",
+                        "...PDDCDDDP....",
+                        "..PPDDCDDDPP...",
+                        ".PPDDDCDDDDPP..",
+                        "PP.DDDCDDD.PP..",
+                        "...DDDCDDD.....",
+                        "...DDCCCDD.....",
+                        "...DDDCDDD.....",
+                        "..PDDDCDDDP....",
+                        ".PPDDDCDDDDPP..",
+                        "...DDD.DDD.....",
+                        "...DD...DD.....",
+                        "...DD...DD.....",
+                        "...D.....D.....",
+                        "......F........",
+                        ".....FFF.......",
+                        "......F........",
+                    ],
+                    &pilgrim_palette,
+                ),
+                sprite_from_ascii(
+                    &[
+                        ".....PPP.......",
+                        "....PDDDP......",
+                        "...PDDDDDPP....",
+                        "...PDDCDDDP....",
+                        "..PPDDCDDDPP...",
+                        ".PPDDDCDDDDPP..",
+                        "PP.DDDCDDD.PP..",
+                        "...DDDCDDD.....",
+                        "...DDCCCDD.....",
+                        "...DDDCDDD.....",
+                        "..PDDDCDDDP....",
+                        ".PPDDDCDDDDPP..",
+                        "...DDD.DDD.....",
+                        "...DD...DD.....",
+                        "...DD...DD.....",
+                        "...D.....D.....",
+                        ".....FFF.......",
+                        "....FFFFF......",
+                        ".....FFF.......",
+                    ],
+                    &pilgrim_palette,
+                ),
+            ],
+            carrion: vec![
+                sprite_from_ascii(
+                    &[
+                        "EE.................EE",
+                        ".EE...............EE.",
+                        "..EEE...........EEE..",
+                        "....EEE.......EEE....",
+                        "......EEEDRDEEE......",
+                        "......EDDDDDDE.......",
+                        ".....EEDDRDDEE.......",
+                        "......EDDDDDDE.......",
+                        ".......E.D.E.........",
+                        "......E.....E........",
+                        ".....E.......E.......",
+                    ],
+                    &carrion_palette,
+                ),
+                sprite_from_ascii(
+                    &[
+                        ".....................",
+                        ".....................",
+                        "E...................E",
+                        "EEE...............EEE",
+                        "..EEEEEE.DRD.EEEEEE..",
+                        "......EDDDDDDE.......",
+                        ".....EEDDRDDEE.......",
+                        "......EDDDDDDE.......",
+                        "....EEE..D..EEE......",
+                        "..EEE.........EEE....",
+                        "EE.................EE",
+                    ],
+                    &carrion_palette,
+                ),
+            ],
+            bellkeeper: vec![
+                sprite_from_ascii(
+                    &[
+                        ".............LLLLL.............",
+                        "...........LLBBBBBLL...........",
+                        "..........LBBBBBBBBBL..........",
+                        ".........BBBBBBBBBBBBB.........",
+                        ".........BBBKKKKKKKBBB.........",
+                        ".........BBKKKKKKKKKBB.........",
+                        ".........BKKKBBBBBKKKB.........",
+                        ".........BKKBBBBBBBKK..........",
+                        ".........BKKBBBLBBBKK..........",
+                        ".........BKKBBBRBBBKK..........",
+                        ".........BKKBBBBBBBKK..........",
+                        ".........BKKKBBBBBKKKB.........",
+                        ".........BBKKKKKKKKKBB.........",
+                        ".........BBBLLLLLLLBBB.........",
+                        ".........BBBBBBBBBBBBB.........",
+                        ".........BBBBBRBBBBBBB.........",
+                        "..............BRB..............",
+                        "..............BRB..............",
+                        "..............BRB..............",
+                        "...............R...............",
+                    ],
+                    &bell_palette,
+                ),
+                sprite_from_ascii(
+                    &[
+                        "............LLLLLLL............",
+                        "..........LLLBBBBBLLL..........",
+                        ".........LLBBBBBBBBBLL.........",
+                        ".........BBBBBBBBBBBBB.........",
+                        ".........BBBKKKKKKKBBB.........",
+                        ".........BBKKKKKKKKKBB.........",
+                        ".........BKKKBBBBBKKKB.........",
+                        ".........BKKBBBBBBBKK..........",
+                        ".........BKKBBBLBBBKK..........",
+                        ".........BKKBBBRBBBKK..........",
+                        ".........BKKBBBBBBBKK..........",
+                        ".........BKKKBBBBBKKKB.........",
+                        ".........BBKKKKKKKKKBB.........",
+                        ".........BBBLLLLLLLBBB.........",
+                        ".........BBBBBBBBBBBBB.........",
+                        ".........BBBBBRBBBBBBB.........",
+                        "...............BRB.............",
+                        "...............BRB.............",
+                        "...............BRB.............",
+                        "................R..............",
+                    ],
+                    &bell_palette,
+                ),
+            ],
+        }
+    }
+
+    fn render_pilgrim(
+        &self,
+        framebuffer: &mut Framebuffer,
+        x: i32,
+        y: i32,
+        focused: bool,
+        invulnerability: f32,
+        animation_time: f32,
+    ) {
+        let visible = invulnerability <= 0.0 || ((invulnerability * 16.0) as i32 % 2 == 0);
+        if !visible {
+            return;
+        }
+
+        let frame = animation_frame(animation_time, 8.0, self.pilgrim.len());
+        self.pilgrim[frame].draw_centered(framebuffer, x, y);
+
+        if focused {
+            framebuffer.draw_circle(x, y, 5, FOCUS_COLOR);
+            framebuffer.fill_circle(x, y, 1, FOCUS_COLOR);
+        }
+    }
+
+    fn render_carrion(&self, framebuffer: &mut Framebuffer, enemy: CarrionDrone) {
+        let frame = animation_frame(enemy.age + enemy.phase * 0.17, 6.0, self.carrion.len());
+        self.carrion[frame].draw_centered(
+            framebuffer,
+            enemy.x.round() as i32,
+            enemy.y.round() as i32,
+        );
+    }
+
+    fn render_bellkeeper(&self, framebuffer: &mut Framebuffer, boss: Bellkeeper) {
+        let x = boss.x.round() as i32;
+        let y = boss.y.round() as i32;
+        let frame = animation_frame(boss.age, 4.0, self.bellkeeper.len());
+        let pulse = ((boss.age * 5.0) as i32 & 1) == 0;
+        let glow = if pulse { BELL_LIGHT } else { BELL_METAL };
+
+        framebuffer.draw_circle(x, y, 27, BELL_DARK);
+        framebuffer.draw_line(x - 14, y - 5, x - 32, y - 16, BELL_METAL);
+        framebuffer.draw_line(x + 14, y - 5, x + 32, y - 16, BELL_METAL);
+        framebuffer.draw_circle(x - 34, y - 17, 4, glow);
+        framebuffer.draw_circle(x + 34, y - 17, 4, glow);
+        self.bellkeeper[frame].draw_centered(framebuffer, x, y);
+
+        match boss.phase() {
+            BellPhase::Procession => {}
+            BellPhase::Resonance => framebuffer.draw_circle(x, y - 1, 24, BELL_LIGHT),
+            BellPhase::FinalToll => {
+                framebuffer.draw_circle(x, y - 1, 24, DANGER);
+                framebuffer.draw_circle(x, y - 1, 34, BELL_LIGHT);
+            }
+        }
+    }
+}
 
 struct VoidCanticleGame {
     controls: ControlMap,
     sounds: SoundBank,
+    visuals: Visuals,
     player_x: f32,
     player_y: f32,
     player_bullets: Vec<Bullet>,
@@ -230,6 +525,7 @@ struct VoidCanticleGame {
     encounter_phase: EncounterPhase,
     boss_intro_timer: f32,
     scroll: f32,
+    animation_time: f32,
     score: u32,
     lives: u32,
     core_charge: u32,
@@ -268,19 +564,31 @@ impl VoidCanticleGame {
         let mut sounds = SoundBank::new();
         for (id, wav) in [
             (FIRE_SOUND, synthesize_chirp(920.0, 520.0, 0.050, 0.12)),
-            (ENEMY_HIT_SOUND, synthesize_noise_burst(0.105, 0.34, 0xC411_10A1)),
-            (ENEMY_FIRE_SOUND, synthesize_chirp(260.0, 410.0, 0.070, 0.10)),
+            (
+                ENEMY_HIT_SOUND,
+                synthesize_noise_burst(0.105, 0.34, 0xC411_10A1),
+            ),
+            (
+                ENEMY_FIRE_SOUND,
+                synthesize_chirp(260.0, 410.0, 0.070, 0.10),
+            ),
             (CINDER_SOUND, synthesize_chirp(730.0, 1120.0, 0.095, 0.22)),
-            (PLAYER_HIT_SOUND, synthesize_noise_burst(0.240, 0.48, 0x5157_0001)),
+            (
+                PLAYER_HIT_SOUND,
+                synthesize_noise_burst(0.240, 0.48, 0x5157_0001),
+            ),
             (CANTICLE_SOUND, synthesize_canticle_sound()),
             (BELL_SOUND, synthesize_bell_sound()),
         ] {
-            sounds.insert_wav(id, wav).expect("Void Canticle sound ids should be unique");
+            sounds
+                .insert_wav(id, wav)
+                .expect("Void Canticle sound ids should be unique");
         }
 
         let mut game = Self {
             controls,
             sounds,
+            visuals: Visuals::new(),
             player_x: 0.0,
             player_y: 0.0,
             player_bullets: Vec::new(),
@@ -295,6 +603,7 @@ impl VoidCanticleGame {
             encounter_phase: EncounterPhase::Waves,
             boss_intro_timer: 0.0,
             scroll: 0.0,
+            animation_time: 0.0,
             score: 0,
             lives: 3,
             core_charge: 0,
@@ -321,6 +630,7 @@ impl VoidCanticleGame {
         self.encounter_phase = EncounterPhase::Waves;
         self.boss_intro_timer = 0.0;
         self.scroll = 0.0;
+        self.animation_time = 0.0;
         self.score = 0;
         self.lives = 3;
         self.core_charge = 0;
@@ -334,7 +644,8 @@ impl VoidCanticleGame {
     }
 
     fn canticle_pressed(&self, frame: &Frame<'_>) -> bool {
-        self.controls.action(CANTICLE).pressed() || frame.input.mouse_button(MouseButton::Left).pressed()
+        self.controls.action(CANTICLE).pressed()
+            || frame.input.mouse_button(MouseButton::Left).pressed()
     }
 
     fn update_player(&mut self, dt: f32, focused: bool) {
@@ -352,8 +663,10 @@ impl VoidCanticleGame {
         }
 
         let speed = if focused { FOCUS_SPEED } else { PLAYER_SPEED };
-        self.player_x = (self.player_x + dx * speed * dt).clamp(8.0, FRAMEBUFFER_WIDTH as f32 - 8.0);
-        self.player_y = (self.player_y + dy * speed * dt).clamp(30.0, FRAMEBUFFER_HEIGHT as f32 - 16.0);
+        self.player_x =
+            (self.player_x + dx * speed * dt).clamp(8.0, FRAMEBUFFER_WIDTH as f32 - 8.0);
+        self.player_y = (self.player_y + dy * speed * dt)
+            .clamp(30.0, FRAMEBUFFER_HEIGHT as f32 - 16.0);
     }
 
     fn update_player_fire(&mut self, dt: f32, frame: &mut Frame<'_>) {
@@ -382,7 +695,11 @@ impl VoidCanticleGame {
                     self.enemies.push(CarrionDrone::new(WAVE[self.next_spawn]));
                     self.next_spawn += 1;
                 }
-                if self.next_spawn == WAVE.len() && self.stage_time >= 10.4 && self.enemies.is_empty() {
+
+                if self.next_spawn == WAVE.len()
+                    && self.stage_time >= 10.4
+                    && self.enemies.is_empty()
+                {
                     self.begin_boss_intro(frame);
                 }
             }
@@ -411,35 +728,99 @@ impl VoidCanticleGame {
     fn update_boss(&mut self, dt: f32, frame: &mut Frame<'_>) {
         let mut spawned = Vec::new();
         let mut tolled = false;
+
         if let Some(boss) = self.boss.as_mut() {
             boss.age += dt;
             boss.x = FRAMEBUFFER_WIDTH as f32 / 2.0 + (boss.age * 0.72).sin() * 42.0;
             boss.y = 64.0 + (boss.age * 1.25).sin() * 5.0;
             boss.shot_timer -= dt;
+
             if boss.shot_timer <= 0.0 {
                 match boss.phase() {
                     BellPhase::Procession => {
                         if boss.pattern_step % 2 == 0 {
-                            spawn_ring(&mut spawned, boss.x, boss.y + 12.0, 12, boss.ring_rotation, 54.0);
+                            spawn_ring(
+                                &mut spawned,
+                                boss.x,
+                                boss.y + 12.0,
+                                12,
+                                boss.ring_rotation,
+                                54.0,
+                            );
                         } else {
-                            spawn_fan(&mut spawned, boss.x, boss.y + 12.0, self.player_x, self.player_y, 7, 0.86, 62.0);
+                            spawn_fan(
+                                &mut spawned,
+                                boss.x,
+                                boss.y + 12.0,
+                                self.player_x,
+                                self.player_y,
+                                7,
+                                0.86,
+                                62.0,
+                            );
                         }
                         boss.ring_rotation += 0.24;
                         boss.shot_timer += 1.08;
                     }
                     BellPhase::Resonance => {
-                        spawn_ring(&mut spawned, boss.x, boss.y + 12.0, 14, boss.ring_rotation, 59.0);
-                        spawn_ring(&mut spawned, boss.x, boss.y + 12.0, 14, boss.ring_rotation + 0.19, 42.0);
+                        spawn_ring(
+                            &mut spawned,
+                            boss.x,
+                            boss.y + 12.0,
+                            14,
+                            boss.ring_rotation,
+                            59.0,
+                        );
+                        spawn_ring(
+                            &mut spawned,
+                            boss.x,
+                            boss.y + 12.0,
+                            14,
+                            boss.ring_rotation + 0.19,
+                            42.0,
+                        );
                         if boss.pattern_step % 3 == 2 {
-                            spawn_fan(&mut spawned, boss.x, boss.y + 12.0, self.player_x, self.player_y, 5, 0.56, 72.0);
+                            spawn_fan(
+                                &mut spawned,
+                                boss.x,
+                                boss.y + 12.0,
+                                self.player_x,
+                                self.player_y,
+                                5,
+                                0.56,
+                                72.0,
+                            );
                         }
                         boss.ring_rotation += 0.31;
                         boss.shot_timer += 0.92;
                     }
                     BellPhase::FinalToll => {
-                        spawn_ring(&mut spawned, boss.x, boss.y + 12.0, 16, boss.ring_rotation, 67.0);
-                        spawn_ring(&mut spawned, boss.x, boss.y + 12.0, 16, boss.ring_rotation + 0.28, 49.0);
-                        spawn_fan(&mut spawned, boss.x, boss.y + 12.0, self.player_x, self.player_y, 7, 0.78, 76.0);
+                        spawn_ring(
+                            &mut spawned,
+                            boss.x,
+                            boss.y + 12.0,
+                            16,
+                            boss.ring_rotation,
+                            67.0,
+                        );
+                        spawn_ring(
+                            &mut spawned,
+                            boss.x,
+                            boss.y + 12.0,
+                            16,
+                            boss.ring_rotation + 0.28,
+                            49.0,
+                        );
+                        spawn_fan(
+                            &mut spawned,
+                            boss.x,
+                            boss.y + 12.0,
+                            self.player_x,
+                            self.player_y,
+                            7,
+                            0.78,
+                            76.0,
+                        );
                         boss.ring_rotation += 0.39;
                         boss.shot_timer += 0.78;
                     }
@@ -448,21 +829,43 @@ impl VoidCanticleGame {
                 tolled = true;
             }
         }
-        if !spawned.is_empty() { self.enemy_bullets.extend(spawned); }
-        if tolled { let _ = self.sounds.play(frame.audio, BELL_SOUND); }
+
+        if !spawned.is_empty() {
+            self.enemy_bullets.extend(spawned);
+        }
+        if tolled {
+            let _ = self.sounds.play(frame.audio, BELL_SOUND);
+        }
     }
 
     fn update_enemies(&mut self, dt: f32, frame: &mut Frame<'_>) {
         let mut spawned_shots = Vec::new();
+
         for enemy in &mut self.enemies {
             enemy.update_position(dt);
             enemy.fire_timer -= dt;
+
             if enemy.fire_timer <= 0.0 && (42.0..225.0).contains(&enemy.y) {
-                spawn_pattern(&mut spawned_shots, enemy.pattern, enemy.x, enemy.y + 6.0, self.player_x, self.player_y);
-                enemy.fire_timer += match enemy.pattern { ShotPattern::Aimed => 2.15, ShotPattern::Fan3 => 2.55, ShotPattern::Fan5 => 3.20 };
+                spawn_pattern(
+                    &mut spawned_shots,
+                    enemy.pattern,
+                    enemy.x,
+                    enemy.y + 6.0,
+                    self.player_x,
+                    self.player_y,
+                );
+                enemy.fire_timer += match enemy.pattern {
+                    ShotPattern::Aimed => 2.15,
+                    ShotPattern::Fan3 => 2.55,
+                    ShotPattern::Fan5 => 3.20,
+                };
             }
-            if enemy.y > FRAMEBUFFER_HEIGHT as f32 + 18.0 { enemy.alive = false; }
+
+            if enemy.y > FRAMEBUFFER_HEIGHT as f32 + 18.0 {
+                enemy.alive = false;
+            }
         }
+
         if !spawned_shots.is_empty() {
             let _ = self.sounds.play(frame.audio, ENEMY_FIRE_SOUND);
             self.enemy_bullets.extend(spawned_shots);
@@ -477,10 +880,14 @@ impl VoidCanticleGame {
             bullet.alive = bullet.y > 18.0;
         }
         self.player_bullets.retain(|bullet| bullet.alive);
+
         for bullet in &mut self.enemy_bullets {
             bullet.x += bullet.vx * dt;
             bullet.y += bullet.vy * dt;
-            bullet.alive = bullet.x > -8.0 && bullet.x < FRAMEBUFFER_WIDTH as f32 + 8.0 && bullet.y > 18.0 && bullet.y < FRAMEBUFFER_HEIGHT as f32 + 8.0;
+            bullet.alive = bullet.x > -8.0
+                && bullet.x < FRAMEBUFFER_WIDTH as f32 + 8.0
+                && bullet.y > 18.0
+                && bullet.y < FRAMEBUFFER_HEIGHT as f32 + 8.0;
         }
         self.enemy_bullets.retain(|bullet| bullet.alive);
     }
@@ -488,8 +895,12 @@ impl VoidCanticleGame {
     fn resolve_player_shots(&mut self, frame: &mut Frame<'_>) {
         let mut destroyed = Vec::new();
         let mut boss_hits = 0_u32;
+
         for bullet in &mut self.player_bullets {
-            if !bullet.alive { continue; }
+            if !bullet.alive {
+                continue;
+            }
+
             for enemy in &mut self.enemies {
                 if enemy.alive && point_near(bullet.x, bullet.y, enemy.x, enemy.y, 9.0) {
                     bullet.alive = false;
@@ -498,9 +909,12 @@ impl VoidCanticleGame {
                     break;
                 }
             }
+
             if bullet.alive {
                 if let Some(boss) = self.boss.as_mut() {
-                    if self.encounter_phase == EncounterPhase::BossFight && point_near(bullet.x, bullet.y, boss.x, boss.y, 20.0) {
+                    if self.encounter_phase == EncounterPhase::BossFight
+                        && point_near(bullet.x, bullet.y, boss.x, boss.y, 20.0)
+                    {
                         bullet.alive = false;
                         boss.hp = boss.hp.saturating_sub(1);
                         boss_hits += 1;
@@ -508,18 +922,31 @@ impl VoidCanticleGame {
                 }
             }
         }
+
         self.player_bullets.retain(|bullet| bullet.alive);
         self.enemies.retain(|enemy| enemy.alive);
+
         for (x, y) in destroyed {
             self.score = self.score.saturating_add(100);
-            self.cinders.push(CinderDrop { x, y, age: 0.0, phase: x * 0.11 + y * 0.07, alive: true });
+            self.cinders.push(CinderDrop {
+                x,
+                y,
+                age: 0.0,
+                phase: x * 0.11 + y * 0.07,
+                alive: true,
+            });
             self.bursts.push(Burst::new(x, y, 0.22, ENEMY_EYE));
             let _ = self.sounds.play(frame.audio, ENEMY_HIT_SOUND);
         }
+
         if boss_hits > 0 {
             self.score = self.score.saturating_add(boss_hits * 5);
-            if let Some(boss) = self.boss { self.bursts.push(Burst::new(boss.x, boss.y + 4.0, 0.10, BELL_LIGHT)); }
+            if let Some(boss) = self.boss {
+                self.bursts
+                    .push(Burst::new(boss.x, boss.y + 4.0, 0.10, BELL_LIGHT));
+            }
         }
+
         self.finish_boss_if_destroyed(frame);
     }
 
@@ -527,16 +954,21 @@ impl VoidCanticleGame {
         let player_x = self.player_x;
         let player_y = self.player_y;
         let mut collected = 0_u32;
+
         for cinder in &mut self.cinders {
             cinder.age += dt;
             cinder.y += 24.0 * dt;
             cinder.x += (cinder.age * 4.2 + cinder.phase).sin() * 10.0 * dt;
+
             if point_near(cinder.x, cinder.y, player_x, player_y, 10.0) {
                 cinder.alive = false;
                 collected += 1;
-            } else if cinder.y > FRAMEBUFFER_HEIGHT as f32 + 8.0 { cinder.alive = false; }
+            } else if cinder.y > FRAMEBUFFER_HEIGHT as f32 + 8.0 {
+                cinder.alive = false;
+            }
         }
         self.cinders.retain(|cinder| cinder.alive);
+
         if collected > 0 {
             self.core_charge = (self.core_charge + collected * CINDER_CHARGE).min(CORE_MAX);
             self.score = self.score.saturating_add(collected * 25);
@@ -545,13 +977,18 @@ impl VoidCanticleGame {
     }
 
     fn trigger_canticle(&mut self, frame: &mut Frame<'_>) {
-        if self.core_charge < CORE_MAX || self.canticle_timer > 0.0 { return; }
+        if self.core_charge < CORE_MAX || self.canticle_timer > 0.0 {
+            return;
+        }
+
         self.core_charge = 0;
         self.canticle_timer = CANTICLE_DURATION;
         self.invulnerability = self.invulnerability.max(0.72);
+
         let erased_bullets = self.enemy_bullets.len() as u32;
         self.enemy_bullets.clear();
         self.score = self.score.saturating_add(erased_bullets * 2);
+
         let mut destroyed = Vec::new();
         for enemy in &mut self.enemies {
             if enemy.alive && enemy.y >= 18.0 && enemy.y < FRAMEBUFFER_HEIGHT as f32 {
@@ -560,25 +997,50 @@ impl VoidCanticleGame {
             }
         }
         self.enemies.retain(|enemy| enemy.alive);
-        self.score = self.score.saturating_add((destroyed.len() as u32).saturating_mul(50));
-        for (x, y) in destroyed { self.bursts.push(Burst::new(x, y, 0.38, CANTICLE_COLOR)); }
+        self.score = self
+            .score
+            .saturating_add((destroyed.len() as u32).saturating_mul(50));
+
+        for (x, y) in destroyed {
+            self.bursts
+                .push(Burst::new(x, y, 0.38, CANTICLE_COLOR));
+        }
+
         if self.encounter_phase == EncounterPhase::BossFight {
             if let Some(boss) = self.boss.as_mut() {
                 boss.hp = boss.hp.saturating_sub(CANTICLE_BOSS_DAMAGE);
-                self.bursts.push(Burst::new(boss.x, boss.y, 0.52, CANTICLE_COLOR));
+                self.bursts
+                    .push(Burst::new(boss.x, boss.y, 0.52, CANTICLE_COLOR));
             }
         }
-        self.bursts.push(Burst::new(self.player_x, self.player_y, CANTICLE_DURATION, CANTICLE_COLOR));
+
+        self.bursts.push(Burst::new(
+            self.player_x,
+            self.player_y,
+            CANTICLE_DURATION,
+            CANTICLE_COLOR,
+        ));
         let _ = self.sounds.play(frame.audio, CANTICLE_SOUND);
         self.finish_boss_if_destroyed(frame);
     }
 
     fn finish_boss_if_destroyed(&mut self, frame: &mut Frame<'_>) {
         let destroyed = self.boss.is_some_and(|boss| boss.hp == 0);
-        if !destroyed || self.encounter_phase == EncounterPhase::Cleared { return; }
+        if !destroyed || self.encounter_phase == EncounterPhase::Cleared {
+            return;
+        }
+
         if let Some(boss) = self.boss {
-            for (dx, dy) in [(-22.0, -10.0), (22.0, -10.0), (-15.0, 12.0), (15.0, 12.0), (0.0, -4.0), (0.0, 14.0)] {
-                self.bursts.push(Burst::new(boss.x + dx, boss.y + dy, 0.66, CANTICLE_COLOR));
+            for (dx, dy) in [
+                (-22.0, -10.0),
+                (22.0, -10.0),
+                (-15.0, 12.0),
+                (15.0, 12.0),
+                (0.0, -4.0),
+                (0.0, 14.0),
+            ] {
+                self.bursts
+                    .push(Burst::new(boss.x + dx, boss.y + dy, 0.66, CANTICLE_COLOR));
             }
         }
         self.enemy_bullets.clear();
@@ -588,52 +1050,119 @@ impl VoidCanticleGame {
     }
 
     fn resolve_player_hits(&mut self, frame: &mut Frame<'_>) {
-        if self.invulnerability > 0.0 || self.game_over { return; }
-        let bullet_hit = self.enemy_bullets.iter().any(|bullet| point_near(bullet.x, bullet.y, self.player_x, self.player_y, 4.0));
-        let body_hit = self.enemies.iter().any(|enemy| point_near(enemy.x, enemy.y, self.player_x, self.player_y, 8.0));
-        if !bullet_hit && !body_hit { return; }
+        if self.invulnerability > 0.0 || self.game_over {
+            return;
+        }
+
+        let bullet_hit = self
+            .enemy_bullets
+            .iter()
+            .any(|bullet| point_near(bullet.x, bullet.y, self.player_x, self.player_y, 4.0));
+        let body_hit = self
+            .enemies
+            .iter()
+            .any(|enemy| point_near(enemy.x, enemy.y, self.player_x, self.player_y, 8.0));
+
+        if !bullet_hit && !body_hit {
+            return;
+        }
+
         self.lives = self.lives.saturating_sub(1);
         self.invulnerability = PLAYER_INVULNERABILITY;
         self.enemy_bullets.clear();
-        self.bursts.push(Burst::new(self.player_x, self.player_y, 0.42, DANGER));
+        self.bursts
+            .push(Burst::new(self.player_x, self.player_y, 0.42, DANGER));
         let _ = self.sounds.play(frame.audio, PLAYER_HIT_SOUND);
-        if self.lives == 0 { self.game_over = true; }
+
+        if self.lives == 0 {
+            self.game_over = true;
+        }
     }
 
     fn update_feedback(&mut self, dt: f32) {
+        self.animation_time += dt;
         self.invulnerability = (self.invulnerability - dt).max(0.0);
         self.canticle_timer = (self.canticle_timer - dt).max(0.0);
-        for burst in &mut self.bursts { burst.remaining = (burst.remaining - dt).max(0.0); }
+        for burst in &mut self.bursts {
+            burst.remaining = (burst.remaining - dt).max(0.0);
+        }
         self.bursts.retain(|burst| burst.remaining > 0.0);
     }
 
     fn render(&self, framebuffer: &mut Framebuffer, focused: bool) {
-        framebuffer.clear(if self.canticle_timer > 0.46 { BG_CANTICLE } else { BG });
+        framebuffer.clear(if self.canticle_timer > 0.46 {
+            BG_CANTICLE
+        } else {
+            BG
+        });
         render_grave_orbit_background(framebuffer, self.scroll);
+
         for cinder in &self.cinders {
             let x = cinder.x.round() as i32;
             let y = cinder.y.round() as i32;
             framebuffer.fill_circle(x, y, 2, CINDER);
             framebuffer.draw(x, y - 4, CANTICLE_COLOR);
         }
-        for enemy in &self.enemies { render_carrion_drone(framebuffer, *enemy); }
+
+        for enemy in &self.enemies {
+            self.visuals.render_carrion(framebuffer, *enemy);
+        }
+
         if let Some(boss) = self.boss {
-            if self.encounter_phase != EncounterPhase::Cleared { render_bellkeeper(framebuffer, boss); }
+            if self.encounter_phase != EncounterPhase::Cleared {
+                self.visuals.render_bellkeeper(framebuffer, boss);
+            }
         }
+
         for bullet in &self.player_bullets {
-            framebuffer.fill_rect(bullet.x.round() as i32 - 1, bullet.y.round() as i32 - 4, 2, 8, SHOT);
+            framebuffer.fill_rect(
+                bullet.x.round() as i32 - 1,
+                bullet.y.round() as i32 - 4,
+                2,
+                8,
+                SHOT,
+            );
         }
+
         for bullet in &self.enemy_bullets {
-            let color = if bullet.alternate { ENEMY_SHOT_ALT } else { ENEMY_SHOT };
-            framebuffer.fill_circle(bullet.x.round() as i32, bullet.y.round() as i32, 2, color);
+            let color = if bullet.alternate {
+                ENEMY_SHOT_ALT
+            } else {
+                ENEMY_SHOT
+            };
+            framebuffer.fill_circle(
+                bullet.x.round() as i32,
+                bullet.y.round() as i32,
+                2,
+                color,
+            );
         }
-        for burst in &self.bursts { render_burst(framebuffer, *burst); }
-        render_pilgrim(framebuffer, self.player_x.round() as i32, self.player_y.round() as i32, focused, self.invulnerability);
+
+        for burst in &self.bursts {
+            render_burst(framebuffer, *burst);
+        }
+
+        self.visuals.render_pilgrim(
+            framebuffer,
+            self.player_x.round() as i32,
+            self.player_y.round() as i32,
+            focused,
+            self.invulnerability,
+            self.animation_time,
+        );
+
         if self.canticle_timer > 0.0 {
-            render_canticle(framebuffer, self.player_x.round() as i32, self.player_y.round() as i32, self.canticle_timer);
+            render_canticle(
+                framebuffer,
+                self.player_x.round() as i32,
+                self.player_y.round() as i32,
+                self.canticle_timer,
+            );
         }
+
         self.render_hud(framebuffer);
         self.render_encounter_overlay(framebuffer);
+
         if self.game_over {
             framebuffer.fill_rect(20, 132, 140, 48, Pixel::rgb(12, 10, 18));
             framebuffer.draw_rect(20, 132, 140, 48, DANGER);
@@ -644,24 +1173,34 @@ impl VoidCanticleGame {
 
     fn render_hud(&self, framebuffer: &mut Framebuffer) {
         framebuffer.draw_text(4, 4, "VOID CANTICLE", ACCENT);
-        framebuffer.draw_text(4, 15, "GRAVE ORBIT / VC0.5", TEXT);
+        framebuffer.draw_text(4, 15, &format!("GRAVE ORBIT / {GAME_VERSION}"), TEXT);
         framebuffer.draw_text(4, 27, &format!("LIVES {}", self.lives), TEXT);
+        framebuffer.draw_text(82, 27, &format!("BUILD {BUILD_ID}"), WRECK_LIGHT);
         framebuffer.draw_text(126, 4, &format!("{}", self.score), PILGRIM_CORE);
+
         if let Some(boss) = self.boss {
             if self.encounter_phase == EncounterPhase::BossFight {
                 framebuffer.draw_text(4, 39, "BELLKEEPER", BELL_LIGHT);
                 framebuffer.fill_rect(66, 40, 106, 5, CORE_BG);
                 let width = 106_u32.saturating_mul(boss.hp) / BELLKEEPER_MAX_HP;
                 framebuffer.fill_rect(66, 40, width, 5, DANGER);
-                let phase = match boss.phase() { BellPhase::Procession => "TOLL I", BellPhase::Resonance => "TOLL II", BellPhase::FinalToll => "FINAL TOLL" };
+                let phase = match boss.phase() {
+                    BellPhase::Procession => "TOLL I",
+                    BellPhase::Resonance => "TOLL II",
+                    BellPhase::FinalToll => "FINAL TOLL",
+                };
                 framebuffer.draw_text(4, 49, phase, WRECK_LIGHT);
             }
         }
+
         framebuffer.draw_text(4, 279, "CORE", TEXT);
         framebuffer.fill_rect(34, 280, 138, 6, CORE_BG);
         let charge_width = 138_u32.saturating_mul(self.core_charge) / CORE_MAX;
         framebuffer.fill_rect(34, 280, charge_width, 6, CINDER);
-        if self.core_charge >= CORE_MAX { framebuffer.draw_text(112, 269, "READY", CANTICLE_COLOR); }
+        if self.core_charge >= CORE_MAX {
+            framebuffer.draw_text(112, 269, "READY", CANTICLE_COLOR);
+        }
+
         framebuffer.draw_text(4, 294, "SPACE FIRE", TEXT);
         framebuffer.draw_text(76, 294, "SHIFT FOCUS", TEXT);
         framebuffer.draw_text(4, 305, "X CANTICLE", TEXT);
@@ -694,14 +1233,19 @@ impl VoidCanticleGame {
 impl Game for VoidCanticleGame {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.controls.update(frame.input);
+
         if self.game_over {
-            if self.controls.action(FIRE).pressed() { self.reset_run(); }
+            if self.controls.action(FIRE).pressed() {
+                self.reset_run();
+            }
             self.render(frame.framebuffer, false);
             return GameResult::Continue;
         }
+
         let dt = frame.delta_time.as_secs_f32().min(0.05);
         let focused = self.focus_held(frame);
         let canticle_pressed = self.canticle_pressed(frame);
+
         self.scroll = (self.scroll + 34.0 * dt) % FRAMEBUFFER_HEIGHT as f32;
         self.update_feedback(dt);
         self.update_player(dt, focused);
@@ -711,7 +1255,11 @@ impl Game for VoidCanticleGame {
         self.update_projectiles(dt);
         self.resolve_player_shots(frame);
         self.update_cinders(dt, frame);
-        if canticle_pressed { self.trigger_canticle(frame); }
+
+        if canticle_pressed {
+            self.trigger_canticle(frame);
+        }
+
         self.resolve_player_hits(frame);
         self.render(frame.framebuffer, focused);
         GameResult::Continue
@@ -719,42 +1267,137 @@ impl Game for VoidCanticleGame {
 }
 
 fn bell_phase_for_hp(hp: u32) -> BellPhase {
-    if hp > BELLKEEPER_MAX_HP * 2 / 3 { BellPhase::Procession }
-    else if hp > BELLKEEPER_MAX_HP / 3 { BellPhase::Resonance }
-    else { BellPhase::FinalToll }
-}
-
-fn spawn_pattern(output: &mut Vec<Bullet>, pattern: ShotPattern, x: f32, y: f32, target_x: f32, target_y: f32) {
-    let (count, spread) = match pattern { ShotPattern::Aimed => (1, 0.0), ShotPattern::Fan3 => (3, 0.44), ShotPattern::Fan5 => (5, 0.76) };
-    spawn_fan(output, x, y, target_x, target_y, count, spread, ENEMY_SHOT_SPEED);
-}
-
-fn spawn_fan(output: &mut Vec<Bullet>, x: f32, y: f32, target_x: f32, target_y: f32, count: usize, spread: f32, speed: f32) {
-    let base_angle = (target_y - y).atan2(target_x - x);
-    let center = (count.saturating_sub(1)) as f32 / 2.0;
-    let step = if count > 1 { spread / (count - 1) as f32 } else { 0.0 };
-    for index in 0..count {
-        let offset = (index as f32 - center) * step;
-        let angle = base_angle + offset;
-        output.push(Bullet { x, y, vx: angle.cos() * speed, vy: angle.sin() * speed, alive: true, alternate: index % 2 == 1 });
+    if hp > BELLKEEPER_MAX_HP * 2 / 3 {
+        BellPhase::Procession
+    } else if hp > BELLKEEPER_MAX_HP / 3 {
+        BellPhase::Resonance
+    } else {
+        BellPhase::FinalToll
     }
 }
 
-fn spawn_ring(output: &mut Vec<Bullet>, x: f32, y: f32, count: usize, rotation: f32, speed: f32) {
+fn spawn_pattern(
+    output: &mut Vec<Bullet>,
+    pattern: ShotPattern,
+    x: f32,
+    y: f32,
+    target_x: f32,
+    target_y: f32,
+) {
+    let (count, spread) = match pattern {
+        ShotPattern::Aimed => (1, 0.0),
+        ShotPattern::Fan3 => (3, 0.44),
+        ShotPattern::Fan5 => (5, 0.76),
+    };
+    spawn_fan(
+        output,
+        x,
+        y,
+        target_x,
+        target_y,
+        count,
+        spread,
+        ENEMY_SHOT_SPEED,
+    );
+}
+
+fn spawn_fan(
+    output: &mut Vec<Bullet>,
+    x: f32,
+    y: f32,
+    target_x: f32,
+    target_y: f32,
+    count: usize,
+    spread: f32,
+    speed: f32,
+) {
+    let base_angle = (target_y - y).atan2(target_x - x);
+    let center = (count.saturating_sub(1)) as f32 / 2.0;
+    let step = if count > 1 {
+        spread / (count - 1) as f32
+    } else {
+        0.0
+    };
+    for index in 0..count {
+        let offset = (index as f32 - center) * step;
+        let angle = base_angle + offset;
+        output.push(Bullet {
+            x,
+            y,
+            vx: angle.cos() * speed,
+            vy: angle.sin() * speed,
+            alive: true,
+            alternate: index % 2 == 1,
+        });
+    }
+}
+
+fn spawn_ring(
+    output: &mut Vec<Bullet>,
+    x: f32,
+    y: f32,
+    count: usize,
+    rotation: f32,
+    speed: f32,
+) {
     for index in 0..count {
         let angle = rotation + index as f32 * std::f32::consts::TAU / count as f32;
-        output.push(Bullet { x, y, vx: angle.cos() * speed, vy: angle.sin() * speed, alive: true, alternate: index % 2 == 1 });
+        output.push(Bullet {
+            x,
+            y,
+            vx: angle.cos() * speed,
+            vy: angle.sin() * speed,
+            alive: true,
+            alternate: index % 2 == 1,
+        });
     }
 }
 
 fn curved_x(base_x: f32, age: f32, phase: f32, amplitude: f32) -> f32 {
-    (base_x + (age * 2.05 + phase).sin() * amplitude).clamp(10.0, FRAMEBUFFER_WIDTH as f32 - 10.0)
+    (base_x + (age * 2.05 + phase).sin() * amplitude)
+        .clamp(10.0, FRAMEBUFFER_WIDTH as f32 - 10.0)
 }
 
 fn point_near(ax: f32, ay: f32, bx: f32, by: f32, radius: f32) -> bool {
     let dx = ax - bx;
     let dy = ay - by;
     dx * dx + dy * dy <= radius * radius
+}
+
+fn animation_frame(time: f32, frames_per_second: f32, frame_count: usize) -> usize {
+    if frame_count == 0 {
+        return 0;
+    }
+    ((time.max(0.0) * frames_per_second).floor() as usize) % frame_count
+}
+
+fn sprite_from_ascii(rows: &[&str], palette: &[(char, Pixel)]) -> Sprite {
+    let width = rows
+        .first()
+        .map(|row| row.chars().count())
+        .unwrap_or_default();
+    assert!(
+        rows.iter().all(|row| row.chars().count() == width),
+        "Void Canticle sprite rows must have equal width"
+    );
+
+    let mut pixels = Vec::with_capacity(width * rows.len());
+    for row in rows {
+        for cell in row.chars() {
+            if cell == '.' || cell == ' ' {
+                pixels.push(Pixel::TRANSPARENT);
+                continue;
+            }
+            let color = palette
+                .iter()
+                .find_map(|(key, color)| (*key == cell).then_some(*color))
+                .unwrap_or_else(|| panic!("unknown Void Canticle sprite palette key: {cell}"));
+            pixels.push(color);
+        }
+    }
+
+    Sprite::new(width as u32, rows.len() as u32, pixels)
+        .expect("Void Canticle sprite dimensions must match authored pixels")
 }
 
 fn wrapped_y(base: f32, scroll: f32, speed: f32, period: f32) -> i32 {
@@ -774,11 +1417,21 @@ fn render_nebula(framebuffer: &mut Framebuffer, scroll: f32) {
     let y1 = wrapped_y(230.0, scroll, 0.13, 416.0);
     framebuffer.fill_circle(-18, y0, 74, NEBULA);
     framebuffer.fill_circle(194, y1, 82, NEBULA);
-    framebuffer.draw_circle(85, wrapped_y(145.0, scroll, 0.09, 416.0), 58, WRECK_FAR);
+    framebuffer.draw_circle(
+        85,
+        wrapped_y(145.0, scroll, 0.09, 416.0),
+        58,
+        WRECK_FAR,
+    );
 }
 
 fn render_far_wrecks(framebuffer: &mut Framebuffer, scroll: f32) {
-    render_cross_satellite(framebuffer, 28, wrapped_y(82.0, scroll, 0.24, 408.0), WRECK_FAR);
+    render_cross_satellite(
+        framebuffer,
+        28,
+        wrapped_y(82.0, scroll, 0.24, 408.0),
+        WRECK_FAR,
+    );
     let ring_y = wrapped_y(274.0, scroll, 0.20, 408.0);
     framebuffer.draw_circle(146, ring_y, 35, WRECK_FAR);
     framebuffer.draw_circle(146, ring_y, 29, WRECK_FAR);
@@ -786,12 +1439,27 @@ fn render_far_wrecks(framebuffer: &mut Framebuffer, scroll: f32) {
 }
 
 fn render_mid_wrecks(framebuffer: &mut Framebuffer, scroll: f32) {
-    render_broken_hull(framebuffer, 138, wrapped_y(168.0, scroll, 0.46, 430.0), WRECK_MID);
-    render_reliquary_wreck(framebuffer, 49, wrapped_y(360.0, scroll, 0.39, 430.0), WRECK_MID);
+    render_broken_hull(
+        framebuffer,
+        138,
+        wrapped_y(168.0, scroll, 0.46, 430.0),
+        WRECK_MID,
+    );
+    render_reliquary_wreck(
+        framebuffer,
+        49,
+        wrapped_y(360.0, scroll, 0.39, 430.0),
+        WRECK_MID,
+    );
 }
 
 fn render_near_wrecks(framebuffer: &mut Framebuffer, scroll: f32) {
-    render_broken_hull(framebuffer, 12, wrapped_y(42.0, scroll, 0.78, 470.0), WRECK_NEAR);
+    render_broken_hull(
+        framebuffer,
+        12,
+        wrapped_y(42.0, scroll, 0.78, 470.0),
+        WRECK_NEAR,
+    );
     let mast_y = wrapped_y(275.0, scroll, 0.70, 470.0);
     framebuffer.fill_rect(160, mast_y - 32, 5, 65, WRECK_NEAR);
     framebuffer.fill_rect(147, mast_y - 3, 30, 5, WRECK_NEAR);
@@ -832,64 +1500,13 @@ fn render_starfield(framebuffer: &mut Framebuffer, scroll: f32) {
         let speed = if index % 3 == 0 { 0.52 } else { 1.0 };
         let y = (base_y + (scroll * speed).round() as i32).rem_euclid(FRAMEBUFFER_HEIGHT as i32);
         let bright = index % 7 == 0;
-        framebuffer.fill_rect(x, y, if bright { 2 } else { 1 }, if bright { 2 } else { 1 }, if bright { STAR_BRIGHT } else { STAR_DIM });
-    }
-}
-
-fn render_pilgrim(framebuffer: &mut Framebuffer, x: i32, y: i32, focused: bool, invulnerability: f32) {
-    let visible = invulnerability <= 0.0 || ((invulnerability * 16.0) as i32 % 2 == 0);
-    if !visible { return; }
-    framebuffer.fill_rect(x - 4, y - 10, 9, 1, PILGRIM);
-    framebuffer.fill_rect(x - 2, y - 8, 5, 3, PILGRIM);
-    framebuffer.fill_rect(x - 3, y - 5, 7, 8, PILGRIM);
-    framebuffer.fill_rect(x - 6, y - 3, 3, 5, PILGRIM);
-    framebuffer.fill_rect(x + 4, y - 3, 3, 5, PILGRIM);
-    framebuffer.fill_rect(x - 1, y - 3, 3, 4, PILGRIM_CORE);
-    framebuffer.fill_rect(x - 3, y + 3, 2, 4, PILGRIM);
-    framebuffer.fill_rect(x + 2, y + 3, 2, 4, PILGRIM);
-    if focused {
-        framebuffer.draw_circle(x, y - 1, 4, FOCUS_COLOR);
-        framebuffer.fill_circle(x, y - 1, 1, FOCUS_COLOR);
-    }
-}
-
-fn render_carrion_drone(framebuffer: &mut Framebuffer, enemy: CarrionDrone) {
-    let x = enemy.x.round() as i32;
-    let y = enemy.y.round() as i32;
-    framebuffer.fill_rect(x - 6, y - 3, 13, 6, ENEMY);
-    framebuffer.draw_line(x - 6, y - 2, x - 12, y - 7, ENEMY);
-    framebuffer.draw_line(x + 6, y - 2, x + 12, y - 7, ENEMY);
-    framebuffer.draw_line(x - 6, y + 2, x - 11, y + 6, ENEMY);
-    framebuffer.draw_line(x + 6, y + 2, x + 11, y + 6, ENEMY);
-    framebuffer.fill_rect(x - 1, y - 1, 3, 3, ENEMY_EYE);
-}
-
-fn render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper) {
-    let x = boss.x.round() as i32;
-    let y = boss.y.round() as i32;
-    let pulse = ((boss.age * 5.0) as i32 & 1) == 0;
-    let glow = if pulse { BELL_LIGHT } else { BELL_METAL };
-    let clapper = y + 14 + (boss.age * 5.0).sin().round() as i32 * 2;
-    framebuffer.draw_circle(x, y - 2, 28, BELL_DARK);
-    framebuffer.draw_line(x - 22, y - 8, x - 34, y - 17, BELL_METAL);
-    framebuffer.draw_line(x + 22, y - 8, x + 34, y - 17, BELL_METAL);
-    framebuffer.draw_line(x - 34, y - 17, x - 38, y + 3, BELL_METAL);
-    framebuffer.draw_line(x + 34, y - 17, x + 38, y + 3, BELL_METAL);
-    framebuffer.draw_circle(x - 38, y + 5, 4, glow);
-    framebuffer.draw_circle(x + 38, y + 5, 4, glow);
-    framebuffer.fill_rect(x - 12, y - 17, 25, 5, BELL_METAL);
-    framebuffer.fill_rect(x - 16, y - 12, 33, 18, BELL_METAL);
-    framebuffer.fill_rect(x - 20, y + 6, 41, 6, glow);
-    framebuffer.draw_rect(x - 16, y - 12, 33, 18, BELL_LIGHT);
-    framebuffer.fill_rect(x - 2, clapper, 5, 8, DANGER);
-    framebuffer.fill_circle(x, y - 4, 3, ENEMY_EYE);
-    match boss.phase() {
-        BellPhase::Procession => {}
-        BellPhase::Resonance => framebuffer.draw_circle(x, y - 3, 23, BELL_LIGHT),
-        BellPhase::FinalToll => {
-            framebuffer.draw_circle(x, y - 3, 23, DANGER);
-            framebuffer.draw_circle(x, y - 3, 33, BELL_LIGHT);
-        }
+        framebuffer.fill_rect(
+            x,
+            y,
+            if bright { 2 } else { 1 },
+            if bright { 2 } else { 1 },
+            if bright { STAR_BRIGHT } else { STAR_DIM },
+        );
     }
 }
 
@@ -898,9 +1515,20 @@ fn render_burst(framebuffer: &mut Framebuffer, burst: Burst) {
     let radius = (2.0 + progress * 11.0).round() as i32;
     let x = burst.x.round() as i32;
     let y = burst.y.round() as i32;
-    let points = [(-radius, 0), (radius, 0), (0, -radius), (0, radius), (-radius, -radius), (radius, -radius), (-radius, radius), (radius, radius)];
+    let points = [
+        (-radius, 0),
+        (radius, 0),
+        (0, -radius),
+        (0, radius),
+        (-radius, -radius),
+        (radius, -radius),
+        (-radius, radius),
+        (radius, radius),
+    ];
     framebuffer.fill_rect(x - 1, y - 1, 3, 3, burst.color);
-    for (dx, dy) in points { framebuffer.fill_rect(x + dx, y + dy, 2, 2, burst.color); }
+    for (dx, dy) in points {
+        framebuffer.fill_rect(x + dx, y + dy, 2, 2, burst.color);
+    }
 }
 
 fn render_canticle(framebuffer: &mut Framebuffer, x: i32, y: i32, remaining: f32) {
@@ -908,13 +1536,16 @@ fn render_canticle(framebuffer: &mut Framebuffer, x: i32, y: i32, remaining: f32
     let radius = (8.0 + progress * 190.0).round() as u32;
     framebuffer.draw_circle(x, y, radius, CANTICLE_COLOR);
     framebuffer.draw_circle(x, y, radius.saturating_add(5), PILGRIM_CORE);
-    if progress < 0.30 { framebuffer.fill_circle(x, y, 7, CANTICLE_COLOR); }
+    if progress < 0.30 {
+        framebuffer.fill_circle(x, y, 7, CANTICLE_COLOR);
+    }
 }
 
 fn synthesize_chirp(start_hz: f32, end_hz: f32, duration: f32, volume: f32) -> Vec<u8> {
     let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
     let mut samples = Vec::with_capacity(sample_count);
     let mut phase = 0.0_f32;
+
     for index in 0..sample_count {
         let t = index as f32 / AUDIO_SAMPLE_RATE as f32;
         let progress = (t / duration).clamp(0.0, 1.0);
@@ -924,12 +1555,15 @@ fn synthesize_chirp(start_hz: f32, end_hz: f32, duration: f32, volume: f32) -> V
         let envelope = (1.0 - progress).powi(2);
         samples.push((square * envelope * volume * i16::MAX as f32) as i16);
     }
-    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples).expect("Void Canticle procedural audio should use supported PCM")
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Void Canticle procedural audio should use supported PCM")
 }
 
 fn synthesize_noise_burst(duration: f32, volume: f32, mut seed: u32) -> Vec<u8> {
     let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
     let mut samples = Vec::with_capacity(sample_count);
+
     for index in 0..sample_count {
         let progress = index as f32 / sample_count.max(1) as f32;
         seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
@@ -937,6 +1571,7 @@ fn synthesize_noise_burst(duration: f32, volume: f32, mut seed: u32) -> Vec<u8> 
         let envelope = (1.0 - progress).powi(2);
         samples.push((noise * envelope * volume * i16::MAX as f32) as i16);
     }
+
     pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples).expect("Void Canticle noise should use supported PCM")
 }
 
@@ -946,6 +1581,7 @@ fn synthesize_canticle_sound() -> Vec<u8> {
     let mut samples = Vec::with_capacity(sample_count);
     let mut low_phase = 0.0_f32;
     let mut high_phase = 0.0_f32;
+
     for index in 0..sample_count {
         let progress = index as f32 / sample_count.max(1) as f32;
         low_phase += (72.0 + progress * 54.0) / AUDIO_SAMPLE_RATE as f32;
@@ -957,13 +1593,16 @@ fn synthesize_canticle_sound() -> Vec<u8> {
         let sample = (low * 0.70 + high * 0.30) * attack * release * 0.52;
         samples.push((sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
     }
-    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples).expect("Void Canticle Canticle audio should use supported PCM")
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Void Canticle Canticle audio should use supported PCM")
 }
 
 fn synthesize_bell_sound() -> Vec<u8> {
     let duration = 0.78_f32;
     let sample_count = (AUDIO_SAMPLE_RATE as f32 * duration) as usize;
     let mut samples = Vec::with_capacity(sample_count);
+
     for index in 0..sample_count {
         let t = index as f32 / AUDIO_SAMPLE_RATE as f32;
         let progress = (t / duration).clamp(0.0, 1.0);
@@ -975,11 +1614,17 @@ fn synthesize_bell_sound() -> Vec<u8> {
         let sample = (fundamental + partial + high) * strike.max(tail * 0.55) * 0.40;
         samples.push((sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16);
     }
-    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples).expect("Void Canticle bell audio should use supported PCM")
+
+    pcm16_mono_wav(AUDIO_SAMPLE_RATE, &samples)
+        .expect("Void Canticle bell audio should use supported PCM")
 }
 
 fn window_size_for(is_wsl: bool) -> (u32, u32) {
-    if is_wsl { (960, 612) } else { (FRAMEBUFFER_WIDTH * 3, FRAMEBUFFER_HEIGHT * 3) }
+    if is_wsl {
+        (960, 612)
+    } else {
+        (FRAMEBUFFER_WIDTH * 3, FRAMEBUFFER_HEIGHT * 3)
+    }
 }
 
 fn window_size() -> (u32, u32) {
@@ -988,9 +1633,22 @@ fn window_size() -> (u32, u32) {
 
 fn main() -> Result<(), EngineError> {
     let (window_width, window_height) = window_size();
+
     run(
-        EngineConfig { title: "Void Canticle - Gotoo Pixel Engine".into(), framebuffer_width: FRAMEBUFFER_WIDTH, framebuffer_height: FRAMEBUFFER_HEIGHT, window_width, window_height },
-        PauseGame::new(VoidCanticleGame::new(), PauseConfig::new(Size { width: FRAMEBUFFER_WIDTH, height: FRAMEBUFFER_HEIGHT })),
+        EngineConfig {
+            title: format!("Void Canticle {GAME_VERSION} [{BUILD_ID}] - Gotoo Pixel Engine"),
+            framebuffer_width: FRAMEBUFFER_WIDTH,
+            framebuffer_height: FRAMEBUFFER_HEIGHT,
+            window_width,
+            window_height,
+        },
+        PauseGame::new(
+            VoidCanticleGame::new(),
+            PauseConfig::new(Size {
+                width: FRAMEBUFFER_WIDTH,
+                height: FRAMEBUFFER_HEIGHT,
+            }),
+        ),
     )
 }
 
@@ -1001,7 +1659,14 @@ mod tests {
     #[test]
     fn aimed_pattern_points_toward_target() {
         let mut bullets = Vec::new();
-        spawn_pattern(&mut bullets, ShotPattern::Aimed, 50.0, 50.0, 50.0, 150.0);
+        spawn_pattern(
+            &mut bullets,
+            ShotPattern::Aimed,
+            50.0,
+            50.0,
+            50.0,
+            150.0,
+        );
         assert_eq!(bullets.len(), 1);
         assert!(bullets[0].vy > 0.0);
         assert!(bullets[0].vx.abs() < 0.001);
@@ -1020,7 +1685,16 @@ mod tests {
     #[test]
     fn generic_fan_has_requested_density() {
         let mut bullets = Vec::new();
-        spawn_fan(&mut bullets, 90.0, 64.0, 90.0, 240.0, 7, 0.8, 70.0);
+        spawn_fan(
+            &mut bullets,
+            90.0,
+            64.0,
+            90.0,
+            240.0,
+            7,
+            0.8,
+            70.0,
+        );
         assert_eq!(bullets.len(), 7);
     }
 
@@ -1033,9 +1707,18 @@ mod tests {
 
     #[test]
     fn bellkeeper_phases_follow_health_thirds() {
-        assert_eq!(bell_phase_for_hp(BELLKEEPER_MAX_HP), BellPhase::Procession);
-        assert_eq!(bell_phase_for_hp(BELLKEEPER_MAX_HP * 2 / 3), BellPhase::Resonance);
-        assert_eq!(bell_phase_for_hp(BELLKEEPER_MAX_HP / 3), BellPhase::FinalToll);
+        assert_eq!(
+            bell_phase_for_hp(BELLKEEPER_MAX_HP),
+            BellPhase::Procession
+        );
+        assert_eq!(
+            bell_phase_for_hp(BELLKEEPER_MAX_HP * 2 / 3),
+            BellPhase::Resonance
+        );
+        assert_eq!(
+            bell_phase_for_hp(BELLKEEPER_MAX_HP / 3),
+            BellPhase::FinalToll
+        );
     }
 
     #[test]
@@ -1045,17 +1728,58 @@ mod tests {
     }
 
     #[test]
-    fn focus_speed_is_slower_than_normal_speed() { assert!(FOCUS_SPEED < PLAYER_SPEED); }
+    fn sprite_frames_have_stable_dimensions() {
+        let visuals = Visuals::new();
+        assert!(visuals
+            .pilgrim
+            .iter()
+            .all(|sprite| sprite.width() == 15 && sprite.height() == 19));
+        assert!(visuals
+            .carrion
+            .iter()
+            .all(|sprite| sprite.width() == 21 && sprite.height() == 11));
+        assert!(visuals
+            .bellkeeper
+            .iter()
+            .all(|sprite| sprite.width() == 31 && sprite.height() == 20));
+    }
 
     #[test]
-    fn five_cinders_fill_the_core() { assert_eq!(CINDER_CHARGE * 5, CORE_MAX); }
+    fn animation_frame_cycles() {
+        assert_eq!(animation_frame(0.0, 8.0, 2), 0);
+        assert_eq!(animation_frame(0.13, 8.0, 2), 1);
+        assert_eq!(animation_frame(0.26, 8.0, 2), 0);
+    }
 
     #[test]
-    fn canticle_does_not_one_shot_full_health_boss() { assert!(CANTICLE_BOSS_DAMAGE < BELLKEEPER_MAX_HP); }
+    fn build_metadata_is_available() {
+        assert!(!GAME_VERSION.is_empty());
+        assert!(!BUILD_ID.is_empty());
+    }
+
+    #[test]
+    fn focus_speed_is_slower_than_normal_speed() {
+        assert!(FOCUS_SPEED < PLAYER_SPEED);
+    }
+
+    #[test]
+    fn five_cinders_fill_the_core() {
+        assert_eq!(CINDER_CHARGE * 5, CORE_MAX);
+    }
+
+    #[test]
+    fn canticle_does_not_one_shot_full_health_boss() {
+        assert!(CANTICLE_BOSS_DAMAGE < BELLKEEPER_MAX_HP);
+    }
 
     #[test]
     fn procedural_sounds_are_pcm_wav() {
-        for wav in [synthesize_chirp(900.0, 500.0, 0.05, 0.1), synthesize_noise_burst(0.1, 0.2, 42), synthesize_canticle_sound(), synthesize_bell_sound()] {
+        for wav in [
+            synthesize_chirp(900.0, 500.0, 0.05, 0.1),
+            synthesize_noise_burst(0.1, 0.2, 42),
+            synthesize_canticle_sound(),
+            synthesize_bell_sound(),
+        ] {
             assert_eq!(&wav[0..4], b"RIFF");
             assert_eq!(&wav[8..12], b"WAVE");
         }
@@ -1064,6 +1788,9 @@ mod tests {
     #[test]
     fn wsl_uses_known_stable_surface_size() {
         assert_eq!(window_size_for(true), (960, 612));
-        assert_eq!(window_size_for(false), (FRAMEBUFFER_WIDTH * 3, FRAMEBUFFER_HEIGHT * 3));
+        assert_eq!(
+            window_size_for(false),
+            (FRAMEBUFFER_WIDTH * 3, FRAMEBUFFER_HEIGHT * 3)
+        );
     }
 }
