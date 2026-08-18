@@ -321,7 +321,7 @@ enum IsoMenuCommand {
     Quit,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct IsoFeedbackConfig {
     default: IsoFeedbackPreset,
     events: Vec<IsoFeedbackEvent>,
@@ -531,13 +531,13 @@ impl IsoMenuConfig {
         }
         for screen in &screens {
             for item in &screen.items {
-                if let IsoMenuAction::Submenu(target) = &item.action {
-                    if !screens.iter().any(|screen| &screen.id == target) {
-                        return Err(format!(
-                            "SBH ISO menu item '{}' targets unknown submenu '{}'",
-                            item.label, target
-                        ));
-                    }
+                if let IsoMenuAction::Submenu(target) = &item.action
+                    && !screens.iter().any(|screen| &screen.id == target)
+                {
+                    return Err(format!(
+                        "SBH ISO menu item '{}' targets unknown submenu '{}'",
+                        item.label, target
+                    ));
                 }
             }
         }
@@ -589,15 +589,6 @@ impl IsoMenuStyle {
                 .unwrap_or(base.item_scale)
                 .max(1),
         })
-    }
-}
-
-impl Default for IsoFeedbackConfig {
-    fn default() -> Self {
-        Self {
-            default: IsoFeedbackPreset::default(),
-            events: Vec::new(),
-        }
     }
 }
 
