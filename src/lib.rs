@@ -1,5 +1,7 @@
 mod audio;
 mod audio_wav;
+#[cfg(not(target_arch = "wasm32"))]
+mod capture_mirror;
 mod control;
 pub mod framebuffer;
 mod gamepad;
