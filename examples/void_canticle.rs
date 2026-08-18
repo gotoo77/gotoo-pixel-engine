@@ -119,8 +119,10 @@ impl VoidCanticleGame {
             dy *= INV_SQRT_2;
         }
 
-        self.player_x = (self.player_x + dx * PLAYER_SPEED * dt).clamp(8.0, FRAMEBUFFER_WIDTH as f32 - 8.0);
-        self.player_y = (self.player_y + dy * PLAYER_SPEED * dt).clamp(28.0, FRAMEBUFFER_HEIGHT as f32 - 10.0);
+        self.player_x = (self.player_x + dx * PLAYER_SPEED * dt)
+            .clamp(8.0, FRAMEBUFFER_WIDTH as f32 - 8.0);
+        self.player_y = (self.player_y + dy * PLAYER_SPEED * dt)
+            .clamp(28.0, FRAMEBUFFER_HEIGHT as f32 - 10.0);
     }
 
     fn update_fire(&mut self, dt: f32, frame: &mut Frame<'_>) {
@@ -165,7 +167,11 @@ impl VoidCanticleGame {
             self.score = self.score.saturating_add(1);
             let phase = self.score as f32 * 0.91;
             self.target.x = 24.0 + phase.sin().abs() * (FRAMEBUFFER_WIDTH as f32 - 48.0);
-            self.target.vx = if self.score.is_multiple_of(2) { 42.0 } else { -42.0 };
+            self.target.vx = if self.score.is_multiple_of(2) {
+                42.0
+            } else {
+                -42.0
+            };
             let _ = self.sounds.play(frame.audio, HIT_SOUND);
         }
     }
@@ -176,10 +182,20 @@ impl VoidCanticleGame {
         render_target(framebuffer, self.target);
 
         for bullet in &self.bullets {
-            framebuffer.fill_rect(bullet.x.round() as i32 - 1, bullet.y.round() as i32 - 3, 2, 6, SHOT);
+            framebuffer.fill_rect(
+                bullet.x.round() as i32 - 1,
+                bullet.y.round() as i32 - 3,
+                2,
+                6,
+                SHOT,
+            );
         }
 
-        render_pilgrim(framebuffer, self.player_x.round() as i32, self.player_y.round() as i32);
+        render_pilgrim(
+            framebuffer,
+            self.player_x.round() as i32,
+            self.player_y.round() as i32,
+        );
 
         framebuffer.draw_text(5, 5, "VOID CANTICLE", ACCENT);
         framebuffer.draw_text(5, 16, "VC0 / GRAVE ORBIT", TEXT);
@@ -218,7 +234,13 @@ fn render_starfield(framebuffer: &mut Framebuffer, scroll: f32) {
         let base_y = (index * 83 + 11) % FRAMEBUFFER_HEIGHT as i32;
         let y = (base_y + scroll.round() as i32).rem_euclid(FRAMEBUFFER_HEIGHT as i32);
         let bright = index % 7 == 0;
-        framebuffer.fill_rect(x, y, if bright { 2 } else { 1 }, if bright { 2 } else { 1 }, if bright { STAR_BRIGHT } else { STAR_DIM });
+        framebuffer.fill_rect(
+            x,
+            y,
+            if bright { 2 } else { 1 },
+            if bright { 2 } else { 1 },
+            if bright { STAR_BRIGHT } else { STAR_DIM },
+        );
     }
 }
 
@@ -271,14 +293,30 @@ fn synthesize_chirp(start_hz: f32, end_hz: f32, duration: f32, volume: f32) -> V
         .expect("Void Canticle procedural audio should use supported PCM")
 }
 
+fn window_size_for(is_wsl: bool) -> (u32, u32) {
+    if is_wsl {
+        // WSLg/Weston is known to crash for some surface sizes. 960x612 is
+        // documented as stable in docs/investigations/wslg-surface-present-stall.md.
+        (960, 612)
+    } else {
+        (FRAMEBUFFER_WIDTH * 3, FRAMEBUFFER_HEIGHT * 3)
+    }
+}
+
+fn window_size() -> (u32, u32) {
+    window_size_for(std::env::var_os("WSL_DISTRO_NAME").is_some())
+}
+
 fn main() -> Result<(), EngineError> {
+    let (window_width, window_height) = window_size();
+
     run(
         EngineConfig {
             title: "Void Canticle - Gotoo Pixel Engine".into(),
             framebuffer_width: FRAMEBUFFER_WIDTH,
             framebuffer_height: FRAMEBUFFER_HEIGHT,
-            window_width: FRAMEBUFFER_WIDTH * 3,
-            window_height: FRAMEBUFFER_HEIGHT * 3,
+            window_width,
+            window_height,
         },
         PauseGame::new(
             VoidCanticleGame::new(),
@@ -311,7 +349,13 @@ mod tests {
             y: 60.0,
             vx: 0.0,
         };
-        assert!(!bullet_hits_target(Bullet { x: 120.0, y: 60.0 }, target));
+        assert!(!bullet_hits_target(
+            Bullet {
+                x: 120.0,
+                y: 60.0,
+            },
+            target
+        ));
     }
 
     #[test]
@@ -320,5 +364,14 @@ mod tests {
             assert_eq!(&wav[0..4], b"RIFF");
             assert_eq!(&wav[8..12], b"WAVE");
         }
+    }
+
+    #[test]
+    fn wsl_uses_known_stable_surface_size() {
+        assert_eq!(window_size_for(true), (960, 612));
+        assert_eq!(
+            window_size_for(false),
+            (FRAMEBUFFER_WIDTH * 3, FRAMEBUFFER_HEIGHT * 3)
+        );
     }
 }
