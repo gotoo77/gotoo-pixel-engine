@@ -21,13 +21,19 @@ mod game {
                 pub(crate) mod v10 {
                     use super::*;
                     include!("void_canticle/v10_game.rs");
-                    include!("void_canticle/v11_game.rs");
+
+                    pub(crate) mod v11 {
+                        #![allow(clippy::assign_op_pattern)]
+
+                        use super::*;
+                        include!("void_canticle/v11_game.rs");
+                    }
                 }
             }
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::run_v11_with_obs_mirror;
+    pub(crate) use legacy_base::v07::v09::v10::v11::run_v11_with_obs_mirror;
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
