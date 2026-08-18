@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  apply-format-push:
+  fix-clippy-push:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -18,23 +18,26 @@ jobs:
           ref: agent/sbh-level-runtime-roundtrip
           fetch-depth: 0
 
-      - name: Install Rust formatting tool
-        run: rustup component add rustfmt
-
-      - name: Apply focused SBH patch
-        run: python3 scripts/_apply_sbh_roundtrip.py
+      - name: Keep serializer test-only until editor consumes it
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("examples/smart_boy_hero/world/level_spec.rs")
+          text = path.read_text()
+          old = "    pub(super) fn to_json(&self) -> Result<String, String> {"
+          new = "    #[cfg(test)]\n    pub(super) fn to_json(&self) -> Result<String, String> {"
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one to_json method, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
 
       - name: Format
         run: cargo fmt
 
-      - name: Commit formatted candidate
+      - name: Commit Clippy fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md examples/smart_boy_hero.rs examples/smart_boy_hero/game.rs examples/smart_boy_hero/world.rs
-          if git diff --cached --quiet; then
-            echo "No patch changes to commit"
-            exit 0
-          fi
-          git commit -m "Add native SBH external level roundtrip"
+          git add examples/smart_boy_hero/world/level_spec.rs
+          git commit -m "Keep SBH level serializer test-only for now"
           git push origin HEAD:agent/sbh-level-runtime-roundtrip
