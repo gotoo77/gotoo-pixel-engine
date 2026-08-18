@@ -1,4 +1,4 @@
-const VC07_VERSION: &str = "VC0.7";
+const VC07_VERSION: &str = "VC0.8";
 const START_POWER_LEVEL: u8 = 1;
 const MAX_POWER_LEVEL: u8 = 5;
 const POWERUP_SOUND: SoundId = SoundId::new("void_canticle.powerup");
@@ -200,4 +200,3 @@ impl PilgrimV07Visuals {
         }
     }
 }
-
