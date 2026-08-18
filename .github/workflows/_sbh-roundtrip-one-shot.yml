@@ -21,6 +21,11 @@ jobs:
           ref: agent/sbh-level-runtime-roundtrip
           fetch-depth: 0
 
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+
       - name: Install Rust tooling
         run: rustup component add rustfmt clippy
 
