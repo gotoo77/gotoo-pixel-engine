@@ -17,6 +17,8 @@ mod viewport;
 
 pub use audio::{Audio, AudioError, NoopAudio, SoundBank, SoundId};
 pub use audio_wav::pcm16_mono_wav;
+#[cfg(not(target_arch = "wasm32"))]
+pub use capture_mirror::ObsMirrorGame;
 pub use control::{ActionId, ControlBinding, ControlMap};
 pub use framebuffer::Framebuffer;
 pub use gamepad_profile::{AxisCalibration, GamepadProfile};
