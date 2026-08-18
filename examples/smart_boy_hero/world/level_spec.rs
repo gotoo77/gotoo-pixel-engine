@@ -43,6 +43,7 @@ impl LevelSpec {
         serde_json::from_str(json).map_err(|error| format!("invalid SBH level JSON: {error}"))
     }
 
+    #[cfg(test)]
     pub(super) fn to_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self)
             .map_err(|error| format!("failed to serialize SBH level JSON: {error}"))
