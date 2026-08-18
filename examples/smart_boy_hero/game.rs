@@ -265,15 +265,27 @@ impl SmartBoyHeroGame {
         Self::new_with_mode(SmartBoyHeroMode::Native)
     }
 
+    pub fn from_level_json(json: &str) -> Result<Self, String> {
+        let world = SmartBoyWorld::from_level_json(json, INITIAL_SEED)?;
+        Ok(Self::new_with_mode_and_world(
+            SmartBoyHeroMode::Native,
+            world,
+        ))
+    }
+
     #[allow(dead_code)]
     pub fn new_touch() -> Self {
         Self::new_with_mode(SmartBoyHeroMode::Touch)
     }
 
     fn new_with_mode(mode: SmartBoyHeroMode) -> Self {
+        Self::new_with_mode_and_world(mode, SmartBoyWorld::new(INITIAL_SEED))
+    }
+
+    fn new_with_mode_and_world(mode: SmartBoyHeroMode, world: SmartBoyWorld) -> Self {
         Self {
             mode,
-            world: SmartBoyWorld::new(INITIAL_SEED),
+            world,
             controls: controls(),
             virtual_pad: virtual_pad_for_mode(mode),
             sounds: smart_boy_sound_bank().expect("Smart Boy Hero SFX config should be valid"),
@@ -1384,7 +1396,7 @@ fn draw_level_select(framebuffer: &mut Framebuffer, layout: Layout, game: &Smart
             width: panel.width - 20,
             height: 14,
         },
-        SmartBoyWorld::level_name_at(game.selected_level),
+        &SmartBoyWorld::level_name_at(game.selected_level),
         1,
         WIN,
     );
