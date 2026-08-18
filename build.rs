@@ -1,7 +1,7 @@
 use std::process::Command;
 
 fn main() {
-    let build_id = git_build_id().unwrap_or_else(|| "unknown".to_string());
+    let build_id = git_build_id().unwrap_or_else(|| "UNKNOWN".to_string());
     println!("cargo:rustc-env=GPE_BUILD_ID={build_id}");
 }
 
@@ -14,7 +14,10 @@ fn git_build_id() -> Option<String> {
         return None;
     }
 
-    let sha = String::from_utf8(sha.stdout).ok()?.trim().to_string();
+    let sha = String::from_utf8(sha.stdout)
+        .ok()?
+        .trim()
+        .to_ascii_uppercase();
     if sha.is_empty() {
         return None;
     }
