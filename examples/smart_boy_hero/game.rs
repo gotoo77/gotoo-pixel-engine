@@ -84,7 +84,10 @@ const HERO: Pixel = Pixel::rgb(70, 215, 120);
 const HERO_DARK: Pixel = Pixel::rgb(22, 94, 58);
 const GUARD: Pixel = Pixel::rgb(238, 76, 82);
 const WALKER: Pixel = Pixel::rgb(250, 156, 58);
+const RAT: Pixel = Pixel::rgb(180, 188, 190);
+const CAT: Pixel = Pixel::rgb(116, 150, 255);
 const BONUS: Pixel = Pixel::rgb(86, 196, 246);
+const FOOD: Pixel = Pixel::rgb(116, 226, 106);
 const MYSTERY: Pixel = Pixel::rgb(235, 92, 218);
 const WALL: Pixel = Pixel::rgb(92, 98, 104);
 const DOOR_CLOSED: Pixel = Pixel::rgb(112, 74, 214);
@@ -659,6 +662,7 @@ fn sound_for_event(
         WorldEvent::TrapArmed => Some(TRAP_ARM_SOUND),
         WorldEvent::TrapDisarmed => Some(TRAP_DISARM_SOUND),
         WorldEvent::TrapTriggered => Some(TRAP_TRIGGER_SOUND),
+        WorldEvent::PitFall => Some(TRAP_TRIGGER_SOUND),
         WorldEvent::BoulderReleased { .. } => Some(BOULDER_RELEASE_SOUND),
         WorldEvent::BoulderCrushedEnemy { .. } => Some(BOULDER_CRUSH_SOUND),
         WorldEvent::BoulderStopped { .. } => Some(BOULDER_STOP_SOUND),
@@ -679,7 +683,13 @@ fn sound_for_event(
         | WorldEvent::WalkerLostTarget
         | WorldEvent::WalkerMoved
         | WorldEvent::WalkerResumedPatrol
-        | WorldEvent::WalkerTurned => None,
+        | WorldEvent::WalkerTurned
+        | WorldEvent::RatSmelledFood
+        | WorldEvent::RatScared
+        | WorldEvent::RatMoved
+        | WorldEvent::CatChasedRat
+        | WorldEvent::CatMoved
+        | WorldEvent::FoodEaten => None,
         WorldEvent::SmartChain { .. } => None,
     }
 }
@@ -1013,8 +1023,16 @@ fn draw_board(
         );
     }
 
+    for pit in world.pits() {
+        draw_pit(framebuffer, layout.cell_rect(pit.cell));
+    }
+
     draw_shout_feedback(framebuffer, layout, feedback);
     draw_enemy_kill_feedback(framebuffer, layout, feedback);
+
+    for food in world.foods() {
+        draw_food(framebuffer, layout.cell_rect(food.cell));
+    }
 
     for bonus in world.bonuses() {
         draw_bonus(framebuffer, layout.cell_rect(bonus.cell), *bonus);
@@ -1128,6 +1146,36 @@ fn feedback_line(events: &[WorldEvent]) -> (&'static str, Pixel, Option<&'static
         .any(|event| matches!(event, WorldEvent::TrapTriggered))
     {
         return ("SNAP", DANGER, None);
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::PitFall))
+    {
+        return ("DOWN!", DANGER, Some("PIT"));
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::RatScared))
+    {
+        return ("RAT RUN", WIN, None);
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::RatSmelledFood))
+    {
+        return ("SMELLS", FOOD, None);
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::CatChasedRat))
+    {
+        return ("CAT!", CAT, None);
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, WorldEvent::FoodEaten))
+    {
+        return ("YUM", FOOD, None);
     }
     if events
         .iter()
@@ -1570,6 +1618,37 @@ fn draw_trap(framebuffer: &mut Framebuffer, rect: Rect, active: bool) {
     }
 }
 
+fn draw_pit(framebuffer: &mut Framebuffer, rect: Rect) {
+    framebuffer.fill_rect(
+        rect.x + 2,
+        rect.y + 2,
+        rect.width - 4,
+        rect.height - 4,
+        Pixel::BLACK,
+    );
+    framebuffer.draw_rect(
+        rect.x + 2,
+        rect.y + 2,
+        rect.width - 4,
+        rect.height - 4,
+        DANGER,
+    );
+    framebuffer.draw_line(
+        rect.x + 5,
+        rect.y + 5,
+        rect.x + rect.width as i32 - 6,
+        rect.y + rect.height as i32 - 6,
+        MUTED,
+    );
+    framebuffer.draw_line(
+        rect.x + 5,
+        rect.y + rect.height as i32 - 6,
+        rect.x + rect.width as i32 - 6,
+        rect.y + 5,
+        MUTED,
+    );
+}
+
 fn draw_shout_feedback(framebuffer: &mut Framebuffer, layout: Layout, events: &[WorldEvent]) {
     let Some(cell) = events.iter().find_map(|event| match *event {
         WorldEvent::Shouted { cell, .. } => Some(cell),
@@ -1622,10 +1701,20 @@ fn draw_bonus(framebuffer: &mut Framebuffer, rect: Rect, bonus: Bonus) {
     draw_text_centered(framebuffer, rect, &label, 1, color);
 }
 
+fn draw_food(framebuffer: &mut Framebuffer, rect: Rect) {
+    let cx = rect.x + rect.width as i32 / 2;
+    let cy = rect.y + rect.height as i32 / 2;
+    framebuffer.fill_circle(cx, cy, 6, FOOD);
+    framebuffer.draw_circle(cx, cy, 7, Pixel::BLACK);
+    draw_text_centered(framebuffer, rect, "F", 1, Pixel::BLACK);
+}
+
 fn draw_enemy(framebuffer: &mut Framebuffer, rect: Rect, enemy: &Enemy) {
     let color = match enemy.kind {
         EnemyKind::Guard => GUARD,
         EnemyKind::Walker { .. } => WALKER,
+        EnemyKind::Rat => RAT,
+        EnemyKind::Cat => CAT,
     };
     framebuffer.fill_rect(
         rect.x + 2,
@@ -1670,6 +1759,12 @@ fn draw_enemy(framebuffer: &mut Framebuffer, rect: Rect, enemy: &Enemy) {
                     Pixel::BLACK,
                 );
             }
+        }
+        EnemyKind::Rat => {
+            draw_text_centered(framebuffer, rect, "RAT", 1, Pixel::BLACK);
+        }
+        EnemyKind::Cat => {
+            draw_text_centered(framebuffer, rect, "CAT", 1, Pixel::BLACK);
         }
     }
 }
@@ -2179,6 +2274,7 @@ mod tests {
             (16, "COME HERE"),
             (17, "GROUP THERAPY"),
             (18, "SMART WAY"),
+            (19, "SMELL A RAT"),
         ] {
             let mut game = SmartBoyHeroGame::new();
             game.ui_state = UiState::LevelSelect;

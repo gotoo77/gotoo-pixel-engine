@@ -1,9 +1,10 @@
 pub(super) const GRID_WIDTH: i32 = 12;
 pub(super) const GRID_HEIGHT: i32 = 8;
-pub(super) const LEVEL_COUNT: usize = 19;
+pub(super) const LEVEL_COUNT: usize = 20;
 const SHOUT_RADIUS: i32 = 5;
 pub(super) const ROCK_THROW_RANGE: i32 = 6;
 pub(super) const ROCK_HEARING_RADIUS: i32 = 3;
+const RAT_FEAR_RADIUS: i32 = 2;
 const BOULDER_STEPS_PER_TICK: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +15,7 @@ pub(super) struct SmartBoyWorld {
     hero: Cell,
     hero_power: i32,
     enemies: Vec<Enemy>,
+    foods: Vec<Food>,
     bonuses: Vec<Bonus>,
     latched_doors_open: Vec<bool>,
     doors_open: Vec<bool>,
@@ -53,6 +55,7 @@ impl SmartBoyWorld {
             hero: level.hero_start,
             hero_power: level.hero_power,
             enemies: level.enemies.clone(),
+            foods: level.foods.clone(),
             bonuses: level.bonuses.clone(),
             latched_doors_open: vec![false; level.doors.len()],
             doors_open: vec![false; level.doors.len()],
@@ -212,6 +215,10 @@ impl SmartBoyWorld {
         &self.enemies
     }
 
+    pub(super) fn foods(&self) -> &[Food] {
+        &self.foods
+    }
+
     pub(super) fn bonuses(&self) -> &[Bonus] {
         &self.bonuses
     }
@@ -230,6 +237,10 @@ impl SmartBoyWorld {
 
     pub(super) fn traps(&self) -> &[Trap] {
         &self.level.traps
+    }
+
+    pub(super) fn pits(&self) -> &[Pit] {
+        &self.level.pits
     }
 
     pub(super) fn trap_active(&self, index: usize) -> bool {
@@ -353,9 +364,9 @@ impl SmartBoyWorld {
     }
 
     fn resolve_hero_entered_cell(&mut self, cell: Cell, report: &mut TurnReport) {
-        if self.active_trap_at(cell).is_some() {
+        if let Some(danger) = self.active_danger_at(cell) {
             self.phase = Phase::Dead;
-            report.events.push(WorldEvent::TrapTriggered);
+            report.events.push(danger.trigger_event());
             report.events.push(WorldEvent::HeroDied);
             return;
         }
@@ -373,12 +384,7 @@ impl SmartBoyWorld {
         let mut index = 0;
         let mut trap_kills = 0;
         while index < self.enemies.len() {
-            let EnemyKind::Walker { direction } = self.enemies[index].kind else {
-                index += 1;
-                continue;
-            };
-
-            let Some(direction) = self.walker_direction_for_turn(index, direction, report) else {
+            let Some(direction) = self.enemy_direction_for_turn(index, report) else {
                 index += 1;
                 continue;
             };
@@ -406,16 +412,13 @@ impl SmartBoyWorld {
                 || self.closed_door_at(target).is_some()
                 || self.enemy_at_except(target, index).is_some()
             {
-                self.enemies[index].kind = EnemyKind::Walker {
-                    direction: direction.opposite(),
-                };
-                report.events.push(WorldEvent::WalkerTurned);
+                self.resolve_enemy_blocked(index, direction, report);
             } else {
-                if self.active_trap_at(target).is_some() {
+                if let Some(danger) = self.active_danger_at(target) {
                     let power = self.enemies[index].power;
                     self.enemies[index].cell = target;
                     let enemy = self.enemies.remove(index);
-                    report.events.push(WorldEvent::TrapTriggered);
+                    report.events.push(danger.trigger_event());
                     report.events.push(WorldEvent::EnemyKilled {
                         cell: target,
                         power,
@@ -425,8 +428,8 @@ impl SmartBoyWorld {
                     continue;
                 }
                 self.enemies[index].cell = target;
-                self.resolve_investigation_arrival(index, report);
-                report.events.push(WorldEvent::WalkerMoved);
+                self.resolve_enemy_arrival(index, report);
+                self.report_enemy_moved(index, report);
             }
 
             index += 1;
@@ -436,6 +439,52 @@ impl SmartBoyWorld {
             report
                 .events
                 .push(WorldEvent::SmartChain { count: trap_kills });
+        }
+    }
+
+    fn enemy_direction_for_turn(
+        &mut self,
+        index: usize,
+        report: &mut TurnReport,
+    ) -> Option<Direction> {
+        match self.enemies[index].kind {
+            EnemyKind::Guard => None,
+            EnemyKind::Walker { direction } => {
+                self.walker_direction_for_turn(index, direction, report)
+            }
+            EnemyKind::Rat => self.rat_direction_for_turn(index, report),
+            EnemyKind::Cat => self.cat_direction_for_turn(index, report),
+        }
+    }
+
+    fn resolve_enemy_blocked(
+        &mut self,
+        index: usize,
+        direction: Direction,
+        report: &mut TurnReport,
+    ) {
+        if matches!(self.enemies[index].kind, EnemyKind::Walker { .. }) {
+            self.enemies[index].kind = EnemyKind::Walker {
+                direction: direction.opposite(),
+            };
+            report.events.push(WorldEvent::WalkerTurned);
+        }
+    }
+
+    fn resolve_enemy_arrival(&mut self, index: usize, report: &mut TurnReport) {
+        match self.enemies[index].kind {
+            EnemyKind::Walker { .. } => self.resolve_investigation_arrival(index, report),
+            EnemyKind::Rat => self.eat_food_at(self.enemies[index].cell, report),
+            EnemyKind::Guard | EnemyKind::Cat => {}
+        }
+    }
+
+    fn report_enemy_moved(&self, index: usize, report: &mut TurnReport) {
+        match self.enemies[index].kind {
+            EnemyKind::Walker { .. } => report.events.push(WorldEvent::WalkerMoved),
+            EnemyKind::Rat => report.events.push(WorldEvent::RatMoved),
+            EnemyKind::Cat => report.events.push(WorldEvent::CatMoved),
+            EnemyKind::Guard => {}
         }
     }
 
@@ -555,6 +604,49 @@ impl SmartBoyWorld {
         self.semi_continuous() && self.enemies[index].cell.manhattan_distance(self.hero) == 1
     }
 
+    fn rat_direction_for_turn(
+        &mut self,
+        index: usize,
+        report: &mut TurnReport,
+    ) -> Option<Direction> {
+        let rat = self.enemies[index].cell;
+        if let Some(cat) = self.nearest_enemy_kind_cell(rat, EnemyKind::Cat) {
+            if rat.manhattan_distance(cat) <= RAT_FEAR_RADIUS {
+                if let Some(direction) = self.step_away_from(index, cat) {
+                    report.events.push(WorldEvent::RatScared);
+                    return Some(direction);
+                }
+            }
+        }
+
+        let food = self.nearest_food_cell(rat)?;
+        let direction = match self.step_toward(index, food) {
+            PathStep::Step(direction) => direction,
+            PathStep::Arrived => {
+                self.eat_food_at(rat, report);
+                return None;
+            }
+            PathStep::Blocked => return None,
+        };
+        report.events.push(WorldEvent::RatSmelledFood);
+        Some(direction)
+    }
+
+    fn cat_direction_for_turn(
+        &mut self,
+        index: usize,
+        report: &mut TurnReport,
+    ) -> Option<Direction> {
+        let cat = self.enemies[index].cell;
+        let rat = self.nearest_enemy_kind_cell(cat, EnemyKind::Rat)?;
+        let direction = match self.step_toward(index, rat) {
+            PathStep::Step(direction) => direction,
+            PathStep::Arrived | PathStep::Blocked => return None,
+        };
+        report.events.push(WorldEvent::CatChasedRat);
+        Some(direction)
+    }
+
     fn resume_patrol(
         &mut self,
         index: usize,
@@ -600,6 +692,45 @@ impl SmartBoyWorld {
         PathStep::Blocked
     }
 
+    fn step_away_from(&self, enemy_index: usize, threat: Cell) -> Option<Direction> {
+        let start = self.enemies[enemy_index].cell;
+        let current_distance = start.manhattan_distance(threat);
+        let mut best = None;
+        for direction in directions_toward(threat, start) {
+            let cell = start.step(direction);
+            if !self.in_bounds(cell)
+                || self.wall_at(cell)
+                || self.closed_door_at(cell).is_some()
+                || self.enemy_at_except(cell, enemy_index).is_some()
+            {
+                continue;
+            }
+            let distance = cell.manhattan_distance(threat);
+            if distance <= current_distance {
+                continue;
+            }
+            if best.is_none_or(|(_, best_distance)| distance > best_distance) {
+                best = Some((direction, distance));
+            }
+        }
+        best.map(|(direction, _)| direction)
+    }
+
+    fn nearest_enemy_kind_cell(&self, from: Cell, kind: EnemyKind) -> Option<Cell> {
+        self.enemies
+            .iter()
+            .filter(|enemy| enemy.kind == kind)
+            .map(|enemy| enemy.cell)
+            .min_by_key(|cell| (from.manhattan_distance(*cell), cell.y, cell.x))
+    }
+
+    fn nearest_food_cell(&self, from: Cell) -> Option<Cell> {
+        self.foods
+            .iter()
+            .map(|food| food.cell)
+            .min_by_key(|cell| (from.manhattan_distance(*cell), cell.y, cell.x))
+    }
+
     fn collect_at(&mut self, cell: Cell, report: &mut TurnReport) {
         self.collect_core_key_at(cell, report);
 
@@ -639,6 +770,13 @@ impl SmartBoyWorld {
         }
         if opened {
             self.refresh_triggered_systems(report);
+        }
+    }
+
+    fn eat_food_at(&mut self, cell: Cell, report: &mut TurnReport) {
+        if let Some(index) = self.foods.iter().position(|food| food.cell == cell) {
+            self.foods.remove(index);
+            report.events.push(WorldEvent::FoodEaten);
         }
     }
 
@@ -761,6 +899,20 @@ impl SmartBoyWorld {
             .enumerate()
             .find(|(index, trap)| trap.cell == cell && self.traps_active[*index])
             .map(|(index, _)| index)
+    }
+
+    fn active_pit_at(&self, cell: Cell) -> Option<usize> {
+        self.level.pits.iter().position(|pit| pit.cell == cell)
+    }
+
+    fn active_danger_at(&self, cell: Cell) -> Option<DangerKind> {
+        if self.active_trap_at(cell).is_some() {
+            return Some(DangerKind::Trap);
+        }
+        if self.active_pit_at(cell).is_some() {
+            return Some(DangerKind::Pit);
+        }
+        None
     }
 
     fn actor_at(&self, cell: Cell) -> bool {
@@ -896,6 +1048,7 @@ impl SmartBoyWorld {
             && !self.wall_at(cell)
             && self.closed_door_at(cell).is_none()
             && self.active_trap_at(cell).is_none()
+            && self.active_pit_at(cell).is_none()
             && self.enemy_at(cell).is_none()
             && !self.boulders.iter().any(|boulder| boulder.cell == cell)
     }
@@ -950,6 +1103,7 @@ pub(super) enum WorldEvent {
     TrapArmed,
     TrapDisarmed,
     TrapTriggered,
+    PitFall,
     BoulderReleased {
         cell: Cell,
         direction: Direction,
@@ -981,6 +1135,12 @@ pub(super) enum WorldEvent {
     WalkerResumedPatrol,
     WalkerSpottedHero,
     WalkerTurned,
+    RatSmelledFood,
+    RatScared,
+    RatMoved,
+    CatChasedRat,
+    CatMoved,
+    FoodEaten,
     SmartChain {
         count: usize,
     },
@@ -1074,6 +1234,23 @@ pub(super) enum EnemyRole {
 pub(super) enum EnemyKind {
     Guard,
     Walker { direction: Direction },
+    Rat,
+    Cat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DangerKind {
+    Trap,
+    Pit,
+}
+
+impl DangerKind {
+    fn trigger_event(self) -> WorldEvent {
+        match self {
+            Self::Trap => WorldEvent::TrapTriggered,
+            Self::Pit => WorldEvent::PitFall,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1121,6 +1298,11 @@ pub(super) struct Bonus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Food {
+    pub(super) cell: Cell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BonusKind {
     Fixed(i32),
     Mystery { min: i32, max: i32 },
@@ -1154,6 +1336,11 @@ pub(super) struct Trap {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Pit {
+    pub(super) cell: Cell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Boulder {
     pub(super) cell: Cell,
     group: u8,
@@ -1181,7 +1368,9 @@ struct Level {
     doors: Vec<Door>,
     levers: Vec<Lever>,
     traps: Vec<Trap>,
+    pits: Vec<Pit>,
     boulders: Vec<Boulder>,
+    foods: Vec<Food>,
     bonuses: Vec<Bonus>,
     enemies: Vec<Enemy>,
 }
@@ -1213,6 +1402,7 @@ fn build_level(index: usize) -> Level {
         16 => level_come_here(),
         17 => level_group_therapy(),
         18 => level_smart_way(),
+        19 => level_smell_a_rat(),
         _ => unreachable!("level index is wrapped by LEVEL_COUNT"),
     }
 }
@@ -1233,7 +1423,9 @@ fn level_seriously() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![guard(3, 4, 3), guard(3, 2, 15)],
     }
@@ -1254,7 +1446,9 @@ fn level_math_is_hard() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![fixed_bonus(2, 1, 6)],
         enemies: vec![guard(4, 3, 10)],
     }
@@ -1276,7 +1470,9 @@ fn level_pay_the_price() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![guard(3, 3, 4), guard(7, 3, 5)],
     }
@@ -1298,7 +1494,9 @@ fn level_order_matters() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![fixed_bonus(3, 2, 5)],
         enemies: vec![guard(3, 3, 2), guard(6, 4, 8)],
     }
@@ -1320,7 +1518,9 @@ fn level_just_leave() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![guard(5, 4, 99)],
     }
@@ -1343,7 +1543,9 @@ fn level_hes_moving() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(5, 4, 9, Direction::Up)],
     }
@@ -1366,7 +1568,9 @@ fn level_wait_for_it() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(5, 3, 9, Direction::Down)],
     }
@@ -1390,7 +1594,9 @@ fn level_let_him_come() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![fixed_bonus(6, 4, 4)],
         enemies: vec![walker(5, 4, 4, Direction::Left), guard(7, 4, 9)],
     }
@@ -1414,7 +1620,9 @@ fn level_lucky_boy() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![fixed_bonus(5, 2, 3), mystery_bonus(5, 5, 2, 8)],
         enemies: vec![guard(8, 2, 8), guard(8, 5, 8)],
     }
@@ -1442,7 +1650,9 @@ fn level_smart_boy() -> Level {
         }],
         levers: vec![lever(2, 2, 1)],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![
             fixed_bonus(4, 5, 4),
             fixed_bonus(5, 2, 5),
@@ -1477,7 +1687,9 @@ fn level_living_plate_a() -> Level {
         }],
         levers: vec![pressure_plate(4, 2, 1)],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(3, 2, 99, Direction::Right)],
     }
@@ -1503,7 +1715,9 @@ fn level_living_plate_b() -> Level {
         }],
         levers: vec![pressure_plate(5, 2, 1)],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(3, 2, 99, Direction::Right)],
     }
@@ -1529,7 +1743,9 @@ fn level_living_plate_c() -> Level {
         }],
         levers: vec![lever(2, 2, 1), pressure_plate(5, 2, 1)],
         traps: vec![],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(4, 2, 99, Direction::Right)],
     }
@@ -1548,7 +1764,9 @@ fn level_watch_your_step() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![active_trap(3, 4)],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![],
     }
@@ -1570,7 +1788,9 @@ fn level_set_the_trap() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(1, 3, 1)],
         traps: vec![group_trap(6, 4, 1)],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(9, 4, 9, Direction::Left)],
     }
@@ -1592,7 +1812,9 @@ fn level_clockwork() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(2, 4, 1)],
         traps: vec![group_trap(6, 4, 1)],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(8, 4, 9, Direction::Left)],
     }
@@ -1614,7 +1836,9 @@ fn level_come_here() -> Level {
         doors: vec![],
         levers: vec![],
         traps: vec![active_trap(6, 4)],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![walker(9, 4, 9, Direction::Up)],
     }
@@ -1636,7 +1860,9 @@ fn level_group_therapy() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(5, 2, 1)],
         traps: vec![group_trap(7, 3, 1), group_trap(8, 3, 1)],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![
             walker(8, 3, 9, Direction::Up),
@@ -1660,12 +1886,42 @@ fn level_smart_way() -> Level {
         doors: vec![],
         levers: vec![pressure_plate(5, 3, 1)],
         traps: vec![group_trap(6, 2, 1), group_trap(6, 4, 1)],
+        pits: vec![],
         boulders: vec![],
+        foods: vec![],
         bonuses: vec![],
         enemies: vec![
             walker(7, 2, 7, Direction::Up),
             walker(7, 4, 7, Direction::Down),
         ],
+    }
+}
+
+fn level_smell_a_rat() -> Level {
+    let mut walls = vertical_wall(7, &[2, 4]);
+    walls.extend(cells(&[(4, 1), (6, 1), (6, 6)]));
+
+    Level {
+        width: GRID_WIDTH,
+        height: GRID_HEIGHT,
+        timing: LevelTiming::SemiContinuous,
+        name: "SMELL A RAT",
+        hero_start: Cell::new(1, 4),
+        hero_power: 6,
+        exit: Cell::new(10, 4),
+        walls,
+        doors: vec![Door {
+            cell: Cell::new(7, 4),
+            group: 1,
+            initially_open: false,
+        }],
+        levers: vec![pressure_plate(5, 2, 1)],
+        traps: vec![],
+        pits: vec![pit(5, 6)],
+        boulders: vec![],
+        foods: vec![food(5, 2)],
+        bonuses: vec![],
+        enemies: vec![rat(5, 5), rat(4, 6), cat(3, 6)],
     }
 }
 
@@ -1748,7 +2004,9 @@ fn level_iso_slice() -> Level {
             group_trap(10, 14, 1),
             group_trap(17, 9, 1),
         ],
+        pits: vec![],
         boulders: vec![boulder(14, 8, Direction::Right, 5)],
+        foods: vec![],
         bonuses: vec![fixed_bonus(3, 3, 12)],
         enemies: vec![
             walker(5, 8, 8, Direction::Right),
@@ -1821,6 +2079,26 @@ fn key_warden(x: i32, y: i32, power: i32, direction: Direction) -> Enemy {
     }
 }
 
+fn rat(x: i32, y: i32) -> Enemy {
+    Enemy {
+        cell: Cell::new(x, y),
+        power: 1,
+        kind: EnemyKind::Rat,
+        role: EnemyRole::Normal,
+        intent: EnemyIntent::Patrol,
+    }
+}
+
+fn cat(x: i32, y: i32) -> Enemy {
+    Enemy {
+        cell: Cell::new(x, y),
+        power: 2,
+        kind: EnemyKind::Cat,
+        role: EnemyRole::Normal,
+        intent: EnemyIntent::Patrol,
+    }
+}
+
 fn directions_toward(cell: Cell, target: Cell) -> [Direction; 4] {
     let horizontal = if target.x < cell.x {
         Direction::Left
@@ -1856,6 +2134,12 @@ fn mystery_bonus(x: i32, y: i32, min: i32, max: i32) -> Bonus {
     }
 }
 
+fn food(x: i32, y: i32) -> Food {
+    Food {
+        cell: Cell::new(x, y),
+    }
+}
+
 fn lever(x: i32, y: i32, group: u8) -> Lever {
     Lever {
         cell: Cell::new(x, y),
@@ -1885,6 +2169,12 @@ fn group_trap(x: i32, y: i32, group: u8) -> Trap {
         cell: Cell::new(x, y),
         group: Some(group),
         initially_active: false,
+    }
+}
+
+fn pit(x: i32, y: i32) -> Pit {
+    Pit {
+        cell: Cell::new(x, y),
     }
 }
 
@@ -1942,7 +2232,9 @@ mod tests {
             doors: vec![],
             levers: vec![],
             traps: vec![],
+            pits: vec![],
             boulders: vec![],
+            foods: vec![],
             bonuses: vec![],
             enemies: vec![],
         }
@@ -1961,6 +2253,7 @@ mod tests {
             hero: level.hero_start,
             hero_power: level.hero_power,
             enemies: level.enemies.clone(),
+            foods: level.foods.clone(),
             bonuses: level.bonuses.clone(),
             latched_doors_open: vec![false; level.doors.len()],
             doors_open: vec![false; level.doors.len()],
@@ -3323,6 +3616,100 @@ mod tests {
     }
 
     #[test]
+    fn rat_moves_toward_food_and_eats_it() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(rat(3, 1));
+        level.foods.push(food(5, 1));
+        let mut world = world_from(level);
+
+        let smelled = world.update_tick();
+        assert_eq!(world.enemies()[0].cell, Cell::new(4, 1));
+        assert!(smelled.events.contains(&WorldEvent::RatSmelledFood));
+
+        let eaten = world.update_tick();
+        assert_eq!(world.enemies()[0].cell, Cell::new(5, 1));
+        assert!(world.foods().is_empty());
+        assert!(eaten.events.contains(&WorldEvent::FoodEaten));
+    }
+
+    #[test]
+    fn nearby_cat_makes_rat_flee_before_food() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(rat(3, 1));
+        level.enemies.push(cat(2, 1));
+        level.foods.push(food(5, 1));
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert_eq!(world.enemies()[0].cell, Cell::new(4, 1));
+        assert!(report.events.contains(&WorldEvent::RatScared));
+        assert!(!report.events.contains(&WorldEvent::RatSmelledFood));
+    }
+
+    #[test]
+    fn pit_kills_rat_that_flees_into_it() {
+        let mut level = semi_test_level(10);
+        level.enemies.push(rat(3, 1));
+        level.enemies.push(cat(2, 1));
+        level.pits.push(pit(4, 1));
+        let mut world = world_from(level);
+
+        let report = world.update_tick();
+
+        assert!(
+            world
+                .enemies()
+                .iter()
+                .all(|enemy| enemy.kind != EnemyKind::Rat)
+        );
+        assert!(report.events.contains(&WorldEvent::PitFall));
+        assert!(report.events.contains(&WorldEvent::EnemyKilled {
+            cell: Cell::new(4, 1),
+            power: 1,
+        }));
+    }
+
+    #[test]
+    fn rat_on_food_plate_temporarily_opens_matching_door() {
+        let mut level = semi_test_level(10);
+        level.levers.push(pressure_plate(5, 1, 7));
+        level.doors.push(Door {
+            cell: Cell::new(7, 1),
+            group: 7,
+            initially_open: false,
+        });
+        level.enemies.push(rat(3, 1));
+        level.foods.push(food(5, 1));
+        let mut world = world_from(level);
+
+        world.update_tick();
+        let opened = world.update_tick();
+
+        assert!(world.door_open(0));
+        assert!(opened.events.contains(&WorldEvent::PressurePlateOn));
+        assert!(opened.events.contains(&WorldEvent::DoorOpened));
+        assert!(opened.events.contains(&WorldEvent::FoodEaten));
+    }
+
+    #[test]
+    fn level_twenty_combines_cat_fear_pit_food_and_plate() {
+        let mut world = SmartBoyWorld::for_level(19, 0xB0A);
+
+        let pit = world.update_tick();
+        assert!(pit.events.contains(&WorldEvent::PitFall));
+        assert!(pit.events.contains(&WorldEvent::RatScared));
+
+        world.update_tick();
+        let opened = world.update_tick();
+
+        assert!(world.door_open(0));
+        assert!(opened.events.contains(&WorldEvent::PressurePlateOn));
+        assert!(opened.events.contains(&WorldEvent::DoorOpened));
+        assert!(opened.events.contains(&WorldEvent::FoodEaten));
+    }
+
+    #[test]
     fn same_ticks_and_inputs_produce_identical_semi_continuous_result() {
         let mut first = SmartBoyWorld::for_level(16, 0xB0A);
         let mut second = SmartBoyWorld::for_level(16, 0xB0A);
@@ -4068,6 +4455,20 @@ mod tests {
                     .traps
                     .iter()
                     .map(|trap| trap.cell)
+                    .all(|cell| level_in_bounds(&level, cell))
+            );
+            assert!(
+                level
+                    .pits
+                    .iter()
+                    .map(|pit| pit.cell)
+                    .all(|cell| level_in_bounds(&level, cell))
+            );
+            assert!(
+                level
+                    .foods
+                    .iter()
+                    .map(|food| food.cell)
                     .all(|cell| level_in_bounds(&level, cell))
             );
             assert!(

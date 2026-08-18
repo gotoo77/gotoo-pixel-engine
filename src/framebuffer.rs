@@ -1,5 +1,44 @@
 use crate::{Image, ImageRegion, Pixel};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Font {
+    #[default]
+    Pixel5x7,
+    Mini3x5,
+}
+
+impl Font {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "builtin" | "default" | "pixel" | "pixel_5x7" | "5x7" => Some(Self::Pixel5x7),
+            "mini" | "mini_3x5" | "tiny" | "tiny_3x5" | "3x5" => Some(Self::Mini3x5),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Pixel5x7 => "pixel_5x7",
+            Self::Mini3x5 => "mini_3x5",
+        }
+    }
+
+    fn metrics(self) -> FontMetrics {
+        match self {
+            Self::Pixel5x7 => FontMetrics {
+                glyph_width: 5,
+                glyph_height: 7,
+                glyph_spacing: 1,
+            },
+            Self::Mini3x5 => FontMetrics {
+                glyph_width: 3,
+                glyph_height: 5,
+                glyph_spacing: 1,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Framebuffer {
     width: u32,
@@ -234,18 +273,40 @@ impl Framebuffer {
     }
 
     pub fn draw_text_scaled(&mut self, x: i32, y: i32, text: &str, scale: u32, pixel: Pixel) {
+        self.draw_text_scaled_with_font(Font::default(), x, y, text, scale, pixel);
+    }
+
+    pub fn draw_text_with_font(&mut self, font: Font, x: i32, y: i32, text: &str, pixel: Pixel) {
+        self.draw_text_scaled_with_font(font, x, y, text, 1, pixel);
+    }
+
+    pub fn draw_text_scaled_with_font(
+        &mut self,
+        font: Font,
+        x: i32,
+        y: i32,
+        text: &str,
+        scale: u32,
+        pixel: Pixel,
+    ) {
         let scale = scale.max(1);
         let mut cursor_x = i64::from(x);
         let y = i64::from(y);
-        let advance = i64::from((FONT_GLYPH_WIDTH + FONT_GLYPH_SPACING).saturating_mul(scale));
+        let metrics = font.metrics();
+        let advance =
+            i64::from((metrics.glyph_width + metrics.glyph_spacing).saturating_mul(scale));
 
         for character in text.chars() {
-            self.draw_glyph_scaled(cursor_x, y, glyph_for(character), scale, pixel);
+            self.draw_glyph_scaled(cursor_x, y, font, glyph_for(font, character), scale, pixel);
             cursor_x += advance;
         }
     }
 
     pub fn text_size(text: &str, scale: u32) -> (u32, u32) {
+        Self::text_size_with_font(Font::default(), text, scale)
+    }
+
+    pub fn text_size_with_font(font: Font, text: &str, scale: u32) -> (u32, u32) {
         let scale = scale.max(1);
         let character_count = u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
 
@@ -253,9 +314,10 @@ impl Framebuffer {
             return (0, 0);
         }
 
-        let glyph_width = FONT_GLYPH_WIDTH.saturating_mul(scale);
-        let glyph_height = FONT_GLYPH_HEIGHT.saturating_mul(scale);
-        let spacing = FONT_GLYPH_SPACING.saturating_mul(scale);
+        let metrics = font.metrics();
+        let glyph_width = metrics.glyph_width.saturating_mul(scale);
+        let glyph_height = metrics.glyph_height.saturating_mul(scale);
+        let spacing = metrics.glyph_spacing.saturating_mul(scale);
         let text_width = glyph_width
             .saturating_mul(character_count)
             .saturating_add(spacing.saturating_mul(character_count.saturating_sub(1)));
@@ -278,10 +340,24 @@ impl Framebuffer {
         self.pixels[index..index + 4].copy_from_slice(&pixel.to_rgba8());
     }
 
-    fn draw_glyph_scaled(&mut self, x: i64, y: i64, glyph: Glyph, scale: u32, pixel: Pixel) {
-        for (row_index, row) in glyph.iter().copied().enumerate() {
-            for column in 0..FONT_GLYPH_WIDTH {
-                let mask = 1 << (FONT_GLYPH_WIDTH - 1 - column);
+    fn draw_glyph_scaled(
+        &mut self,
+        x: i64,
+        y: i64,
+        font: Font,
+        glyph: Glyph,
+        scale: u32,
+        pixel: Pixel,
+    ) {
+        let metrics = font.metrics();
+        for (row_index, row) in glyph
+            .iter()
+            .copied()
+            .take(metrics.glyph_height as usize)
+            .enumerate()
+        {
+            for column in 0..metrics.glyph_width {
+                let mask = 1 << (metrics.glyph_width - 1 - column);
                 if row & mask == 0 {
                     continue;
                 }
@@ -565,13 +641,26 @@ fn blend_channel(source: u16, source_alpha: u16, dest: u16, inverse_alpha: u16) 
     ((source * source_alpha + dest * inverse_alpha + 127) / 255) as u8
 }
 
-const FONT_GLYPH_WIDTH: u32 = 5;
-const FONT_GLYPH_HEIGHT: u32 = 7;
-const FONT_GLYPH_SPACING: u32 = 1;
+const MAX_FONT_GLYPH_HEIGHT: usize = 7;
 
-type Glyph = [u8; FONT_GLYPH_HEIGHT as usize];
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FontMetrics {
+    glyph_width: u32,
+    glyph_height: u32,
+    glyph_spacing: u32,
+}
 
-fn glyph_for(character: char) -> Glyph {
+type Glyph = [u8; MAX_FONT_GLYPH_HEIGHT];
+
+fn glyph_for(font: Font, character: char) -> Glyph {
+    let character = character.to_ascii_uppercase();
+    match font {
+        Font::Pixel5x7 => pixel_5x7_glyph_for(character),
+        Font::Mini3x5 => mini_3x5_glyph_for(character),
+    }
+}
+
+fn pixel_5x7_glyph_for(character: char) -> Glyph {
     match character {
         'A' => [
             0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
@@ -690,16 +779,86 @@ fn glyph_for(character: char) -> Glyph {
         '+' => [
             0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000,
         ],
-        ' ' => [0; FONT_GLYPH_HEIGHT as usize],
+        ':' => [
+            0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000,
+        ],
+        '-' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
+        '.' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100,
+        ],
+        ',' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100, 0b01000,
+        ],
+        '!' => [
+            0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100,
+        ],
+        '?' => [
+            0b11111, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
+        ],
+        ' ' => [0; MAX_FONT_GLYPH_HEIGHT],
         _ => [
             0b11111, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
         ],
     }
 }
 
+fn mini_3x5_glyph_for(character: char) -> Glyph {
+    match character {
+        'A' => [0b111, 0b101, 0b111, 0b101, 0b101, 0, 0],
+        'B' => [0b110, 0b101, 0b110, 0b101, 0b110, 0, 0],
+        'C' => [0b111, 0b100, 0b100, 0b100, 0b111, 0, 0],
+        'D' => [0b110, 0b101, 0b101, 0b101, 0b110, 0, 0],
+        'E' => [0b111, 0b100, 0b110, 0b100, 0b111, 0, 0],
+        'F' => [0b111, 0b100, 0b110, 0b100, 0b100, 0, 0],
+        'G' => [0b111, 0b100, 0b101, 0b101, 0b111, 0, 0],
+        'H' => [0b101, 0b101, 0b111, 0b101, 0b101, 0, 0],
+        'I' => [0b111, 0b010, 0b010, 0b010, 0b111, 0, 0],
+        'J' => [0b001, 0b001, 0b001, 0b101, 0b111, 0, 0],
+        'K' => [0b101, 0b101, 0b110, 0b101, 0b101, 0, 0],
+        'L' => [0b100, 0b100, 0b100, 0b100, 0b111, 0, 0],
+        'M' => [0b101, 0b111, 0b111, 0b101, 0b101, 0, 0],
+        'N' => [0b101, 0b111, 0b111, 0b111, 0b101, 0, 0],
+        'O' => [0b111, 0b101, 0b101, 0b101, 0b111, 0, 0],
+        'P' => [0b111, 0b101, 0b111, 0b100, 0b100, 0, 0],
+        'Q' => [0b111, 0b101, 0b101, 0b111, 0b001, 0, 0],
+        'R' => [0b110, 0b101, 0b110, 0b101, 0b101, 0, 0],
+        'S' => [0b111, 0b100, 0b111, 0b001, 0b111, 0, 0],
+        'T' => [0b111, 0b010, 0b010, 0b010, 0b010, 0, 0],
+        'U' => [0b101, 0b101, 0b101, 0b101, 0b111, 0, 0],
+        'V' => [0b101, 0b101, 0b101, 0b101, 0b010, 0, 0],
+        'W' => [0b101, 0b101, 0b111, 0b111, 0b101, 0, 0],
+        'X' => [0b101, 0b101, 0b010, 0b101, 0b101, 0, 0],
+        'Y' => [0b101, 0b101, 0b010, 0b010, 0b010, 0, 0],
+        'Z' => [0b111, 0b001, 0b010, 0b100, 0b111, 0, 0],
+        '0' => [0b111, 0b101, 0b101, 0b101, 0b111, 0, 0],
+        '1' => [0b010, 0b110, 0b010, 0b010, 0b111, 0, 0],
+        '2' => [0b111, 0b001, 0b111, 0b100, 0b111, 0, 0],
+        '3' => [0b111, 0b001, 0b111, 0b001, 0b111, 0, 0],
+        '4' => [0b101, 0b101, 0b111, 0b001, 0b001, 0, 0],
+        '5' => [0b111, 0b100, 0b111, 0b001, 0b111, 0, 0],
+        '6' => [0b111, 0b100, 0b111, 0b101, 0b111, 0, 0],
+        '7' => [0b111, 0b001, 0b010, 0b010, 0b010, 0, 0],
+        '8' => [0b111, 0b101, 0b111, 0b101, 0b111, 0, 0],
+        '9' => [0b111, 0b101, 0b111, 0b001, 0b111, 0, 0],
+        '>' => [0b100, 0b010, 0b001, 0b010, 0b100, 0, 0],
+        '/' => [0b001, 0b001, 0b010, 0b100, 0b100, 0, 0],
+        '+' => [0b000, 0b010, 0b111, 0b010, 0b000, 0, 0],
+        ':' => [0b000, 0b010, 0b000, 0b010, 0b000, 0, 0],
+        '-' => [0b000, 0b000, 0b111, 0b000, 0b000, 0, 0],
+        '.' => [0b000, 0b000, 0b000, 0b000, 0b010, 0, 0],
+        ',' => [0b000, 0b000, 0b000, 0b010, 0b100, 0, 0],
+        '!' => [0b010, 0b010, 0b010, 0b000, 0b010, 0, 0],
+        '?' => [0b111, 0b001, 0b010, 0b000, 0b010, 0, 0],
+        ' ' => [0; MAX_FONT_GLYPH_HEIGHT],
+        _ => [0b111, 0b001, 0b010, 0b000, 0b010, 0, 0],
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Framebuffer, Image, ImageRegion, Pixel, glyph_for};
+    use super::{Font, Framebuffer, Image, ImageRegion, Pixel, glyph_for};
 
     fn drawn_pixels(framebuffer: &Framebuffer, pixel: Pixel) -> Vec<(i32, i32)> {
         let mut pixels = Vec::new();
@@ -1243,9 +1402,49 @@ mod tests {
 
     #[test]
     fn menu_punctuation_has_explicit_glyphs() {
-        assert_ne!(glyph_for('>'), glyph_for('?'));
-        assert_ne!(glyph_for('/'), glyph_for('?'));
-        assert_ne!(glyph_for('+'), glyph_for('?'));
+        for font in [Font::Pixel5x7, Font::Mini3x5] {
+            assert_ne!(glyph_for(font, '>'), glyph_for(font, '?'));
+            assert_ne!(glyph_for(font, '/'), glyph_for(font, '?'));
+            assert_ne!(glyph_for(font, '+'), glyph_for(font, '?'));
+            assert_ne!(glyph_for(font, ':'), glyph_for(font, '?'));
+            assert_ne!(glyph_for(font, '-'), glyph_for(font, '?'));
+            assert_ne!(glyph_for(font, '.'), glyph_for(font, '?'));
+            assert_ne!(glyph_for(font, ','), glyph_for(font, '?'));
+            assert_ne!(glyph_for(font, '!'), glyph_for(font, '?'));
+        }
+    }
+
+    #[test]
+    fn font_names_parse_expected_builtin_fonts() {
+        assert_eq!(Font::from_name("builtin"), Some(Font::Pixel5x7));
+        assert_eq!(Font::from_name("pixel_5x7"), Some(Font::Pixel5x7));
+        assert_eq!(Font::from_name("mini_3x5"), Some(Font::Mini3x5));
+        assert_eq!(Font::Mini3x5.name(), "mini_3x5");
+        assert_eq!(Font::from_name("serif"), None);
+    }
+
+    #[test]
+    fn mini_font_has_smaller_text_metrics_and_draws() {
+        let mut framebuffer = Framebuffer::new(3, 5);
+
+        framebuffer.draw_text_with_font(Font::Mini3x5, 0, 0, "A", Pixel::WHITE);
+
+        assert_eq!(
+            Framebuffer::text_size_with_font(Font::Mini3x5, "A", 1),
+            (3, 5)
+        );
+        assert_eq!(Framebuffer::text_size("A", 1), (5, 7));
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::WHITE));
+        assert_eq!(framebuffer.pixel(1, 1), Some(Pixel::TRANSPARENT));
+    }
+
+    #[test]
+    fn lowercase_ascii_reuses_uppercase_glyphs() {
+        assert_eq!(
+            glyph_for(Font::Pixel5x7, 'a'),
+            glyph_for(Font::Pixel5x7, 'A')
+        );
+        assert_eq!(glyph_for(Font::Mini3x5, 'z'), glyph_for(Font::Mini3x5, 'Z'));
     }
 
     #[test]

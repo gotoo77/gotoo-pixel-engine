@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use gotoo_pixel_engine::{
-    Audio, AudioError, Frame, Framebuffer, Game, GameResult, GamepadButton, Image, ImageRegion,
-    Key, Pixel, PlaybackId, SoundBank, SoundId, TouchPhase,
+    Audio, AudioError, Font, Frame, Framebuffer, Game, GameResult, GamepadButton, Image,
+    ImageRegion, Key, Pixel, PlaybackId, SoundBank, SoundId, TouchPhase,
 };
 use include_dir::{Dir, include_dir};
 
@@ -10,8 +10,8 @@ use include_dir::{Dir, include_dir};
 #[path = "../smart_boy_hero/world.rs"]
 mod world;
 use world::{
-    BoulderState, Cell, Direction, EnemyIntent, Phase, PlayerAction, ROCK_HEARING_RADIUS,
-    SmartBoyWorld, WorldEvent,
+    BoulderState, Cell, Direction, EnemyIntent, EnemyKind, Phase, PlayerAction,
+    ROCK_HEARING_RADIUS, SmartBoyWorld, WorldEvent,
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 520;
@@ -20,10 +20,17 @@ pub const FRAMEBUFFER_HEIGHT: u32 = 320;
 const FIXED_STEP: Duration = Duration::from_millis(420);
 const FEEDBACK_DURATION: Duration = Duration::from_millis(620);
 const ROCK_FLIGHT_DURATION: Duration = Duration::from_millis(280);
+const MOVE_REPEAT_DELAY: Duration = Duration::from_millis(180);
+const MOVE_REPEAT_PERIOD: Duration = Duration::from_millis(90);
 const TILE_WIDTH: i32 = 32;
 const TILE_HEIGHT: i32 = 16;
+const ACTUATOR_MARKER_HALF_WIDTH: i32 = TILE_WIDTH / 2 - 4;
+const ACTUATOR_MARKER_HALF_HEIGHT: i32 = TILE_HEIGHT / 2 - 2;
 const SPRITE_SIZE: u32 = 32;
 const SPRITE_HEIGHT: u32 = 40;
+const TILE_SPRITE_Y_OFFSET: i32 = -28;
+const ACTOR_SPRITE_Y_OFFSET: i32 = -36;
+const TILE_VISUAL_CENTER_Y_OFFSET: f32 = -2.0;
 const VIEWPORT_TOP: i32 = 48;
 const VIEWPORT_WIDTH: i32 = FRAMEBUFFER_WIDTH as i32;
 const VIEWPORT_HEIGHT: i32 = FRAMEBUFFER_HEIGHT as i32 - VIEWPORT_TOP;
@@ -36,6 +43,7 @@ const SFX_ASSET_PREFIX: &str = "assets/smart_boy_hero/";
 const SHOUT_SFX_KEY: &str = "shout";
 const DEATH_SFX_KEY: &str = "death";
 const SFX_CONFIG_JSON: &str = include_str!("../../assets/smart_boy_hero/sfx.json");
+const MENU_CONFIG_JSON: &str = include_str!("../../assets/smart_boy_hero/iso/menu.json");
 static SMART_BOY_ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/smart_boy_hero");
 
 const COMBAT_SOUND: SoundId = SoundId::new("smart_boy_hero.combat");
@@ -76,9 +84,13 @@ const ROCK_COLOR: Pixel = Pixel::rgb(190, 222, 214);
 const ROCK_INVALID: Pixel = Pixel::rgb(255, 82, 82);
 const ROCK_VALID: Pixel = Pixel::rgb(91, 214, 255);
 const DANGER: Pixel = Pixel::rgb(255, 56, 68);
+const DANGER_DARK: Pixel = Pixel::rgb(74, 32, 39);
+const GUARD_MARK: Pixel = Pixel::rgb(255, 196, 82);
 const SMART: Pixel = Pixel::rgb(86, 240, 185);
 const BRONZE: Pixel = Pixel::rgb(218, 139, 61);
 const LOCKED: Pixel = Pixel::rgb(255, 196, 82);
+const MENU_ACCENT: Pixel = Pixel::rgb(91, 214, 255);
+const MENU_SELECTED: Pixel = Pixel::rgb(255, 246, 104);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpriteFrame {
@@ -90,9 +102,6 @@ enum SpriteFrame {
     WalkerPatrol = 5,
     WalkerAlert = 6,
     WalkerDeath = 7,
-    TrapInactive = 8,
-    TrapArmed = 9,
-    TrapTriggered = 10,
     Plate = 11,
     DoorClosed = 12,
     DoorOpen = 13,
@@ -130,6 +139,46 @@ struct RockFlight {
     from: Cell,
     to: Cell,
     elapsed: Duration,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct DirectionRepeat {
+    direction: Option<Direction>,
+    held_for: Duration,
+    repeat_accumulator: Duration,
+}
+
+impl DirectionRepeat {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn update(&mut self, direction: Option<Direction>, delta: Duration) -> Option<Direction> {
+        let Some(direction) = direction else {
+            self.reset();
+            return None;
+        };
+
+        if self.direction != Some(direction) {
+            self.direction = Some(direction);
+            self.held_for = Duration::ZERO;
+            self.repeat_accumulator = Duration::ZERO;
+            return Some(direction);
+        }
+
+        self.held_for = self.held_for.saturating_add(delta);
+        if self.held_for < MOVE_REPEAT_DELAY {
+            return None;
+        }
+
+        self.repeat_accumulator = self.repeat_accumulator.saturating_add(delta);
+        if self.repeat_accumulator >= MOVE_REPEAT_PERIOD {
+            self.repeat_accumulator -= MOVE_REPEAT_PERIOD;
+            Some(direction)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -193,10 +242,683 @@ impl Camera {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ActiveFeedback {
+    key: &'static str,
+    elapsed: Duration,
+}
+
+impl ActiveFeedback {
+    fn new(key: &'static str) -> Self {
+        Self {
+            key,
+            elapsed: Duration::ZERO,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoMenuConfig {
+    style: IsoMenuStyle,
+    feedback: IsoFeedbackConfig,
+    screens: Vec<IsoMenuScreen>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoMenuScreen {
+    id: String,
+    title: String,
+    style: IsoMenuStyle,
+    body: Vec<String>,
+    items: Vec<IsoMenuItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoMenuStyle {
+    font: Font,
+    title_color: Pixel,
+    text_color: Pixel,
+    muted_color: Pixel,
+    selected_color: Pixel,
+    accent_color: Pixel,
+    title_scale: u32,
+    body_scale: u32,
+    item_scale: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoMenuItem {
+    label: String,
+    action: IsoMenuAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IsoMenuAction {
+    Resume,
+    Retry,
+    Quit,
+    Back,
+    Submenu(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IsoMenuCursor {
+    screen: usize,
+    selected: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoMenu {
+    config: IsoMenuConfig,
+    stack: Vec<IsoMenuCursor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IsoMenuCommand {
+    Continue,
+    Resume,
+    Retry,
+    Quit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoFeedbackConfig {
+    default: IsoFeedbackPreset,
+    events: Vec<IsoFeedbackEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoFeedbackEvent {
+    key: String,
+    preset: IsoFeedbackPreset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IsoFeedbackPreset {
+    text: String,
+    x: i32,
+    y: i32,
+    scale: u32,
+    color: Pixel,
+    shadow_color: Option<Pixel>,
+    backdrop_color: Option<Pixel>,
+    backdrop_padding: i32,
+    font: Font,
+    sound: Option<String>,
+}
+
+impl IsoMenu {
+    fn new(config: IsoMenuConfig) -> Self {
+        Self {
+            config,
+            stack: Vec::new(),
+        }
+    }
+
+    fn open(&mut self, screen_id: &str) {
+        if let Some(screen) = self.screen_index(screen_id) {
+            self.stack.clear();
+            self.stack.push(IsoMenuCursor {
+                screen,
+                selected: 0,
+            });
+        }
+    }
+
+    fn is_open(&self) -> bool {
+        !self.stack.is_empty()
+    }
+
+    fn close(&mut self) {
+        self.stack.clear();
+    }
+
+    fn active_screen(&self) -> Option<&IsoMenuScreen> {
+        self.stack
+            .last()
+            .and_then(|cursor| self.config.screens.get(cursor.screen))
+    }
+
+    fn selected_index(&self) -> usize {
+        self.stack.last().map(|cursor| cursor.selected).unwrap_or(0)
+    }
+
+    fn select_previous(&mut self) {
+        let Some(cursor) = self.stack.last_mut() else {
+            return;
+        };
+        let item_count = self
+            .config
+            .screens
+            .get(cursor.screen)
+            .map(|screen| screen.items.len())
+            .unwrap_or(0);
+        if item_count == 0 {
+            return;
+        }
+        cursor.selected = if cursor.selected == 0 {
+            item_count - 1
+        } else {
+            cursor.selected - 1
+        };
+    }
+
+    fn select_next(&mut self) {
+        let Some(cursor) = self.stack.last_mut() else {
+            return;
+        };
+        let item_count = self
+            .config
+            .screens
+            .get(cursor.screen)
+            .map(|screen| screen.items.len())
+            .unwrap_or(0);
+        if item_count == 0 {
+            return;
+        }
+        cursor.selected = (cursor.selected + 1) % item_count;
+    }
+
+    fn select(&mut self, index: usize) {
+        let Some(cursor) = self.stack.last_mut() else {
+            return;
+        };
+        let item_count = self
+            .config
+            .screens
+            .get(cursor.screen)
+            .map(|screen| screen.items.len())
+            .unwrap_or(0);
+        if index < item_count {
+            cursor.selected = index;
+        }
+    }
+
+    fn activate_selected(&mut self) -> IsoMenuCommand {
+        let Some(cursor) = self.stack.last().copied() else {
+            return IsoMenuCommand::Continue;
+        };
+        let Some(action) = self
+            .config
+            .screens
+            .get(cursor.screen)
+            .and_then(|screen| screen.items.get(cursor.selected))
+            .map(|item| item.action.clone())
+        else {
+            return IsoMenuCommand::Continue;
+        };
+        self.apply_action(action)
+    }
+
+    fn escape(&mut self) -> IsoMenuCommand {
+        if self.stack.len() <= 1 {
+            self.close();
+            return IsoMenuCommand::Resume;
+        }
+        self.stack.pop();
+        IsoMenuCommand::Continue
+    }
+
+    fn apply_action(&mut self, action: IsoMenuAction) -> IsoMenuCommand {
+        match action {
+            IsoMenuAction::Resume => {
+                self.close();
+                IsoMenuCommand::Resume
+            }
+            IsoMenuAction::Retry => {
+                self.close();
+                IsoMenuCommand::Retry
+            }
+            IsoMenuAction::Quit => IsoMenuCommand::Quit,
+            IsoMenuAction::Back => self.escape(),
+            IsoMenuAction::Submenu(target) => {
+                if let Some(screen) = self.screen_index(&target) {
+                    self.stack.push(IsoMenuCursor {
+                        screen,
+                        selected: 0,
+                    });
+                }
+                IsoMenuCommand::Continue
+            }
+        }
+    }
+
+    fn screen_index(&self, screen_id: &str) -> Option<usize> {
+        self.config
+            .screens
+            .iter()
+            .position(|screen| screen.id == screen_id)
+    }
+}
+
+impl IsoMenuConfig {
+    fn parse(json: &str) -> Result<Self, String> {
+        let value = serde_json::from_str::<serde_json::Value>(json)
+            .map_err(|err| format!("invalid SBH ISO menu JSON: {err}"))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| "invalid SBH ISO menu JSON: root must be an object".to_string())?;
+        let style = object
+            .get("style")
+            .map(|value| IsoMenuStyle::parse(value, IsoMenuStyle::default()))
+            .transpose()?
+            .unwrap_or_default();
+        let feedback = object
+            .get("feedback")
+            .map(IsoFeedbackConfig::parse)
+            .transpose()?
+            .unwrap_or_default();
+        let screens = object
+            .get("screens")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| "SBH ISO menu JSON must contain a screens array".to_string())?;
+
+        let screens = screens
+            .iter()
+            .map(|value| parse_menu_screen(value, &style))
+            .collect::<Result<Vec<_>, _>>()?;
+        if screens.is_empty() {
+            return Err("SBH ISO menu config must contain at least one screen".to_string());
+        }
+        if !screens.iter().any(|screen| screen.id == "pause") {
+            return Err("SBH ISO menu config must contain a pause screen".to_string());
+        }
+        if !screens.iter().any(|screen| screen.id == "game_over") {
+            return Err("SBH ISO menu config must contain a game_over screen".to_string());
+        }
+        if !screens.iter().any(|screen| screen.id == "victory") {
+            return Err("SBH ISO menu config must contain a victory screen".to_string());
+        }
+        for screen in &screens {
+            for item in &screen.items {
+                if let IsoMenuAction::Submenu(target) = &item.action {
+                    if !screens.iter().any(|screen| &screen.id == target) {
+                        return Err(format!(
+                            "SBH ISO menu item '{}' targets unknown submenu '{}'",
+                            item.label, target
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(Self {
+            style,
+            feedback,
+            screens,
+        })
+    }
+}
+
+impl Default for IsoMenuStyle {
+    fn default() -> Self {
+        Self {
+            font: Font::default(),
+            title_color: MENU_ACCENT,
+            text_color: TEXT,
+            muted_color: MUTED,
+            selected_color: MENU_SELECTED,
+            accent_color: MENU_ACCENT,
+            title_scale: 2,
+            body_scale: 1,
+            item_scale: 1,
+        }
+    }
+}
+
+impl IsoMenuStyle {
+    fn parse(value: &serde_json::Value, base: Self) -> Result<Self, String> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| "SBH ISO menu style must be an object".to_string())?;
+        Ok(Self {
+            font: optional_font(object, "font")?.unwrap_or(base.font),
+            title_color: optional_pixel(object, "title_color")?.unwrap_or(base.title_color),
+            text_color: optional_pixel(object, "text_color")?.unwrap_or(base.text_color),
+            muted_color: optional_pixel(object, "muted_color")?.unwrap_or(base.muted_color),
+            selected_color: optional_pixel(object, "selected_color")?
+                .unwrap_or(base.selected_color),
+            accent_color: optional_pixel(object, "accent_color")?.unwrap_or(base.accent_color),
+            title_scale: optional_u32(object, "title_scale")?
+                .unwrap_or(base.title_scale)
+                .max(1),
+            body_scale: optional_u32(object, "body_scale")?
+                .unwrap_or(base.body_scale)
+                .max(1),
+            item_scale: optional_u32(object, "item_scale")?
+                .unwrap_or(base.item_scale)
+                .max(1),
+        })
+    }
+}
+
+impl Default for IsoFeedbackConfig {
+    fn default() -> Self {
+        Self {
+            default: IsoFeedbackPreset::default(),
+            events: Vec::new(),
+        }
+    }
+}
+
+impl IsoFeedbackConfig {
+    fn parse(value: &serde_json::Value) -> Result<Self, String> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| "SBH ISO feedback config must be an object".to_string())?;
+        let default = object
+            .get("default")
+            .map(|value| IsoFeedbackPreset::parse(value, IsoFeedbackPreset::default()))
+            .transpose()?
+            .unwrap_or_default();
+        let events_object = object
+            .get("events")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| "SBH ISO feedback config must contain an events object".to_string())?;
+        let events = events_object
+            .iter()
+            .map(|(key, value)| {
+                Ok(IsoFeedbackEvent {
+                    key: key.clone(),
+                    preset: IsoFeedbackPreset::parse(value, default.clone())?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        Ok(Self { default, events })
+    }
+
+    fn preset(&self, key: &str) -> Option<&IsoFeedbackPreset> {
+        self.events
+            .iter()
+            .find(|event| event.key == key)
+            .map(|event| &event.preset)
+    }
+}
+
+impl Default for IsoFeedbackPreset {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            x: 178,
+            y: 55,
+            scale: 3,
+            color: POWER,
+            shadow_color: Some(BG),
+            backdrop_color: Some(Pixel::rgba(18, 20, 25, 204)),
+            backdrop_padding: 5,
+            font: Font::default(),
+            sound: None,
+        }
+    }
+}
+
+impl IsoFeedbackPreset {
+    fn parse(value: &serde_json::Value, base: Self) -> Result<Self, String> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| "SBH ISO feedback preset must be an object".to_string())?;
+        Ok(Self {
+            text: optional_string(object, "text")
+                .unwrap_or(base.text.as_str())
+                .to_string(),
+            x: optional_i32(object, "x")?.unwrap_or(base.x),
+            y: optional_i32(object, "y")?.unwrap_or(base.y),
+            scale: optional_u32(object, "scale")?.unwrap_or(base.scale).max(1),
+            color: optional_pixel(object, "color")?.unwrap_or(base.color),
+            shadow_color: optional_nullable_pixel(object, "shadow_color")?
+                .unwrap_or(base.shadow_color),
+            backdrop_color: optional_nullable_pixel(object, "backdrop_color")?
+                .unwrap_or(base.backdrop_color),
+            backdrop_padding: optional_i32(object, "backdrop_padding")?
+                .unwrap_or(base.backdrop_padding)
+                .max(0),
+            font: optional_font(object, "font")?.unwrap_or(base.font),
+            sound: optional_nullable_string(object, "sound")?
+                .map(|sound| sound.map(str::to_string))
+                .unwrap_or(base.sound),
+        })
+    }
+}
+
+fn parse_menu_screen(
+    value: &serde_json::Value,
+    default_style: &IsoMenuStyle,
+) -> Result<IsoMenuScreen, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "SBH ISO menu screen must be an object".to_string())?;
+    let id = required_string(object, "id")?.to_string();
+    let title = required_string(object, "title")?.to_string();
+    let style = object
+        .get("style")
+        .map(|value| IsoMenuStyle::parse(value, default_style.clone()))
+        .transpose()?
+        .unwrap_or_else(|| default_style.clone());
+    let body = object
+        .get("body")
+        .map(parse_string_array)
+        .transpose()?
+        .unwrap_or_default();
+    let items = object
+        .get("items")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("SBH ISO menu screen '{id}' must contain an items array"))?
+        .iter()
+        .map(parse_menu_item)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(IsoMenuScreen {
+        id,
+        title,
+        style,
+        body,
+        items,
+    })
+}
+
+fn parse_menu_item(value: &serde_json::Value) -> Result<IsoMenuItem, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "SBH ISO menu item must be an object".to_string())?;
+    let label = required_string(object, "label")?.to_string();
+    let action = object
+        .get("action")
+        .ok_or_else(|| format!("SBH ISO menu item '{label}' must contain an action"))?;
+
+    Ok(IsoMenuItem {
+        label,
+        action: parse_menu_action(action)?,
+    })
+}
+
+fn parse_menu_action(value: &serde_json::Value) -> Result<IsoMenuAction, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "SBH ISO menu action must be an object".to_string())?;
+    let kind = required_string(object, "kind")?;
+    match kind {
+        "resume" => Ok(IsoMenuAction::Resume),
+        "retry" => Ok(IsoMenuAction::Retry),
+        "quit" => Ok(IsoMenuAction::Quit),
+        "back" => Ok(IsoMenuAction::Back),
+        "submenu" => Ok(IsoMenuAction::Submenu(
+            required_string(object, "target")?.to_string(),
+        )),
+        _ => Err(format!("unsupported SBH ISO menu action kind '{kind}'")),
+    }
+}
+
+fn required_string<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<&'a str, String> {
+    object
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("SBH ISO menu field '{key}' must be a string"))
+}
+
+fn optional_string<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<&'a str> {
+    object.get(key).and_then(serde_json::Value::as_str)
+}
+
+fn optional_nullable_string<'a>(
+    object: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<Option<&'a str>>, String> {
+    match object.get(key) {
+        None => Ok(None),
+        Some(serde_json::Value::Null) => Ok(Some(None)),
+        Some(value) => value
+            .as_str()
+            .map(|value| Some(Some(value)))
+            .ok_or_else(|| format!("SBH ISO menu field '{key}' must be a string or null")),
+    }
+}
+
+fn optional_i32(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<i32>, String> {
+    match object.get(key) {
+        None => Ok(None),
+        Some(value) => value
+            .as_i64()
+            .and_then(|value| i32::try_from(value).ok())
+            .map(Some)
+            .ok_or_else(|| format!("SBH ISO menu field '{key}' must be an i32")),
+    }
+}
+
+fn optional_u32(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<u32>, String> {
+    match object.get(key) {
+        None => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .map(Some)
+            .ok_or_else(|| format!("SBH ISO menu field '{key}' must be a u32")),
+    }
+}
+
+fn optional_pixel(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<Pixel>, String> {
+    match object.get(key) {
+        None => Ok(None),
+        Some(value) => value
+            .as_str()
+            .ok_or_else(|| format!("SBH ISO menu field '{key}' must be a color string"))
+            .and_then(parse_color)
+            .map(Some),
+    }
+}
+
+fn optional_font(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<Font>, String> {
+    match object.get(key) {
+        None => Ok(None),
+        Some(value) => {
+            let name = value
+                .as_str()
+                .ok_or_else(|| format!("SBH ISO menu field '{key}' must be a font string"))?;
+            Font::from_name(name)
+                .map(Some)
+                .ok_or_else(|| format!("unsupported SBH ISO font '{name}'"))
+        }
+    }
+}
+
+fn optional_nullable_pixel(
+    object: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Result<Option<Option<Pixel>>, String> {
+    match object.get(key) {
+        None => Ok(None),
+        Some(serde_json::Value::Null) => Ok(Some(None)),
+        Some(value) => value
+            .as_str()
+            .ok_or_else(|| format!("SBH ISO menu field '{key}' must be a color string or null"))
+            .and_then(parse_color)
+            .map(|color| Some(Some(color))),
+    }
+}
+
+fn parse_color(value: &str) -> Result<Pixel, String> {
+    match value {
+        "bg" => Ok(BG),
+        "panel" => Ok(PANEL),
+        "text" => Ok(TEXT),
+        "muted" => Ok(MUTED),
+        "gold" => Ok(GOLD),
+        "power" => Ok(POWER),
+        "shout" => Ok(SHOUT_COLOR),
+        "rock" => Ok(ROCK_COLOR),
+        "rock_invalid" => Ok(ROCK_INVALID),
+        "rock_valid" => Ok(ROCK_VALID),
+        "danger" => Ok(DANGER),
+        "danger_dark" => Ok(DANGER_DARK),
+        "guard_mark" => Ok(GUARD_MARK),
+        "smart" => Ok(SMART),
+        "bronze" => Ok(BRONZE),
+        "locked" => Ok(LOCKED),
+        "menu_accent" => Ok(MENU_ACCENT),
+        "menu_selected" => Ok(MENU_SELECTED),
+        hex if hex.starts_with('#') => parse_hex_color(hex),
+        _ => Err(format!("unsupported SBH ISO color '{value}'")),
+    }
+}
+
+fn parse_hex_color(value: &str) -> Result<Pixel, String> {
+    let hex = &value[1..];
+    let parse_byte = |range: std::ops::Range<usize>| {
+        u8::from_str_radix(&hex[range], 16).map_err(|_| format!("invalid SBH ISO color '{value}'"))
+    };
+    match hex.len() {
+        6 => Ok(Pixel::rgb(
+            parse_byte(0..2)?,
+            parse_byte(2..4)?,
+            parse_byte(4..6)?,
+        )),
+        8 => Ok(Pixel::rgba(
+            parse_byte(0..2)?,
+            parse_byte(2..4)?,
+            parse_byte(4..6)?,
+            parse_byte(6..8)?,
+        )),
+        _ => Err(format!("invalid SBH ISO color '{value}'")),
+    }
+}
+
+fn parse_string_array(value: &serde_json::Value) -> Result<Vec<String>, String> {
+    value
+        .as_array()
+        .ok_or_else(|| "SBH ISO menu body must be an array".to_string())?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "SBH ISO menu body entries must be strings".to_string())
+        })
+        .collect()
+}
+
 pub struct SmartBoyHeroIsoGame {
     world: SmartBoyWorld,
     sprites: Image,
     sounds: SoundBank,
+    menu: IsoMenu,
     camera: Camera,
     camera_target: Camera,
     simulation_accumulator: Duration,
@@ -213,9 +935,10 @@ pub struct SmartBoyHeroIsoGame {
     screen_shake: Duration,
     boulder_roll_loop: Option<PlaybackId>,
     sfx_rng: u32,
-    feedback_text: Option<(&'static str, Duration)>,
+    feedback: Option<ActiveFeedback>,
     death_elapsed: Option<Duration>,
     game_over: bool,
+    move_repeat: DirectionRepeat,
 }
 
 impl SmartBoyHeroIsoGame {
@@ -229,6 +952,10 @@ impl SmartBoyHeroIsoGame {
             ))
             .expect("checked-in SBH iso sprite sheet should decode"),
             sounds: smart_boy_sound_bank().expect("checked-in SBH SFX config should load"),
+            menu: IsoMenu::new(
+                IsoMenuConfig::parse(MENU_CONFIG_JSON)
+                    .expect("checked-in SBH ISO menu config should parse"),
+            ),
             camera,
             camera_target: camera,
             simulation_accumulator: Duration::ZERO,
@@ -245,9 +972,10 @@ impl SmartBoyHeroIsoGame {
             screen_shake: Duration::ZERO,
             boulder_roll_loop: None,
             sfx_rng: INITIAL_SEED ^ 0x0A11_D150,
-            feedback_text: None,
+            feedback: None,
             death_elapsed: None,
             game_over: false,
+            move_repeat: DirectionRepeat::default(),
         }
     }
 
@@ -259,6 +987,7 @@ impl SmartBoyHeroIsoGame {
         self.hero_motion = None;
         self.enemy_motions.clear();
         self.boulder_motions.clear();
+        self.menu.close();
         self.targeting = None;
         self.rock_flight = None;
         self.rock_impact = None;
@@ -267,9 +996,10 @@ impl SmartBoyHeroIsoGame {
         self.smart_flash = None;
         self.key_elapsed = Duration::ZERO;
         self.screen_shake = Duration::ZERO;
-        self.feedback_text = None;
+        self.feedback = None;
         self.death_elapsed = None;
         self.game_over = false;
+        self.move_repeat.reset();
     }
 
     fn restart_with_audio(&mut self, audio: &mut dyn Audio) {
@@ -278,8 +1008,19 @@ impl SmartBoyHeroIsoGame {
     }
 
     fn update_running(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        if self.world.phase() == Phase::Won {
+            self.move_repeat.reset();
+            return self.update_victory(frame);
+        }
+
         if self.game_over || self.death_elapsed.is_some() {
+            self.move_repeat.reset();
             return self.update_death_or_game_over(frame);
+        }
+
+        if self.menu.is_open() {
+            self.move_repeat.reset();
+            return self.update_menu(frame);
         }
 
         if pressed(frame, Key::R, GamepadButton::West) {
@@ -288,25 +1029,32 @@ impl SmartBoyHeroIsoGame {
         }
 
         if self.targeting.is_some() {
+            self.move_repeat.reset();
             self.update_targeting(frame);
             self.advance_transients(frame.delta_time);
             return GameResult::Continue;
         }
 
         if pressed(frame, Key::Escape, GamepadButton::Start) {
+            self.move_repeat.reset();
             self.stop_boulder_roll(frame.audio);
-            return GameResult::Exit;
+            self.menu.open("pause");
+            return GameResult::Continue;
         }
 
         let mut events = Vec::new();
         if let Some(target) = touch_rock_target(frame, &self.world, self.camera) {
+            self.move_repeat.reset();
             self.start_rock_flight(target);
         } else if pressed(frame, Key::F, GamepadButton::RightShoulder) {
+            self.move_repeat.reset();
             self.start_targeting();
-        } else if self.rock_flight.is_none()
-            && let Some(action) = requested_action(frame)
-        {
-            events.extend(self.capture_player_action(action));
+        } else if self.rock_flight.is_none() {
+            if let Some(action) = self.requested_action(frame) {
+                events.extend(self.capture_player_action(action));
+            }
+        } else {
+            self.move_repeat.reset();
         }
 
         events.extend(self.update_rock_flight(frame.delta_time));
@@ -335,13 +1083,59 @@ impl SmartBoyHeroIsoGame {
         self.capture_feedback(&events);
         self.update_boulder_roll_audio(frame.audio, &events);
         self.play_sounds(frame.audio, &events);
-        if self.world.phase() == Phase::Dead {
+        if self.world.phase() != Phase::Running {
             self.stop_boulder_roll(frame.audio);
         }
         self.advance_camera(frame.delta_time);
         self.advance_transients(frame.delta_time);
 
         GameResult::Continue
+    }
+
+    fn update_menu(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        if pressed(frame, Key::Escape, GamepadButton::Start)
+            || frame
+                .input
+                .gamepad_button_any(GamepadButton::East)
+                .pressed()
+        {
+            let command = self.menu.escape();
+            return self.apply_menu_command(command, frame.audio);
+        }
+
+        if let Some(index) = touched_menu_item(frame, &self.menu) {
+            self.menu.select(index);
+            let command = self.menu.activate_selected();
+            return self.apply_menu_command(command, frame.audio);
+        }
+
+        if pressed(frame, Key::Up, GamepadButton::DPadUp) || frame.input.key(Key::W).pressed() {
+            self.menu.select_previous();
+        }
+        if pressed(frame, Key::Down, GamepadButton::DPadDown) || frame.input.key(Key::S).pressed() {
+            self.menu.select_next();
+        }
+        if pressed(frame, Key::Space, GamepadButton::South) {
+            let command = self.menu.activate_selected();
+            return self.apply_menu_command(command, frame.audio);
+        }
+
+        self.advance_transients(frame.delta_time);
+        GameResult::Continue
+    }
+
+    fn apply_menu_command(&mut self, command: IsoMenuCommand, audio: &mut dyn Audio) -> GameResult {
+        match command {
+            IsoMenuCommand::Continue | IsoMenuCommand::Resume => GameResult::Continue,
+            IsoMenuCommand::Retry => {
+                self.restart_with_audio(audio);
+                GameResult::Continue
+            }
+            IsoMenuCommand::Quit => {
+                self.stop_boulder_roll(audio);
+                GameResult::Exit
+            }
+        }
     }
 
     fn update_death_or_game_over(&mut self, frame: &mut Frame<'_>) -> GameResult {
@@ -353,32 +1147,71 @@ impl SmartBoyHeroIsoGame {
             if elapsed >= DEATH_ANIMATION_DURATION {
                 self.death_elapsed = None;
                 self.game_over = true;
-                self.feedback_text = None;
+                self.feedback = None;
+                self.menu.open("game_over");
             }
             return GameResult::Continue;
         }
 
-        if game_over_retry_requested(frame) {
+        if !self.menu.is_open() {
+            self.menu.open("game_over");
+        }
+        if pressed(frame, Key::R, GamepadButton::West) {
             self.restart_with_audio(frame.audio);
             return GameResult::Continue;
         }
-        if game_over_quit_requested(frame) {
+        let on_game_over_root = self
+            .menu
+            .active_screen()
+            .is_some_and(|screen| screen.id == "game_over");
+        if on_game_over_root
+            && (pressed(frame, Key::Escape, GamepadButton::Start)
+                || frame
+                    .input
+                    .gamepad_button_any(GamepadButton::East)
+                    .pressed())
+        {
             return GameResult::Exit;
         }
-        GameResult::Continue
+        self.update_menu(frame)
+    }
+
+    fn update_victory(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        self.stop_boulder_roll(frame.audio);
+        if !self.menu.is_open() {
+            self.menu.open("victory");
+        }
+        if pressed(frame, Key::R, GamepadButton::West) {
+            self.restart_with_audio(frame.audio);
+            return GameResult::Continue;
+        }
+        let on_victory_root = self
+            .menu
+            .active_screen()
+            .is_some_and(|screen| screen.id == "victory");
+        if on_victory_root
+            && (pressed(frame, Key::Escape, GamepadButton::Start)
+                || frame
+                    .input
+                    .gamepad_button_any(GamepadButton::East)
+                    .pressed())
+        {
+            return GameResult::Exit;
+        }
+        self.update_menu(frame)
     }
 
     fn start_targeting(&mut self) {
         self.targeting = Some(TargetingState {
             target: initial_rock_target(&self.world),
         });
-        self.feedback_text = Some(("ROCK?", Duration::ZERO));
+        self.set_feedback("rock_prompt");
     }
 
     fn update_targeting(&mut self, frame: &Frame<'_>) {
         if pressed(frame, Key::Escape, GamepadButton::East) {
             self.targeting = None;
-            self.feedback_text = Some(("CANCEL", Duration::ZERO));
+            self.set_feedback("target_cancel");
             return;
         }
 
@@ -409,7 +1242,7 @@ impl SmartBoyHeroIsoGame {
                 self.targeting = None;
                 self.start_rock_flight(targeting.target);
             } else {
-                self.feedback_text = Some(("NOPE", Duration::ZERO));
+                self.set_feedback("target_invalid");
             }
         }
     }
@@ -420,7 +1253,7 @@ impl SmartBoyHeroIsoGame {
             to: target,
             elapsed: Duration::ZERO,
         });
-        self.feedback_text = Some(("THROW", Duration::ZERO));
+        self.set_feedback("rock_throw");
     }
 
     fn update_rock_flight(&mut self, delta: Duration) -> Vec<WorldEvent> {
@@ -467,7 +1300,19 @@ impl SmartBoyHeroIsoGame {
                     }
                     _ => (SHOUT_SOUNDS[0], None),
                 };
-                sound_for_event(event, shout_sound, death_sound.unwrap_or(DEATH_SOUNDS[0]))
+                let configured_sound = feedback_key_for_event(event)
+                    .and_then(|key| self.menu.config.feedback.preset(key))
+                    .and_then(|preset| preset.sound.as_deref())
+                    .and_then(|key| {
+                        sound_id_from_config_key(
+                            key,
+                            shout_sound,
+                            death_sound.unwrap_or(DEATH_SOUNDS[0]),
+                        )
+                    });
+                configured_sound.or_else(|| {
+                    sound_for_event(event, shout_sound, death_sound.unwrap_or(DEATH_SOUNDS[0]))
+                })
             })
             .collect()
     }
@@ -509,6 +1354,13 @@ impl SmartBoyHeroIsoGame {
             });
         }
         report.events
+    }
+
+    fn requested_action(&mut self, frame: &Frame<'_>) -> Option<PlayerAction> {
+        self.move_repeat
+            .update(held_direction(frame), frame.delta_time)
+            .map(PlayerAction::Move)
+            .or_else(|| pressed(frame, Key::E, GamepadButton::North).then_some(PlayerAction::Shout))
     }
 
     fn capture_enemy_motions(&mut self, previous_enemies: &[Cell]) {
@@ -556,16 +1408,22 @@ impl SmartBoyHeroIsoGame {
                         cell,
                         elapsed: Duration::ZERO,
                     });
-                    self.feedback_text =
-                        Some((if heard == 0 { "SHOUT" } else { "HEARD!" }, Duration::ZERO));
+                    self.set_feedback(if heard == 0 {
+                        "shout_empty"
+                    } else {
+                        "shout_heard"
+                    });
                 }
                 WorldEvent::RockImpacted { cell, heard } => {
                     self.rock_impact = Some(TimedCell {
                         cell,
                         elapsed: Duration::ZERO,
                     });
-                    self.feedback_text =
-                        Some((if heard == 0 { "CLACK" } else { "LURED!" }, Duration::ZERO));
+                    self.set_feedback(if heard == 0 {
+                        "rock_impact"
+                    } else {
+                        "rock_lured"
+                    });
                 }
                 WorldEvent::EnemyKilled { cell, .. } => self.kill_bursts.push(TimedCell {
                     cell,
@@ -573,54 +1431,64 @@ impl SmartBoyHeroIsoGame {
                 }),
                 WorldEvent::SmartChain { count } => {
                     self.smart_flash = Some((count, Duration::ZERO));
-                    self.feedback_text = Some(("SMART!", Duration::ZERO));
+                    self.set_feedback("smart_chain");
                 }
                 WorldEvent::BoulderReleased { .. } => {
-                    self.feedback_text = Some(("RUN!", Duration::ZERO));
+                    self.set_feedback("boulder_release");
                     self.screen_shake = Duration::from_millis(120);
                 }
                 WorldEvent::BoulderCrushedEnemy { chain, .. } => {
-                    self.feedback_text = Some(("CRUSH!", Duration::ZERO));
+                    self.set_feedback("boulder_crush");
                     self.screen_shake = Duration::from_millis(if chain >= 3 { 360 } else { 220 });
                 }
                 WorldEvent::BoulderStopped { .. } => {
-                    self.feedback_text = Some(("THUD!", Duration::ZERO));
+                    self.set_feedback("boulder_stop");
                     self.screen_shake = self.screen_shake.max(Duration::from_millis(160));
                 }
                 WorldEvent::BoulderSmartChain { count } => {
                     self.smart_flash = Some((count, Duration::ZERO));
-                    self.feedback_text = Some(if count >= 4 {
-                        ("GENIUS!", Duration::ZERO)
+                    self.set_feedback(if count >= 4 {
+                        "boulder_genius"
                     } else {
-                        ("SMART!", Duration::ZERO)
+                        "smart_chain"
                     });
                 }
-                WorldEvent::TrapTriggered => self.feedback_text = Some(("SNAP!", Duration::ZERO)),
+                WorldEvent::TrapTriggered => self.set_feedback("trap_trigger"),
                 WorldEvent::WalkerSpottedHero => {
-                    self.feedback_text = Some(("SPOTTED!", Duration::ZERO));
+                    self.set_feedback("enemy_alert");
                 }
                 WorldEvent::CoreKeyDropped { .. } => {
-                    self.feedback_text = Some(("KEY DROP", Duration::ZERO));
+                    self.set_feedback("key_drop");
                 }
                 WorldEvent::CoreKeyAcquired => {
-                    self.feedback_text = Some(("KEY!", Duration::ZERO));
+                    self.set_feedback("key_pickup");
                 }
                 WorldEvent::LockedGateBlocked => {
-                    self.feedback_text = Some(("LOCKED", Duration::ZERO));
+                    self.set_feedback("locked");
                 }
                 WorldEvent::CoreGateUnlocked => {
-                    self.feedback_text = Some(("OPEN!", Duration::ZERO));
+                    self.set_feedback("gate_open");
                 }
                 WorldEvent::HeroDied => {
-                    self.feedback_text = Some(("OUCH!", Duration::ZERO));
+                    self.set_feedback("hero_dead");
                     self.death_elapsed = Some(Duration::ZERO);
                     self.targeting = None;
                     self.rock_flight = None;
                 }
-                WorldEvent::Won => self.feedback_text = Some(("CLEAR!", Duration::ZERO)),
+                WorldEvent::Won => {
+                    self.set_feedback("victory");
+                    self.move_repeat.reset();
+                    self.targeting = None;
+                    self.rock_flight = None;
+                    self.menu.open("victory");
+                }
                 _ => {}
             }
         }
+    }
+
+    fn set_feedback(&mut self, key: &'static str) {
+        self.feedback = Some(ActiveFeedback::new(key));
     }
 
     fn advance_camera(&mut self, delta: Duration) {
@@ -674,10 +1542,10 @@ impl SmartBoyHeroIsoGame {
                 self.smart_flash = None;
             }
         }
-        if let Some((_, elapsed)) = &mut self.feedback_text {
-            *elapsed += delta;
-            if *elapsed >= FEEDBACK_DURATION {
-                self.feedback_text = None;
+        if let Some(feedback) = &mut self.feedback {
+            feedback.elapsed += delta;
+            if feedback.elapsed >= FEEDBACK_DURATION {
+                self.feedback = None;
             }
         }
         self.key_elapsed += delta;
@@ -687,15 +1555,11 @@ impl SmartBoyHeroIsoGame {
     fn draw(&self, framebuffer: &mut Framebuffer) {
         framebuffer.clear(BG);
         let camera = self.camera.with_shake(self.shake_offset());
-        draw_hud(
-            framebuffer,
-            &self.world,
-            self.feedback_text,
-            self.smart_flash,
-        );
+        draw_hud(framebuffer, &self.world);
         draw_room(framebuffer, &self.world, &self.sprites, self, camera);
-        if self.game_over {
-            draw_game_over(framebuffer);
+        draw_feedback_overlay(framebuffer, self.feedback, &self.menu.config.feedback);
+        if self.menu.is_open() {
+            draw_menu_overlay(framebuffer, &self.menu);
         }
     }
 
@@ -738,28 +1602,6 @@ impl Default for SmartBoyHeroIsoGame {
     }
 }
 
-fn requested_action(frame: &Frame<'_>) -> Option<PlayerAction> {
-    if pressed(frame, Key::Up, GamepadButton::DPadUp) || frame.input.key(Key::W).pressed() {
-        Some(PlayerAction::Move(Direction::Up))
-    } else if pressed(frame, Key::Down, GamepadButton::DPadDown)
-        || frame.input.key(Key::S).pressed()
-    {
-        Some(PlayerAction::Move(Direction::Down))
-    } else if pressed(frame, Key::Left, GamepadButton::DPadLeft)
-        || frame.input.key(Key::A).pressed()
-    {
-        Some(PlayerAction::Move(Direction::Left))
-    } else if pressed(frame, Key::Right, GamepadButton::DPadRight)
-        || frame.input.key(Key::D).pressed()
-    {
-        Some(PlayerAction::Move(Direction::Right))
-    } else if pressed(frame, Key::E, GamepadButton::North) {
-        Some(PlayerAction::Shout)
-    } else {
-        None
-    }
-}
-
 fn target_direction(frame: &Frame<'_>) -> Option<Direction> {
     if pressed(frame, Key::Up, GamepadButton::DPadUp) || frame.input.key(Key::W).pressed() {
         Some(Direction::Up)
@@ -774,6 +1616,20 @@ fn target_direction(frame: &Frame<'_>) -> Option<Direction> {
     } else if pressed(frame, Key::Right, GamepadButton::DPadRight)
         || frame.input.key(Key::D).pressed()
     {
+        Some(Direction::Right)
+    } else {
+        None
+    }
+}
+
+fn held_direction(frame: &Frame<'_>) -> Option<Direction> {
+    if held(frame, Key::Up, GamepadButton::DPadUp) || frame.input.key(Key::W).held() {
+        Some(Direction::Up)
+    } else if held(frame, Key::Down, GamepadButton::DPadDown) || frame.input.key(Key::S).held() {
+        Some(Direction::Down)
+    } else if held(frame, Key::Left, GamepadButton::DPadLeft) || frame.input.key(Key::A).held() {
+        Some(Direction::Left)
+    } else if held(frame, Key::Right, GamepadButton::DPadRight) || frame.input.key(Key::D).held() {
         Some(Direction::Right)
     } else {
         None
@@ -830,6 +1686,10 @@ fn pressed(frame: &Frame<'_>, key: Key, button: GamepadButton) -> bool {
     frame.input.key(key).pressed() || frame.input.gamepad_button_any(button).pressed()
 }
 
+fn held(frame: &Frame<'_>, key: Key, button: GamepadButton) -> bool {
+    frame.input.key(key).held() || frame.input.gamepad_button_any(button).held()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ButtonRect {
     x: i32,
@@ -847,47 +1707,54 @@ impl ButtonRect {
     }
 }
 
-const GAME_OVER_RETRY: ButtonRect = ButtonRect {
-    x: 178,
-    y: 174,
-    width: 164,
-    height: 32,
-};
-const GAME_OVER_QUIT: ButtonRect = ButtonRect {
-    x: 178,
-    y: 214,
-    width: 164,
-    height: 32,
+const MENU_PANEL: ButtonRect = ButtonRect {
+    x: 116,
+    y: 58,
+    width: 288,
+    height: 216,
 };
 
-fn game_over_retry_requested(frame: &Frame<'_>) -> bool {
-    pressed(frame, Key::R, GamepadButton::West)
-        || pressed(frame, Key::Space, GamepadButton::South)
-        || touch_started_in(frame, GAME_OVER_RETRY)
+fn touched_menu_item(frame: &Frame<'_>, menu: &IsoMenu) -> Option<usize> {
+    let screen = menu.active_screen()?;
+    frame
+        .input
+        .touches()
+        .iter()
+        .filter(|touch| matches!(touch.phase, TouchPhase::Started))
+        .filter_map(|touch| touch.position)
+        .find_map(|position| {
+            screen
+                .items
+                .iter()
+                .enumerate()
+                .find(|(index, _)| menu_item_rect(screen, *index).contains(position))
+                .map(|(index, _)| index)
+        })
 }
 
-fn game_over_quit_requested(frame: &Frame<'_>) -> bool {
-    pressed(frame, Key::Escape, GamepadButton::Start)
-        || frame
-            .input
-            .gamepad_button_any(GamepadButton::East)
-            .pressed()
-        || touch_started_in(frame, GAME_OVER_QUIT)
+fn menu_items_start_y(screen: &IsoMenuScreen) -> i32 {
+    let title_height = Framebuffer::text_size_with_font(
+        screen.style.font,
+        &screen.title,
+        screen.style.title_scale,
+    )
+    .1 as i32;
+    let mut y = MENU_PANEL.y + 16 + title_height + 14;
+    y += screen.body.len() as i32 * (8 * screen.style.body_scale as i32 + 6);
+    y + if screen.body.is_empty() { 8 } else { 10 }
 }
 
-fn touch_started_in(frame: &Frame<'_>, rect: ButtonRect) -> bool {
-    frame.input.touches().iter().any(|touch| {
-        matches!(touch.phase, TouchPhase::Started)
-            && touch.position.is_some_and(|pos| rect.contains(pos))
-    })
+fn menu_item_rect(screen: &IsoMenuScreen, index: usize) -> ButtonRect {
+    let item_height = 9 * screen.style.item_scale as i32 + 9;
+    ButtonRect {
+        x: MENU_PANEL.x + 18,
+        y: menu_items_start_y(screen) + index as i32 * (item_height + 5),
+        width: MENU_PANEL.width - 36,
+        height: item_height,
+    }
 }
 
-fn draw_hud(
-    framebuffer: &mut Framebuffer,
-    world: &SmartBoyWorld,
-    feedback_text: Option<(&'static str, Duration)>,
-    smart_flash: Option<(usize, Duration)>,
-) {
+fn draw_hud(framebuffer: &mut Framebuffer, world: &SmartBoyWorld) {
     framebuffer.fill_rect(0, 0, FRAMEBUFFER_WIDTH, 48, PANEL);
     framebuffer.draw_text_scaled(10, 8, "SMART BOY HERO ISO", 2, GOLD);
     framebuffer.draw_text(
@@ -905,20 +1772,14 @@ fn draw_hud(
         318,
         8,
         if world.has_core_key() {
-            "KEY ACQUIRED"
+            "OBJ REACH EXIT"
         } else {
             "OBJ FIND CORE KEY"
         },
         MUTED,
     );
     framebuffer.draw_text(338, 20, "MOVE WASD/ARROWS", MUTED);
-    framebuffer.draw_text(338, 32, "SHOUT E  ROCK F  R/ESC", MUTED);
-
-    if let Some((count, _)) = smart_flash {
-        framebuffer.draw_text_scaled(192, 52, &format!("SMART x{count}"), 3, SMART);
-    } else if let Some((text, _)) = feedback_text {
-        framebuffer.draw_text_scaled(216, 52, text, 2, POWER);
-    }
+    framebuffer.draw_text(338, 32, "SHOUT E  ROCK F  ESC MENU", MUTED);
 }
 
 fn draw_room(
@@ -1012,26 +1873,13 @@ fn draw_low_objects(
     camera: Camera,
 ) {
     for (index, trap) in world.traps().iter().enumerate() {
-        draw_sprite_at_cell(
-            framebuffer,
-            sprites,
-            if world.trap_active(index) {
-                SpriteFrame::TrapArmed
-            } else {
-                SpriteFrame::TrapInactive
-            },
-            trap.cell,
-            camera,
-        );
-        let point = project_cell(trap.cell, camera);
-        if world.trap_active(index) {
-            framebuffer.draw_circle(point.x as i32, point.y as i32 - 4, 14, DANGER);
-        }
+        draw_iso_trap(framebuffer, trap.cell, camera, world.trap_active(index));
     }
     for (index, lever) in world.levers().iter().enumerate() {
         draw_sprite_at_cell(framebuffer, sprites, SpriteFrame::Plate, lever.cell, camera);
         draw_actuator_marker(framebuffer, world.lever_actuator(index), lever.cell, camera);
     }
+    draw_exit_marker(framebuffer, world.exit(), camera);
 }
 
 fn draw_enemy(
@@ -1051,11 +1899,11 @@ fn draw_enemy(
         game.enemy_motions.get(index).and_then(|motion| *motion),
         camera,
     );
-    let frame = match enemy.intent {
-        EnemyIntent::Patrol => SpriteFrame::WalkerPatrol,
-        EnemyIntent::Investigate { .. } | EnemyIntent::ChaseHero { .. } => SpriteFrame::WalkerAlert,
-    };
-    draw_sprite_at_point(framebuffer, sprites, frame, point);
+    let frame = enemy_sprite_frame(enemy.kind, enemy.intent);
+    draw_actor_sprite_at_point(framebuffer, sprites, frame, point);
+    if matches!(enemy.kind, EnemyKind::Guard) {
+        draw_guard_marker(framebuffer, point);
+    }
     if world.enemy_is_key_warden(index) {
         framebuffer.draw_circle(point.x as i32, point.y as i32 - 22, 20, LOCKED);
         framebuffer.draw_text(point.x as i32 - 6, point.y as i32 - 54, "KEY", LOCKED);
@@ -1088,7 +1936,7 @@ fn draw_boulder(
             _ => SpriteFrame::Boulder2,
         },
     };
-    draw_sprite_at_point(framebuffer, sprites, frame, point);
+    draw_actor_sprite_at_point(framebuffer, sprites, frame, point);
     if matches!(boulder.state, BoulderState::Ready) {
         framebuffer.draw_circle(point.x as i32, point.y as i32 - 16, 18, BRONZE);
     }
@@ -1114,7 +1962,7 @@ fn draw_hero(
     } else {
         SpriteFrame::HeroIdle
     };
-    draw_sprite_at_point(framebuffer, sprites, frame, point);
+    draw_actor_sprite_at_point(framebuffer, sprites, frame, point);
     draw_centered_text(
         framebuffer,
         point,
@@ -1130,36 +1978,53 @@ fn draw_actuator_marker(
     cell: Cell,
     camera: Camera,
 ) {
-    let point = project_cell(cell, camera);
+    let point = project_tile_center(cell, camera);
+    let x = point.x as i32;
+    let y = point.y as i32;
     match actuator {
         world::ActuatorKind::Boulder => {
-            framebuffer.draw_circle(point.x as i32, point.y as i32 - 6, 15, BRONZE);
-            framebuffer.draw_line(
-                point.x as i32 - 8,
-                point.y as i32 - 6,
-                point.x as i32 + 8,
-                point.y as i32 - 6,
+            draw_iso_diamond_at(
+                framebuffer,
+                x,
+                y,
+                ACTUATOR_MARKER_HALF_WIDTH,
+                ACTUATOR_MARKER_HALF_HEIGHT,
                 BRONZE,
             );
+            framebuffer.draw_line(x - 8, y, x + 8, y, BRONZE);
+            framebuffer.draw_line(x - 5, y - 2, x - 5, y + 2, BRONZE);
+            framebuffer.draw_line(x + 5, y - 2, x + 5, y + 2, BRONZE);
         }
         world::ActuatorKind::Trap => {
-            framebuffer.draw_circle(point.x as i32, point.y as i32 - 6, 14, DANGER);
-            framebuffer.draw_line(
-                point.x as i32,
-                point.y as i32 - 16,
-                point.x as i32,
-                point.y as i32 + 2,
+            draw_iso_diamond_at(
+                framebuffer,
+                x,
+                y,
+                ACTUATOR_MARKER_HALF_WIDTH,
+                ACTUATOR_MARKER_HALF_HEIGHT,
                 DANGER,
             );
+            framebuffer.draw_line(x - 6, y + 2, x, y - 4, DANGER);
+            framebuffer.draw_line(x, y - 4, x + 6, y + 2, DANGER);
+            framebuffer.draw_line(x - 5, y + 2, x + 5, y + 2, DANGER);
         }
         world::ActuatorKind::Door => {
-            framebuffer.draw_circle(point.x as i32, point.y as i32 - 6, 13, LOCKED);
+            draw_iso_diamond_at(
+                framebuffer,
+                x,
+                y,
+                ACTUATOR_MARKER_HALF_WIDTH,
+                ACTUATOR_MARKER_HALF_HEIGHT,
+                LOCKED,
+            );
+            framebuffer.draw_rect(x - 4, y - 3, 9, 6, LOCKED);
+            framebuffer.draw_line(x, y - 5, x, y + 5, LOCKED);
         }
     }
 }
 
 fn draw_key_marker(framebuffer: &mut Framebuffer, cell: Cell, camera: Camera, elapsed: Duration) {
-    let point = project_cell(cell, camera);
+    let point = project_tile_center(cell, camera);
     let x = point.x as i32;
     let y = point.y as i32;
     let pulse = (elapsed.as_secs_f32() * 7.0).sin();
@@ -1170,18 +2035,27 @@ fn draw_key_marker(framebuffer: &mut Framebuffer, cell: Cell, camera: Camera, el
     framebuffer.fill_circle(x, y, 4, LOCKED);
 
     let key_y = y - 14 + bob;
-    framebuffer.fill_circle(x - 7, key_y, 5, LOCKED);
-    framebuffer.draw_circle(x - 7, key_y, 8, GOLD);
-    framebuffer.draw_line(x - 1, key_y, x + 15, key_y, LOCKED);
-    framebuffer.draw_line(x + 9, key_y, x + 9, key_y + 7, LOCKED);
-    framebuffer.draw_line(x + 14, key_y, x + 14, key_y + 5, LOCKED);
+    framebuffer.fill_circle(x - 10, key_y, 5, LOCKED);
+    framebuffer.draw_circle(x - 10, key_y, 8, GOLD);
+    framebuffer.draw_line(x - 4, key_y, x + 12, key_y, LOCKED);
+    framebuffer.draw_line(x + 6, key_y, x + 6, key_y + 7, LOCKED);
+    framebuffer.draw_line(x + 11, key_y, x + 11, key_y + 5, LOCKED);
 }
 
 fn draw_locked_gate_marker(framebuffer: &mut Framebuffer, cell: Cell, camera: Camera) {
-    let point = project_cell(cell, camera);
+    let point = project_tile_center(cell, camera);
     framebuffer.draw_circle(point.x as i32, point.y as i32 - 32, 15, LOCKED);
     framebuffer.fill_rect(point.x as i32 - 8, point.y as i32 - 31, 16, 14, LOCKED);
     framebuffer.draw_text(point.x as i32 - 8, point.y as i32 - 48, "KEY", LOCKED);
+}
+
+fn draw_exit_marker(framebuffer: &mut Framebuffer, cell: Cell, camera: Camera) {
+    let point = project_tile_center(cell, camera);
+    let x = point.x as i32;
+    let y = point.y as i32;
+    draw_iso_diamond_at(framebuffer, x, y, 17, 8, SMART);
+    draw_iso_diamond_at(framebuffer, x, y, 10, 5, GOLD);
+    framebuffer.draw_text(x - 12, y - 24, "EXIT", SMART);
 }
 
 fn draw_dead_hero(
@@ -1259,14 +2133,8 @@ fn draw_vfx(
         let point = project_cell(burst.cell, camera);
         let t = burst.elapsed.as_secs_f32() / FEEDBACK_DURATION.as_secs_f32();
         let offset = (t * 18.0) as i32;
-        draw_sprite_at_cell(
-            framebuffer,
-            sprites,
-            SpriteFrame::TrapTriggered,
-            burst.cell,
-            camera,
-        );
-        draw_sprite_at_point(
+        draw_iso_trap(framebuffer, burst.cell, camera, true);
+        draw_actor_sprite_at_point(
             framebuffer,
             sprites,
             SpriteFrame::WalkerDeath,
@@ -1284,36 +2152,160 @@ fn draw_vfx(
     }
 }
 
-fn draw_game_over(framebuffer: &mut Framebuffer) {
+fn draw_menu_overlay(framebuffer: &mut Framebuffer, menu: &IsoMenu) {
+    let Some(screen) = menu.active_screen() else {
+        return;
+    };
+    let panel = MENU_PANEL;
     framebuffer.fill_rect(
         0,
         0,
         FRAMEBUFFER_WIDTH,
         FRAMEBUFFER_HEIGHT,
-        Pixel::rgba(0, 0, 0, 180),
+        Pixel::rgba(0, 0, 0, 150),
     );
-    framebuffer.fill_rect(148, 98, 224, 162, PANEL);
-    framebuffer.draw_rect(148, 98, 224, 162, DANGER);
-    framebuffer.draw_text_scaled(184, 116, "GAME OVER", 3, DANGER);
-    draw_button(framebuffer, GAME_OVER_RETRY, "RETRY  R / SPACE", LOCKED);
-    draw_button(framebuffer, GAME_OVER_QUIT, "QUIT  ESC", MUTED);
+    framebuffer.fill_rect(
+        panel.x,
+        panel.y,
+        panel.width as u32,
+        panel.height as u32,
+        PANEL,
+    );
+    framebuffer.draw_rect(
+        panel.x,
+        panel.y,
+        panel.width as u32,
+        panel.height as u32,
+        screen.style.accent_color,
+    );
+    framebuffer.draw_text_scaled_with_font(
+        screen.style.font,
+        panel.x + 18,
+        panel.y + 16,
+        &screen.title,
+        screen.style.title_scale,
+        screen.style.title_color,
+    );
+
+    let title_height = Framebuffer::text_size_with_font(
+        screen.style.font,
+        &screen.title,
+        screen.style.title_scale,
+    )
+    .1 as i32;
+    let mut y = panel.y + 16 + title_height + 14;
+    for line in &screen.body {
+        framebuffer.draw_text_scaled_with_font(
+            screen.style.font,
+            panel.x + 18,
+            y,
+            line,
+            screen.style.body_scale,
+            screen.style.muted_color,
+        );
+        y += 8 * screen.style.body_scale as i32 + 6;
+    }
+
+    y = menu_items_start_y(screen);
+    for (index, item) in screen.items.iter().enumerate() {
+        let selected = index == menu.selected_index();
+        let color = if selected {
+            screen.style.selected_color
+        } else {
+            screen.style.text_color
+        };
+        let prefix = if selected { ">" } else { " " };
+        let rect = menu_item_rect(screen, index);
+        if selected {
+            framebuffer.fill_rect(
+                rect.x,
+                rect.y - 3,
+                rect.width as u32,
+                rect.height as u32,
+                Pixel::rgba(255, 255, 255, 22),
+            );
+            framebuffer.draw_rect(
+                rect.x,
+                rect.y - 3,
+                rect.width as u32,
+                rect.height as u32,
+                screen.style.selected_color,
+            );
+        }
+        framebuffer.draw_text_scaled_with_font(
+            screen.style.font,
+            rect.x + 6,
+            y,
+            prefix,
+            screen.style.item_scale,
+            color,
+        );
+        framebuffer.draw_text_scaled_with_font(
+            screen.style.font,
+            rect.x + 22,
+            y,
+            &item.label,
+            screen.style.item_scale,
+            color,
+        );
+        y += rect.height + 5;
+    }
+
+    framebuffer.draw_text_scaled_with_font(
+        screen.style.font,
+        panel.x + 18,
+        panel.y + panel.height - 24,
+        "SPACE OK   ESC BACK",
+        screen.style.body_scale,
+        screen.style.muted_color,
+    );
 }
 
-fn draw_button(framebuffer: &mut Framebuffer, rect: ButtonRect, label: &str, color: Pixel) {
-    framebuffer.fill_rect(
-        rect.x,
-        rect.y,
-        rect.width as u32,
-        rect.height as u32,
-        Pixel::rgb(28, 30, 36),
-    );
-    framebuffer.draw_rect(rect.x, rect.y, rect.width as u32, rect.height as u32, color);
-    let (text_width, text_height) = Framebuffer::text_size(label, 1);
-    framebuffer.draw_text(
-        rect.x + (rect.width - text_width as i32) / 2,
-        rect.y + (rect.height - text_height as i32) / 2,
-        label,
-        TEXT,
+fn draw_feedback_overlay(
+    framebuffer: &mut Framebuffer,
+    feedback: Option<ActiveFeedback>,
+    config: &IsoFeedbackConfig,
+) {
+    let Some(feedback) = feedback else {
+        return;
+    };
+    let Some(preset) = config.preset(feedback.key) else {
+        return;
+    };
+    if preset.text.is_empty() {
+        return;
+    }
+    let (text_width, text_height) =
+        Framebuffer::text_size_with_font(preset.font, &preset.text, preset.scale);
+    let x = preset.x;
+    let y = preset.y;
+    if let Some(color) = preset.backdrop_color {
+        let padding = preset.backdrop_padding;
+        framebuffer.fill_rect(
+            x - padding,
+            y - padding,
+            text_width + (padding * 2) as u32,
+            text_height + (padding * 2) as u32,
+            color,
+        );
+    }
+    if let Some(color) = preset.shadow_color {
+        framebuffer.draw_text_scaled_with_font(
+            preset.font,
+            x + 2,
+            y + 2,
+            &preset.text,
+            preset.scale,
+            color,
+        );
+    }
+    framebuffer.draw_text_scaled_with_font(
+        preset.font,
+        x,
+        y,
+        &preset.text,
+        preset.scale,
+        preset.color,
     );
 }
 
@@ -1361,7 +2353,7 @@ fn draw_targeting_overlay(
 }
 
 fn draw_cell_diamond(framebuffer: &mut Framebuffer, cell: Cell, camera: Camera, pixel: Pixel) {
-    let point = project_cell(cell, camera);
+    let point = project_tile_center(cell, camera);
     draw_iso_diamond_at(
         framebuffer,
         point.x as i32,
@@ -1370,6 +2362,53 @@ fn draw_cell_diamond(framebuffer: &mut Framebuffer, cell: Cell, camera: Camera, 
         TILE_HEIGHT / 2,
         pixel,
     );
+}
+
+fn draw_iso_trap(framebuffer: &mut Framebuffer, cell: Cell, camera: Camera, active: bool) {
+    let point = project_tile_center(cell, camera);
+    let x = point.x as i32;
+    let y = point.y as i32;
+    let base = if active {
+        DANGER_DARK
+    } else {
+        Pixel::rgb(31, 35, 39)
+    };
+    let edge = if active { DANGER } else { MUTED };
+
+    fill_iso_diamond_at(
+        framebuffer,
+        x,
+        y,
+        TILE_WIDTH / 2 - 2,
+        TILE_HEIGHT / 2 - 1,
+        base,
+    );
+    draw_iso_diamond_at(framebuffer, x, y, TILE_WIDTH / 2 - 1, TILE_HEIGHT / 2, edge);
+
+    if active {
+        for dx in [-8, 0, 8] {
+            framebuffer.draw_line(x + dx - 4, y + 1, x + dx, y - 7, DANGER);
+            framebuffer.draw_line(x + dx + 4, y + 1, x + dx, y - 7, DANGER);
+            framebuffer.draw_line(x + dx - 3, y + 2, x + dx + 3, y + 2, DANGER);
+        }
+    } else {
+        framebuffer.draw_line(x - 9, y, x + 9, y, MUTED);
+        framebuffer.draw_line(x, y - 4, x, y + 4, MUTED);
+    }
+}
+
+fn fill_iso_diamond_at(
+    framebuffer: &mut Framebuffer,
+    x: i32,
+    y: i32,
+    half_width: i32,
+    half_height: i32,
+    pixel: Pixel,
+) {
+    for dy in -half_height..=half_height {
+        let width = half_width * (half_height - dy.abs()) / half_height.max(1);
+        framebuffer.draw_line(x - width, y + dy, x + width, y + dy, pixel);
+    }
 }
 
 fn draw_iso_diamond_at(
@@ -1384,6 +2423,27 @@ fn draw_iso_diamond_at(
     framebuffer.draw_line(x + half_width, y, x, y + half_height, pixel);
     framebuffer.draw_line(x, y + half_height, x - half_width, y, pixel);
     framebuffer.draw_line(x - half_width, y, x, y - half_height, pixel);
+}
+
+fn draw_guard_marker(framebuffer: &mut Framebuffer, point: ScreenPoint) {
+    let x = point.x as i32;
+    let y = point.y as i32;
+    framebuffer.draw_rect(x - 7, y - 26, 14, 13, GUARD_MARK);
+    framebuffer.draw_line(x - 10, y - 30, x + 10, y - 30, GUARD_MARK);
+    framebuffer.draw_line(x + 10, y - 31, x + 10, y - 8, GUARD_MARK);
+    framebuffer.fill_rect(x + 8, y - 10, 5, 3, GUARD_MARK);
+}
+
+fn enemy_sprite_frame(kind: EnemyKind, intent: EnemyIntent) -> SpriteFrame {
+    match kind {
+        EnemyKind::Guard => SpriteFrame::WalkerAlert,
+        EnemyKind::Walker { .. } | EnemyKind::Rat | EnemyKind::Cat => match intent {
+            EnemyIntent::Patrol => SpriteFrame::WalkerPatrol,
+            EnemyIntent::Investigate { .. } | EnemyIntent::ChaseHero { .. } => {
+                SpriteFrame::WalkerAlert
+            }
+        },
+    }
 }
 
 fn manhattan(a: Cell, b: Cell) -> i32 {
@@ -1406,6 +2466,25 @@ fn draw_sprite_at_point(
     frame: SpriteFrame,
     point: ScreenPoint,
 ) {
+    draw_sprite_at_point_with_y_offset(framebuffer, sprites, frame, point, TILE_SPRITE_Y_OFFSET);
+}
+
+fn draw_actor_sprite_at_point(
+    framebuffer: &mut Framebuffer,
+    sprites: &Image,
+    frame: SpriteFrame,
+    point: ScreenPoint,
+) {
+    draw_sprite_at_point_with_y_offset(framebuffer, sprites, frame, point, ACTOR_SPRITE_Y_OFFSET);
+}
+
+fn draw_sprite_at_point_with_y_offset(
+    framebuffer: &mut Framebuffer,
+    sprites: &Image,
+    frame: SpriteFrame,
+    point: ScreenPoint,
+    y_offset: i32,
+) {
     if point.x < -(SPRITE_SIZE as f32)
         || point.x > FRAMEBUFFER_WIDTH as f32 + SPRITE_SIZE as f32
         || point.y < -(SPRITE_HEIGHT as f32)
@@ -1413,12 +2492,20 @@ fn draw_sprite_at_point(
     {
         return;
     }
+    let (x, y) = sprite_top_left(point, y_offset);
     framebuffer.draw_image_region(
-        point.x as i32 - SPRITE_SIZE as i32 / 2,
-        point.y as i32 - 28,
+        x,
+        y,
         sprites,
         ImageRegion::new(frame as u32 * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_HEIGHT),
     );
+}
+
+fn sprite_top_left(point: ScreenPoint, y_offset: i32) -> (i32, i32) {
+    (
+        point.x as i32 - SPRITE_SIZE as i32 / 2,
+        point.y as i32 + y_offset,
+    )
 }
 
 fn draw_centered_text(
@@ -1456,6 +2543,14 @@ fn project_cell(cell: Cell, camera: Camera) -> ScreenPoint {
     ScreenPoint {
         x: raw.x - camera.offset_x,
         y: VIEWPORT_TOP as f32 + raw.y - camera.offset_y,
+    }
+}
+
+fn project_tile_center(cell: Cell, camera: Camera) -> ScreenPoint {
+    let point = project_cell(cell, camera);
+    ScreenPoint {
+        x: point.x,
+        y: point.y + TILE_VISUAL_CENTER_Y_OFFSET,
     }
 }
 
@@ -1558,6 +2653,68 @@ fn sound_for_event(
         WorldEvent::WalkerSpottedHero => Some(ENEMY_ALERT_SOUND),
         WorldEvent::HeroDied => Some(death_sound),
         WorldEvent::Won => Some(VICTORY_SOUND),
+        _ => None,
+    }
+}
+
+fn feedback_key_for_event(event: &WorldEvent) -> Option<&'static str> {
+    match *event {
+        WorldEvent::Shouted { heard, .. } => Some(if heard == 0 {
+            "shout_empty"
+        } else {
+            "shout_heard"
+        }),
+        WorldEvent::RockImpacted { heard, .. } => Some(if heard == 0 {
+            "rock_impact"
+        } else {
+            "rock_lured"
+        }),
+        WorldEvent::SmartChain { .. } => Some("smart_chain"),
+        WorldEvent::BoulderReleased { .. } => Some("boulder_release"),
+        WorldEvent::BoulderCrushedEnemy { .. } => Some("boulder_crush"),
+        WorldEvent::BoulderStopped { .. } => Some("boulder_stop"),
+        WorldEvent::BoulderSmartChain { count } => Some(if count >= 4 {
+            "boulder_genius"
+        } else {
+            "smart_chain"
+        }),
+        WorldEvent::TrapTriggered => Some("trap_trigger"),
+        WorldEvent::WalkerSpottedHero => Some("enemy_alert"),
+        WorldEvent::CoreKeyDropped { .. } => Some("key_drop"),
+        WorldEvent::CoreKeyAcquired => Some("key_pickup"),
+        WorldEvent::LockedGateBlocked => Some("locked"),
+        WorldEvent::CoreGateUnlocked => Some("gate_open"),
+        WorldEvent::HeroDied => Some("hero_dead"),
+        WorldEvent::Won => Some("victory"),
+        _ => None,
+    }
+}
+
+fn sound_id_from_config_key(
+    key: &str,
+    shout_sound: SoundId,
+    death_sound: SoundId,
+) -> Option<SoundId> {
+    match key {
+        "combat" => Some(COMBAT_SOUND),
+        "pressure_plate_on" => Some(PRESSURE_PLATE_ON_SOUND),
+        "pressure_plate_off" => Some(PRESSURE_PLATE_OFF_SOUND),
+        "door_open" => Some(DOOR_OPEN_SOUND),
+        "door_close" => Some(DOOR_CLOSE_SOUND),
+        "trap_arm" => Some(TRAP_ARM_SOUND),
+        "trap_disarm" => Some(TRAP_DISARM_SOUND),
+        "trap_trigger" => Some(TRAP_TRIGGER_SOUND),
+        "shout" => Some(shout_sound),
+        "rock_impact" => Some(ROCK_IMPACT_SOUND),
+        "enemy_kill" => Some(ENEMY_KILL_SOUND),
+        "enemy_alert" => Some(ENEMY_ALERT_SOUND),
+        "boulder_release" => Some(BOULDER_RELEASE_SOUND),
+        "boulder_crush" => Some(BOULDER_CRUSH_SOUND),
+        "boulder_stop" => Some(BOULDER_STOP_SOUND),
+        "key_pickup" => Some(KEY_PICKUP_SOUND),
+        "key_unlock" => Some(KEY_UNLOCK_SOUND),
+        "death" => Some(death_sound),
+        "victory" => Some(VICTORY_SOUND),
         _ => None,
     }
 }
@@ -1817,6 +2974,48 @@ mod tests {
         key_cell
     }
 
+    fn checked_in_menu_config() -> IsoMenuConfig {
+        IsoMenuConfig::parse(MENU_CONFIG_JSON).expect("checked-in menu config should parse")
+    }
+
+    #[test]
+    fn held_direction_repeats_after_initial_delay() {
+        let mut repeat = DirectionRepeat::default();
+
+        assert_eq!(
+            repeat.update(Some(Direction::Right), Duration::from_millis(16)),
+            Some(Direction::Right)
+        );
+        assert_eq!(
+            repeat.update(
+                Some(Direction::Right),
+                MOVE_REPEAT_DELAY - Duration::from_millis(1)
+            ),
+            None
+        );
+        assert_eq!(
+            repeat.update(Some(Direction::Right), Duration::from_millis(1)),
+            None
+        );
+        assert_eq!(
+            repeat.update(
+                Some(Direction::Right),
+                MOVE_REPEAT_PERIOD - Duration::from_millis(1)
+            ),
+            Some(Direction::Right)
+        );
+        assert_eq!(
+            repeat.update(Some(Direction::Up), Duration::from_millis(16)),
+            Some(Direction::Up)
+        );
+
+        assert_eq!(repeat.update(None, Duration::from_millis(16)), None);
+        assert_eq!(
+            repeat.update(Some(Direction::Up), Duration::from_millis(16)),
+            Some(Direction::Up)
+        );
+    }
+
     fn framebuffer_has_pixel_near(
         framebuffer: &Framebuffer,
         point: ScreenPoint,
@@ -1847,6 +3046,198 @@ mod tests {
         assert!(right.y > origin.y);
         assert!(down.x < origin.x);
         assert!(down.y > origin.y);
+    }
+
+    #[test]
+    fn checked_in_menu_config_describes_pause_and_commands() {
+        let config = checked_in_menu_config();
+        assert_eq!(config.style.font, Font::Pixel5x7);
+
+        let pause = config
+            .screens
+            .iter()
+            .find(|screen| screen.id == "pause")
+            .expect("pause screen should exist");
+        assert_eq!(pause.title, "PAUSE");
+        assert!(
+            pause
+                .items
+                .iter()
+                .any(|item| item.action == IsoMenuAction::Resume)
+        );
+        assert!(pause.items.iter().any(|item| matches!(
+            item.action,
+            IsoMenuAction::Submenu(ref target) if target == "commands"
+        )));
+
+        let commands = config
+            .screens
+            .iter()
+            .find(|screen| screen.id == "commands")
+            .expect("commands screen should exist");
+        assert!(commands.body.iter().any(|line| line.contains("SHOUT")));
+        assert!(commands.body.iter().any(|line| line.contains("ROCK")));
+
+        let game_over = config
+            .screens
+            .iter()
+            .find(|screen| screen.id == "game_over")
+            .expect("game_over screen should exist");
+        assert_eq!(game_over.title, "GAME OVER");
+        assert!(
+            game_over
+                .items
+                .iter()
+                .any(|item| item.action == IsoMenuAction::Retry)
+        );
+
+        let victory = config
+            .screens
+            .iter()
+            .find(|screen| screen.id == "victory")
+            .expect("victory screen should exist");
+        assert_eq!(victory.title, "CLEAR!");
+        assert!(victory.body.iter().any(|line| line.contains("CHECKPOINT")));
+        assert!(
+            victory
+                .items
+                .iter()
+                .any(|item| item.action == IsoMenuAction::Retry)
+        );
+
+        let trap_feedback = config
+            .feedback
+            .preset("trap_trigger")
+            .expect("trap feedback should exist");
+        assert_eq!(trap_feedback.text, "SNAP!");
+        assert_eq!(trap_feedback.color, DANGER);
+        assert_eq!(trap_feedback.sound.as_deref(), Some("trap_trigger"));
+    }
+
+    #[test]
+    fn menu_actions_can_open_submenu_back_and_resume() {
+        let mut menu = IsoMenu::new(checked_in_menu_config());
+        menu.open("pause");
+        assert!(menu.is_open());
+        assert_eq!(
+            menu.active_screen().map(|screen| screen.id.as_str()),
+            Some("pause")
+        );
+
+        menu.select_next();
+        assert_eq!(menu.activate_selected(), IsoMenuCommand::Continue);
+        assert_eq!(
+            menu.active_screen().map(|screen| screen.id.as_str()),
+            Some("commands")
+        );
+
+        assert_eq!(menu.escape(), IsoMenuCommand::Continue);
+        assert_eq!(
+            menu.active_screen().map(|screen| screen.id.as_str()),
+            Some("pause")
+        );
+        assert_eq!(menu.escape(), IsoMenuCommand::Resume);
+        assert!(!menu.is_open());
+    }
+
+    #[test]
+    fn menu_quit_action_maps_to_quit_command() {
+        let mut menu = IsoMenu::new(checked_in_menu_config());
+        menu.open("pause");
+
+        menu.select_next();
+        menu.select_next();
+
+        assert_eq!(menu.activate_selected(), IsoMenuCommand::Quit);
+    }
+
+    #[test]
+    fn game_over_retry_action_uses_shared_menu_command() {
+        let mut menu = IsoMenu::new(checked_in_menu_config());
+        menu.open("game_over");
+
+        assert_eq!(menu.activate_selected(), IsoMenuCommand::Retry);
+        assert!(!menu.is_open());
+    }
+
+    #[test]
+    fn victory_event_opens_victory_menu() {
+        let mut game = SmartBoyHeroIsoGame::new();
+
+        game.capture_feedback(&[WorldEvent::Won]);
+
+        assert_eq!(
+            game.menu.active_screen().map(|screen| screen.id.as_str()),
+            Some("victory")
+        );
+        assert_eq!(game.feedback.map(|feedback| feedback.key), Some("victory"));
+    }
+
+    #[test]
+    fn open_menu_freezes_iso_simulation() {
+        let mut game = SmartBoyHeroIsoGame::new();
+        let turn_count = game.world.turn_count();
+        let enemies = game
+            .world
+            .enemies()
+            .iter()
+            .map(|enemy| enemy.cell)
+            .collect::<Vec<_>>();
+
+        game.menu.open("pause");
+        update_with_default_frame(&mut game, FIXED_STEP * 4);
+
+        assert_eq!(game.world.turn_count(), turn_count);
+        assert_eq!(
+            game.world
+                .enemies()
+                .iter()
+                .map(|enemy| enemy.cell)
+                .collect::<Vec<_>>(),
+            enemies
+        );
+    }
+
+    #[test]
+    fn actor_sprite_feet_are_anchored_on_tile_center_not_bottom_vertex() {
+        let point = ScreenPoint { x: 120.0, y: 80.0 };
+        let (_, tile_y) = sprite_top_left(point, TILE_SPRITE_Y_OFFSET);
+        let (_, actor_y) = sprite_top_left(point, ACTOR_SPRITE_Y_OFFSET);
+
+        assert_eq!(tile_y, 52);
+        assert_eq!(actor_y, 44);
+        assert_eq!(actor_y + SPRITE_HEIGHT as i32 - 4, point.y as i32);
+    }
+
+    #[test]
+    fn tile_overlays_use_floor_sprite_visual_center() {
+        let camera = Camera {
+            offset_x: 12.0,
+            offset_y: 8.0,
+        };
+        let cell = Cell::new(6, 4);
+        let logical = project_cell(cell, camera);
+        let visual = project_tile_center(cell, camera);
+
+        assert_eq!(visual.x, logical.x);
+        assert_eq!(visual.y, logical.y - 2.0);
+    }
+
+    #[test]
+    fn immobile_guard_uses_different_sprite_than_patrolling_walker() {
+        assert_eq!(
+            enemy_sprite_frame(EnemyKind::Guard, EnemyIntent::Patrol),
+            SpriteFrame::WalkerAlert
+        );
+        assert_eq!(
+            enemy_sprite_frame(
+                EnemyKind::Walker {
+                    direction: Direction::Right
+                },
+                EnemyIntent::Patrol
+            ),
+            SpriteFrame::WalkerPatrol
+        );
     }
 
     #[test]
@@ -1988,6 +3379,49 @@ mod tests {
     }
 
     #[test]
+    fn actuator_markers_stay_centered_inside_tile_diamond_bounds() {
+        let cell = Cell::new(8, 4);
+        let camera = Camera {
+            offset_x: 0.0,
+            offset_y: 0.0,
+        };
+        let center = project_tile_center(cell, camera);
+
+        for (actuator, color) in [
+            (world::ActuatorKind::Boulder, BRONZE),
+            (world::ActuatorKind::Trap, DANGER),
+            (world::ActuatorKind::Door, LOCKED),
+        ] {
+            let mut framebuffer = Framebuffer::new(200, 160);
+
+            draw_actuator_marker(&mut framebuffer, actuator, cell, camera);
+
+            let mut bounds = None;
+            for y in 0..160 {
+                for x in 0..200 {
+                    if framebuffer.pixel(x, y) == Some(color) {
+                        let (min_x, max_x, min_y, max_y) = bounds.unwrap_or((x, x, y, y));
+                        bounds = Some((min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y)));
+                        assert!(
+                            (x - center.x as i32).abs() <= ACTUATOR_MARKER_HALF_WIDTH,
+                            "actuator marker overflowed tile width at ({x}, {y})"
+                        );
+                        assert!(
+                            (y - center.y as i32).abs() <= ACTUATOR_MARKER_HALF_HEIGHT,
+                            "actuator marker overflowed tile height at ({x}, {y})"
+                        );
+                    }
+                }
+            }
+            let bounds = bounds.expect("actuator marker should draw pixels");
+            assert_eq!(bounds.0, center.x as i32 - ACTUATOR_MARKER_HALF_WIDTH);
+            assert_eq!(bounds.1, center.x as i32 + ACTUATOR_MARKER_HALF_WIDTH);
+            assert_eq!(bounds.2, center.y as i32 - ACTUATOR_MARKER_HALF_HEIGHT);
+            assert_eq!(bounds.3, center.y as i32 + ACTUATOR_MARKER_HALF_HEIGHT);
+        }
+    }
+
+    #[test]
     fn camera_projection_round_trips_world_cell_after_scroll() {
         let world = SmartBoyWorld::iso_slice(INITIAL_SEED);
         let camera = Camera {
@@ -2009,7 +3443,7 @@ mod tests {
         let mut game = SmartBoyHeroIsoGame::new();
         let key_cell = drop_iso_core_key_with_boulder(&mut game);
         let camera = game.camera.with_shake(game.shake_offset());
-        let point = project_cell(key_cell, camera);
+        let point = project_tile_center(key_cell, camera);
         let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
 
         assert!(
@@ -2241,12 +3675,17 @@ mod tests {
         assert_eq!(result, GameResult::Continue);
         assert_eq!(game.death_elapsed, None);
         assert!(game.game_over);
+        assert_eq!(
+            game.menu.active_screen().map(|screen| screen.id.as_str()),
+            Some("game_over")
+        );
     }
 
     #[test]
     fn game_over_draws_panel_after_death() {
         let mut game = SmartBoyHeroIsoGame::new();
         game.game_over = true;
+        game.menu.open("game_over");
         let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
 
         game.draw(&mut framebuffer);
@@ -2269,6 +3708,39 @@ mod tests {
 
         assert_eq!(game.world, initial);
         assert!(game.game_over);
+        assert_eq!(
+            game.menu.active_screen().map(|screen| screen.id.as_str()),
+            Some("game_over")
+        );
+    }
+
+    #[test]
+    fn configured_feedback_draws_over_the_room_layer() {
+        let mut game = SmartBoyHeroIsoGame::new();
+        game.set_feedback("trap_trigger");
+        let preset = game
+            .menu
+            .config
+            .feedback
+            .preset("trap_trigger")
+            .expect("trap feedback should exist")
+            .clone();
+        let mut framebuffer = Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
+
+        game.draw(&mut framebuffer);
+
+        assert!(
+            framebuffer_has_pixel_near(
+                &framebuffer,
+                ScreenPoint {
+                    x: preset.x as f32,
+                    y: preset.y as f32
+                },
+                44,
+                DANGER,
+            ),
+            "configured feedback text should be drawn after the map"
+        );
     }
 
     #[test]

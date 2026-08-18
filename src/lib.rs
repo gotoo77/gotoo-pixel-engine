@@ -16,7 +16,7 @@ mod viewport;
 pub use audio::{Audio, AudioError, NoopAudio, PlaybackId, SoundBank, SoundId};
 pub use audio_wav::pcm16_mono_wav;
 pub use control::{ActionId, ControlBinding, ControlMap};
-pub use framebuffer::Framebuffer;
+pub use framebuffer::{Font, Framebuffer};
 pub use gamepad_profile::{AxisCalibration, GamepadProfile};
 pub use image::{Image, ImageError, ImageRegion};
 pub use input::{
