@@ -1,5 +1,5 @@
 use std::io::{self, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -7,7 +7,7 @@ use crate::Framebuffer;
 use crate::platform::{Frame, Game, GameResult};
 
 const MIRROR_ENV: &str = "GPE_OBS_MIRROR";
-const DEFAULT_ADDRESS: &str = "127.0.0.1:7878";
+const DEFAULT_BIND_ADDRESS: &str = "0.0.0.0:7878";
 
 pub struct ObsMirrorGame<G> {
     game: G,
@@ -48,16 +48,21 @@ impl CaptureMirror {
         }
 
         let address = if matches!(normalized.as_str(), "1" | "true" | "on" | "yes") {
-            DEFAULT_ADDRESS.to_string()
+            DEFAULT_BIND_ADDRESS.to_string()
         } else if value.parse::<u16>().is_ok() {
-            format!("127.0.0.1:{value}")
+            format!("0.0.0.0:{value}")
         } else {
             value.to_string()
         };
 
         match Self::start(width, height, &address) {
-            Ok(mirror) => {
-                eprintln!("GPE OBS mirror: http://{address}/");
+            Ok((mirror, port)) => {
+                eprintln!("GPE OBS mirror listening on {address}");
+                eprintln!("GPE OBS mirror Windows URL: http://localhost:{port}/");
+                if let Some(ip) = guest_ip() {
+                    eprintln!("GPE OBS mirror direct WSL URL: http://{ip}:{port}/");
+                }
+                eprintln!("GPE OBS mirror health: http://localhost:{port}/health");
                 Some(mirror)
             }
             Err(err) => {
@@ -67,12 +72,13 @@ impl CaptureMirror {
         }
     }
 
-    fn start(width: u32, height: u32, address: &str) -> io::Result<Self> {
+    fn start(width: u32, height: u32, address: &str) -> io::Result<(Self, u16)> {
         let frame_len = (width as usize)
             .checked_mul(height as usize)
             .and_then(|pixels| pixels.checked_mul(4))
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "framebuffer is too large"))?;
         let listener = TcpListener::bind(address)?;
+        let port = listener.local_addr()?.port();
         let latest_rgba = Arc::new(Mutex::new(vec![0; frame_len]));
         let server_frame = Arc::clone(&latest_rgba);
 
@@ -80,7 +86,7 @@ impl CaptureMirror {
             .name("gpe-obs-mirror".to_string())
             .spawn(move || serve(listener, server_frame, width, height))?;
 
-        Ok(Self { latest_rgba })
+        Ok((Self { latest_rgba }, port))
     }
 
     fn publish(&self, framebuffer: &Framebuffer) {
@@ -89,6 +95,13 @@ impl CaptureMirror {
         };
         latest.copy_from_slice(framebuffer.as_rgba8());
     }
+}
+
+fn guest_ip() -> Option<IpAddr> {
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("1.1.1.1:80").ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
 }
 
 fn serve(listener: TcpListener, latest_rgba: Arc<Mutex<Vec<u8>>>, width: u32, height: u32) {
@@ -162,23 +175,37 @@ fn mirror_page(width: u32, height: u32) -> String {
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
 canvas{display:block;width:100vw;height:100vh;image-rendering:pixelated;image-rendering:crisp-edges}
+#status{position:fixed;left:8px;top:8px;padding:5px 7px;background:#250018;color:#fff;font:12px monospace;z-index:2}
 </style>
 </head>
 <body>
+<div id="status">GPE OBS MIRROR: WAITING FOR FRAME</div>
 <canvas id="game" width="__WIDTH__" height="__HEIGHT__"></canvas>
 <script>
 const width=__WIDTH__, height=__HEIGHT__;
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d',{alpha:false});
+const status=document.getElementById('status');
 let sequence=0;
+let received=false;
 async function frame(){
   try {
     const response=await fetch('/frame.rgba?'+(++sequence),{cache:'no-store'});
+    if(!response.ok) throw new Error('HTTP '+response.status);
     const bytes=new Uint8ClampedArray(await response.arrayBuffer());
     if(bytes.length===width*height*4){
       ctx.putImageData(new ImageData(bytes,width,height),0,0);
+      if(!received){
+        received=true;
+        status.style.display='none';
+      }
+    } else {
+      status.textContent='GPE OBS MIRROR: BAD FRAME SIZE '+bytes.length;
     }
-  } catch (_) {}
+  } catch (error) {
+    status.style.display='block';
+    status.textContent='GPE OBS MIRROR: FRAME LINK FAILED';
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -202,5 +229,10 @@ mod tests {
         assert!(page.contains("width=\"180\""));
         assert!(page.contains("height=\"320\""));
         assert!(page.contains("const width=180, height=320"));
+    }
+
+    #[test]
+    fn default_bind_accepts_windows_to_wsl_connections() {
+        assert_eq!(DEFAULT_BIND_ADDRESS, "0.0.0.0:7878");
     }
 }
