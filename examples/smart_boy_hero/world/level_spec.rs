@@ -10,9 +10,8 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct LevelSpec<'a> {
-    #[serde(borrow)]
-    pub(super) name: &'a str,
+pub(super) struct LevelSpec {
+    pub(super) name: String,
     pub(super) width: i32,
     pub(super) height: i32,
     #[serde(default)]
@@ -39,9 +38,14 @@ pub(super) struct LevelSpec<'a> {
     pub(super) enemies: Vec<EnemySpec>,
 }
 
-impl<'a> LevelSpec<'a> {
-    pub(super) fn parse(json: &'a str) -> Result<Self, String> {
+impl LevelSpec {
+    pub(super) fn parse(json: &str) -> Result<Self, String> {
         serde_json::from_str(json).map_err(|error| format!("invalid SBH level JSON: {error}"))
+    }
+
+    pub(super) fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|error| format!("failed to serialize SBH level JSON: {error}"))
     }
 
     pub(super) fn validate(&self) -> ValidationReport {
@@ -143,10 +147,7 @@ impl<'a> LevelSpec<'a> {
         report
     }
 
-    pub(super) fn into_level(self) -> Result<Level, ValidationReport>
-    where
-        'a: 'static,
-    {
+    pub(super) fn into_level(self) -> Result<Level, ValidationReport> {
         let report = self.validate();
         if !report.is_valid() {
             return Err(report);
@@ -618,7 +619,7 @@ mod tests {
     #[test]
     fn parses_and_serializes_fixture() {
         let spec = LevelSpec::parse(SMELL_A_RAT).expect("fixture should parse");
-        let encoded = serde_json::to_string_pretty(&spec).expect("fixture should serialize");
+        let encoded = spec.to_json().expect("fixture should serialize");
         let reparsed = LevelSpec::parse(&encoded).expect("serialized fixture should parse");
 
         assert_eq!(spec, reparsed);
