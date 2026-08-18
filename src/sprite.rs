@@ -112,12 +112,7 @@ mod tests {
 
     #[test]
     fn transparent_pixels_leave_framebuffer_untouched() {
-        let sprite = Sprite::new(
-            2,
-            1,
-            vec![Pixel::TRANSPARENT, Pixel::rgb(10, 20, 30)],
-        )
-        .unwrap();
+        let sprite = Sprite::new(2, 1, vec![Pixel::TRANSPARENT, Pixel::rgb(10, 20, 30)]).unwrap();
         let mut framebuffer = Framebuffer::new(3, 1);
         framebuffer.clear(Pixel::rgb(1, 2, 3));
 
