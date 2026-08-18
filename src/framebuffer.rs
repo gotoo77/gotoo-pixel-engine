@@ -603,6 +603,9 @@ fn glyph_for(character: char) -> Glyph {
         '+' => [
             0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000,
         ],
+        '-' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
         ' ' => [0; FONT_GLYPH_HEIGHT as usize],
         _ => [
             0b11111, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
@@ -1077,6 +1080,17 @@ mod tests {
         assert_ne!(glyph_for('>'), glyph_for('?'));
         assert_ne!(glyph_for('/'), glyph_for('?'));
         assert_ne!(glyph_for('+'), glyph_for('?'));
+        assert_ne!(glyph_for('-'), glyph_for('?'));
+    }
+
+    #[test]
+    fn hyphen_glyph_is_horizontal_stroke() {
+        assert_eq!(
+            glyph_for('-'),
+            [
+                0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+            ]
+        );
     }
 
     #[test]
