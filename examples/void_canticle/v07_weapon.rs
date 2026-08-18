@@ -69,7 +69,7 @@ fn spawn_power_volley(output: &mut Vec<PowerShot>, level: u8, x: f32, y: f32) {
 }
 
 fn should_drop_relic(destroyed_enemies: u32) -> bool {
-    matches!(destroyed_enemies, 2 | 4 | 6 | 8)
+    matches!(destroyed_enemies, 3 | 8 | 15 | 23)
 }
 
 fn power_after_death(level: u8) -> u8 {
@@ -153,9 +153,13 @@ mod v07_tests {
     }
 
     #[test]
-    fn authored_relic_schedule_reaches_max_power_before_boss() {
-        let drops = (1..=10).filter(|kill| should_drop_relic(*kill)).count() as u8;
+    fn authored_relic_schedule_spreads_power_across_the_stage() {
+        let drops = (1..=32).filter(|kill| should_drop_relic(*kill)).count() as u8;
         assert_eq!(START_POWER_LEVEL + drops, MAX_POWER_LEVEL);
+        assert!(!should_drop_relic(1));
+        assert!(!should_drop_relic(2));
+        assert!(should_drop_relic(3));
+        assert!(should_drop_relic(23));
     }
 
     #[test]
