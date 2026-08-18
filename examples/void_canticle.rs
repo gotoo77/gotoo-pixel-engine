@@ -31,6 +31,11 @@ mod game {
                         pub(crate) mod v12 {
                             use super::*;
                             include!("void_canticle/v12_game.rs");
+
+                            pub(crate) mod v13 {
+                                use super::*;
+                                include!("void_canticle/v13_game.rs");
+                            }
                         }
                     }
                 }
@@ -38,9 +43,9 @@ mod game {
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::v11::v12::run_v12_with_obs_mirror;
+    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::run_v13_with_obs_mirror;
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_v12_with_obs_mirror()
+    game::run_v13_with_obs_mirror()
 }
