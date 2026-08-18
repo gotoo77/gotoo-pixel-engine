@@ -332,10 +332,12 @@ readme = readme_path.read_text()
 readme = replace_once(
     readme,
     """cargo run --example breakout
+cargo run --example smart_boy_hero
 cargo run --example arcade
 ```
 """,
     """cargo run --example breakout
+cargo run --example smart_boy_hero
 cargo run --example arcade
 ```
 
