@@ -78,10 +78,10 @@ impl VoidCanticleV10 {
             base.visuals.render_carrion(framebuffer, *enemy);
         }
 
-        if let Some(boss) = base.boss {
-            if base.encounter_phase != EncounterPhase::Cleared {
-                base.visuals.render_bellkeeper(framebuffer, boss);
-            }
+        if let Some(boss) = base.boss
+            && base.encounter_phase != EncounterPhase::Cleared
+        {
+            base.visuals.render_bellkeeper(framebuffer, boss);
         }
 
         for shot in &game.power_shots {
@@ -145,12 +145,12 @@ impl VoidCanticleV10 {
         let score_x = FRAMEBUFFER_WIDTH as i32 - score_width as i32 - 4;
         framebuffer.draw_text(score_x, 4, &score, PILGRIM_CORE);
 
-        if let Some(boss) = base.boss {
-            if base.encounter_phase == EncounterPhase::BossFight {
-                framebuffer.fill_rect(24, 15, 132, 5, CORE_BG);
-                let width = 132_u32.saturating_mul(boss.hp) / BELLKEEPER_MAX_HP;
-                framebuffer.fill_rect(24, 15, width, 5, DANGER);
-            }
+        if let Some(boss) = base.boss
+            && base.encounter_phase == EncounterPhase::BossFight
+        {
+            framebuffer.fill_rect(24, 15, 132, 5, CORE_BG);
+            let width = 132_u32.saturating_mul(boss.hp) / BELLKEEPER_MAX_HP;
+            framebuffer.fill_rect(24, 15, width, 5, DANGER);
         }
 
         framebuffer.draw_text(4, 302, "CORE", TEXT);
@@ -304,7 +304,12 @@ impl<G> VoidCanticlePause<G> {
     }
 
     fn render_menu(&self, framebuffer: &mut Framebuffer) {
-        let panel = gotoo_pixel_engine::Rect { x: 18, y: 58, width: 144, height: 198 };
+        let panel = gotoo_pixel_engine::Rect {
+            x: 18,
+            y: 58,
+            width: 144,
+            height: 198,
+        };
         gotoo_pixel_engine::ui::draw_panel(
             framebuffer,
             panel,
@@ -324,7 +329,12 @@ impl<G> VoidCanticlePause<G> {
         {
             gotoo_pixel_engine::ui::draw_menu_item(
                 framebuffer,
-                gotoo_pixel_engine::Rect { x: 34, y, width: 112, height: 18 },
+                gotoo_pixel_engine::Rect {
+                    x: 34,
+                    y,
+                    width: 112,
+                    height: 18,
+                },
                 label,
                 self.menu.selected() == Some(index),
                 1,
@@ -335,7 +345,12 @@ impl<G> VoidCanticlePause<G> {
     }
 
     fn render_controls(&self, framebuffer: &mut Framebuffer) {
-        let panel = gotoo_pixel_engine::Rect { x: 10, y: 46, width: 160, height: 224 };
+        let panel = gotoo_pixel_engine::Rect {
+            x: 10,
+            y: 46,
+            width: 160,
+            height: 224,
+        };
         gotoo_pixel_engine::ui::draw_panel(
             framebuffer,
             panel,
@@ -352,7 +367,12 @@ impl<G> VoidCanticlePause<G> {
     }
 
     fn render_build_info(&self, framebuffer: &mut Framebuffer) {
-        let panel = gotoo_pixel_engine::Rect { x: 10, y: 58, width: 160, height: 196 };
+        let panel = gotoo_pixel_engine::Rect {
+            x: 10,
+            y: 58,
+            width: 160,
+            height: 196,
+        };
         gotoo_pixel_engine::ui::draw_panel(
             framebuffer,
             panel,
