@@ -4,16 +4,41 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::Framebuffer;
+use crate::platform::{Frame, Game, GameResult};
 
 const MIRROR_ENV: &str = "GPE_OBS_MIRROR";
 const DEFAULT_ADDRESS: &str = "127.0.0.1:7878";
 
-pub(crate) struct CaptureMirror {
+pub struct ObsMirrorGame<G> {
+    game: G,
+    mirror: Option<CaptureMirror>,
+}
+
+impl<G> ObsMirrorGame<G> {
+    pub fn from_env(game: G, width: u32, height: u32) -> Self {
+        Self {
+            game,
+            mirror: CaptureMirror::from_env(width, height),
+        }
+    }
+}
+
+impl<G: Game> Game for ObsMirrorGame<G> {
+    fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        let result = self.game.update(frame);
+        if let Some(mirror) = &self.mirror {
+            mirror.publish(frame.framebuffer);
+        }
+        result
+    }
+}
+
+struct CaptureMirror {
     latest_rgba: Arc<Mutex<Vec<u8>>>,
 }
 
 impl CaptureMirror {
-    pub(crate) fn from_env(width: u32, height: u32) -> Option<Self> {
+    fn from_env(width: u32, height: u32) -> Option<Self> {
         let raw = std::env::var(MIRROR_ENV).ok()?;
         let value = raw.trim();
         let normalized = value.to_ascii_lowercase();
@@ -58,7 +83,7 @@ impl CaptureMirror {
         Ok(Self { latest_rgba })
     }
 
-    pub(crate) fn publish(&self, framebuffer: &Framebuffer) {
+    fn publish(&self, framebuffer: &Framebuffer) {
         let Ok(mut latest) = self.latest_rgba.try_lock() else {
             return;
         };
