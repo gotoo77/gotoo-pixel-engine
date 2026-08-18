@@ -78,7 +78,9 @@ impl CaptureMirror {
         let frame_len = (width as usize)
             .checked_mul(height as usize)
             .and_then(|pixels| pixels.checked_mul(4))
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "framebuffer is too large"))?;
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "framebuffer is too large")
+            })?;
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr()?.port();
         let latest_rgba = Arc::new(Mutex::new(vec![0; frame_len]));
@@ -141,7 +143,12 @@ fn serve_connection(
     match path {
         "/" => {
             let page = mirror_page(width, height);
-            write_response(stream, "200 OK", "text/html; charset=utf-8", page.as_bytes())
+            write_response(
+                stream,
+                "200 OK",
+                "text/html; charset=utf-8",
+                page.as_bytes(),
+            )
         }
         "/stream.rgba" => stream_frames(stream, latest_rgba),
         "/frame.rgba" => {
