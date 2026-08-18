@@ -1,0 +1,42 @@
+name: SBH roundtrip one-shot
+
+on:
+  push:
+    branches:
+      - agent/sbh-level-runtime-roundtrip
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-push:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust tooling
+        run: rustup component add rustfmt clippy
+
+      - name: Apply focused SBH patch
+        run: python3 scripts/_apply_sbh_roundtrip.py
+
+      - name: Format
+        run: cargo fmt
+
+      - name: Validate
+        run: ./scripts/check.sh
+
+      - name: Commit validated patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md examples/smart_boy_hero.rs examples/smart_boy_hero/game.rs examples/smart_boy_hero/world.rs
+          if git diff --cached --quiet; then
+            echo "No patch changes to commit"
+            exit 0
+          fi
+          git commit -m "Add native SBH external level roundtrip"
+          git push origin HEAD:agent/sbh-level-runtime-roundtrip
