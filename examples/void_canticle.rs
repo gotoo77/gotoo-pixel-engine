@@ -3,8 +3,9 @@ mod game {
     include!("void_canticle/v07_visuals.rs");
     include!("void_canticle/v07_game.rs");
     include!("void_canticle/v07_weapon.rs");
+    include!("void_canticle/v08_game.rs");
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_v07()
+    game::run_v08()
 }
