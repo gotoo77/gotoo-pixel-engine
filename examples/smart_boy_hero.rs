@@ -1,8 +1,10 @@
 #[path = "smart_boy_hero/game.rs"]
 mod game;
 
+use std::{fs, io};
+
 use game::{FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, SmartBoyHeroGame};
-use gotoo_pixel_engine::{EngineConfig, EngineError, run};
+use gotoo_pixel_engine::{EngineConfig, run};
 
 fn window_size() -> (u32, u32) {
     if std::env::var_os("WSL_DISTRO_NAME").is_some() {
@@ -14,8 +16,17 @@ fn window_size() -> (u32, u32) {
     }
 }
 
-fn main() -> Result<(), EngineError> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (window_width, window_height) = window_size();
+    let game = match std::env::args_os().nth(1) {
+        Some(path) => {
+            let json = fs::read_to_string(&path)?;
+            SmartBoyHeroGame::from_level_json(&json)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+        }
+        None => SmartBoyHeroGame::new(),
+    };
+
     run(
         EngineConfig {
             title: "Smart Boy Hero - Gotoo Pixel Engine".into(),
@@ -24,6 +35,7 @@ fn main() -> Result<(), EngineError> {
             window_width,
             window_height,
         },
-        SmartBoyHeroGame::new(),
-    )
+        game,
+    )?;
+    Ok(())
 }

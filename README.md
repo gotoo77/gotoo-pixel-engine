@@ -153,6 +153,14 @@ cargo run --example smart_boy_hero
 cargo run --example arcade
 ```
 
+Playtester Smart Boy Hero avec un niveau JSON externe (natif uniquement) :
+
+```bash
+cargo run --example smart_boy_hero -- assets/smart_boy_hero/levels/smell_a_rat.json
+```
+
+Le chemin est optionnel : sans argument, SBH conserve ses niveaux embarqués habituels.
+
 Construire tous les entrypoints Web/WASM :
 
 ```bash
