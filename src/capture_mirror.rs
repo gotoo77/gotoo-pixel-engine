@@ -2,12 +2,14 @@ use std::io::{self, Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use crate::Framebuffer;
 use crate::platform::{Frame, Game, GameResult};
 
 const MIRROR_ENV: &str = "GPE_OBS_MIRROR";
 const DEFAULT_BIND_ADDRESS: &str = "0.0.0.0:7878";
+const STREAM_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 
 pub struct ObsMirrorGame<G> {
     game: G,
@@ -105,8 +107,14 @@ fn guest_ip() -> Option<IpAddr> {
 }
 
 fn serve(listener: TcpListener, latest_rgba: Arc<Mutex<Vec<u8>>>, width: u32, height: u32) {
-    for mut stream in listener.incoming().flatten() {
-        let _ = serve_connection(&mut stream, &latest_rgba, width, height);
+    for stream in listener.incoming().flatten() {
+        let client_frame = Arc::clone(&latest_rgba);
+        let _ = thread::Builder::new()
+            .name("gpe-obs-client".to_string())
+            .spawn(move || {
+                let mut stream = stream;
+                let _ = serve_connection(&mut stream, &client_frame, width, height);
+            });
     }
 }
 
@@ -135,11 +143,9 @@ fn serve_connection(
             let page = mirror_page(width, height);
             write_response(stream, "200 OK", "text/html; charset=utf-8", page.as_bytes())
         }
+        "/stream.rgba" => stream_frames(stream, latest_rgba),
         "/frame.rgba" => {
-            let frame = latest_rgba
-                .lock()
-                .map(|pixels| pixels.clone())
-                .unwrap_or_default();
+            let frame = snapshot(latest_rgba);
             write_response(stream, "200 OK", "application/octet-stream", &frame)
         }
         "/health" => write_response(stream, "200 OK", "text/plain; charset=utf-8", b"ok\n"),
@@ -149,6 +155,26 @@ fn serve_connection(
             "text/plain; charset=utf-8",
             b"not found\n",
         ),
+    }
+}
+
+fn snapshot(latest_rgba: &Mutex<Vec<u8>>) -> Vec<u8> {
+    latest_rgba
+        .lock()
+        .map(|pixels| pixels.clone())
+        .unwrap_or_default()
+}
+
+fn stream_frames(stream: &mut TcpStream, latest_rgba: &Mutex<Vec<u8>>) -> io::Result<()> {
+    stream.write_all(
+        b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nCache-Control: no-store, no-cache, must-revalidate\r\nConnection: close\r\n\r\n",
+    )?;
+
+    loop {
+        let frame = snapshot(latest_rgba);
+        stream.write_all(&frame)?;
+        stream.flush()?;
+        thread::sleep(STREAM_FRAME_INTERVAL);
     }
 }
 
@@ -174,41 +200,75 @@ fn mirror_page(width: u32, height: u32) -> String {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
-canvas{display:block;width:100vw;height:100vh;image-rendering:pixelated;image-rendering:crisp-edges}
+body{display:flex;align-items:center;justify-content:center}
+#stage{display:flex;align-items:center;justify-content:center;width:100vw;height:100vh;background:#000}
+canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#000}
 #status{position:fixed;left:8px;top:8px;padding:5px 7px;background:#250018;color:#fff;font:12px monospace;z-index:2}
 </style>
 </head>
 <body>
-<div id="status">GPE OBS MIRROR: WAITING FOR FRAME</div>
-<canvas id="game" width="__WIDTH__" height="__HEIGHT__"></canvas>
+<div id="stage"><canvas id="game" width="__WIDTH__" height="__HEIGHT__"></canvas></div>
+<div id="status">GPE OBS MIRROR: CONNECTING</div>
 <script>
 const width=__WIDTH__, height=__HEIGHT__;
+const frameSize=width*height*4;
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d',{alpha:false});
 const status=document.getElementById('status');
-let sequence=0;
-let received=false;
-async function frame(){
-  try {
-    const response=await fetch('/frame.rgba?'+(++sequence),{cache:'no-store'});
-    if(!response.ok) throw new Error('HTTP '+response.status);
-    const bytes=new Uint8ClampedArray(await response.arrayBuffer());
-    if(bytes.length===width*height*4){
-      ctx.putImageData(new ImageData(bytes,width,height),0,0);
-      if(!received){
-        received=true;
-        status.style.display='none';
-      }
-    } else {
-      status.textContent='GPE OBS MIRROR: BAD FRAME SIZE '+bytes.length;
-    }
-  } catch (error) {
-    status.style.display='block';
-    status.textContent='GPE OBS MIRROR: FRAME LINK FAILED';
-  }
-  requestAnimationFrame(frame);
+
+function fitCanvas(){
+  const fit=Math.min(window.innerWidth/width,window.innerHeight/height);
+  const scale=fit>=1?Math.max(1,Math.floor(fit)):fit;
+  canvas.style.width=(width*scale)+'px';
+  canvas.style.height=(height*scale)+'px';
 }
-requestAnimationFrame(frame);
+
+function showStatus(message){
+  status.textContent=message;
+  status.style.display='block';
+}
+
+function hideStatus(){
+  status.style.display='none';
+}
+
+function drawFrame(bytes){
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(bytes),width,height),0,0);
+  hideStatus();
+}
+
+async function streamFrames(){
+  showStatus('GPE OBS MIRROR: CONNECTING');
+  try {
+    const response=await fetch('/stream.rgba',{cache:'no-store'});
+    if(!response.ok||!response.body) throw new Error('stream unavailable');
+    const reader=response.body.getReader();
+    let pending=new Uint8Array(0);
+
+    for(;;){
+      const result=await reader.read();
+      if(result.done) throw new Error('stream closed');
+
+      const merged=new Uint8Array(pending.length+result.value.length);
+      merged.set(pending,0);
+      merged.set(result.value,pending.length);
+
+      let offset=0;
+      while(merged.length-offset>=frameSize){
+        drawFrame(merged.slice(offset,offset+frameSize));
+        offset+=frameSize;
+      }
+      pending=merged.slice(offset);
+    }
+  } catch (_) {
+    showStatus('GPE OBS MIRROR: RECONNECTING');
+    window.setTimeout(streamFrames,500);
+  }
+}
+
+window.addEventListener('resize',fitCanvas);
+fitCanvas();
+streamFrames();
 </script>
 </body>
 </html>
@@ -229,6 +289,22 @@ mod tests {
         assert!(page.contains("width=\"180\""));
         assert!(page.contains("height=\"320\""));
         assert!(page.contains("const width=180, height=320"));
+    }
+
+    #[test]
+    fn mirror_page_preserves_aspect_ratio() {
+        let page = mirror_page(180, 320);
+        assert!(page.contains("Math.min(window.innerWidth/width,window.innerHeight/height)"));
+        assert!(page.contains("canvas.style.width=(width*scale)+'px'"));
+        assert!(page.contains("canvas.style.height=(height*scale)+'px'"));
+    }
+
+    #[test]
+    fn mirror_page_uses_single_stream_connection() {
+        let page = mirror_page(180, 320);
+        assert!(page.contains("fetch('/stream.rgba'"));
+        assert!(page.contains("response.body.getReader()"));
+        assert!(!page.contains("requestAnimationFrame(frame)"));
     }
 
     #[test]
