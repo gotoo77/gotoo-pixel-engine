@@ -3,7 +3,6 @@ mod game {
     include!("void_canticle/v07_visuals.rs");
     include!("void_canticle/v07_game.rs");
     include!("void_canticle/v07_weapon.rs");
-    include!("void_canticle/v08_game.rs");
     include!("void_canticle/v09_game.rs");
     include!("void_canticle/v10_game.rs");
 }
