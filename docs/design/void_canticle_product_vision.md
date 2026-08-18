@@ -114,6 +114,99 @@ Autrement dit :
 
 Si un système ne fait qu’allonger une barre ou ajouter un bonus numérique sans créer de décision, de sensation ou de possibilité nouvelle, il doit être remis en question.
 
+Règle complémentaire :
+
+> **La progression doit donner une raison de jouer, jamais une raison d’attendre.**
+
+Void Canticle ne doit donc pas devenir un idle game. Une progression incrémentale valable doit ouvrir du gameplay, créer des décisions, élargir l’espace des builds, ouvrir des lieux, modifier des règles ou produire une satisfaction de jeu directe.
+
+## Future progression de campagne
+
+La progression de campagne visée à long terme est :
+
+```text
+combat
+↓
+loot
+↓
+XP
+↓
+build
+↓
+boss / exploration
+↓
+ressources
+↓
+Warpgates
+↓
+nouveaux mondes
+↓
+nouveaux systèmes
+↓
+nouveaux runs
+```
+
+Les ressources persistantes doivent préférentiellement ouvrir de nouvelles possibilités, routes, outils, archétypes ou règles plutôt que servir uniquement à acheter des bonus numériques marginaux.
+
+## Le Void réagit au joueur
+
+À long terme, plus le Pèlerin exploite, perturbe et transforme le Void, plus celui-ci peut sembler prendre conscience de lui.
+
+Une progression possible est :
+
+**Dormant → Stirring → Awake → Hostile → Cataclysmic**
+
+Cette montée ne doit pas se réduire à davantage de HP. Elle peut modifier les ennemis, patterns, invasions, événements, boss, ressources, zones, règles et capacités accessibles.
+
+Cette direction est narrative et systémique ; elle n’est pas à implémenter tant que le gameplay de run n’en a pas besoin.
+
+## Prestiges et cycles futurs
+
+Si un mécanisme de prestige existe un jour, éviter le modèle :
+
+```text
+RESET
++25 % production
+```
+
+Préférer des transformations qui changent réellement la prochaine run. Exemple conceptuel :
+
+```text
+ECHO OF HUNGER
+
+XP normal réduit
+loot élite fortement augmenté
+famille DEVOUR débloquée
+```
+
+Le prestige doit devenir un choix de règles et d’identité de run, pas un multiplicateur abstrait.
+
+## Univers multi-gameplay
+
+Void Canticle peut devenir un univers dans lequel plusieurs formes de gameplay coexistent :
+
+- SHMUP principal ;
+- séquences SHMUP alternatives ;
+- mini-jeux ;
+- rythme / synchronisation ;
+- cartes ;
+- casino et jeux d’adresse ;
+- activités propres aux factions.
+
+Principe :
+
+> **Un mini-jeu doit sembler appartenir au monde, pas avoir été collé au jeu.**
+
+Une faille peut modifier temporairement la forme du SHMUP, une activité musicale peut découler littéralement du Canticle, un jeu de cartes peut être une pratique culturelle d’une faction et un casino peut utiliser une monnaie et des règles propres à l’univers.
+
+## Mini-jeux, hasard et agency
+
+Les futurs mini-jeux ne doivent généralement pas reposer uniquement sur le RNG.
+
+Le hasard peut contribuer à la tension, la surprise, l’adrénaline et au push-your-luck, mais le joueur doit conserver une capacité d’action via le timing, le skill, la lecture, les décisions, les probabilités, le build, la prise de risque ou la possibilité de cash-out.
+
+Même une future activité de casino peut donc chercher l’excitation d’un jackpot sans devenir un simple lancer de dés déguisé.
+
 ## Stratégie de validation
 
 Cette vision doit être construite par tranches verticales concrètes, sans architecture spéculative.
