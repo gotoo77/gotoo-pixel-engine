@@ -14,6 +14,7 @@ use level_spec::LevelSpec;
 pub(super) struct SmartBoyWorld {
     level_index: usize,
     level: Level,
+    restart_level: Option<Level>,
     phase: Phase,
     hero: Cell,
     hero_power: i32,
@@ -51,9 +52,24 @@ impl SmartBoyWorld {
         Self::from_level(LEVEL_COUNT, level_iso_slice(), seed)
     }
 
+    pub(super) fn from_level_json(json: &str, seed: u32) -> Result<Self, String> {
+        let level = LevelSpec::parse(json)?
+            .into_level()
+            .map_err(|report| format!("invalid SBH level spec:\n{report}"))?;
+        Ok(Self::from_external_level(level, seed))
+    }
+
+    fn from_external_level(level: Level, seed: u32) -> Self {
+        let restart_level = level.clone();
+        let mut world = Self::from_level(0, level, seed);
+        world.restart_level = Some(restart_level);
+        world
+    }
+
     fn from_level(level_index: usize, level: Level, seed: u32) -> Self {
         let mut world = Self {
             level_index,
+            restart_level: None,
             phase: Phase::Running,
             hero: level.hero_start,
             hero_power: level.hero_power,
@@ -82,7 +98,9 @@ impl SmartBoyWorld {
     }
 
     pub(super) fn restart(&mut self) {
-        if self.level_index == LEVEL_COUNT {
+        if let Some(level) = self.restart_level.clone() {
+            *self = Self::from_external_level(level, self.seed);
+        } else if self.level_index == LEVEL_COUNT {
             *self = Self::iso_slice(self.seed);
         } else {
             *self = Self::for_level(self.level_index, self.seed);
@@ -160,11 +178,11 @@ impl SmartBoyWorld {
         self.level_index
     }
 
-    pub(super) fn level_name(&self) -> &'static str {
-        self.level.name
+    pub(super) fn level_name(&self) -> &str {
+        &self.level.name
     }
 
-    pub(super) fn level_name_at(level_index: usize) -> &'static str {
+    pub(super) fn level_name_at(level_index: usize) -> String {
         build_level(level_index % LEVEL_COUNT).name
     }
 
@@ -1362,7 +1380,7 @@ struct Level {
     width: i32,
     height: i32,
     timing: LevelTiming,
-    name: &'static str,
+    name: String,
     hero_start: Cell,
     hero_power: i32,
     exit: Cell,
@@ -1417,7 +1435,7 @@ fn level_seriously() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "SERIOUSLY?",
+        name: "SERIOUSLY?".into(),
         hero_start: Cell::new(1, 3),
         hero_power: 10,
         exit: Cell::new(10, 3),
@@ -1440,7 +1458,7 @@ fn level_math_is_hard() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "MATH IS HARD",
+        name: "MATH IS HARD".into(),
         hero_start: Cell::new(1, 3),
         hero_power: 5,
         exit: Cell::new(10, 3),
@@ -1464,7 +1482,7 @@ fn level_pay_the_price() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "PAY THE PRICE",
+        name: "PAY THE PRICE".into(),
         hero_start: Cell::new(1, 3),
         hero_power: 10,
         exit: Cell::new(10, 3),
@@ -1488,7 +1506,7 @@ fn level_order_matters() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "ORDER MATTERS",
+        name: "ORDER MATTERS".into(),
         hero_start: Cell::new(1, 4),
         hero_power: 6,
         exit: Cell::new(10, 4),
@@ -1512,7 +1530,7 @@ fn level_just_leave() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "JUST LEAVE",
+        name: "JUST LEAVE".into(),
         hero_start: Cell::new(1, 4),
         hero_power: 9,
         exit: Cell::new(10, 4),
@@ -1537,7 +1555,7 @@ fn level_hes_moving() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "HE'S MOVING",
+        name: "HE'S MOVING".into(),
         hero_start: Cell::new(1, 4),
         hero_power: 8,
         exit: Cell::new(10, 4),
@@ -1562,7 +1580,7 @@ fn level_wait_for_it() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "WAIT FOR IT",
+        name: "WAIT FOR IT".into(),
         hero_start: Cell::new(3, 4),
         hero_power: 7,
         exit: Cell::new(10, 4),
@@ -1588,7 +1606,7 @@ fn level_let_him_come() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "LET HIM COME",
+        name: "LET HIM COME".into(),
         hero_start: Cell::new(3, 4),
         hero_power: 12,
         exit: Cell::new(10, 4),
@@ -1614,7 +1632,7 @@ fn level_lucky_boy() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "LUCKY BOY?",
+        name: "LUCKY BOY?".into(),
         hero_start: Cell::new(1, 4),
         hero_power: 6,
         exit: Cell::new(10, 3),
@@ -1640,7 +1658,7 @@ fn level_smart_boy() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "SMART BOY",
+        name: "SMART BOY".into(),
         hero_start: Cell::new(1, 5),
         hero_power: 8,
         exit: Cell::new(10, 2),
@@ -1677,7 +1695,7 @@ fn level_living_plate_a() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "THING DID IT",
+        name: "THING DID IT".into(),
         hero_start: Cell::new(3, 4),
         hero_power: 9,
         exit: Cell::new(10, 4),
@@ -1705,7 +1723,7 @@ fn level_living_plate_b() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "HOLD THE DOOR",
+        name: "HOLD THE DOOR".into(),
         hero_start: Cell::new(4, 4),
         hero_power: 9,
         exit: Cell::new(10, 4),
@@ -1733,7 +1751,7 @@ fn level_living_plate_c() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "TWO SMART WAYS",
+        name: "TWO SMART WAYS".into(),
         hero_start: Cell::new(5, 4),
         hero_power: 9,
         exit: Cell::new(10, 4),
@@ -1758,7 +1776,7 @@ fn level_watch_your_step() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "WATCH YOUR STEP",
+        name: "WATCH YOUR STEP".into(),
         hero_start: Cell::new(1, 4),
         hero_power: 9,
         exit: Cell::new(10, 4),
@@ -1782,7 +1800,7 @@ fn level_set_the_trap() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "SET THE TRAP",
+        name: "SET THE TRAP".into(),
         hero_start: Cell::new(1, 4),
         hero_power: 5,
         exit: Cell::new(10, 4),
@@ -1806,7 +1824,7 @@ fn level_clockwork() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::TurnBased,
-        name: "CLOCKWORK",
+        name: "CLOCKWORK".into(),
         hero_start: Cell::new(1, 4),
         hero_power: 12,
         exit: Cell::new(10, 4),
@@ -1830,7 +1848,7 @@ fn level_come_here() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::SemiContinuous,
-        name: "COME HERE",
+        name: "COME HERE".into(),
         hero_start: Cell::new(3, 4),
         hero_power: 5,
         exit: Cell::new(10, 4),
@@ -1854,7 +1872,7 @@ fn level_group_therapy() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::SemiContinuous,
-        name: "GROUP THERAPY",
+        name: "GROUP THERAPY".into(),
         hero_start: Cell::new(5, 3),
         hero_power: 5,
         exit: Cell::new(10, 3),
@@ -1880,7 +1898,7 @@ fn level_smart_way() -> Level {
         width: GRID_WIDTH,
         height: GRID_HEIGHT,
         timing: LevelTiming::SemiContinuous,
-        name: "SMART WAY",
+        name: "SMART WAY".into(),
         hero_start: Cell::new(4, 3),
         hero_power: 20,
         exit: Cell::new(10, 3),
@@ -1959,7 +1977,7 @@ fn level_iso_slice() -> Level {
         width,
         height,
         timing: LevelTiming::SemiContinuous,
-        name: "THE CLOCKWORK KEEP",
+        name: "THE CLOCKWORK KEEP".into(),
         hero_start: Cell::new(2, 9),
         hero_power: 55,
         exit: Cell::new(24, 8),
@@ -2211,7 +2229,7 @@ mod tests {
             width: GRID_WIDTH,
             height: GRID_HEIGHT,
             timing: LevelTiming::TurnBased,
-            name: "TEST",
+            name: "TEST".into(),
             hero_start: Cell::new(1, 1),
             hero_power,
             exit: Cell::new(10, 1),
@@ -2236,6 +2254,7 @@ mod tests {
     fn world_from(level: Level) -> SmartBoyWorld {
         let mut world = SmartBoyWorld {
             level_index: 0,
+            restart_level: None,
             phase: Phase::Running,
             hero: level.hero_start,
             hero_power: level.hero_power,
@@ -3879,6 +3898,28 @@ mod tests {
         world.restart();
 
         assert_eq!(world, initial);
+    }
+
+    #[test]
+    fn restart_reuses_external_level_definition() {
+        let mut spec = LevelSpec::parse(include_str!(
+            "../../assets/smart_boy_hero/levels/smell_a_rat.json"
+        ))
+        .expect("fixture should parse");
+        spec.name = "EXTERNAL RAT TEST".into();
+        let json = spec.to_json().expect("fixture should serialize");
+        let mut world =
+            SmartBoyWorld::from_level_json(&json, 42).expect("external level should load");
+        let initial = world.clone();
+
+        assert_eq!(world.level_name(), "EXTERNAL RAT TEST");
+        world.update_tick();
+        assert_ne!(world, initial);
+
+        world.restart();
+
+        assert_eq!(world, initial);
+        assert_eq!(world.level_name(), "EXTERNAL RAT TEST");
     }
 
     #[test]
