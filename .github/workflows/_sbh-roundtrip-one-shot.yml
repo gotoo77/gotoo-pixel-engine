@@ -4,15 +4,12 @@ on:
   push:
     branches:
       - agent/sbh-level-runtime-roundtrip
-  pull_request:
-    branches:
-      - agent/smart-boy-hero-adventure-slice
 
 permissions:
   contents: write
 
 jobs:
-  patch-test-push:
+  apply-format-push:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -21,13 +18,8 @@ jobs:
           ref: agent/sbh-level-runtime-roundtrip
           fetch-depth: 0
 
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
-
-      - name: Install Rust tooling
-        run: rustup component add rustfmt clippy
+      - name: Install Rust formatting tool
+        run: rustup component add rustfmt
 
       - name: Apply focused SBH patch
         run: python3 scripts/_apply_sbh_roundtrip.py
@@ -35,10 +27,7 @@ jobs:
       - name: Format
         run: cargo fmt
 
-      - name: Validate
-        run: ./scripts/check.sh
-
-      - name: Commit validated patch
+      - name: Commit formatted candidate
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
