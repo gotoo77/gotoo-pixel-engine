@@ -4,6 +4,7 @@ struct VoidCanticleV27DirectPresentation {
     game: VoidCanticleV23Sustain,
     simulation_framebuffer: Framebuffer,
     player_overlay: Framebuffer,
+    clean_background: Framebuffer,
 }
 
 impl VoidCanticleV27DirectPresentation {
@@ -12,6 +13,7 @@ impl VoidCanticleV27DirectPresentation {
             game: VoidCanticleV23Sustain::new(),
             simulation_framebuffer: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             player_overlay: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
+            clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
         }
     }
 
@@ -109,25 +111,31 @@ impl VoidCanticleV27DirectPresentation {
     fn render_canticle_charge(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
         let base = self.game.game.base();
-        let x = 10 * scale;
-        let y = 306 * scale;
-        let width = 62 * scale;
-        let height = scale;
+        let width = 88 * scale;
+        let height = 4 * scale;
+        let x = (VC_VISUAL_PRESENTATION_WIDTH - width) / 2;
+        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(18 * scale);
         let ratio = base.core_charge.min(CORE_MAX) as f32 / CORE_MAX as f32;
         let filled = (width as f32 * ratio).round() as u32;
-        let color = if base.core_charge >= CORE_MAX {
-            CANTICLE_COLOR
-        } else {
-            CINDER
-        };
+        let ready = base.core_charge >= CORE_MAX;
+        let color = if ready { CANTICLE_COLOR } else { CINDER };
 
+        framebuffer.draw_text_scaled(8 * scale as i32, y as i32 - 1, "CORE", scale, TEXT);
         framebuffer.fill_rect(x as i32, y as i32, width, height, WRECK_MID);
         if filled > 0 {
             framebuffer.fill_rect(x as i32, y as i32, filled.min(width), height, color);
         }
         for segment in 1..5 {
-            let sx = x + width * segment / 5;
-            framebuffer.fill_rect(sx as i32, y as i32, scale, height, BG);
+            let separator = x + width * segment / 5;
+            framebuffer.fill_rect(separator as i32, y as i32, 1, height, BG);
+        }
+        framebuffer.draw_rect(x as i32 - 1, y as i32 - 1, width + 2, height + 2, WRECK_LIGHT);
+
+        if ready && ((base.animation_time * 6.0) as i32 & 1) == 0 {
+            let (text_width, text_height) = Framebuffer::text_size("READY", 1);
+            let text_x = x + width.saturating_sub(text_width) / 2;
+            let text_y = y + height.saturating_sub(text_height) / 2;
+            framebuffer.draw_text(text_x as i32, text_y as i32, "READY", BG);
         }
     }
 
@@ -139,14 +147,16 @@ impl VoidCanticleV27DirectPresentation {
 
         let margin = 8 * scale;
         let width = 72 * scale;
-        let height = scale;
-        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(4 * scale);
+        let height = 4 * scale;
+        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(7 * scale);
         let hull_x = margin;
         let shield_x = VC_VISUAL_PRESENTATION_WIDTH
             .saturating_sub(margin)
             .saturating_sub(width);
+        let hull_segments = ((hull_cap / 10.0).ceil() as u32).clamp(4, 12);
+        let shield_segments = ((shield_cap / 5.0).ceil() as u32).clamp(3, 10);
 
-        vc27_bar(
+        vc27_segmented_bar(
             framebuffer,
             hull_x as i32,
             y as i32,
@@ -154,13 +164,14 @@ impl VoidCanticleV27DirectPresentation {
             height,
             model.player_hull,
             hull_cap,
+            hull_segments,
             if model.player_hull_flash_timer > 0.0 {
                 DANGER
             } else {
                 VC20_HULL
             },
         );
-        vc27_bar(
+        vc27_segmented_bar(
             framebuffer,
             shield_x as i32,
             y as i32,
@@ -168,6 +179,7 @@ impl VoidCanticleV27DirectPresentation {
             height,
             model.player_shield,
             shield_cap,
+            shield_segments,
             if model.player_shield_flash_timer > 0.0 {
                 VC20_ARMOR_LIGHT
             } else {
@@ -217,6 +229,45 @@ impl VoidCanticleV27DirectPresentation {
         self.render_survival_bars(framebuffer);
         self.render_player_last(framebuffer);
     }
+
+    fn render_death_presentation(&mut self, framebuffer: &mut Framebuffer) {
+        let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
+        self.clean_background.clear(BG);
+        render_grave_orbit_background(&mut self.clean_background, self.game.game.base().scroll);
+        vc_visual_blit_nearest(
+            &self.clean_background,
+            framebuffer,
+            VC_VISUAL_PRESENTATION_SCALE,
+            false,
+        );
+
+        let panel_width = 150 * scale;
+        let panel_height = 62 * scale;
+        let panel_x = ((VC_VISUAL_PRESENTATION_WIDTH - panel_width) / 2) as i32;
+        let panel_y = (118 * scale) as i32;
+        framebuffer.fill_rect(
+            panel_x,
+            panel_y,
+            panel_width,
+            panel_height,
+            Pixel::rgb(9, 8, 15),
+        );
+        framebuffer.draw_rect(panel_x, panel_y, panel_width, panel_height, DANGER);
+        vc_visual_draw_centered_text(
+            framebuffer,
+            panel_y + 15 * scale as i32,
+            "PILGRIM FALLEN",
+            scale,
+            DANGER,
+        );
+        vc_visual_draw_centered_text(
+            framebuffer,
+            panel_y + 39 * scale as i32,
+            "SPACE TO RETURN",
+            scale,
+            TEXT,
+        );
+    }
 }
 
 impl Game for VoidCanticleV27DirectPresentation {
@@ -244,10 +295,13 @@ impl Game for VoidCanticleV27DirectPresentation {
         }
 
         let mode = self.visual_mode();
+        if mode == VcVisualMode::Death {
+            self.render_death_presentation(frame.framebuffer);
+            return GameResult::Continue;
+        }
 
-        // Critical VC2.7 rule: never erase parts of the gameplay framebuffer in
-        // order to remove HUD. Legacy HUD producers are disabled at their source.
-        // The raw simulation is therefore copied intact, including bullets/FX.
+        // VC2.7 rule: gameplay is copied intact. Legacy screen-space HUD
+        // producers are retired at their source instead of erased afterward.
         vc_visual_blit_nearest(
             &self.simulation_framebuffer,
             frame.framebuffer,
@@ -263,7 +317,7 @@ impl Game for VoidCanticleV27DirectPresentation {
     }
 }
 
-fn vc27_bar(
+fn vc27_segmented_bar(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -271,6 +325,7 @@ fn vc27_bar(
     height: u32,
     value: f32,
     max_value: f32,
+    segments: u32,
     fill: Pixel,
 ) {
     let ratio = (value / max_value.max(1.0)).clamp(0.0, 1.0);
@@ -279,6 +334,12 @@ fn vc27_bar(
     if filled > 0 {
         framebuffer.fill_rect(x, y, filled.min(width), height, fill);
     }
+
+    for segment in 1..segments.max(1) {
+        let separator = width.saturating_mul(segment) / segments.max(1);
+        framebuffer.fill_rect(x + separator as i32, y, 1, height, BG);
+    }
+    framebuffer.draw_rect(x - 1, y - 1, width + 2, height + 2, WRECK_LIGHT);
 }
 
 pub fn run_v27_direct_presentation_with_obs_mirror() -> Result<(), EngineError> {
@@ -311,11 +372,11 @@ mod v27_tests {
     }
 
     #[test]
-    fn bar_only_touches_its_own_row() {
+    fn segmented_bar_only_touches_its_own_rows() {
         let mut framebuffer = Framebuffer::new(20, 8);
         framebuffer.clear(Pixel::BLUE);
-        vc27_bar(&mut framebuffer, 2, 3, 12, 1, 3.0, 12.0, Pixel::RED);
-        assert_eq!(framebuffer.pixel(2, 2), Some(Pixel::BLUE));
-        assert_eq!(framebuffer.pixel(2, 4), Some(Pixel::BLUE));
+        vc27_segmented_bar(&mut framebuffer, 2, 3, 12, 2, 3.0, 12.0, 4, Pixel::RED);
+        assert_eq!(framebuffer.pixel(2, 1), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(2, 6), Some(Pixel::BLUE));
     }
 }
