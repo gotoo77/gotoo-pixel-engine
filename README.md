@@ -134,40 +134,40 @@ suspension ne transmet pas toute la durée murale au jeu en une seule frame.
 
 ## Commandes utiles
 
+Les commandes de développement sont centralisées dans `scripts/dev.py`. Elles
+sont identiques sous Windows, Linux et macOS dès que Python 3 est disponible.
+Les anciens scripts `.sh` restent des wrappers de compatibilité Unix.
+
 Lancer le sélecteur de jeux natif :
 
 ```bash
-./scripts/run-game
+python scripts/dev.py run-game
 ```
 
-Lancer directement un jeu :
+Lancer directement un jeu, éventuellement en release :
 
 ```bash
-cargo run --example snake
-cargo run --example tetris
-cargo run --example space_invaders
-cargo run --example pong
-cargo run --example breakout
-cargo run --example arcade
+python scripts/dev.py run-game snake
+python scripts/dev.py run-game void-canticle --release
 ```
 
 Construire tous les entrypoints Web/WASM :
 
 ```bash
 rustup target add wasm32-unknown-unknown
-./scripts/check-web.sh
+python scripts/dev.py check-web
 ```
 
 Construire les paquets Web locaux avec `wasm-bindgen` :
 
 ```bash
-./scripts/build-web.sh
+python scripts/dev.py build-web
 ```
 
 Puis servir le dossier `web` :
 
 ```bash
-./scripts/serve-web.sh
+python scripts/dev.py serve-web
 ```
 
 ## Validation
@@ -175,20 +175,19 @@ Puis servir le dossier `web` :
 Validation native complète :
 
 ```bash
-./scripts/check.sh
+python scripts/dev.py check
 ```
 
 Validation de tous les entrypoints Web :
 
 ```bash
-./scripts/check-web.sh
+python scripts/dev.py check-web
 ```
 
-La CI GitHub compile tous les entrypoints Web puis exécute également
-`build-web.sh` avec la version verrouillée de `wasm-bindgen-cli`, afin qu'une PR
-valide aussi le packaging JavaScript/WASM réellement requis par les pages Web.
-Le workflow GitHub Pages reste responsable de la construction release et du
-déploiement.
+La CI GitHub utilise la même CLI Python pour les validations natives/Web et le
+packaging JavaScript/WASM. Le workflow GitHub Pages appelle également
+`scripts/dev.py build-web --pages` pour construire le bundle release et
+assembler `dist/`.
 
 ## Licence
 
