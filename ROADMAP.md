@@ -282,6 +282,36 @@ Besoin attendu : chargement d'image, représentation `Sprite`, dessin
 complet/partiel, transparence et ownership Rust clair. À engager avec un jeu
 consommateur concret.
 
+### Texte, fontes custom et i18n
+
+Void Canticle fournit maintenant un besoin concret : interface et narration
+destinées à être traduites dans plusieurs langues, dont le japonais, avec une
+direction artistique typographique propre au jeu plutôt que la seule fonte ASCII
+5x7 intégrée au framebuffer.
+
+Capacités à valider par slices, sans créer d'abord un framework de localisation
+généraliste :
+
+- chaîne texte UTF-8 de bout en bout ;
+- fonte asset configurable, avec possibilité de fontes bitmap/pixel custom ;
+- mapping Unicode -> glyphes au lieu de supposer un alphabet ASCII fixe ;
+- stratégie de glyphes japonais/CJK : atlas adapté ou génération/subsetting à
+  partir du corpus réel de traductions, afin de ne pas embarquer aveuglément un
+  atlas gigantesque ;
+- métriques de glyphes, alignement, largeur variable et mesure de texte ;
+- retour à la ligne/wrapping et layouts qui tolèrent des traductions plus longues ;
+- fallback de fonte/glyphe visible et diagnostic des caractères absents ;
+- séparation entre les identifiants stables de texte et leur traduction ;
+- catalogues de locale (premiers objectifs : anglais, français, japonais),
+  interpolation de valeurs, locale de fallback et diagnostic des clés manquantes ;
+- possibilité pour un jeu de choisir plusieurs rôles typographiques (HUD,
+  dialogue, titre) sans imposer ces choix artistiques au moteur.
+
+Le premier vertical slice devra prouver un même écran Void Canticle rendu en
+anglais, français et japonais avec une fonte custom, en natif et sur Web. Le
+catalogue i18n peut rester local à Void Canticle tant qu'un second jeu ne justifie
+pas une petite abstraction partagée dans GPE.
+
 ### Rendu GPU / decals
 
 Explorer seulement lorsque des mesures ou un jeu réel montrent que le chemin
