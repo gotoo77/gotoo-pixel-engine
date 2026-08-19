@@ -68,27 +68,51 @@ mod game {
                                                                 #![allow(unused_assignments)]
 
                                                                 use super::*;
-                                                                include!("void_canticle/v20_game.rs");
+                                                                include!(
+                                                                    "void_canticle/v20_game.rs"
+                                                                );
 
                                                                 pub(crate) mod v21 {
                                                                     use super::*;
-                                                                    include!("void_canticle/v21_game.rs");
-                                                                    include!("void_canticle/v21_runtime.rs");
-                                                                    include!("void_canticle/v21_tuning.rs");
-                                                                    include!("void_canticle/v21_stabilization.rs");
-                                                                    include!("void_canticle/v21_survival_cleanup.rs");
+                                                                    include!(
+                                                                        "void_canticle/v21_game.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_runtime.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_tuning.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_stabilization.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_survival_cleanup.rs"
+                                                                    );
 
                                                                     pub(crate) mod v22 {
                                                                         use super::*;
-                                                                        include!("void_canticle/v22_game.rs");
-                                                                        include!("void_canticle/v22_movement.rs");
-                                                                        include!("void_canticle/v22_passives.rs");
+                                                                        include!(
+                                                                            "void_canticle/v22_game.rs"
+                                                                        );
+                                                                        include!(
+                                                                            "void_canticle/v22_movement.rs"
+                                                                        );
+                                                                        include!(
+                                                                            "void_canticle/v22_passives.rs"
+                                                                        );
 
                                                                         pub(crate) mod v23 {
                                                                             use super::*;
-                                                                            include!("void_canticle/v23_game.rs");
-                                                                            include!("void_canticle/v23_sustain.rs");
-                                                                            include!("void_canticle/v23_visual_foundation.rs");
+                                                                            include!(
+                                                                                "void_canticle/v23_game.rs"
+                                                                            );
+                                                                            include!(
+                                                                                "void_canticle/v23_sustain.rs"
+                                                                            );
+                                                                            include!(
+                                                                                "void_canticle/v23_visual_foundation.rs"
+                                                                            );
 
                                                                             pub(crate) mod v24 {
                                                                                 use super::*;
