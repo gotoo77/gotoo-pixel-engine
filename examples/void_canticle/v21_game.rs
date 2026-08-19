@@ -544,42 +544,8 @@ impl VoidCanticleV21 {
     }
 
     fn render_player_survival(&self, framebuffer: &mut Framebuffer) {
-        framebuffer.fill_rect(3, 25, 77, 13, BG);
-        framebuffer.draw_text(
-            4,
-            27,
-            &format!(
-                "H{:03} S{:02}",
-                self.player_hull.round() as u32,
-                self.player_shield.round() as u32
-            ),
-            TEXT,
-        );
-
-        framebuffer.fill_rect(4, 35, 34, 2, CORE_BG);
-        framebuffer.fill_rect(
-            4,
-            35,
-            vc21_health_width(self.player_hull, VC21_PLAYER_HULL_MAX, 34),
-            2,
-            VC20_HULL,
-        );
-        framebuffer.fill_rect(43, 35, 34, 2, VC20_ARMOR_BG);
-        let shield_color = if self.player_shield_flash_timer > 0.0
-            || (self.shield_regen_delay <= 0.0 && self.player_shield < VC21_PLAYER_SHIELD_MAX)
-        {
-            VC20_ARMOR_LIGHT
-        } else {
-            VC20_ARMOR
-        };
-        framebuffer.fill_rect(
-            43,
-            35,
-            vc21_health_width(self.player_shield, VC21_PLAYER_SHIELD_MAX, 34),
-            2,
-            shield_color,
-        );
-
+        // Screen-space Hull/Shield HUD is owned by the active presentation.
+        // V21 keeps only local hit feedback around the player.
         if self.player_shield_flash_timer > 0.0 {
             framebuffer.draw_circle(
                 self.base().player_x.round() as i32,
@@ -621,9 +587,8 @@ impl VoidCanticleV21 {
         }
     }
 
-    fn render_version_overlay(&self, framebuffer: &mut Framebuffer) {
-        framebuffer.fill_rect(3, 13, 96, 10, BG);
-        framebuffer.draw_text(4, 15, &format!("GRAVE ORBIT / {VC21_VERSION}"), TEXT);
+    fn render_version_overlay(&self, _framebuffer: &mut Framebuffer) {
+        // Retired: presentation owns version/stage text.
     }
 
     fn render_build_info_overlay(&self, framebuffer: &mut Framebuffer) {
