@@ -440,30 +440,9 @@ impl VoidCanticleV20 {
             let pulse = ((self.game.base().animation_time * 7.0).sin().abs() * 2.0) as u32;
             framebuffer.draw_circle(x, y, 27 + pulse, color);
             framebuffer.draw_circle(x, y, 31 + pulse, VC20_ARMOR_BG);
-            framebuffer.draw_text(4, 58, "SHIELD", color);
-            framebuffer.fill_rect(48, 59, 124, 4, VC20_ARMOR_BG);
-            let width = 124_u32.saturating_mul(self.boss_shield) / VC20_BOSS_SHIELD_MAX;
-            framebuffer.fill_rect(48, 59, width, 4, color);
         } else if self.boss_shield_break_timer > 0.0 {
-            framebuffer.fill_rect(44, 56, 128, 10, BG);
-            framebuffer.draw_text(48, 58, "SHIELD BROKEN", CANTICLE_COLOR);
+            framebuffer.draw_circle(x, y, 31, CANTICLE_COLOR);
         }
-    }
-
-    fn render_lore_hud(&self, framebuffer: &mut Framebuffer) {
-        if !self.game.art_can_overlay_game() {
-            return;
-        }
-
-        let progression = &self.game.v14().progression;
-        framebuffer.draw_text(4, 269, "CINDERS > CORE", CINDER);
-        framebuffer.fill_rect(103, 303, 73, 10, BG);
-        framebuffer.draw_text(
-            104,
-            305,
-            &format!("ECHOES {}", progression.xp),
-            XP_ORB_CORE,
-        );
     }
 
     fn render_build_info_overlay(&self, framebuffer: &mut Framebuffer) {
@@ -505,7 +484,6 @@ impl Game for VoidCanticleV20 {
         if self.game.art_can_overlay_game() {
             self.render_enemy_defenses(frame.framebuffer);
             self.render_boss_defense(frame.framebuffer);
-            self.render_lore_hud(frame.framebuffer);
         } else if matches!(&self.game.ui.state, VcPauseState::BuildInfo) {
             self.render_build_info_overlay(frame.framebuffer);
         }
