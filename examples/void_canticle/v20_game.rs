@@ -39,6 +39,22 @@ impl VoidCanticleV20 {
         }
     }
 
+    fn render_lore_hud(&self, framebuffer: &mut Framebuffer) {
+        if !self.game.art_can_overlay_game() {
+            return;
+        }
+
+        let progression = &self.game.v14().progression;
+        framebuffer.draw_text(4, 269, "CINDERS > CORE", CINDER);
+        framebuffer.fill_rect(103, 303, 73, 10, BG);
+        framebuffer.draw_text(
+            104,
+            305,
+            &format!("ECHOES {}", progression.xp),
+            XP_ORB_CORE,
+        );
+    }
+
     fn render_build_info_overlay(&self, framebuffer: &mut Framebuffer) {
         framebuffer.fill_rect(17, 92, 146, 14, Pixel::rgb(9, 8, 15));
         framebuffer.draw_text(20, 97, &format!("VERSION {VC20_VERSION}"), CANTICLE_COLOR);
@@ -59,7 +75,9 @@ impl Game for VoidCanticleV20 {
             return result;
         }
 
-        if matches!(&self.game.ui.state, VcPauseState::BuildInfo) {
+        if self.game.art_can_overlay_game() {
+            self.render_lore_hud(frame.framebuffer);
+        } else if matches!(&self.game.ui.state, VcPauseState::BuildInfo) {
             self.render_build_info_overlay(frame.framebuffer);
         }
 
