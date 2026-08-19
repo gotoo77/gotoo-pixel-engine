@@ -207,8 +207,6 @@ impl VoidCanticleV23 {
             return;
         }
 
-        // Compact radial gauge: eight pips communicate cooldown at a glance.
-        // Text-heavy input/status strings are deliberately gone from combat.
         const CENTER_X: i32 = 164;
         const CENTER_Y: i32 = 250;
         const RADIUS: f32 = 9.0;
@@ -246,19 +244,6 @@ impl VoidCanticleV23 {
             gauge_color,
         );
     }
-
-    fn render_v23_version(&self, framebuffer: &mut Framebuffer) {
-        if !self.active_combat() {
-            return;
-        }
-        framebuffer.fill_rect(3, 13, 116, 10, BG);
-        framebuffer.draw_text(
-            4,
-            15,
-            &format!("GRAVE ORBIT / {VC23_PIXEL_VERSION}"),
-            TEXT,
-        );
-    }
 }
 
 impl Game for VoidCanticleV23 {
@@ -284,7 +269,6 @@ impl Game for VoidCanticleV23 {
         self.render_wraith_shields(frame.framebuffer);
         self.render_emp_wave(frame.framebuffer);
         self.render_emp_hud(frame.framebuffer);
-        self.render_v23_version(frame.framebuffer);
         GameResult::Continue
     }
 }
