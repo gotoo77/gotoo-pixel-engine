@@ -107,12 +107,10 @@ impl VoidCanticleV20 {
         // XP: same treatment as CORE; no full-width dark strip underneath.
         Self::restore_strip(framebuffer, 4, 315, 172, 3, 312);
         let progression = &self.inner.v14().progression;
-        let xp_width = if progression.xp_next == 0 {
-            0
-        } else {
-            172_u32.saturating_mul(progression.xp.min(progression.xp_next))
-                / progression.xp_next
-        };
+        let xp_width = 172_u32
+            .saturating_mul(progression.xp.min(progression.xp_next))
+            .checked_div(progression.xp_next)
+            .unwrap_or(172);
         if xp_width > 0 {
             framebuffer.fill_rect(4, 315, xp_width, 2, XP_BAR_FILL);
         }
