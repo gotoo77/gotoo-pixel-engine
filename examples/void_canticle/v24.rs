@@ -1,13 +1,17 @@
-const VC24_PRESENTATION_VERSION: &str = "VC2.4";
+const VC24_PRESENTATION_VERSION: &str = "VC2.4-R2";
 
 struct VoidCanticleV24HudPolish {
     inner: VoidCanticleVisualFoundation,
+    combat_snapshot: Framebuffer,
+    has_combat_snapshot: bool,
 }
 
 impl VoidCanticleV24HudPolish {
     fn new() -> Self {
         Self {
             inner: VoidCanticleVisualFoundation::new(),
+            combat_snapshot: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
+            has_combat_snapshot: false,
         }
     }
 
@@ -16,9 +20,8 @@ impl VoidCanticleV24HudPolish {
             return;
         }
 
-        // The VC2 presentation owns combat UI now. Remove the remaining
-        // historical wave-toast glyphs so the upper screen is reserved for
-        // the authored VC2 announcement layer only.
+        // The upper presentation area belongs to authored VC2 announcements,
+        // not to old wave/status HUD fragments.
         vc_visual_restore_matching_colors(
             &mut self.inner.simulation_framebuffer,
             &self.inner.background_framebuffer,
@@ -31,9 +34,8 @@ impl VoidCanticleV24HudPolish {
             &[POWER_RELIC_LIGHT, ART_GOLD, XP_ORB_CORE],
         );
 
-        // Explicitly kill legacy textual HUD in the lower-left presentation
-        // zone (LV, old status/meta copy, etc.). The bars drawn afterwards are
-        // label-free and therefore cannot inherit these remnants.
+        // Remove legacy lower-left copy (LV/status) before the VC2 presentation
+        // is upscaled. Persistent combat state is rendered by VC2.4-R2 only.
         vc_visual_restore_matching_colors(
             &mut self.inner.simulation_framebuffer,
             &self.inner.background_framebuffer,
@@ -54,19 +56,80 @@ impl VoidCanticleV24HudPolish {
         );
     }
 
+    fn remember_clean_combat_frame(&mut self) {
+        vc24_copy_framebuffer(
+            &self.inner.simulation_framebuffer,
+            &mut self.combat_snapshot,
+        );
+        self.has_combat_snapshot = true;
+    }
+
+    fn restore_modal_base(&mut self) {
+        if self.has_combat_snapshot {
+            vc24_copy_framebuffer(
+                &self.combat_snapshot,
+                &mut self.inner.simulation_framebuffer,
+            );
+        } else {
+            vc24_copy_framebuffer(
+                &self.inner.background_framebuffer,
+                &mut self.inner.simulation_framebuffer,
+            );
+        }
+    }
+
+    fn redraw_modal_last(&mut self, mode: VcVisualMode) {
+        match mode {
+            VcVisualMode::SupportChoice => {
+                let game = &self.inner.game;
+                let framebuffer = &mut self.inner.simulation_framebuffer;
+                game.render_support_choice(framebuffer);
+            }
+            VcVisualMode::LevelChoice => {
+                let v14 = self.inner.game.game.v20().game.v14();
+                let framebuffer = &mut self.inner.simulation_framebuffer;
+                if let Some(choice) = &v14.progression.level_choice {
+                    v14.progression.render_level_choice(framebuffer, choice);
+                }
+            }
+            VcVisualMode::MutationChoice => {
+                let v14 = self.inner.game.game.v20().game.v14();
+                let framebuffer = &mut self.inner.simulation_framebuffer;
+                if let Some(choice) = &v14.mutation_choice {
+                    v14.render_mutation_choice(framebuffer, choice);
+                }
+            }
+            VcVisualMode::Pause => {
+                let pause = self.inner.game.survival_model().game.pause_ui();
+                let framebuffer = &mut self.inner.simulation_framebuffer;
+                match &pause.state {
+                    VcPauseState::Controls => pause.render_controls(framebuffer),
+                    VcPauseState::BuildInfo => pause.render_build_info(framebuffer),
+                    _ => pause.render_menu(framebuffer),
+                }
+            }
+            VcVisualMode::StageClear => {
+                let stabilized = &self.inner.game.survival_model().game;
+                let framebuffer = &mut self.inner.simulation_framebuffer;
+                stabilized.render_stage_clear(framebuffer);
+            }
+            VcVisualMode::Combat | VcVisualMode::Death => {}
+        }
+    }
+
     fn render_combat_presentation(&mut self, framebuffer: &mut Framebuffer) {
         if !self.inner.game.game.active_combat() {
             return;
         }
 
-        // Upper screen: announcements only. All persistent gauges live below.
+        // Upper screen: announcements only. No persistent Hull/Shield/Core/XP
+        // furniture is allowed here.
         self.inner.render_event_announcement(framebuffer);
         self.inner.render_player_foreground(framebuffer);
 
-        self.render_bottom_boss_status(framebuffer);
+        // Persistent combat HUD is intentionally reduced to exactly two thin
+        // gauges at the bottom edge.
         self.render_bottom_survival_bars(framebuffer);
-        self.render_textless_core(framebuffer);
-        self.inner.render_compact_xp(framebuffer);
     }
 
     fn render_bottom_survival_bars(&self, framebuffer: &mut Framebuffer) {
@@ -75,15 +138,35 @@ impl VoidCanticleV24HudPolish {
         let hull_cap = self.inner.game.hull_cap();
         let shield_cap = self.inner.game.shield_cap().max(1.0);
 
-        let margin = 10 * scale;
-        let gap = 14 * scale;
-        let bar_width = (VC_VISUAL_PRESENTATION_WIDTH - margin * 2 - gap) / 2;
-        let bar_height = 2 * scale;
-        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(30 * scale);
+        let margin = 8 * scale;
+        let bar_width = 72 * scale;
+        let bar_height = scale;
+        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(4 * scale);
         let hull_x = margin;
-        let shield_x = margin + bar_width + gap;
+        let shield_x = VC_VISUAL_PRESENTATION_WIDTH
+            .saturating_sub(margin)
+            .saturating_sub(bar_width);
 
-        vc24_thin_transparent_bar(
+        let hull_fill = if model.player_hull_flash_timer > 0.0 {
+            DANGER
+        } else if self.inner.game.sustain_flash_timer > 0.0
+            && self.inner.game.augment == Some(Vc23SustainAugment::NaniteRepair)
+        {
+            CANTICLE_COLOR
+        } else {
+            VC20_HULL
+        };
+        let shield_fill = if model.player_shield_flash_timer > 0.0 {
+            VC20_ARMOR_LIGHT
+        } else if self.inner.game.sustain_flash_timer > 0.0
+            && self.inner.game.augment == Some(Vc23SustainAugment::ShieldCapacitor)
+        {
+            ART_CYAN_LIGHT
+        } else {
+            VC20_ARMOR
+        };
+
+        vc24_thin_bar(
             framebuffer,
             hull_x as i32,
             y as i32,
@@ -91,13 +174,9 @@ impl VoidCanticleV24HudPolish {
             bar_height,
             model.player_hull,
             hull_cap,
-            if model.player_hull_flash_timer > 0.0 {
-                DANGER
-            } else {
-                VC20_HULL
-            },
+            hull_fill,
         );
-        vc24_thin_transparent_bar(
+        vc24_thin_bar(
             framebuffer,
             shield_x as i32,
             y as i32,
@@ -105,105 +184,8 @@ impl VoidCanticleV24HudPolish {
             bar_height,
             model.player_shield,
             shield_cap,
-            if model.player_shield_flash_timer > 0.0 {
-                VC20_ARMOR_LIGHT
-            } else {
-                VC20_ARMOR
-            },
+            shield_fill,
         );
-
-        // Sustain is intentionally not represented by a second progress line.
-        // A very brief outline flash is enough feedback without creating the
-        // ugly persistent yellow/cyan underline from VC2.3.
-        if self.inner.game.sustain_flash_timer > 0.0 {
-            let (x, color) = match self.inner.game.augment {
-                Some(Vc23SustainAugment::NaniteRepair) => (hull_x, CANTICLE_COLOR),
-                Some(Vc23SustainAugment::ShieldCapacitor) => (shield_x, ART_CYAN_LIGHT),
-                None => return,
-            };
-            framebuffer.draw_rect(
-                x as i32 - 1,
-                y as i32 - 1,
-                bar_width + 2,
-                bar_height + 2,
-                color,
-            );
-        }
-    }
-
-    fn render_bottom_boss_status(&self, framebuffer: &mut Framebuffer) {
-        let base = self.inner.game.game.base();
-        if base.encounter_phase != EncounterPhase::BossFight {
-            return;
-        }
-        let Some(boss) = base.boss else {
-            return;
-        };
-
-        let scale = VC_VISUAL_PRESENTATION_SCALE;
-        let width = 82 * scale;
-        let height = scale;
-        let x = (VC_VISUAL_PRESENTATION_WIDTH - width) / 2;
-        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(38 * scale);
-        let ratio = boss.hp as f32 / BELLKEEPER_MAX_HP as f32;
-        let filled = (width as f32 * ratio).round() as u32;
-
-        framebuffer.draw_rect(
-            x as i32 - 1,
-            y as i32 - 1,
-            width + 2,
-            height + 2,
-            BELL_DARK,
-        );
-        if filled > 0 {
-            framebuffer.fill_rect(x as i32, y as i32, filled.min(width), height, DANGER);
-        }
-    }
-
-    fn render_textless_core(&self, framebuffer: &mut Framebuffer) {
-        let scale = VC_VISUAL_PRESENTATION_SCALE;
-        let base = self.inner.game.game.base();
-        let x = 10 * scale;
-        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(14 * scale);
-        let width = 62 * scale;
-        let height = 3 * scale;
-        let ratio = base.core_charge.min(CORE_MAX) as f32 / CORE_MAX as f32;
-        let ready = base.core_charge >= CORE_MAX;
-        let color = if ready { CANTICLE_COLOR } else { CINDER };
-
-        framebuffer.draw_rect(
-            x as i32 - 1,
-            y as i32 - 1,
-            width + 2,
-            height + 2,
-            WRECK_MID,
-        );
-        let fill = (width as f32 * ratio).round() as u32;
-        if fill > 0 {
-            framebuffer.fill_rect(x as i32, y as i32, fill.min(width), height, color);
-        }
-        for segment in 1..5 {
-            let separator = x + width * segment / 5;
-            framebuffer.draw_line(
-                separator as i32,
-                y as i32,
-                separator as i32,
-                (y + height - 1) as i32,
-                WRECK_MID,
-            );
-        }
-
-        // Ready state is conveyed by color only: no READY/LV/status text in
-        // the lower-left corner.
-        if ready {
-            framebuffer.draw_rect(
-                x as i32 - 2,
-                y as i32 - 2,
-                width + 4,
-                height + 4,
-                CANTICLE_COLOR,
-            );
-        }
     }
 }
 
@@ -233,8 +215,30 @@ impl Game for VoidCanticleV24HudPolish {
 
         let mode = self.inner.visual_mode();
         self.inner.prepare_background_frame();
-        self.inner.clean_simulation_legacy_hud(mode);
-        self.clean_residual_legacy_hud(mode);
+
+        match mode {
+            VcVisualMode::Combat => {
+                self.inner.clean_simulation_legacy_hud(mode);
+                self.clean_residual_legacy_hud(mode);
+                self.remember_clean_combat_frame();
+            }
+            VcVisualMode::Pause
+            | VcVisualMode::LevelChoice
+            | VcVisualMode::MutationChoice
+            | VcVisualMode::SupportChoice => {
+                // The historical wrappers keep rendering gameplay/FX after
+                // their modal panel. Restore a clean frozen combat frame and
+                // redraw the modal last so bullets/orbs can never cover it.
+                self.restore_modal_base();
+                self.redraw_modal_last(mode);
+            }
+            VcVisualMode::StageClear => {
+                self.redraw_modal_last(mode);
+            }
+            VcVisualMode::Death => {
+                self.inner.clean_simulation_legacy_hud(mode);
+            }
+        }
 
         vc_visual_blit_nearest(
             &self.inner.simulation_framebuffer,
@@ -251,7 +255,17 @@ impl Game for VoidCanticleV24HudPolish {
     }
 }
 
-fn vc24_thin_transparent_bar(
+fn vc24_copy_framebuffer(source: &Framebuffer, destination: &mut Framebuffer) {
+    for y in 0..source.height() {
+        for x in 0..source.width() {
+            if let Some(pixel) = source.pixel(x as i32, y as i32) {
+                destination.set_pixel_in_bounds(x, y, pixel);
+            }
+        }
+    }
+}
+
+fn vc24_thin_bar(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -264,9 +278,9 @@ fn vc24_thin_transparent_bar(
     let ratio = (value / max_value.max(1.0)).clamp(0.0, 1.0);
     let filled = (width as f32 * ratio).round() as u32;
 
-    // Deliberately no opaque background fill: unfilled gauge space is the
-    // live Grave Orbit scene.
-    framebuffer.draw_rect(x - 1, y - 1, width + 2, height + 2, WRECK_MID);
+    // One dim baseline + one coloured fill. No frame, no opaque backing, no
+    // secondary sustain line: at presentation scale 2 this is only 2 px high.
+    framebuffer.fill_rect(x, y, width, height, WRECK_MID);
     if filled > 0 {
         framebuffer.fill_rect(x, y, filled.min(width), height, fill);
     }
@@ -277,7 +291,7 @@ pub fn run_hud_polish_with_obs_mirror() -> Result<(), EngineError> {
     run(
         EngineConfig {
             title: format!(
-                "Void Canticle {VC24_PRESENTATION_VERSION} HUD Layout - Gotoo Pixel Engine"
+                "Void Canticle {VC24_PRESENTATION_VERSION} HUD R2 - Gotoo Pixel Engine"
             ),
             framebuffer_width: VC_VISUAL_PRESENTATION_WIDTH,
             framebuffer_height: VC_VISUAL_PRESENTATION_HEIGHT,
@@ -298,63 +312,42 @@ mod v24_tests {
 
     #[test]
     fn presentation_version_is_unambiguous() {
-        assert_eq!(VC24_PRESENTATION_VERSION, "VC2.4");
+        assert_eq!(VC24_PRESENTATION_VERSION, "VC2.4-R2");
     }
 
     #[test]
-    fn wave_toast_gold_ghost_is_restored_from_background() {
-        let mut game = VoidCanticleV24HudPolish::new();
-        game.inner.background_framebuffer.clear(Pixel::BLUE);
-        game.inner.simulation_framebuffer.clear(Pixel::RED);
-        game.inner
-            .simulation_framebuffer
-            .draw(110, 40, POWER_RELIC_LIGHT);
+    fn framebuffer_copy_preserves_snapshot_pixels() {
+        let mut source = Framebuffer::new(3, 2);
+        source.clear(Pixel::BLUE);
+        source.draw(1, 1, Pixel::RED);
+        let mut destination = Framebuffer::new(3, 2);
+        destination.clear(Pixel::GREEN);
 
-        game.clean_residual_legacy_hud(VcVisualMode::Combat);
+        vc24_copy_framebuffer(&source, &mut destination);
 
-        assert_eq!(
-            game.inner.simulation_framebuffer.pixel(110, 40),
-            Some(Pixel::BLUE)
-        );
+        assert_eq!(destination.pixel(0, 0), Some(Pixel::BLUE));
+        assert_eq!(destination.pixel(1, 1), Some(Pixel::RED));
     }
 
     #[test]
-    fn legacy_level_label_colors_are_removed_from_bottom_left() {
-        let mut game = VoidCanticleV24HudPolish::new();
-        game.inner.background_framebuffer.clear(Pixel::BLUE);
-        game.inner.simulation_framebuffer.clear(Pixel::RED);
-        game.inner.simulation_framebuffer.draw(8, 292, XP_ORB_CORE);
-        game.inner.simulation_framebuffer.draw(12, 292, TEXT);
-
-        game.clean_residual_legacy_hud(VcVisualMode::Combat);
-
-        assert_eq!(
-            game.inner.simulation_framebuffer.pixel(8, 292),
-            Some(Pixel::BLUE)
-        );
-        assert_eq!(
-            game.inner.simulation_framebuffer.pixel(12, 292),
-            Some(Pixel::BLUE)
-        );
-    }
-
-    #[test]
-    fn thin_bar_keeps_unfilled_area_transparent_to_scene() {
+    fn thin_bar_stays_one_row_high_and_has_no_frame() {
         let mut framebuffer = Framebuffer::new(20, 8);
         framebuffer.clear(Pixel::BLUE);
 
-        vc24_thin_transparent_bar(
+        vc24_thin_bar(
             &mut framebuffer,
             2,
             3,
             12,
-            2,
+            1,
             3.0,
             12.0,
             Pixel::RED,
         );
 
-        assert_eq!(framebuffer.pixel(4, 3), Some(Pixel::RED));
-        assert_eq!(framebuffer.pixel(12, 3), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(2, 3), Some(Pixel::RED));
+        assert_eq!(framebuffer.pixel(12, 3), Some(WRECK_MID));
+        assert_eq!(framebuffer.pixel(2, 2), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(2, 4), Some(Pixel::BLUE));
     }
 }
