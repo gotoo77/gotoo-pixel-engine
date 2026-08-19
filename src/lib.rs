@@ -10,6 +10,7 @@ mod input;
 mod pixel;
 mod platform;
 mod renderer;
+mod sfx_manifest;
 mod sprite;
 mod storage;
 pub mod ui;
@@ -28,6 +29,7 @@ pub use input::{
 };
 pub use pixel::Pixel;
 pub use platform::{EngineConfig, EngineError, Frame, Game, GameResult, run};
+pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
 pub use viewport::{Rect, Size, Viewport};
