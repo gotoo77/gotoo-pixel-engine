@@ -132,88 +132,12 @@ impl VoidCanticleV10 {
         }
     }
 
-    fn render_minimal_hud(&self, framebuffer: &mut Framebuffer) {
-        let game = &self.inner.inner;
-        let base = &game.base;
-
-        framebuffer.draw_text(4, 4, &format!("L {}", base.lives), TEXT);
-        let score = format!("{}", base.score);
-        let (score_width, _) = Framebuffer::text_size(&score, 1);
-        let score_x = FRAMEBUFFER_WIDTH as i32 - score_width as i32 - 4;
-        framebuffer.draw_text(score_x, 4, &score, PILGRIM_CORE);
-
-        if let Some(boss) = base.boss
-            && base.encounter_phase == EncounterPhase::BossFight
-        {
-            framebuffer.fill_rect(24, 15, 132, 5, CORE_BG);
-            let width = 132_u32.saturating_mul(boss.hp) / BELLKEEPER_MAX_HP;
-            framebuffer.fill_rect(24, 15, width, 5, DANGER);
-        }
-
-        framebuffer.draw_text(4, 302, "CORE", TEXT);
-        framebuffer.fill_rect(34, 303, 76, 5, CORE_BG);
-        let core_color = if base.core_charge >= CORE_MAX {
-            CANTICLE_COLOR
-        } else {
-            CINDER
-        };
-        let charge_width = 76_u32.saturating_mul(base.core_charge) / CORE_MAX;
-        framebuffer.fill_rect(34, 303, charge_width, 5, core_color);
-
-        for index in 0..MAX_POWER_LEVEL {
-            let color = if index < game.power_level {
-                POWER_RELIC
-            } else {
-                CORE_BG
-            };
-            framebuffer.fill_rect(143 + i32::from(index) * 7, 303, 5, 5, color);
-        }
+    fn render_minimal_hud(&self, _framebuffer: &mut Framebuffer) {
+        // Retired: the active VC presentation owns all screen-space HUD.
     }
 
-    fn render_side_notifications(&self, framebuffer: &mut Framebuffer) {
-        let base = &self.inner.inner.base;
-
-        if self.wave_toast_timer > 0.0 && self.inner.wave_index < V09_WAVES.len() {
-            let wave = V09_WAVES[self.inner.wave_index];
-            framebuffer.fill_rect(102, 34, 74, 31, Pixel::rgb(9, 8, 15));
-            framebuffer.draw_rect(102, 34, 74, 31, WRECK_LIGHT);
-            framebuffer.draw_text(
-                108,
-                40,
-                &format!("W {}/15", self.inner.wave_index + 1),
-                POWER_RELIC_LIGHT,
-            );
-            framebuffer.draw_text(108, 52, wave.name, WRECK_LIGHT);
-        }
-
-        if self.inner.wipe_banner_timer > 0.0 {
-            framebuffer.fill_rect(105, 76, 71, 31, Pixel::rgb(9, 8, 15));
-            framebuffer.draw_rect(105, 76, 71, 31, POWER_RELIC_LIGHT);
-            framebuffer.draw_text(113, 82, "FULL WIPE", POWER_RELIC_LIGHT);
-            framebuffer.draw_text(
-                113,
-                94,
-                &format!("CHAIN {}", self.inner.wipe_banner_chain),
-                POWER_RELIC,
-            );
-        }
-
-        match base.encounter_phase {
-            EncounterPhase::BossIntro => {
-                framebuffer.fill_rect(4, 90, 92, 45, Pixel::rgb(9, 8, 15));
-                framebuffer.draw_rect(4, 90, 92, 45, BELL_LIGHT);
-                framebuffer.draw_text(12, 98, "WARNING", DANGER);
-                framebuffer.draw_text(12, 111, "BELLKEEPER", BELL_LIGHT);
-                framebuffer.draw_text(12, 123, "TOLLS", TEXT);
-            }
-            EncounterPhase::Cleared => {
-                framebuffer.fill_rect(4, 128, 94, 40, Pixel::rgb(9, 8, 15));
-                framebuffer.draw_rect(4, 128, 94, 40, CANTICLE_COLOR);
-                framebuffer.draw_text(10, 137, "ORBIT CLEARED", CANTICLE_COLOR);
-                framebuffer.draw_text(10, 153, "PATH OPENS", TEXT);
-            }
-            EncounterPhase::Waves | EncounterPhase::BossFight => {}
-        }
+    fn render_side_notifications(&self, _framebuffer: &mut Framebuffer) {
+        // Retired: the active VC presentation owns combat announcements.
     }
 }
 
