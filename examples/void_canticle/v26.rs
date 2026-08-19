@@ -50,9 +50,9 @@ impl VoidCanticleV26HudOwnership {
     fn remove_historical_hud_regions(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
 
-        // The upper 41 simulation rows are presentation-only. Historical lives,
-        // score, boss bar, Hull/Shield and sustain strips are removed regardless
-        // of their pixel colours. VC2 announcements are redrawn afterwards.
+        // Upper screen belongs to VC2 announcements only. This is a hard
+        // geometry reset, not a colour heuristic: legacy lives/score/boss,
+        // Hull/Shield and sustain cannot leak through anymore.
         self.restore_rect_from_background(
             framebuffer,
             0,
@@ -61,12 +61,28 @@ impl VoidCanticleV26HudOwnership {
             41 * scale,
         );
 
+        // Old notification panels are also removed geometrically; the current
+        // authored announcement layer is redrawn afterwards.
+        for (x, y, width, height) in [
+            (102, 34, 74, 31),
+            (105, 76, 71, 31),
+            (4, 90, 92, 45),
+        ] {
+            self.restore_rect_from_background(
+                framebuffer,
+                x * scale,
+                y * scale,
+                width * scale,
+                height * scale,
+            );
+        }
+
         // Historical lower-left LV text and compact VOID status.
         self.restore_rect_from_background(framebuffer, 0, 286 * scale, 72 * scale, 16 * scale);
         self.restore_rect_from_background(framebuffer, 110 * scale, 286 * scale, 70 * scale, 16 * scale);
 
-        // Historical CORE/power strip and XP strip. They are replaced below by
-        // the authored Canticle charge plus Hull/Shield gauges.
+        // Historical CORE/power strip and XP strip. The Canticle gauge is
+        // reconstructed below at its familiar lower-left placement.
         self.restore_rect_from_background(
             framebuffer,
             0,
@@ -86,10 +102,13 @@ impl VoidCanticleV26HudOwnership {
     fn render_canticle_charge(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
         let base = self.inner.inner.inner.game.game.base();
-        let width = 76 * scale;
-        let height = scale;
-        let x = (VC_VISUAL_PRESENTATION_WIDTH - width) / 2;
-        let y = VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(10 * scale);
+
+        // Preserve the visual position of the VC2.3 Canticle/Core charge:
+        // compact, segmented, lower-left, with no CORE/READY text.
+        let x = 10 * scale;
+        let y = 306 * scale;
+        let width = 62 * scale;
+        let height = 3 * scale;
         let ratio = base.core_charge.min(CORE_MAX) as f32 / CORE_MAX as f32;
         let filled = (width as f32 * ratio).round() as u32;
         let color = if base.core_charge >= CORE_MAX {
@@ -98,28 +117,40 @@ impl VoidCanticleV26HudOwnership {
             CINDER
         };
 
-        framebuffer.fill_rect(x as i32, y as i32, width, height, WRECK_MID);
+        // Transparent empty space: scene remains visible behind the gauge.
+        framebuffer.draw_rect(
+            x as i32 - 1,
+            y as i32 - 1,
+            width + 2,
+            height + 2,
+            WRECK_MID,
+        );
         if filled > 0 {
             framebuffer.fill_rect(x as i32, y as i32, filled.min(width), height, color);
         }
 
-        // Five subtle segments preserve the old charge readability without any
-        // CORE/READY text in the lower-left corner.
         for segment in 1..5 {
             let sx = x + width * segment / 5;
-            framebuffer.fill_rect(sx as i32, y as i32, scale, height, BG);
+            framebuffer.draw_line(
+                sx as i32,
+                y as i32,
+                sx as i32,
+                (y + height - 1) as i32,
+                WRECK_MID,
+            );
         }
     }
 
     fn redraw_owned_hud(&mut self, framebuffer: &mut Framebuffer) {
-        // Upper screen: authored text announcements only.
+        // Upper screen: text announcements only.
         self.inner.inner.inner.render_event_announcement(framebuffer);
 
-        // Bottom HUD: Canticle charge + thin Hull/Shield only.
+        // Bottom: Canticle charge plus thin Hull/Shield.
         self.render_canticle_charge(framebuffer);
         self.inner.inner.render_bottom_survival_bars(framebuffer);
 
-        // Player is deliberately last so HUD lines never cut through the ship.
+        // Critical z-order rule: player is last, so gauges never slice through
+        // the ship when it enters the lower screen area.
         self.inner.inner.inner.render_player_foreground(framebuffer);
     }
 }
