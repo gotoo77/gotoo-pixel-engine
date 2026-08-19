@@ -34,13 +34,6 @@ impl Vc23SustainAugment {
             Self::ShieldCapacitor => "SHIELD REGEN AFTER 2S",
         }
     }
-
-    fn hud_label(self) -> &'static str {
-        match self {
-            Self::NaniteRepair => "NANITES",
-            Self::ShieldCapacitor => "CAPACITOR",
-        }
-    }
 }
 
 struct VoidCanticleV23Sustain {
@@ -242,28 +235,20 @@ impl VoidCanticleV23Sustain {
             return;
         };
 
-        framebuffer.fill_rect(3, 222, 173, 13, BG);
-        framebuffer.draw_text(4, 225, augment.hud_label(), ART_CYAN_LIGHT);
+        // Sustain communicates through the survival gauges themselves. The
+        // thin line fills while waiting for a safe window; once active the
+        // corresponding Hull/Shield gauge receives a bright outline.
+        let (x, delay, color) = match augment {
+            Vc23SustainAugment::NaniteRepair => (12, VC23_NANITE_DELAY, CANTICLE_COLOR),
+            Vc23SustainAugment::ShieldCapacitor => (100, VC23_CAPACITOR_DELAY, ART_CYAN_LIGHT),
+        };
+        let progress = (self.quiet_timer / delay).clamp(0.0, 1.0);
+        framebuffer.fill_rect(x, 37, 72, 2, WRECK_MID);
+        framebuffer.fill_rect(x, 37, (72.0 * progress).round() as u32, 2, color);
 
-        let (delay, active_label) = match augment {
-            Vc23SustainAugment::NaniteRepair => (VC23_NANITE_DELAY, "REPAIR"),
-            Vc23SustainAugment::ShieldCapacitor => (VC23_CAPACITOR_DELAY, "REGEN"),
-        };
-        let status = if self.quiet_timer >= delay {
-            active_label.to_string()
-        } else {
-            format!("WAIT {}", (delay - self.quiet_timer).ceil() as u32)
-        };
-        framebuffer.draw_text(
-            116,
-            225,
-            &status,
-            if self.sustain_flash_timer > 0.0 {
-                CANTICLE_COLOR
-            } else {
-                WRECK_LIGHT
-            },
-        );
+        if self.quiet_timer >= delay || self.sustain_flash_timer > 0.0 {
+            framebuffer.draw_rect(x - 2, 25, 76, 11, color);
+        }
     }
 }
 
