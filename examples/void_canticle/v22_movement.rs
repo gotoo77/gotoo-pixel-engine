@@ -5,7 +5,6 @@ const VC22_PILGRIM_BRAKE: f32 = 1_020.0;
 const VC22_WRAITH_ACCEL: f32 = 1_800.0;
 const VC22_WRAITH_BRAKE: f32 = 2_350.0;
 const VC22_FOCUS_RESPONSE_MULTIPLIER: f32 = 2.0;
-const VC22_TELEPORT_THRESHOLD: f32 = 14.0;
 
 #[derive(Debug, Clone, Copy)]
 struct ChassisMovementProfile {
@@ -34,14 +33,52 @@ impl ExosuitChassis {
 
 struct VoidCanticleV22Movement {
     game: VoidCanticleV22,
+    movement_controls: ControlMap,
     velocity_x: f32,
     velocity_y: f32,
 }
 
 impl VoidCanticleV22Movement {
     fn new() -> Self {
+        let mut game = VoidCanticleV22::new();
+
+        // VC2.2 owns movement feel. Keep the historical movement code intact,
+        // but detach its four physical direction bindings so it cannot apply
+        // a second instantaneous displacement after the chassis velocity has
+        // already been integrated.
+        {
+            let controls = &mut game.game.game.game.game.base_mut().controls;
+            controls
+                .clear_bindings(MOVE_LEFT)
+                .clear_bindings(MOVE_RIGHT)
+                .clear_bindings(MOVE_UP)
+                .clear_bindings(MOVE_DOWN);
+        }
+
+        let mut movement_controls = ControlMap::new();
+        movement_controls
+            .bind_key(MOVE_LEFT, Key::Left)
+            .bind_key(MOVE_LEFT, Key::A)
+            .bind_gamepad(MOVE_LEFT, GamepadButton::DPadLeft)
+            .bind_gamepad(MOVE_LEFT, GamepadButton::LeftStickLeft)
+            .bind_key(MOVE_RIGHT, Key::Right)
+            .bind_key(MOVE_RIGHT, Key::D)
+            .bind_gamepad(MOVE_RIGHT, GamepadButton::DPadRight)
+            .bind_gamepad(MOVE_RIGHT, GamepadButton::LeftStickRight)
+            .bind_key(MOVE_UP, Key::Up)
+            .bind_key(MOVE_UP, Key::W)
+            .bind_gamepad(MOVE_UP, GamepadButton::DPadUp)
+            .bind_gamepad(MOVE_UP, GamepadButton::LeftStickUp)
+            .bind_key(MOVE_DOWN, Key::Down)
+            .bind_key(MOVE_DOWN, Key::S)
+            .bind_gamepad(MOVE_DOWN, GamepadButton::DPadDown)
+            .bind_gamepad(MOVE_DOWN, GamepadButton::LeftStickDown)
+            .bind_key(FOCUS, Key::LeftShift)
+            .bind_gamepad(FOCUS, GamepadButton::LeftShoulder);
+
         Self {
-            game: VoidCanticleV22::new(),
+            game,
+            movement_controls,
             velocity_x: 0.0,
             velocity_y: 0.0,
         }
@@ -61,17 +98,36 @@ impl VoidCanticleV22Movement {
     }
 
     fn focused(&self, frame: &Frame<'_>) -> bool {
-        self.base().controls.action(FOCUS).held()
+        self.movement_controls.action(FOCUS).held()
             || frame.input.mouse_button(MouseButton::Right).held()
     }
 
-    fn apply_movement_dynamics(
-        &mut self,
-        before: (f32, f32),
-        after: (f32, f32),
-        dt: f32,
-        frame: &Frame<'_>,
-    ) {
+    fn target_velocity(&self, chassis: ExosuitChassis, focused: bool) -> (f32, f32) {
+        let left = self.movement_controls.action(MOVE_LEFT).held();
+        let right = self.movement_controls.action(MOVE_RIGHT).held();
+        let up = self.movement_controls.action(MOVE_UP).held();
+        let down = self.movement_controls.action(MOVE_DOWN).held();
+
+        let mut dx = (right as i8 - left as i8) as f32;
+        let mut dy = (down as i8 - up as i8) as f32;
+        if dx != 0.0 && dy != 0.0 {
+            const INV_SQRT_2: f32 = 0.707_106_77;
+            dx *= INV_SQRT_2;
+            dy *= INV_SQRT_2;
+        }
+
+        let profile = chassis.profile();
+        let speed = if focused {
+            FOCUS_SPEED * profile.focus_multiplier
+        } else {
+            PLAYER_SPEED * profile.move_multiplier
+        };
+        (dx * speed, dy * speed)
+    }
+
+    fn integrate_chassis_movement(&mut self, dt: f32, frame: &Frame<'_>) {
+        self.movement_controls.update(frame.input);
+
         if !self.game.gameplay_running() || dt <= f32::EPSILON {
             self.reset_velocity();
             return;
@@ -81,17 +137,8 @@ impl VoidCanticleV22Movement {
             return;
         };
 
-        let raw_dx = after.0 - before.0;
-        let raw_dy = after.1 - before.1;
-        if raw_dx.abs() > VC22_TELEPORT_THRESHOLD || raw_dy.abs() > VC22_TELEPORT_THRESHOLD {
-            // Run restarts and other state transitions may reposition the
-            // player instantly. They are not movement input and must not seed
-            // inertia for the next frame.
-            self.reset_velocity();
-            return;
-        }
-
-        let target = (raw_dx / dt, raw_dy / dt);
+        let focused = self.focused(frame);
+        let target = self.target_velocity(chassis, focused);
         let moving = target.0.abs() > 0.01 || target.1.abs() > 0.01;
         let profile = chassis.movement_profile();
         let mut response = if moving {
@@ -99,7 +146,7 @@ impl VoidCanticleV22Movement {
         } else {
             profile.braking
         };
-        if self.focused(frame) {
+        if focused {
             response *= VC22_FOCUS_RESPONSE_MULTIPLIER;
         }
 
@@ -112,10 +159,19 @@ impl VoidCanticleV22Movement {
         self.velocity_y = velocity.1;
 
         let base = self.base_mut();
-        base.player_x = (before.0 + velocity.0 * dt)
-            .clamp(8.0, FRAMEBUFFER_WIDTH as f32 - 8.0);
-        base.player_y = (before.1 + velocity.1 * dt)
-            .clamp(30.0, FRAMEBUFFER_HEIGHT as f32 - 16.0);
+        let unclamped_x = base.player_x + velocity.0 * dt;
+        let unclamped_y = base.player_y + velocity.1 * dt;
+        let next_x = unclamped_x.clamp(8.0, FRAMEBUFFER_WIDTH as f32 - 8.0);
+        let next_y = unclamped_y.clamp(30.0, FRAMEBUFFER_HEIGHT as f32 - 16.0);
+        base.player_x = next_x;
+        base.player_y = next_y;
+
+        if (next_x - unclamped_x).abs() > f32::EPSILON {
+            self.velocity_x = 0.0;
+        }
+        if (next_y - unclamped_y).abs() > f32::EPSILON {
+            self.velocity_y = 0.0;
+        }
     }
 
     fn render_motion_signature(&self, framebuffer: &mut Framebuffer) {
@@ -155,23 +211,17 @@ impl VoidCanticleV22Movement {
 
 impl Game for VoidCanticleV22Movement {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        let before = self.game.player_position();
-        let was_running = self.game.gameplay_running();
         let dt = frame.delta_time.as_secs_f32().min(0.05);
+        self.integrate_chassis_movement(dt, frame);
 
         let result = self.game.update(frame);
         if result == GameResult::Exit {
             return result;
         }
 
-        let running = self.game.gameplay_running();
-        if !was_running || !running {
+        if !self.game.gameplay_running() {
             self.reset_velocity();
-            return GameResult::Continue;
         }
-
-        let after = self.game.player_position();
-        self.apply_movement_dynamics(before, after, dt, frame);
         self.render_motion_signature(frame.framebuffer);
         GameResult::Continue
     }
@@ -242,5 +292,16 @@ mod v22_movement_tests {
     #[test]
     fn focus_increases_control_response() {
         assert!(VC22_FOCUS_RESPONSE_MULTIPLIER > 1.0);
+    }
+
+    #[test]
+    fn bulwark_takes_longer_to_reach_cruise_speed_than_wraith() {
+        let bulwark = ExosuitChassis::Bulwark;
+        let wraith = ExosuitChassis::Wraith;
+        let bulwark_target = PLAYER_SPEED * bulwark.profile().move_multiplier;
+        let wraith_target = PLAYER_SPEED * wraith.profile().move_multiplier;
+        let bulwark_time = bulwark_target / bulwark.movement_profile().acceleration;
+        let wraith_time = wraith_target / wraith.movement_profile().acceleration;
+        assert!(bulwark_time > wraith_time * 2.0);
     }
 }
