@@ -48,6 +48,7 @@ struct VoidCanticleV23Sustain {
     augment: Option<Vc23SustainAugment>,
     support_offered: bool,
     choosing_support: bool,
+    choice_input_armed: bool,
     menu: gotoo_pixel_engine::ui::MenuState,
     controls: ControlMap,
     quiet_timer: f32,
@@ -61,6 +62,7 @@ impl VoidCanticleV23Sustain {
             augment: None,
             support_offered: false,
             choosing_support: false,
+            choice_input_armed: false,
             menu: gotoo_pixel_engine::ui::MenuState::new(VC23_SUSTAIN_AUGMENTS.len()),
             controls: gotoo_pixel_engine::ui::standard_menu_controls(
                 VC23_SUPPORT_UP,
@@ -110,6 +112,7 @@ impl VoidCanticleV23Sustain {
         if self.support_choice_can_start() {
             self.support_offered = true;
             self.choosing_support = true;
+            self.choice_input_armed = false;
             self.menu = gotoo_pixel_engine::ui::MenuState::new(VC23_SUSTAIN_AUGMENTS.len());
             self.quiet_timer = 0.0;
         }
@@ -117,6 +120,17 @@ impl VoidCanticleV23Sustain {
 
     fn update_support_choice(&mut self, frame: &mut Frame<'_>) {
         self.controls.update(frame.input);
+
+        if !self.choice_input_armed {
+            let any_held = [VC23_SUPPORT_UP, VC23_SUPPORT_DOWN, VC23_SUPPORT_CONFIRM]
+                .into_iter()
+                .any(|action| self.controls.action(action).held());
+            if !any_held {
+                self.choice_input_armed = true;
+            }
+            return;
+        }
+
         if self.controls.action(VC23_SUPPORT_UP).pressed() {
             self.menu.select_previous();
         }
@@ -129,17 +143,13 @@ impl VoidCanticleV23Sustain {
         {
             self.augment = Some(augment);
             self.choosing_support = false;
+            self.choice_input_armed = false;
             self.quiet_timer = 0.0;
             self.sustain_flash_timer = VC23_SUSTAIN_FLASH_DURATION;
         }
     }
 
-    fn update_sustain(
-        &mut self,
-        dt: f32,
-        hull_before: f32,
-        shield_before: f32,
-    ) {
+    fn update_sustain(&mut self, dt: f32, hull_before: f32, shield_before: f32) {
         self.sustain_flash_timer = (self.sustain_flash_timer - dt).max(0.0);
         let hull_now = self.combat_model().player_hull;
         let shield_now = self.combat_model().player_shield;
@@ -190,6 +200,7 @@ impl VoidCanticleV23Sustain {
         self.augment = None;
         self.support_offered = false;
         self.choosing_support = false;
+        self.choice_input_armed = false;
         self.menu = gotoo_pixel_engine::ui::MenuState::new(VC23_SUSTAIN_AUGMENTS.len());
         self.quiet_timer = 0.0;
         self.sustain_flash_timer = 0.0;
