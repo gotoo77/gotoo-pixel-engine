@@ -79,44 +79,47 @@ impl VoidCanticleV21SurvivalCleanup {
         let vc21 = &self.game.game.game;
         let hull_cap = self.hull_cap_for_stacks(self.vital_spark_stacks());
         let shield_cap = self.game.tuning.player_shield.max(1.0);
+        let hull_segments = ((hull_cap / 10.0).ceil() as u32).clamp(4, 12);
+        let shield_segments = ((shield_cap / 5.0).ceil() as u32).clamp(3, 10);
 
-        // Explicitly erase the historical LIVES HUD. VC2.1 has one life;
-        // survivability is represented only by Hull and Shield.
-        framebuffer.fill_rect(0, 24, 100, 16, BG);
-        framebuffer.draw_text(
-            4,
+        // VC2.3 presentation rule: survival is read graphically. Remove the
+        // historical lives/build text and replace it with compact segmented
+        // bars inspired by MOBA health/mana readability.
+        framebuffer.fill_rect(0, 24, FRAMEBUFFER_WIDTH, 16, BG);
+        framebuffer.draw_text(4, 27, "H", VC20_HULL);
+        vc21_render_segmented_bar(
+            framebuffer,
+            12,
             27,
-            &format!(
-                "HULL {} SH {}",
-                vc21.player_hull.round() as u32,
-                vc21.player_shield.round() as u32
-            ),
-            TEXT,
-        );
-
-        framebuffer.fill_rect(4, 35, 42, 2, CORE_BG);
-        framebuffer.fill_rect(
-            4,
-            35,
-            vc21_health_width(vc21.player_hull, hull_cap, 42),
-            2,
+            72,
+            7,
+            vc21.player_hull,
+            hull_cap,
+            hull_segments,
             if vc21.player_hull_flash_timer > 0.0 {
                 DANGER
             } else {
                 VC20_HULL
             },
+            CORE_BG,
         );
-        framebuffer.fill_rect(52, 35, 42, 2, VC20_ARMOR_BG);
-        framebuffer.fill_rect(
-            52,
-            35,
-            vc21_health_width(vc21.player_shield, shield_cap, 42),
-            2,
+
+        framebuffer.draw_text(92, 27, "S", VC20_ARMOR_LIGHT);
+        vc21_render_segmented_bar(
+            framebuffer,
+            100,
+            27,
+            72,
+            7,
+            vc21.player_shield,
+            shield_cap,
+            shield_segments,
             if vc21.player_shield_flash_timer > 0.0 {
                 VC20_ARMOR_LIGHT
             } else {
                 VC20_ARMOR
             },
+            VC20_ARMOR_BG,
         );
     }
 
@@ -139,6 +142,34 @@ impl VoidCanticleV21SurvivalCleanup {
             );
         }
     }
+}
+
+fn vc21_render_segmented_bar(
+    framebuffer: &mut Framebuffer,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    value: f32,
+    max_value: f32,
+    segments: u32,
+    fill: Pixel,
+    background: Pixel,
+) {
+    let max_value = max_value.max(1.0);
+    let ratio = (value / max_value).clamp(0.0, 1.0);
+    framebuffer.fill_rect(x, y, width, height, background);
+    let filled = (width as f32 * ratio).round() as u32;
+    if filled > 0 {
+        framebuffer.fill_rect(x, y, filled.min(width), height, fill);
+    }
+
+    let segments = segments.max(1);
+    for segment in 1..segments {
+        let separator_x = x + (width.saturating_mul(segment) / segments) as i32;
+        framebuffer.fill_rect(separator_x, y, 1, height, BG);
+    }
+    framebuffer.draw_rect(x - 1, y - 1, width + 2, height + 2, WRECK_LIGHT);
 }
 
 impl Game for VoidCanticleV21SurvivalCleanup {
@@ -191,5 +222,12 @@ mod v21_survival_cleanup_tests {
     fn vital_spark_bonus_is_meaningful_but_not_an_extra_health_bar() {
         assert!(VC21_VITAL_SPARK_HULL_BONUS > 0.0);
         assert!(VC21_VITAL_SPARK_HULL_BONUS < 50.0);
+    }
+
+    #[test]
+    fn segmented_bar_count_scales_with_survival_budget() {
+        let low = ((40.0_f32 / 10.0).ceil() as u32).clamp(4, 12);
+        let high = ((90.0_f32 / 10.0).ceil() as u32).clamp(4, 12);
+        assert!(low < high);
     }
 }
