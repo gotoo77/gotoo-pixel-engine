@@ -1,13 +1,41 @@
 const VC20_VERSION: &str = "VC2.0";
+const VC20_SFX_MANIFEST: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/void_canticle/sfx.json"
+));
+const VC20_REQUIRED_SFX: [&str; 14] = [
+    "player_fire",
+    "enemy_hit",
+    "enemy_destroy",
+    "boss_hit",
+    "boss_phase",
+    "player_hit",
+    "cinder_pickup",
+    "echo_pickup",
+    "canticle_ready",
+    "canticle_cast",
+    "void_pressure",
+    "level_up",
+    "mutation",
+    "synergy",
+];
 
 struct VoidCanticleV20 {
     game: VoidCanticleV19,
+    sfx_manifest: gotoo_pixel_engine::SfxManifest,
 }
 
 impl VoidCanticleV20 {
     fn new() -> Self {
+        let sfx_manifest = gotoo_pixel_engine::SfxManifest::parse(VC20_SFX_MANIFEST)
+            .expect("checked-in VC2.0 SFX manifest should parse");
+        sfx_manifest
+            .require_keys(&VC20_REQUIRED_SFX)
+            .expect("checked-in VC2.0 SFX manifest should contain required events");
+
         Self {
             game: VoidCanticleV19::new(),
+            sfx_manifest,
         }
     }
 
@@ -15,7 +43,12 @@ impl VoidCanticleV20 {
         framebuffer.fill_rect(17, 92, 146, 14, Pixel::rgb(9, 8, 15));
         framebuffer.draw_text(20, 97, &format!("VERSION {VC20_VERSION}"), CANTICLE_COLOR);
         framebuffer.fill_rect(17, 172, 146, 14, Pixel::rgb(9, 8, 15));
-        framebuffer.draw_text(20, 177, "FEEDBACK PASS", CANTICLE_COLOR);
+        let status = if self.sfx_manifest.contains_key("boss_hit") {
+            "SFX MANIFEST"
+        } else {
+            "FEEDBACK PASS"
+        };
+        framebuffer.draw_text(20, 177, status, CANTICLE_COLOR);
     }
 }
 
@@ -59,5 +92,23 @@ mod v20_tests {
     #[test]
     fn vc20_version_is_explicit() {
         assert_eq!(VC20_VERSION, "VC2.0");
+    }
+
+    #[test]
+    fn checked_in_sfx_manifest_covers_vc20_events() {
+        let manifest = gotoo_pixel_engine::SfxManifest::parse(VC20_SFX_MANIFEST)
+            .expect("VC2.0 SFX manifest should parse");
+        manifest
+            .require_keys(&VC20_REQUIRED_SFX)
+            .expect("VC2.0 SFX manifest should contain every required event");
+
+        assert_eq!(
+            manifest.path("canticle_ready").unwrap(),
+            "assets/void_canticle/sfx/canticle_ready.wav"
+        );
+        assert_eq!(
+            manifest.path("echo_pickup").unwrap(),
+            "assets/void_canticle/sfx/echo_pickup.wav"
+        );
     }
 }
