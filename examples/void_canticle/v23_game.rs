@@ -5,6 +5,7 @@ const VC23_EMP: ActionId = ActionId::new("void_canticle.emp");
 const VC23_EMP_COOLDOWN: f32 = 8.0;
 const VC23_EMP_BASE_DAMAGE: u32 = 20;
 const VC23_EMP_FLASH_DURATION: f32 = 0.52;
+const VC23_EMP_WAVE_RADIUS: f32 = 340.0;
 const VC23_EMP_SOUND: SoundId = SoundId::new("void_canticle.emp_cast");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,7 +193,7 @@ impl VoidCanticleV23 {
         }
         let progress =
             (1.0 - self.emp_flash_timer / VC23_EMP_FLASH_DURATION).clamp(0.0, 1.0);
-        let radius = (10.0 + progress * 185.0).round() as u32;
+        let radius = (10.0 + progress * VC23_EMP_WAVE_RADIUS).round() as u32;
         let x = self.base().player_x.round() as i32;
         let y = self.base().player_y.round() as i32;
         framebuffer.draw_circle(x, y, radius, ART_CYAN_LIGHT);
@@ -208,21 +209,17 @@ impl VoidCanticleV23 {
 
         framebuffer.fill_rect(3, 238, 173, 13, BG);
         framebuffer.draw_text(4, 241, "C WEST EMP", ART_CYAN_LIGHT);
-        let status = if self.emp_cooldown <= 0.0 {
-            "READY".to_string()
+        let (status, color) = if self.emp_hit_flash_timer > 0.0 {
+            ("SHIELD HIT".to_string(), VC20_ARMOR_LIGHT)
+        } else if self.emp_cooldown <= 0.0 {
+            ("READY".to_string(), CANTICLE_COLOR)
         } else {
-            format!("EMP {}", self.emp_cooldown.ceil() as u32)
+            (
+                format!("EMP {}", self.emp_cooldown.ceil() as u32),
+                WRECK_LIGHT,
+            )
         };
-        framebuffer.draw_text(
-            119,
-            241,
-            &status,
-            if self.emp_cooldown <= 0.0 {
-                CANTICLE_COLOR
-            } else {
-                WRECK_LIGHT
-            },
-        );
+        framebuffer.draw_text(119, 241, &status, color);
     }
 
     fn render_v23_version(&self, framebuffer: &mut Framebuffer) {
@@ -331,6 +328,16 @@ mod v23_tests {
     fn emp_has_real_opportunity_cost() {
         assert!(VC23_EMP_COOLDOWN >= 5.0);
         assert!(VC23_EMP_COOLDOWN <= 12.0);
+    }
+
+    #[test]
+    fn checked_in_manifest_names_emp_event() {
+        let manifest = gotoo_pixel_engine::SfxManifest::parse(VC20_SFX_MANIFEST)
+            .expect("VC2.3 SFX manifest should parse");
+        assert_eq!(
+            manifest.path("emp_cast").unwrap(),
+            "assets/void_canticle/sfx/emp_cast.wav"
+        );
     }
 
     #[test]
