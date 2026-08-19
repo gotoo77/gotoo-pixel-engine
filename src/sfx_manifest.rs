@@ -117,7 +117,10 @@ mod tests {
         assert_eq!(manifest.path("hit").unwrap(), "assets/hit.wav");
         assert_eq!(
             manifest.paths("death").unwrap(),
-            &["assets/death1.wav".to_string(), "assets/death2.wav".to_string()]
+            &[
+                "assets/death1.wav".to_string(),
+                "assets/death2.wav".to_string()
+            ]
         );
     }
 
@@ -139,8 +142,8 @@ mod tests {
 
     #[test]
     fn rejects_empty_variant_lists() {
-        let error = SfxManifest::parse(r#"{"death":[]}"#)
-            .expect_err("empty variant list should fail");
+        let error =
+            SfxManifest::parse(r#"{"death":[]}"#).expect_err("empty variant list should fail");
         assert!(error.to_string().contains("at least one WAV path"));
     }
 }
