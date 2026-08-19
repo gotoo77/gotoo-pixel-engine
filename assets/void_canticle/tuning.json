@@ -1,0 +1,7 @@
+{
+  "player_hull": 60.0,
+  "player_shield": 25.0,
+  "impact_damage": 35.0,
+  "post_hit_invulnerability": 0.0,
+  "shield_regen": false
+}
