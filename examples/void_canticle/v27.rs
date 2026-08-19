@@ -129,7 +129,13 @@ impl VoidCanticleV27DirectPresentation {
             let separator = x + width * segment / 5;
             framebuffer.fill_rect(separator as i32, y as i32, 1, height, BG);
         }
-        framebuffer.draw_rect(x as i32 - 1, y as i32 - 1, width + 2, height + 2, WRECK_LIGHT);
+        framebuffer.draw_rect(
+            x as i32 - 1,
+            y as i32 - 1,
+            width + 2,
+            height + 2,
+            WRECK_LIGHT,
+        );
 
         if ready && ((base.animation_time * 6.0) as i32 & 1) == 0 {
             let (text_width, text_height) = Framebuffer::text_size("READY", 1);
@@ -188,6 +194,62 @@ impl VoidCanticleV27DirectPresentation {
         );
     }
 
+    fn render_threat_meter(&self, framebuffer: &mut Framebuffer) {
+        let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
+        let pressure = self.game.game.v20().game.ui.game.combat.combat.pressure;
+        let active = vc27_pressure_level(pressure);
+        let brick_width = 4 * scale;
+        let brick_height = 6 * scale;
+        let gap = 2 * scale;
+        let x = VC_VISUAL_PRESENTATION_WIDTH.saturating_sub(8 * scale);
+        let base_y = 196 * scale;
+        let states = [
+            VoidPressure::Dormant,
+            VoidPressure::Stirring,
+            VoidPressure::Awake,
+            VoidPressure::Hostile,
+            VoidPressure::Cataclysmic,
+        ];
+
+        for (index, state) in states.into_iter().enumerate() {
+            let level = index as u32 + 1;
+            let inverted_index = 4_u32.saturating_sub(index as u32);
+            let y = base_y + inverted_index * (brick_height + gap);
+            let lit = level <= active;
+            let fill = if lit {
+                void_pressure_color(state)
+            } else {
+                WRECK_MID
+            };
+
+            if lit {
+                framebuffer.fill_rect(x as i32, y as i32, brick_width, brick_height, fill);
+            }
+            framebuffer.draw_rect(
+                x as i32 - 1,
+                y as i32 - 1,
+                brick_width + 2,
+                brick_height + 2,
+                fill,
+            );
+        }
+    }
+
+    fn render_echo_shell(&self, framebuffer: &mut Framebuffer) {
+        let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
+        let progression = &self.game.game.v20().game.v14().progression;
+        let ratio = if progression.xp_next == 0 {
+            1.0
+        } else {
+            progression.xp.min(progression.xp_next) as f32 / progression.xp_next as f32
+        };
+        let center_x = (18 * scale) as i32;
+        let center_y = (VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(35 * scale)) as i32;
+        let radius = 11 * scale;
+
+        vc27_echo_shell(framebuffer, center_x, center_y, radius, ratio);
+    }
+
     fn render_player_last(&mut self, framebuffer: &mut Framebuffer) {
         if self.game.combat_model().player_hull <= 0.0 {
             return;
@@ -225,6 +287,8 @@ impl VoidCanticleV27DirectPresentation {
         }
 
         self.render_event_announcement(framebuffer);
+        self.render_threat_meter(framebuffer);
+        self.render_echo_shell(framebuffer);
         self.render_canticle_charge(framebuffer);
         self.render_survival_bars(framebuffer);
         self.render_player_last(framebuffer);
@@ -317,6 +381,70 @@ impl Game for VoidCanticleV27DirectPresentation {
     }
 }
 
+fn vc27_pressure_level(pressure: VoidPressure) -> u32 {
+    match pressure {
+        VoidPressure::Dormant => 1,
+        VoidPressure::Stirring => 2,
+        VoidPressure::Awake => 3,
+        VoidPressure::Hostile => 4,
+        VoidPressure::Cataclysmic => 5,
+    }
+}
+
+fn vc27_echo_shell(
+    framebuffer: &mut Framebuffer,
+    center_x: i32,
+    center_y: i32,
+    radius: u32,
+    ratio: f32,
+) {
+    let ratio = ratio.clamp(0.0, 1.0);
+    let radius = radius.max(4);
+    let steps = 48_u32;
+    let active_steps = (steps as f32 * ratio).round() as u32;
+
+    framebuffer.draw_circle(center_x, center_y, radius, WRECK_MID);
+    framebuffer.draw_circle(center_x, center_y, radius.saturating_sub(3), XP_BAR_BG);
+
+    let mut previous = None;
+    let mut active_tip = (center_x, center_y);
+    for step in 0..=steps {
+        let t = step as f32 / steps as f32;
+        let angle = -std::f32::consts::FRAC_PI_2 + t * std::f32::consts::TAU * 2.20;
+        let spiral_radius = 1.5 + t * (radius as f32 - 3.0);
+        let x = center_x + (angle.cos() * spiral_radius).round() as i32;
+        let y = center_y + (angle.sin() * spiral_radius).round() as i32;
+
+        if let Some((px, py)) = previous {
+            let color = if step <= active_steps {
+                XP_ORB_CORE
+            } else {
+                WRECK_MID
+            };
+            framebuffer.draw_line(px, py, x, y, color);
+        }
+        if step <= active_steps {
+            active_tip = (x, y);
+        }
+        previous = Some((x, y));
+    }
+
+    framebuffer.fill_circle(center_x, center_y, 2, XP_ORB);
+    if active_steps > 0 {
+        framebuffer.fill_circle(active_tip.0, active_tip.1, 1, XP_ORB_CORE);
+    }
+
+    // Small aperture/lip turns the abstract spiral into a shell-like glyph.
+    let lip_x = center_x + radius as i32 - 2;
+    framebuffer.draw_line(
+        center_x + radius as i32 / 2,
+        center_y + radius as i32 / 3,
+        lip_x,
+        center_y + radius as i32 / 2,
+        XP_ORB,
+    );
+}
+
 fn vc27_segmented_bar(
     framebuffer: &mut Framebuffer,
     x: i32,
@@ -369,6 +497,24 @@ mod v27_tests {
     #[test]
     fn version_is_explicit() {
         assert_eq!(VC27_PRESENTATION_VERSION, "VC2.7");
+    }
+
+    #[test]
+    fn pressure_maps_to_five_visual_bricks() {
+        assert_eq!(vc27_pressure_level(VoidPressure::Dormant), 1);
+        assert_eq!(vc27_pressure_level(VoidPressure::Stirring), 2);
+        assert_eq!(vc27_pressure_level(VoidPressure::Awake), 3);
+        assert_eq!(vc27_pressure_level(VoidPressure::Hostile), 4);
+        assert_eq!(vc27_pressure_level(VoidPressure::Cataclysmic), 5);
+    }
+
+    #[test]
+    fn echo_shell_stays_local_to_its_glyph() {
+        let mut framebuffer = Framebuffer::new(40, 40);
+        framebuffer.clear(Pixel::BLUE);
+        vc27_echo_shell(&mut framebuffer, 20, 20, 8, 0.5);
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(39, 39), Some(Pixel::BLUE));
     }
 
     #[test]
