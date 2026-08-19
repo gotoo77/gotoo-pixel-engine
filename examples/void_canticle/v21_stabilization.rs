@@ -1,10 +1,10 @@
 const VC21_STABLE_VERSION: &str = "VC2.1";
 const VC21_PIXEL_VERSION: &str = "VC2-1";
-const VC21_AUDIO_KEEPALIVE_SOUND: SoundId = SoundId::new("void_canticle.audio_keepalive");
-const VC21_AUDIO_KEEPALIVE_PERIOD: f32 = 0.18;
-const VC21_AUDIO_KEEPALIVE_DURATION_SAMPLES: usize = 22_050;
 const VC21_SHOT_ESCAPE_Y: f32 = 18.0;
 const VC21_SHOT_DESPAWN_Y: f32 = -12.0;
+
+const VC21_STAGE_RESTART: ActionId = ActionId::new("void_canticle.stage.restart");
+const VC21_STAGE_MENU: ActionId = ActionId::new("void_canticle.stage.menu");
 
 #[derive(Debug, Clone, Copy)]
 struct Vc21EscapedShot {
@@ -32,28 +32,29 @@ impl From<PowerShot> for Vc21EscapedShot {
 struct VoidCanticleV21Stabilized {
     game: VoidCanticleV21Runtime,
     escaped_shots: Vec<Vc21EscapedShot>,
-    audio_keepalive_timer: f32,
     stage_clear_seen: bool,
+    stage_controls: ControlMap,
+    tuning: Vc21Tuning,
 }
 
 impl VoidCanticleV21Stabilized {
     fn new() -> Self {
-        let mut game = VoidCanticleV21Runtime::new();
-        let silence = vec![0_i16; VC21_AUDIO_KEEPALIVE_DURATION_SAMPLES];
-        let wav = pcm16_mono_wav(AUDIO_SAMPLE_RATE, &silence)
-            .expect("VC2.1 audio keepalive WAV should encode");
-        game.game
-            .base_mut()
-            .sounds
-            .insert_wav(VC21_AUDIO_KEEPALIVE_SOUND, wav)
-            .expect("VC2.1 audio keepalive sound id should be unique");
+        let mut stage_controls = ControlMap::new();
+        stage_controls
+            .bind_key(VC21_STAGE_RESTART, Key::Space)
+            .bind_gamepad(VC21_STAGE_RESTART, GamepadButton::South)
+            .bind_key(VC21_STAGE_MENU, Key::Escape)
+            .bind_gamepad(VC21_STAGE_MENU, GamepadButton::Start);
 
-        Self {
-            game,
+        let mut game = Self {
+            game: VoidCanticleV21Runtime::new(),
             escaped_shots: Vec::new(),
-            audio_keepalive_timer: 0.0,
             stage_clear_seen: false,
-        }
+            stage_controls,
+            tuning: Vc21Tuning::load(),
+        };
+        game.apply_tuning_to_fresh_run();
+        game
     }
 
     fn power_shots(&self) -> &[PowerShot] {
@@ -98,8 +99,62 @@ impl VoidCanticleV21Stabilized {
             .power_shots
     }
 
+    fn pause_ui(&self) -> &VoidCanticlePauseV17 {
+        &self.game.game.combat.game.ui
+    }
+
+    fn pause_ui_mut(&mut self) -> &mut VoidCanticlePauseV17 {
+        &mut self.game.game.combat.game.ui
+    }
+
     fn gameplay_running(&self) -> bool {
         self.game.game.combat.game.art_can_overlay_game()
+    }
+
+    fn stage_clear_visible(&self) -> bool {
+        self.game.game.base().encounter_phase == EncounterPhase::Cleared
+            && matches!(&self.pause_ui().state, VcPauseState::Running)
+    }
+
+    fn apply_tuning_to_fresh_run(&mut self) {
+        self.game.game.player_hull = self.tuning.player_hull;
+        self.game.game.player_shield = self.tuning.player_shield;
+        if !self.tuning.shield_regen {
+            self.game.game.shield_regen_delay = f32::MAX;
+        }
+    }
+
+    fn reset_v20_defenses(&mut self) {
+        let combat = &mut self.game.game.combat;
+        combat.carrion_armor.clear();
+        combat.special_armor.clear();
+        combat.threat_armor.clear();
+        combat.boss_shield = 0;
+        combat.boss_defense_armed = false;
+        combat.boss_shield_flash_timer = 0.0;
+        combat.boss_shield_break_timer = 0.0;
+    }
+
+    fn reset_runtime_models(&mut self) {
+        self.reset_v20_defenses();
+        self.game.game.reset_combat_model();
+        self.apply_tuning_to_fresh_run();
+        self.escaped_shots.clear();
+    }
+
+    fn restart_run_from_stage_clear(&mut self) {
+        self.pause_ui_mut().game.reset_run();
+        self.pause_ui_mut().state = VcPauseState::Running;
+        self.reset_runtime_models();
+        self.stage_clear_seen = false;
+    }
+
+    fn open_stage_clear_menu(&mut self, framebuffer: &mut Framebuffer) {
+        let ui = self.pause_ui_mut();
+        ui.state = VcPauseState::Menu;
+        ui.menu = gotoo_pixel_engine::ui::MenuState::new(5);
+        ui.menu.select_next();
+        ui.render_menu(framebuffer);
     }
 
     fn collect_shots_crossing_hud_cutoff(&mut self, dt: f32) {
@@ -158,23 +213,47 @@ impl VoidCanticleV21Stabilized {
         }
     }
 
-    fn keep_audio_alive(&mut self, dt: f32, frame: &mut Frame<'_>) {
-        self.audio_keepalive_timer -= dt;
-        if self.audio_keepalive_timer > 0.0 {
-            return;
+    fn apply_damage_tuning(
+        &mut self,
+        shield_before: f32,
+        hull_before: f32,
+        frame: &mut Frame<'_>,
+    ) {
+        let health_before = shield_before + hull_before;
+        let health_after = self.game.game.player_shield + self.game.game.player_hull;
+        let damage_taken = (health_before - health_after).max(0.0);
+        let legacy_hit = damage_taken > 0.0
+            && self.game.game.base().invulnerability >= PLAYER_INVULNERABILITY * 0.90;
+
+        if legacy_hit && self.tuning.impact_damage > damage_taken {
+            let extra_damage = self.tuning.impact_damage - damage_taken;
+            self.game.game.apply_player_damage(extra_damage, false);
+            self.game.game.process_combat_events(frame);
         }
-        let _ = self
+
+        if damage_taken > 0.0 {
+            self.game.game.base_mut().invulnerability = self.tuning.post_hit_invulnerability;
+        }
+
+        if !self.tuning.shield_regen {
+            self.game.game.player_shield = self.game.game.player_shield.min(shield_before);
+            self.game.game.shield_regen_delay = f32::MAX;
+        }
+        self.game.game.player_shield = self
             .game
             .game
-            .base_mut()
-            .sounds
-            .play(frame.audio, VC21_AUDIO_KEEPALIVE_SOUND);
-        self.audio_keepalive_timer = VC21_AUDIO_KEEPALIVE_PERIOD;
+            .player_shield
+            .min(self.tuning.player_shield);
+        self.game.game.player_hull = self.game.game.player_hull.min(self.tuning.player_hull);
+        self.game.sync_fatal_hull_to_legacy_game_over();
     }
 
     fn handle_stage_clear_transition(&mut self) {
         let cleared = self.game.game.base().encounter_phase == EncounterPhase::Cleared;
         if !cleared {
+            if self.stage_clear_seen {
+                self.reset_runtime_models();
+            }
             self.stage_clear_seen = false;
             return;
         }
@@ -198,7 +277,7 @@ impl VoidCanticleV21Stabilized {
                 &format!("GRAVE ORBIT / {VC21_PIXEL_VERSION}"),
                 TEXT,
             );
-        } else if matches!(&self.game.game.combat.game.ui.state, VcPauseState::BuildInfo) {
+        } else if matches!(&self.pause_ui().state, VcPauseState::BuildInfo) {
             framebuffer.fill_rect(17, 92, 146, 14, Pixel::rgb(9, 8, 15));
             framebuffer.draw_text(
                 20,
@@ -209,8 +288,46 @@ impl VoidCanticleV21Stabilized {
         }
     }
 
+    fn render_tuned_survival(&self, framebuffer: &mut Framebuffer) {
+        if !self.gameplay_running() {
+            return;
+        }
+
+        framebuffer.fill_rect(3, 25, 77, 13, BG);
+        framebuffer.draw_text(
+            4,
+            27,
+            &format!(
+                "H{:03} S{:02}",
+                self.game.game.player_hull.round() as u32,
+                self.game.game.player_shield.round() as u32
+            ),
+            TEXT,
+        );
+        framebuffer.fill_rect(4, 35, 34, 2, CORE_BG);
+        framebuffer.fill_rect(
+            4,
+            35,
+            vc21_health_width(self.game.game.player_hull, self.tuning.player_hull, 34),
+            2,
+            VC20_HULL,
+        );
+        framebuffer.fill_rect(43, 35, 34, 2, VC20_ARMOR_BG);
+        framebuffer.fill_rect(
+            43,
+            35,
+            vc21_health_width(
+                self.game.game.player_shield,
+                self.tuning.player_shield.max(1.0),
+                34,
+            ),
+            2,
+            VC20_ARMOR,
+        );
+    }
+
     fn render_stage_clear(&self, framebuffer: &mut Framebuffer) {
-        if self.game.game.base().encounter_phase != EncounterPhase::Cleared {
+        if !self.stage_clear_visible() {
             return;
         }
 
@@ -224,61 +341,76 @@ impl VoidCanticleV21Stabilized {
         framebuffer.draw_text(54, 98, "GRAVE ORBIT", TEXT);
         framebuffer.draw_text(60, 116, "PATH OPENS", ART_GOLD);
 
-        framebuffer.draw_text(32, 151, "SCORE", WRECK_LIGHT);
+        framebuffer.draw_text(32, 145, "SCORE", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
-            151,
+            145,
             &format!("{}", self.game.game.base().score),
             PILGRIM_CORE,
         );
-        framebuffer.draw_text(32, 168, "LEVEL", WRECK_LIGHT);
+        framebuffer.draw_text(32, 162, "LEVEL", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
-            168,
+            162,
             &format!("{}", self.game.game.combat.game.v14().progression.level),
             XP_ORB_CORE,
         );
-        framebuffer.draw_text(32, 185, "ECHOES", WRECK_LIGHT);
+        framebuffer.draw_text(32, 179, "ECHOES", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
-            185,
+            179,
             &format!("{}", self.game.game.combat.game.v14().progression.xp),
             XP_ORB_CORE,
         );
-        framebuffer.draw_text(32, 202, "HULL", WRECK_LIGHT);
+        framebuffer.draw_text(32, 196, "HULL", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
-            202,
+            196,
             &format!("{}", self.game.game.player_hull.round() as u32),
             VC20_HULL,
         );
-        framebuffer.draw_text(32, 219, "SHIELD", WRECK_LIGHT);
+        framebuffer.draw_text(32, 213, "SHIELD", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
-            219,
+            213,
             &format!("{}", self.game.game.player_shield.round() as u32),
             VC20_ARMOR_LIGHT,
         );
 
-        framebuffer.draw_text(38, 240, "RUN PHASE COMPLETE", TEXT);
+        framebuffer.draw_text(35, 235, "SPACE RESTART", CANTICLE_COLOR);
+        framebuffer.draw_text(49, 249, "ESC MENU", TEXT);
     }
 }
 
 impl Game for VoidCanticleV21Stabilized {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         let dt = frame.delta_time.as_secs_f32().min(0.05);
-        self.keep_audio_alive(dt, frame);
+        self.stage_controls.update(frame.input);
+
+        if self.stage_clear_visible() {
+            if self.stage_controls.action(VC21_STAGE_RESTART).pressed() {
+                self.restart_run_from_stage_clear();
+            } else if self.stage_controls.action(VC21_STAGE_MENU).pressed() {
+                self.open_stage_clear_menu(frame.framebuffer);
+                return GameResult::Continue;
+            }
+        }
+
         self.collect_shots_crossing_hud_cutoff(dt);
+        let shield_before = self.game.game.player_shield;
+        let hull_before = self.game.game.player_hull;
 
         let result = self.game.update(frame);
         if result == GameResult::Exit {
             return result;
         }
 
+        self.apply_damage_tuning(shield_before, hull_before, frame);
         self.update_escaped_shots(dt);
         self.handle_stage_clear_transition();
         self.render_escaped_shots(frame.framebuffer);
         self.render_pixel_safe_version(frame.framebuffer);
+        self.render_tuned_survival(frame.framebuffer);
         self.render_stage_clear(frame.framebuffer);
 
         GameResult::Continue
@@ -320,8 +452,9 @@ mod v21_stabilization_tests {
     }
 
     #[test]
-    fn audio_keepalive_overlaps_itself() {
-        let duration = VC21_AUDIO_KEEPALIVE_DURATION_SAMPLES as f32 / AUDIO_SAMPLE_RATE as f32;
-        assert!(duration > VC21_AUDIO_KEEPALIVE_PERIOD);
+    fn default_tuning_removes_post_hit_invulnerability() {
+        let tuning = Vc21Tuning::default();
+        assert_eq!(tuning.post_hit_invulnerability, 0.0);
+        assert!(tuning.impact_damage >= VC21_LEGACY_IMPACT_DAMAGE);
     }
 }
