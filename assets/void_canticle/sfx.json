@@ -1,0 +1,16 @@
+{
+  "player_fire": "assets/void_canticle/sfx/player_fire.wav",
+  "enemy_hit": "assets/void_canticle/sfx/enemy_hit.wav",
+  "enemy_destroy": "assets/void_canticle/sfx/enemy_destroy.wav",
+  "boss_hit": "assets/void_canticle/sfx/boss_hit.wav",
+  "boss_phase": "assets/void_canticle/sfx/boss_phase.wav",
+  "player_hit": "assets/void_canticle/sfx/player_hit.wav",
+  "cinder_pickup": "assets/void_canticle/sfx/cinder_pickup.wav",
+  "echo_pickup": "assets/void_canticle/sfx/echo_pickup.wav",
+  "canticle_ready": "assets/void_canticle/sfx/canticle_ready.wav",
+  "canticle_cast": "assets/void_canticle/sfx/canticle_cast.wav",
+  "void_pressure": "assets/void_canticle/sfx/void_pressure.wav",
+  "level_up": "assets/void_canticle/sfx/level_up.wav",
+  "mutation": "assets/void_canticle/sfx/mutation.wav",
+  "synergy": "assets/void_canticle/sfx/synergy.wav"
+}
