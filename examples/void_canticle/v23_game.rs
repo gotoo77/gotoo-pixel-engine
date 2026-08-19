@@ -207,19 +207,44 @@ impl VoidCanticleV23 {
             return;
         }
 
-        framebuffer.fill_rect(3, 238, 173, 13, BG);
-        framebuffer.draw_text(4, 241, "C WEST EMP", ART_CYAN_LIGHT);
-        let (status, color) = if self.emp_hit_flash_timer > 0.0 {
-            ("SHIELD HIT".to_string(), VC20_ARMOR_LIGHT)
+        // Compact radial gauge: eight pips communicate cooldown at a glance.
+        // Text-heavy input/status strings are deliberately gone from combat.
+        const CENTER_X: i32 = 164;
+        const CENTER_Y: i32 = 250;
+        const RADIUS: f32 = 9.0;
+        const PIPS: u32 = 8;
+
+        let ready_ratio = (1.0 - self.emp_cooldown / VC23_EMP_COOLDOWN).clamp(0.0, 1.0);
+        let lit = (ready_ratio * PIPS as f32).floor() as u32;
+        let gauge_color = if self.emp_hit_flash_timer > 0.0 {
+            VC20_ARMOR_LIGHT
         } else if self.emp_cooldown <= 0.0 {
-            ("READY".to_string(), CANTICLE_COLOR)
+            CANTICLE_COLOR
         } else {
-            (
-                format!("EMP {}", self.emp_cooldown.ceil() as u32),
-                WRECK_LIGHT,
-            )
+            ART_CYAN
         };
-        framebuffer.draw_text(119, 241, &status, color);
+
+        framebuffer.fill_circle(CENTER_X, CENTER_Y, 6, BG);
+        framebuffer.draw_circle(CENTER_X, CENTER_Y, 7, VC20_ARMOR_BG);
+        for index in 0..PIPS {
+            let angle = -std::f32::consts::FRAC_PI_2
+                + index as f32 * std::f32::consts::TAU / PIPS as f32;
+            let x = CENTER_X + (angle.cos() * RADIUS).round() as i32;
+            let y = CENTER_Y + (angle.sin() * RADIUS).round() as i32;
+            framebuffer.fill_rect(
+                x - 1,
+                y - 1,
+                2,
+                2,
+                if index < lit { gauge_color } else { WRECK_MID },
+            );
+        }
+        framebuffer.draw_text(
+            CENTER_X - 2,
+            CENTER_Y - 3,
+            if self.emp_cooldown <= 0.0 { "R" } else { "E" },
+            gauge_color,
+        );
     }
 
     fn render_v23_version(&self, framebuffer: &mut Framebuffer) {
