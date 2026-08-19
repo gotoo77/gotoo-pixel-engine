@@ -83,8 +83,10 @@ impl VoidCanticleV20 {
     }
 
     fn prepare_boss_shield(&mut self) {
-        let base = self.game.base();
-        let boss_present = base.boss.is_some() && base.encounter_phase != EncounterPhase::Cleared;
+        let boss_present = {
+            let base = self.game.base();
+            base.boss.is_some() && base.encounter_phase != EncounterPhase::Cleared
+        };
 
         if boss_present && !self.boss_defense_armed {
             self.boss_shield = VC20_BOSS_SHIELD_MAX;
@@ -202,30 +204,32 @@ impl VoidCanticleV20 {
         let mut shield_broken = false;
 
         {
+            let carrion_armor = &mut self.carrion_armor;
+            let boss_shield = &mut self.boss_shield;
             let base = self.game.ui.game.combat.base_mut();
             base.player_bullets.retain_mut(|bullet| {
                 let x = bullet.x + bullet.vx * dt;
                 let y = bullet.y + bullet.vy * dt;
 
                 for (key, enemy_x, enemy_y) in &carrion_targets {
-                    if self.carrion_armor.get(key).copied().unwrap_or(0) > 0
+                    if carrion_armor.get(key).copied().unwrap_or(0) > 0
                         && point_near(x, y, *enemy_x, *enemy_y, 10.5)
                     {
-                        if let Some(armor) = self.carrion_armor.get_mut(key) {
+                        if let Some(armor) = carrion_armor.get_mut(key) {
                             *armor = armor.saturating_sub(1);
                         }
                         return false;
                     }
                 }
 
-                if self.boss_shield > 0
+                if *boss_shield > 0
                     && let Some((boss_x, boss_y)) = boss_target
                     && point_near(x, y, boss_x, boss_y, 23.0)
                 {
-                    let before = self.boss_shield;
-                    self.boss_shield = self.boss_shield.saturating_sub(1);
+                    let before = *boss_shield;
+                    *boss_shield = boss_shield.saturating_sub(1);
                     shield_hit = true;
-                    shield_broken |= before > 0 && self.boss_shield == 0;
+                    shield_broken |= before > 0 && *boss_shield == 0;
                     return false;
                 }
 
@@ -234,6 +238,10 @@ impl VoidCanticleV20 {
         }
 
         {
+            let carrion_armor = &mut self.carrion_armor;
+            let special_armor = &mut self.special_armor;
+            let threat_armor = &mut self.threat_armor;
+            let boss_shield = &mut self.boss_shield;
             let game = &mut self
                 .game
                 .ui
@@ -254,10 +262,10 @@ impl VoidCanticleV20 {
                 let damage = shot.damage.max(1);
 
                 for (key, enemy_x, enemy_y, radius) in &threat_targets {
-                    if self.threat_armor.get(key).copied().unwrap_or(0) > 0
+                    if threat_armor.get(key).copied().unwrap_or(0) > 0
                         && point_near(x, y, *enemy_x, *enemy_y, *radius + shot.radius as f32)
                     {
-                        if let Some(armor) = self.threat_armor.get_mut(key) {
+                        if let Some(armor) = threat_armor.get_mut(key) {
                             *armor = armor.saturating_sub(damage);
                         }
                         return false;
@@ -265,10 +273,10 @@ impl VoidCanticleV20 {
                 }
 
                 for (key, enemy_x, enemy_y, radius) in &special_targets {
-                    if self.special_armor.get(key).copied().unwrap_or(0) > 0
+                    if special_armor.get(key).copied().unwrap_or(0) > 0
                         && point_near(x, y, *enemy_x, *enemy_y, *radius + shot.radius as f32)
                     {
-                        if let Some(armor) = self.special_armor.get_mut(key) {
+                        if let Some(armor) = special_armor.get_mut(key) {
                             *armor = armor.saturating_sub(damage);
                         }
                         return false;
@@ -276,24 +284,24 @@ impl VoidCanticleV20 {
                 }
 
                 for (key, enemy_x, enemy_y) in &carrion_targets {
-                    if self.carrion_armor.get(key).copied().unwrap_or(0) > 0
+                    if carrion_armor.get(key).copied().unwrap_or(0) > 0
                         && point_near(x, y, *enemy_x, *enemy_y, 9.5 + shot.radius as f32)
                     {
-                        if let Some(armor) = self.carrion_armor.get_mut(key) {
+                        if let Some(armor) = carrion_armor.get_mut(key) {
                             *armor = armor.saturating_sub(damage);
                         }
                         return false;
                     }
                 }
 
-                if self.boss_shield > 0
+                if *boss_shield > 0
                     && let Some((boss_x, boss_y)) = boss_target
                     && point_near(x, y, boss_x, boss_y, 22.0 + shot.radius as f32)
                 {
-                    let before = self.boss_shield;
-                    self.boss_shield = self.boss_shield.saturating_sub(damage);
+                    let before = *boss_shield;
+                    *boss_shield = boss_shield.saturating_sub(damage);
                     shield_hit = true;
-                    shield_broken |= before > 0 && self.boss_shield == 0;
+                    shield_broken |= before > 0 && *boss_shield == 0;
                     return false;
                 }
 
@@ -321,6 +329,7 @@ impl VoidCanticleV20 {
         let mut reconciled = None;
         let mut shield_broken = false;
         {
+            let boss_shield = &mut self.boss_shield;
             let base = self.game.ui.game.combat.base_mut();
             let Some(boss) = base.boss.as_mut() else {
                 return;
@@ -333,14 +342,14 @@ impl VoidCanticleV20 {
             }
 
             let damage = before - boss.hp;
-            let absorbed = damage.min(self.boss_shield);
+            let absorbed = damage.min(*boss_shield);
             if absorbed == 0 {
                 return;
             }
 
             boss.hp = boss.hp.saturating_add(absorbed).min(before);
-            self.boss_shield -= absorbed;
-            shield_broken = self.boss_shield == 0;
+            *boss_shield -= absorbed;
+            shield_broken = *boss_shield == 0;
             reconciled = Some((boss.hp, boss.phase()));
         }
 
