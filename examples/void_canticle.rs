@@ -72,6 +72,7 @@ mod game {
                                                                     use super::*;
                                                                     include!("void_canticle/v21_game.rs");
                                                                     include!("void_canticle/v21_runtime.rs");
+                                                                    include!("void_canticle/v21_tuning.rs");
                                                                     include!("void_canticle/v21_stabilization.rs");
                                                                 }
                                                             }
