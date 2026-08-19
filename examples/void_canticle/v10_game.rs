@@ -124,9 +124,6 @@ impl VoidCanticleV10 {
             );
         }
 
-        self.render_minimal_hud(framebuffer);
-        self.render_side_notifications(framebuffer);
-
         if base.game_over {
             framebuffer.fill_rect(4, 132, 92, 42, Pixel::rgb(10, 8, 16));
             framebuffer.draw_rect(4, 132, 92, 42, DANGER);
