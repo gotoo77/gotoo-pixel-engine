@@ -12,6 +12,9 @@ cargo test --lib --bins --examples --tests
 echo "==> cargo clippy --all-targets -- -D warnings"
 cargo clippy --all-targets -- -D warnings
 
+echo "==> Cargo.lock delta"
+git diff -- Cargo.lock
+
 echo "==> git diff --check"
 git diff --check
 
