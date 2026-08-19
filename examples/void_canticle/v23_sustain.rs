@@ -226,30 +226,6 @@ impl VoidCanticleV23Sustain {
 
         framebuffer.draw_text(39, 228, "SPACE SOUTH SELECT", TEXT);
     }
-
-    fn render_sustain_hud(&self, framebuffer: &mut Framebuffer) {
-        if !self.game.active_combat() || self.choosing_support {
-            return;
-        }
-        let Some(augment) = self.augment else {
-            return;
-        };
-
-        // Sustain communicates through the survival gauges themselves. The
-        // thin line fills while waiting for a safe window; once active the
-        // corresponding Hull/Shield gauge receives a bright outline.
-        let (x, delay, color) = match augment {
-            Vc23SustainAugment::NaniteRepair => (12, VC23_NANITE_DELAY, CANTICLE_COLOR),
-            Vc23SustainAugment::ShieldCapacitor => (100, VC23_CAPACITOR_DELAY, ART_CYAN_LIGHT),
-        };
-        let progress = (self.quiet_timer / delay).clamp(0.0, 1.0);
-        framebuffer.fill_rect(x, 37, 72, 2, WRECK_MID);
-        framebuffer.fill_rect(x, 37, (72.0 * progress).round() as u32, 2, color);
-
-        if self.quiet_timer >= delay || self.sustain_flash_timer > 0.0 {
-            framebuffer.draw_rect(x - 2, 25, 76, 11, color);
-        }
-    }
 }
 
 impl Game for VoidCanticleV23Sustain {
@@ -280,8 +256,6 @@ impl Game for VoidCanticleV23Sustain {
 
         if self.choosing_support {
             self.render_support_choice(frame.framebuffer);
-        } else {
-            self.render_sustain_hud(frame.framebuffer);
         }
         GameResult::Continue
     }
