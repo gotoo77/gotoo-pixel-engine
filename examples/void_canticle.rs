@@ -75,6 +75,11 @@ mod game {
                                                                     include!("void_canticle/v21_tuning.rs");
                                                                     include!("void_canticle/v21_stabilization.rs");
                                                                     include!("void_canticle/v21_survival_cleanup.rs");
+
+                                                                    pub(crate) mod v22 {
+                                                                        use super::*;
+                                                                        include!("void_canticle/v22_game.rs");
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -92,9 +97,9 @@ mod game {
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::run_v21_survival_cleanup_with_obs_mirror;
+    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::run_v22_with_obs_mirror;
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_v21_survival_cleanup_with_obs_mirror()
+    game::run_v22_with_obs_mirror()
 }
