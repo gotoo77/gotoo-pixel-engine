@@ -30,7 +30,7 @@ impl From<PowerShot> for Vc21EscapedShot {
 }
 
 struct VoidCanticleV21Stabilized {
-    game: VoidCanticleV21,
+    game: VoidCanticleV21Runtime,
     escaped_shots: Vec<Vc21EscapedShot>,
     audio_keepalive_timer: f32,
     stage_clear_seen: bool,
@@ -38,11 +38,12 @@ struct VoidCanticleV21Stabilized {
 
 impl VoidCanticleV21Stabilized {
     fn new() -> Self {
-        let mut game = VoidCanticleV21::new();
+        let mut game = VoidCanticleV21Runtime::new();
         let silence = vec![0_i16; VC21_AUDIO_KEEPALIVE_DURATION_SAMPLES];
         let wav = pcm16_mono_wav(AUDIO_SAMPLE_RATE, &silence)
             .expect("VC2.1 audio keepalive WAV should encode");
-        game.base_mut()
+        game.game
+            .base_mut()
             .sounds
             .insert_wav(VC21_AUDIO_KEEPALIVE_SOUND, wav)
             .expect("VC2.1 audio keepalive sound id should be unique");
@@ -57,6 +58,7 @@ impl VoidCanticleV21Stabilized {
 
     fn power_game(&self) -> &VoidCanticleV07 {
         &self
+            .game
             .game
             .combat
             .game
@@ -77,6 +79,7 @@ impl VoidCanticleV21Stabilized {
     fn power_game_mut(&mut self) -> &mut VoidCanticleV07 {
         &mut self
             .game
+            .game
             .combat
             .game
             .ui
@@ -94,7 +97,7 @@ impl VoidCanticleV21Stabilized {
     }
 
     fn gameplay_running(&self) -> bool {
-        self.game.combat.game.art_can_overlay_game()
+        self.game.game.combat.game.art_can_overlay_game()
     }
 
     fn collect_shots_crossing_hud_cutoff(&mut self, dt: f32) {
@@ -166,6 +169,7 @@ impl VoidCanticleV21Stabilized {
         }
         let _ = self
             .game
+            .game
             .base_mut()
             .sounds
             .play(frame.audio, VC21_AUDIO_KEEPALIVE_SOUND);
@@ -173,7 +177,7 @@ impl VoidCanticleV21Stabilized {
     }
 
     fn handle_stage_clear_transition(&mut self) {
-        let cleared = self.game.base().encounter_phase == EncounterPhase::Cleared;
+        let cleared = self.game.game.base().encounter_phase == EncounterPhase::Cleared;
         if !cleared {
             self.stage_clear_seen = false;
             return;
@@ -184,9 +188,9 @@ impl VoidCanticleV21Stabilized {
 
         self.stage_clear_seen = true;
         self.escaped_shots.clear();
-        self.game.base_mut().player_bullets.clear();
+        self.game.game.base_mut().player_bullets.clear();
         self.power_game_mut().power_shots.clear();
-        self.game.base_mut().enemy_bullets.clear();
+        self.game.game.base_mut().enemy_bullets.clear();
     }
 
     fn render_pixel_safe_version(&self, framebuffer: &mut Framebuffer) {
@@ -198,7 +202,7 @@ impl VoidCanticleV21Stabilized {
                 &format!("GRAVE ORBIT / {VC21_PIXEL_VERSION}"),
                 TEXT,
             );
-        } else if matches!(&self.game.combat.game.ui.state, VcPauseState::BuildInfo) {
+        } else if matches!(&self.game.game.combat.game.ui.state, VcPauseState::BuildInfo) {
             framebuffer.fill_rect(17, 92, 146, 14, Pixel::rgb(9, 8, 15));
             framebuffer.draw_text(
                 20,
@@ -210,12 +214,12 @@ impl VoidCanticleV21Stabilized {
     }
 
     fn render_stage_clear(&self, framebuffer: &mut Framebuffer) {
-        if self.game.base().encounter_phase != EncounterPhase::Cleared {
+        if self.game.game.base().encounter_phase != EncounterPhase::Cleared {
             return;
         }
 
         framebuffer.clear(BG);
-        render_grave_orbit_background(framebuffer, self.game.base().scroll);
+        render_grave_orbit_background(framebuffer, self.game.game.base().scroll);
         framebuffer.fill_rect(12, 55, 156, 206, Pixel::rgb(9, 8, 15));
         framebuffer.draw_rect(12, 55, 156, 206, CANTICLE_COLOR);
         framebuffer.draw_rect(16, 59, 148, 198, ART_GOLD);
@@ -228,35 +232,35 @@ impl VoidCanticleV21Stabilized {
         framebuffer.draw_text(
             95,
             151,
-            &format!("{}", self.game.base().score),
+            &format!("{}", self.game.game.base().score),
             PILGRIM_CORE,
         );
         framebuffer.draw_text(32, 168, "LEVEL", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
             168,
-            &format!("{}", self.game.combat.game.v14().progression.level),
+            &format!("{}", self.game.game.combat.game.v14().progression.level),
             XP_ORB_CORE,
         );
         framebuffer.draw_text(32, 185, "ECHOES", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
             185,
-            &format!("{}", self.game.combat.game.v14().progression.xp),
+            &format!("{}", self.game.game.combat.game.v14().progression.xp),
             XP_ORB_CORE,
         );
         framebuffer.draw_text(32, 202, "HULL", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
             202,
-            &format!("{}", self.game.player_hull.round() as u32),
+            &format!("{}", self.game.game.player_hull.round() as u32),
             VC20_HULL,
         );
         framebuffer.draw_text(32, 219, "SHIELD", WRECK_LIGHT);
         framebuffer.draw_text(
             95,
             219,
-            &format!("{}", self.game.player_shield.round() as u32),
+            &format!("{}", self.game.game.player_shield.round() as u32),
             VC20_ARMOR_LIGHT,
         );
 
