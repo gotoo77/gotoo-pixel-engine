@@ -268,64 +268,6 @@ impl VoidCanticleV21Stabilized {
         self.game.game.base_mut().enemy_bullets.clear();
     }
 
-    fn render_pixel_safe_version(&self, framebuffer: &mut Framebuffer) {
-        if self.gameplay_running() {
-            framebuffer.fill_rect(3, 13, 102, 10, BG);
-            framebuffer.draw_text(
-                4,
-                15,
-                &format!("GRAVE ORBIT / {VC21_PIXEL_VERSION}"),
-                TEXT,
-            );
-        } else if matches!(&self.pause_ui().state, VcPauseState::BuildInfo) {
-            framebuffer.fill_rect(17, 92, 146, 14, Pixel::rgb(9, 8, 15));
-            framebuffer.draw_text(
-                20,
-                97,
-                &format!("VERSION {VC21_PIXEL_VERSION}"),
-                CANTICLE_COLOR,
-            );
-        }
-    }
-
-    fn render_tuned_survival(&self, framebuffer: &mut Framebuffer) {
-        if !self.gameplay_running() {
-            return;
-        }
-
-        framebuffer.fill_rect(3, 25, 77, 13, BG);
-        framebuffer.draw_text(
-            4,
-            27,
-            &format!(
-                "H{:03} S{:02}",
-                self.game.game.player_hull.round() as u32,
-                self.game.game.player_shield.round() as u32
-            ),
-            TEXT,
-        );
-        framebuffer.fill_rect(4, 35, 34, 2, CORE_BG);
-        framebuffer.fill_rect(
-            4,
-            35,
-            vc21_health_width(self.game.game.player_hull, self.tuning.player_hull, 34),
-            2,
-            VC20_HULL,
-        );
-        framebuffer.fill_rect(43, 35, 34, 2, VC20_ARMOR_BG);
-        framebuffer.fill_rect(
-            43,
-            35,
-            vc21_health_width(
-                self.game.game.player_shield,
-                self.tuning.player_shield.max(1.0),
-                34,
-            ),
-            2,
-            VC20_ARMOR,
-        );
-    }
-
     fn render_stage_clear(&self, framebuffer: &mut Framebuffer) {
         if !self.stage_clear_visible() {
             return;
@@ -409,8 +351,6 @@ impl Game for VoidCanticleV21Stabilized {
         self.update_escaped_shots(dt);
         self.handle_stage_clear_transition();
         self.render_escaped_shots(frame.framebuffer);
-        self.render_pixel_safe_version(frame.framebuffer);
-        self.render_tuned_survival(frame.framebuffer);
         self.render_stage_clear(frame.framebuffer);
 
         GameResult::Continue
