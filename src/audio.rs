@@ -222,10 +222,12 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedSound, AudioError> {
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use std::collections::HashMap;
+    use std::num::NonZero;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use rodio::buffer::SamplesBuffer;
     use rodio::cpal::StreamError;
+    use rodio::source::Zero;
     use rodio::{DeviceSinkBuilder, MixerDeviceSink};
 
     use super::{Audio, AudioError, DecodedSound, PlatformAudio, SoundId, register_decoded_wav};
@@ -260,6 +262,14 @@ mod native {
                 .open_sink_or_fallback()
                 .map_err(|err| AudioError::new(format!("audio device unavailable: {err}")))?;
             sink.log_on_drop(false);
+
+            // Rodio mixers behave like Empty when they have no sources and may detach
+            // from the device player. Keep an infinite Zero source attached from startup
+            // so transient game SFX can never leave the mixer in that detached state.
+            sink.mixer().add(Zero::new(
+                NonZero::new(2_u16).expect("stereo channel count is non-zero"),
+                NonZero::new(48_000_u32).expect("audio sample rate is non-zero"),
+            ));
 
             Ok(Self {
                 sink: Some(sink),
