@@ -65,6 +65,8 @@ mod game {
                                                             include!("void_canticle/v19_game.rs");
 
                                                             pub(crate) mod v20 {
+                                                                #![allow(unused_assignments)]
+
                                                                 use super::*;
                                                                 include!("void_canticle/v20_game.rs");
 
