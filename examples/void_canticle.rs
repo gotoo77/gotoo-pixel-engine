@@ -87,6 +87,13 @@ mod game {
                                                                             include!("void_canticle/v23_game.rs");
                                                                             include!("void_canticle/v23_sustain.rs");
                                                                             include!("void_canticle/v23_visual_foundation.rs");
+
+                                                                            pub(crate) mod v24 {
+                                                                                use super::*;
+                                                                                include!(
+                                                                                    "void_canticle/v24.rs"
+                                                                                );
+                                                                            }
                                                                         }
                                                                     }
                                                                 }
@@ -106,9 +113,9 @@ mod game {
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::run_visual_foundation_with_obs_mirror;
+    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::v24::run_hud_polish_with_obs_mirror;
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_visual_foundation_with_obs_mirror()
+    game::run_hud_polish_with_obs_mirror()
 }
