@@ -77,7 +77,7 @@ impl VoidCanticleV16 {
         self.reset_pressure_layer();
     }
 
-    fn base(&self) -> &VoidCanticle {
+    fn base(&self) -> &VoidCanticleGame {
         &self
             .combat
             .combat
@@ -312,7 +312,11 @@ impl VoidCanticleV16 {
 
         if let Some(attack) = self.pending_attack {
             let pulse = ((self.warning_timer * 20.0).floor() as i32 & 1) == 0;
-            let color = if pulse { VOID_LIGHT } else { void_pressure_color(self.pressure) };
+            let color = if pulse {
+                VOID_LIGHT
+            } else {
+                void_pressure_color(self.pressure)
+            };
             match attack.kind {
                 VoidAttackKind::TwinGates => {
                     let tx = attack.target_x.round() as i32;
@@ -794,9 +798,18 @@ mod v16_tests {
     #[test]
     fn pressure_thresholds_follow_documented_order() {
         assert_eq!(void_pressure_from_score(0), VoidPressure::Dormant);
-        assert_eq!(void_pressure_from_score(VOID_STIRRING_AT), VoidPressure::Stirring);
-        assert_eq!(void_pressure_from_score(VOID_AWAKE_AT), VoidPressure::Awake);
-        assert_eq!(void_pressure_from_score(VOID_HOSTILE_AT), VoidPressure::Hostile);
+        assert_eq!(
+            void_pressure_from_score(VOID_STIRRING_AT),
+            VoidPressure::Stirring
+        );
+        assert_eq!(
+            void_pressure_from_score(VOID_AWAKE_AT),
+            VoidPressure::Awake
+        );
+        assert_eq!(
+            void_pressure_from_score(VOID_HOSTILE_AT),
+            VoidPressure::Hostile
+        );
         assert_eq!(
             void_pressure_from_score(VOID_CATACLYSMIC_AT),
             VoidPressure::Cataclysmic
@@ -815,15 +828,30 @@ mod v16_tests {
             ..MutationBuild::default()
         };
 
-        assert_eq!(void_pressure(isolated, MutationBuild::default(), 2), VoidPressure::Dormant);
-        assert!(void_pressure_score(coherent, split, 2) > void_pressure_score(isolated, MutationBuild::default(), 2));
-        assert_eq!(void_pressure(coherent, split, 2), VoidPressure::Stirring);
+        assert_eq!(
+            void_pressure(isolated, MutationBuild::default(), 2),
+            VoidPressure::Dormant
+        );
+        assert!(
+            void_pressure_score(coherent, split, 2)
+                > void_pressure_score(isolated, MutationBuild::default(), 2)
+        );
+        assert_eq!(
+            void_pressure(coherent, split, 2),
+            VoidPressure::Stirring
+        );
     }
 
     #[test]
     fn pressure_increases_attack_frequency() {
-        assert!(void_attack_interval(VoidPressure::Awake) < void_attack_interval(VoidPressure::Stirring));
-        assert!(void_attack_interval(VoidPressure::Hostile) < void_attack_interval(VoidPressure::Awake));
+        assert!(
+            void_attack_interval(VoidPressure::Awake)
+                < void_attack_interval(VoidPressure::Stirring)
+        );
+        assert!(
+            void_attack_interval(VoidPressure::Hostile)
+                < void_attack_interval(VoidPressure::Awake)
+        );
         assert!(
             void_attack_interval(VoidPressure::Cataclysmic)
                 < void_attack_interval(VoidPressure::Hostile)
@@ -848,7 +876,11 @@ mod v16_tests {
         spawn_choir_rain(&mut bullets, 9, 4, 100.0, 0);
         assert_eq!(bullets.len(), 8);
         let gap_x = rain_lane_x(4, 9);
-        assert!(bullets.iter().all(|bullet| (bullet.x - gap_x).abs() > 0.01));
+        assert!(
+            bullets
+                .iter()
+                .all(|bullet| (bullet.x - gap_x).abs() > 0.01)
+        );
     }
 
     #[test]
