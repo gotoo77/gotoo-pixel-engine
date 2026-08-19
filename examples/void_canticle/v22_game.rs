@@ -239,24 +239,6 @@ impl VoidCanticleV22 {
         base.player_y = (before.1 + (after_y - before.1) * scale)
             .clamp(30.0, FRAMEBUFFER_HEIGHT as f32 - 16.0);
     }
-
-    fn render_v22_overlay(&self, framebuffer: &mut Framebuffer) {
-        if !self.gameplay_running() {
-            return;
-        }
-        let Some(chassis) = self.chassis else {
-            return;
-        };
-        framebuffer.fill_rect(3, 13, 116, 10, BG);
-        framebuffer.draw_text(
-            4,
-            15,
-            &format!("GRAVE ORBIT / {VC22_PIXEL_VERSION}"),
-            TEXT,
-        );
-        framebuffer.fill_rect(101, 25, 75, 11, BG);
-        framebuffer.draw_text(104, 27, chassis.name(), POWER_RELIC_LIGHT);
-    }
 }
 
 impl Game for VoidCanticleV22 {
@@ -276,7 +258,6 @@ impl Game for VoidCanticleV22 {
         }
 
         self.rescale_player_movement(before, frame);
-        self.render_v22_overlay(frame.framebuffer);
         GameResult::Continue
     }
 }
