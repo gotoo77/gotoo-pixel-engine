@@ -114,27 +114,6 @@ mod game {
                                                                                 "void_canticle/v23_visual_foundation.rs"
                                                                             );
 
-                                                                            pub(crate) mod v24 {
-                                                                                use super::*;
-                                                                                include!(
-                                                                                    "void_canticle/v24.rs"
-                                                                                );
-
-                                                                                pub(crate) mod v25 {
-                                                                                    use super::*;
-                                                                                    include!(
-                                                                                        "void_canticle/v25.rs"
-                                                                                    );
-
-                                                                                    pub(crate) mod v26 {
-                                                                                        use super::*;
-                                                                                        include!(
-                                                                                            "void_canticle/v26.rs"
-                                                                                        );
-                                                                                    }
-                                                                                }
-                                                                            }
-
                                                                             pub(crate) mod v27 {
                                                                                 use super::*;
                                                                                 include!(
