@@ -188,8 +188,17 @@ impl VoidCanticleV22 {
             );
         }
 
+        let selected = self.selected_chassis();
+        framebuffer.fill_rect(18, 241, 144, 15, Pixel::rgb(7, 9, 18));
+        framebuffer.draw_text(
+            22,
+            244,
+            &format!("PASSIVE {}", selected.passive_name()),
+            CANTICLE_COLOR,
+        );
         framebuffer.draw_text(39, 260, "SPACE SOUTH SELECT", TEXT);
-        framebuffer.draw_text(55, 273, VC22_PIXEL_VERSION, WRECK_LIGHT);
+        framebuffer.fill_rect(18, 270, 144, 11, Pixel::rgb(7, 9, 18));
+        framebuffer.draw_text(22, 273, selected.passive_description(), WRECK_LIGHT);
     }
 
     fn gameplay_running(&self) -> bool {
