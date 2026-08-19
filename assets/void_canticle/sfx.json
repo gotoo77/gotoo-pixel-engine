@@ -19,5 +19,6 @@
   "player_shield_break": "assets/void_canticle/sfx/player_shield_break.wav",
   "player_hull_impact": "assets/void_canticle/sfx/player_hull_impact.wav",
   "elite_implosion": "assets/void_canticle/sfx/elite_implosion.wav",
-  "elite_nova": "assets/void_canticle/sfx/elite_nova.wav"
+  "elite_nova": "assets/void_canticle/sfx/elite_nova.wav",
+  "emp_cast": "assets/void_canticle/sfx/emp_cast.wav"
 }
