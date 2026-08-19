@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
 
-# Canonical list of Web game entrypoints used by local validation/build scripts.
-# Keep the historical web_demo checked separately: it is not part of the
-# published Arcade catalog but remains a useful compatibility target.
-GPE_WEB_GAME_EXAMPLES=(
-    snake_web
-    breakout_web
-    tetris_web
-    pong_web
-    space_invaders_web
-    arcade_web
-)
+# Compatibility shim. scripts/dev.py owns the canonical Web example list.
+_gpe_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mapfile -t GPE_WEB_GAME_EXAMPLES < <(python3 "${_gpe_script_dir}/dev.py" list-web-examples)
+unset _gpe_script_dir

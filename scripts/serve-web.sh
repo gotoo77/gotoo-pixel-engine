@@ -1,6 +1,3 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-cd "$(git rev-parse --show-toplevel)"
-
-python3 -m http.server 8000 --directory web
+exec python3 "$(dirname "$0")/dev.py" serve-web "$@"

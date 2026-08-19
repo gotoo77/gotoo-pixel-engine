@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+from functools import partial
 import http.server
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -131,11 +131,7 @@ def command_build_web(args: argparse.Namespace) -> None:
 
 def command_serve_web(args: argparse.Namespace) -> None:
     directory = str(ROOT / "web")
-    handler = lambda *handler_args, **handler_kwargs: http.server.SimpleHTTPRequestHandler(  # noqa: E731
-        *handler_args,
-        directory=directory,
-        **handler_kwargs,
-    )
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=directory)
     server = http.server.ThreadingHTTPServer((args.bind, args.port), handler)
     print(f"==> Serving {directory} on http://{args.bind}:{args.port}")
     try:
@@ -163,7 +159,7 @@ def select_game_with_fzf(games: list[tuple[str, str]]) -> str | None:
         cwd=ROOT,
         input=labels,
         text=True,
-        capture_output=True,
+        stdout=subprocess.PIPE,
         check=False,
     )
     if result.returncode != 0:

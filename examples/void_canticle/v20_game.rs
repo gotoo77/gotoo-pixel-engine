@@ -39,6 +39,17 @@ impl VoidCanticleV20 {
         }
     }
 
+    fn tune_bellkeeper_before_update(&mut self) {
+        let base = self.game.ui.game.combat.base_mut();
+        if base.encounter_phase != EncounterPhase::BossFight {
+            return;
+        }
+        let Some(boss) = base.boss.as_mut() else {
+            return;
+        };
+        boss.shot_timer = boss.shot_timer.min(vc20_bellkeeper_shot_cap(boss.phase()));
+    }
+
     fn render_lore_hud(&self, framebuffer: &mut Framebuffer) {
         if !self.game.art_can_overlay_game() {
             return;
@@ -70,6 +81,7 @@ impl VoidCanticleV20 {
 
 impl Game for VoidCanticleV20 {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        self.tune_bellkeeper_before_update();
         let result = self.game.update(frame);
         if result == GameResult::Exit {
             return result;
@@ -82,6 +94,14 @@ impl Game for VoidCanticleV20 {
         }
 
         GameResult::Continue
+    }
+}
+
+fn vc20_bellkeeper_shot_cap(phase: BellPhase) -> f32 {
+    match phase {
+        BellPhase::Procession => 0.72,
+        BellPhase::Resonance => 0.60,
+        BellPhase::FinalToll => 0.50,
     }
 }
 
@@ -127,6 +147,19 @@ mod v20_tests {
         assert_eq!(
             manifest.path("echo_pickup").unwrap(),
             "assets/void_canticle/sfx/echo_pickup.wav"
+        );
+    }
+
+    #[test]
+    fn bellkeeper_pressure_comes_from_real_salves_not_damage_gating() {
+        assert!(vc20_bellkeeper_shot_cap(BellPhase::Procession) < 1.0);
+        assert!(
+            vc20_bellkeeper_shot_cap(BellPhase::Resonance)
+                < vc20_bellkeeper_shot_cap(BellPhase::Procession)
+        );
+        assert!(
+            vc20_bellkeeper_shot_cap(BellPhase::FinalToll)
+                < vc20_bellkeeper_shot_cap(BellPhase::Resonance)
         );
     }
 }
