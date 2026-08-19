@@ -56,7 +56,7 @@ impl VoidCanticleV21Stabilized {
         }
     }
 
-    fn power_game(&self) -> &VoidCanticleV07 {
+    fn power_shots(&self) -> &[PowerShot] {
         &self
             .game
             .game
@@ -74,9 +74,10 @@ impl VoidCanticleV21Stabilized {
             .ui
             .inner
             .inner
+            .power_shots
     }
 
-    fn power_game_mut(&mut self) -> &mut VoidCanticleV07 {
+    fn power_shots_mut(&mut self) -> &mut Vec<PowerShot> {
         &mut self
             .game
             .game
@@ -94,6 +95,7 @@ impl VoidCanticleV21Stabilized {
             .ui
             .inner
             .inner
+            .power_shots
     }
 
     fn gameplay_running(&self) -> bool {
@@ -106,8 +108,7 @@ impl VoidCanticleV21Stabilized {
         }
 
         let crossing: Vec<Vc21EscapedShot> = self
-            .power_game()
-            .power_shots
+            .power_shots()
             .iter()
             .filter(|shot| {
                 shot.alive
@@ -115,12 +116,7 @@ impl VoidCanticleV21Stabilized {
                     && shot.y + shot.vy * dt <= VC21_SHOT_ESCAPE_Y
             })
             .copied()
-            .map(|shot| {
-                let mut escaped = Vc21EscapedShot::from(shot);
-                escaped.x += escaped.vx * dt;
-                escaped.y += escaped.vy * dt;
-                escaped
-            })
+            .map(Vc21EscapedShot::from)
             .collect();
         self.escaped_shots.extend(crossing);
     }
@@ -144,7 +140,7 @@ impl VoidCanticleV21Stabilized {
         if !self.gameplay_running() {
             return;
         }
-        let power_level = self.power_game().power_level;
+        let power_level = self.game.game.power_level();
         for shot in &self.escaped_shots {
             render_power_shot(
                 framebuffer,
@@ -189,7 +185,7 @@ impl VoidCanticleV21Stabilized {
         self.stage_clear_seen = true;
         self.escaped_shots.clear();
         self.game.game.base_mut().player_bullets.clear();
-        self.power_game_mut().power_shots.clear();
+        self.power_shots_mut().clear();
         self.game.game.base_mut().enemy_bullets.clear();
     }
 
