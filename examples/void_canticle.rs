@@ -47,6 +47,11 @@ mod game {
                                         pub(crate) mod v16 {
                                             use super::*;
                                             include!("void_canticle/v16_game.rs");
+
+                                            pub(crate) mod v16b {
+                                                use super::*;
+                                                include!("void_canticle/v16b_game.rs");
+                                            }
                                         }
                                     }
                                 }
@@ -58,9 +63,9 @@ mod game {
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::run_v16_with_obs_mirror;
+    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::run_v16b_with_obs_mirror;
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_v16_with_obs_mirror()
+    game::run_v16b_with_obs_mirror()
 }
