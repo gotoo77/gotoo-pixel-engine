@@ -9,8 +9,8 @@ impl VoidCanticleV21Runtime {
         }
     }
 
-    fn cancel_pending_choices(&mut self) {
-        let v14 = &mut self
+    fn v14(&self) -> &VoidCanticleV14 {
+        &self
             .game
             .combat
             .game
@@ -19,9 +19,50 @@ impl VoidCanticleV21Runtime {
             .combat
             .combat
             .combat
-            .combat;
+            .combat
+    }
+
+    fn v14_mut(&mut self) -> &mut VoidCanticleV14 {
+        &mut self
+            .game
+            .combat
+            .game
+            .ui
+            .game
+            .combat
+            .combat
+            .combat
+            .combat
+    }
+
+    fn cancel_pending_choices(&mut self) {
+        let v14 = self.v14_mut();
         v14.progression.level_choice = None;
         v14.mutation_choice = None;
+    }
+
+    fn presentation_is_frozen(&self) -> bool {
+        self.game.base().game_over
+            || !matches!(&self.game.combat.game.ui.state, VcPauseState::Running)
+            || self.v14().progression.level_choice.is_some()
+            || self.v14().mutation_choice.is_some()
+    }
+
+    fn consume_fresh_bursts_while_frozen(&mut self) {
+        if !self.presentation_is_frozen() {
+            return;
+        }
+
+        // V17 identifies a newly-created impact by `remaining == duration`.
+        // A level/mutation/pause screen freezes the legacy simulation, so the
+        // same burst otherwise remains "fresh" forever and its SFX is replayed
+        // every time V17's impact cooldown expires. Mark those frozen bursts as
+        // already observed without advancing the rest of the simulation.
+        for burst in &mut self.game.base_mut().bursts {
+            if (burst.remaining - burst.duration).abs() <= 0.0001 {
+                burst.remaining = (burst.duration - 0.001).max(0.0);
+            }
+        }
     }
 
     fn sync_fatal_hull_to_legacy_game_over(&mut self) -> bool {
@@ -51,6 +92,8 @@ impl VoidCanticleV21Runtime {
 
 impl Game for VoidCanticleV21Runtime {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        self.consume_fresh_bursts_while_frozen();
+
         let result = self.game.update(frame);
         if result == GameResult::Exit {
             return result;
@@ -88,6 +131,17 @@ pub fn run_v21_runtime_with_obs_mirror() -> Result<(), EngineError> {
 mod v21_runtime_tests {
     use super::*;
 
+    fn install_test_level_choice(runtime: &mut VoidCanticleV21Runtime) {
+        runtime.v14_mut().progression.level_choice = Some(LevelChoice {
+            offers: [
+                UpgradeKind::RapidFire,
+                UpgradeKind::MagnetField,
+                UpgradeKind::CoreSurge,
+            ],
+            menu: gotoo_pixel_engine::ui::MenuState::new(3),
+        });
+    }
+
     #[test]
     fn fatal_hull_is_zero_not_an_extra_life() {
         let mut shield = 0.0;
@@ -101,51 +155,43 @@ mod v21_runtime_tests {
     fn fatal_hull_cancels_level_and_mutation_choices() {
         let mut runtime = VoidCanticleV21Runtime::new();
         runtime.game.player_hull = 0.0;
-
-        {
-            let v14 = &mut runtime
-                .game
-                .combat
-                .game
-                .ui
-                .game
-                .combat
-                .combat
-                .combat
-                .combat;
-            v14.progression.level_choice = Some(LevelChoice {
-                offers: [
-                    UpgradeKind::RapidFire,
-                    UpgradeKind::MagnetField,
-                    UpgradeKind::CoreSurge,
-                ],
-                menu: gotoo_pixel_engine::ui::MenuState::new(3),
-            });
-            v14.mutation_choice = Some(MutationChoice {
-                offers: [
-                    MutationKind::PiercingLance,
-                    MutationKind::SplitVolley,
-                    MutationKind::DeathNova,
-                ],
-                menu: gotoo_pixel_engine::ui::MenuState::new(3),
-            });
-        }
+        install_test_level_choice(&mut runtime);
+        runtime.v14_mut().mutation_choice = Some(MutationChoice {
+            offers: [
+                MutationKind::PiercingLance,
+                MutationKind::SplitVolley,
+                MutationKind::DeathNova,
+            ],
+            menu: gotoo_pixel_engine::ui::MenuState::new(3),
+        });
 
         assert!(runtime.sync_fatal_hull_to_legacy_game_over());
-
-        let v14 = &runtime
-            .game
-            .combat
-            .game
-            .ui
-            .game
-            .combat
-            .combat
-            .combat
-            .combat;
-        assert!(v14.progression.level_choice.is_none());
-        assert!(v14.mutation_choice.is_none());
+        assert!(runtime.v14().progression.level_choice.is_none());
+        assert!(runtime.v14().mutation_choice.is_none());
         assert!(runtime.game.base().game_over);
         assert_eq!(runtime.game.base().lives, 0);
+    }
+
+    #[test]
+    fn frozen_choice_consumes_fresh_burst_marker() {
+        let mut runtime = VoidCanticleV21Runtime::new();
+        install_test_level_choice(&mut runtime);
+        runtime
+            .game
+            .base_mut()
+            .bursts
+            .push(Burst::new(90.0, 160.0, 0.42, DANGER));
+
+        assert!(runtime.presentation_is_frozen());
+        assert_eq!(
+            runtime.game.base().bursts[0].remaining,
+            runtime.game.base().bursts[0].duration
+        );
+
+        runtime.consume_fresh_bursts_while_frozen();
+
+        assert!(
+            runtime.game.base().bursts[0].remaining < runtime.game.base().bursts[0].duration
+        );
     }
 }
