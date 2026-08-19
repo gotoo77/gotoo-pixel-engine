@@ -66,7 +66,9 @@ mod game {
 
                                                             pub(crate) mod v20 {
                                                                 use super::*;
-                                                                include!("void_canticle/v20_game.rs");
+                                                                include!(
+                                                                    "void_canticle/v20_game.rs"
+                                                                );
                                                             }
                                                         }
                                                     }
