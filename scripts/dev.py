@@ -27,6 +27,7 @@ PAGES_STATIC_FILES = [
     "tetris.html",
     "space_invaders.html",
     "pong.html",
+    "favicon.svg",
     "audio-unlock.js",
     "fullscreen.js",
 ]

@@ -1,6 +1,20 @@
 const STYLE_ID = "gpe-fullscreen-style";
 const BUTTON_ID = "gpe-fullscreen-button";
+const FAVICON_ID = "gpe-favicon";
 let touchFullscreenAttempted = false;
+
+function installBranding() {
+  if (document.getElementById(FAVICON_ID)) {
+    return;
+  }
+
+  const favicon = document.createElement("link");
+  favicon.id = FAVICON_ID;
+  favicon.rel = "icon";
+  favicon.type = "image/svg+xml";
+  favicon.href = "./favicon.svg";
+  document.head.append(favicon);
+}
 
 function installStyle() {
   if (document.getElementById(STYLE_ID)) {
@@ -89,5 +103,6 @@ function installFullscreenButton() {
   document.body.append(button);
 }
 
+installBranding();
 installTouchFullscreen();
 installFullscreenButton();

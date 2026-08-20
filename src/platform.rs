@@ -6,6 +6,9 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
+mod branding;
+
 use crate::Framebuffer;
 use crate::audio::{Audio, PlatformAudio, platform_audio};
 use crate::gamepad::GamepadInputBackend;
@@ -13,6 +16,8 @@ use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use crate::storage::{LocalStorage, platform_storage};
 use crate::{GamepadId, GamepadProfile, Size, Viewport};
+#[cfg(not(target_arch = "wasm32"))]
+use branding::default_window_icon;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
@@ -313,6 +318,9 @@ impl<G: Game> PlatformApp<G> {
                 f64::from(self.config.window_height),
             ))
             .with_min_inner_size(LogicalSize::new(1.0, 1.0));
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let attributes = attributes.with_window_icon(default_window_icon());
 
         #[cfg(target_arch = "wasm32")]
         let attributes = {
