@@ -1,4 +1,4 @@
-mod game {
+pub(crate) mod game {
     mod legacy_base {
         #![allow(dead_code, clippy::collapsible_if, clippy::too_many_arguments)]
 
@@ -143,8 +143,11 @@ mod game {
     }
 
     pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::v27::run_v27_showcase_presentation_with_obs_mirror;
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::v27::vc27_preload_choice_catalog_web;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
     game::run_v27_showcase_presentation_with_obs_mirror()
 }
