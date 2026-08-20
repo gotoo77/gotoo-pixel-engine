@@ -1,5 +1,9 @@
 {
-  "bulwark": { "icon": "bulwark.png" },
+  "bulwark": {
+    "icon": "bulwark.png",
+    "hover_sfx": "bulwark_hover.wav",
+    "confirm_sfx": "bulwark_confirm.wav"
+  },
   "pilgrim": { "icon": "pilgrim.png" },
   "wraith": { "icon": "wraith.png" },
   "rapid_fire": { "icon": "rapid_fire.png" },
@@ -10,7 +14,11 @@
   "core_surge": { "icon": "core_surge.png" },
   "piercing_lance": { "icon": "piercing_lance.png" },
   "split_volley": { "icon": "split_volley.png" },
-  "death_nova": { "icon": "death_nova.png" },
+  "death_nova": {
+    "icon": "death_nova.png",
+    "hover_sfx": "death_nova_hover.wav",
+    "confirm_sfx": "death_nova_confirm.wav"
+  },
   "orbitals": { "icon": "orbitals.png" },
   "nanite_repair": { "icon": "nanite_repair.png" },
   "shield_capacitor": { "icon": "shield_capacitor.png" }

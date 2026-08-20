@@ -1,4 +1,4 @@
-const VC27_PRESENTATION_VERSION: &str = "VC3.0";
+const VC27_PRESENTATION_VERSION: &str = "VC3.1";
 const VC27_CARRION_TELEGRAPH_WINDOW: f32 = 0.24;
 const VC27_WRAITH_TELEGRAPH_WINDOW: f32 = 0.30;
 const VC27_BOSS_TELEGRAPH_WINDOW: f32 = 0.34;
@@ -49,4 +49,10 @@ include!(concat!(
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/modals.rs"
+));
+
+#[cfg(test)]
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/vc31_audio_tests.rs"
 ));
