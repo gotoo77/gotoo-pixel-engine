@@ -70,9 +70,12 @@ impl VoidCanticleV27DirectPresentation {
 
         let pressure = self.game.game.v20().game.ui.game.combat.combat.pressure;
         let boss_phase = base.boss.map(Bellkeeper::phase);
-        for bullet in &base.enemy_bullets {
+        for (index, bullet) in base.enemy_bullets.iter().enumerate() {
             let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt().max(1.0);
-            let style = vc27_enemy_shot_style(base.encounter_phase, speed);
+            let style = self
+                .projectile_provenance
+                .style_for(index)
+                .unwrap_or_else(|| vc27_enemy_shot_style(base.encounter_phase, speed));
             vc27_render_enemy_bullet(framebuffer, *bullet, style, pressure, boss_phase);
         }
     }
