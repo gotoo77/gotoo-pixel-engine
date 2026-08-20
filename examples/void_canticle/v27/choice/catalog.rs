@@ -88,9 +88,12 @@ impl Vc27ChoiceCatalog {
         self.sprites.get(&id)
     }
 
-    #[cfg(test)]
     fn insert(&mut self, id: Vc27ChoiceArtId, sprite: Sprite) {
         self.sprites.insert(id, sprite);
+    }
+
+    fn len(&self) -> usize {
+        self.sprites.len()
     }
 }
 
@@ -113,35 +116,49 @@ fn vc27_load_choice_catalog() -> Vc27ChoiceCatalog {
     let Ok(manifest_text) = std::fs::read_to_string(root.join("manifest.json")) else {
         return Vc27ChoiceCatalog::default();
     };
-    let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&manifest_text) else {
-        return Vc27ChoiceCatalog::default();
-    };
-    let Some(entries) = manifest.as_object() else {
+    let Ok(entries) = vc27_choice_manifest_entries(&manifest_text) else {
         return Vc27ChoiceCatalog::default();
     };
 
     let mut catalog = Vc27ChoiceCatalog::default();
     for id in Vc27ChoiceArtId::ALL {
-        let Some(filename) = entries.get(id.slug()).and_then(serde_json::Value::as_str) else {
+        let Some(filename) = entries.get(id.slug()) else {
             continue;
         };
-        let Ok(file) = std::fs::File::open(root.join(filename)) else {
+        let Ok(bytes) = std::fs::read(root.join(filename)) else {
             continue;
         };
-        let Ok(sprite) = vc27_decode_png_sprite(file) else {
+        let Ok(sprite) = vc27_decode_png_sprite(&bytes) else {
             continue;
         };
-        catalog.sprites.insert(id, sprite);
+        catalog.insert(id, sprite);
     }
     catalog
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn vc27_decode_png_sprite(reader: impl std::io::Read) -> Result<Sprite, String> {
-    let mut decoder = png::Decoder::new(reader);
+fn vc27_choice_manifest_entries(
+    manifest_text: &str,
+) -> Result<std::collections::BTreeMap<String, String>, String> {
+    let manifest = serde_json::from_str::<serde_json::Value>(manifest_text)
+        .map_err(|error| error.to_string())?;
+    let entries = manifest
+        .as_object()
+        .ok_or_else(|| "choice asset manifest must be a JSON object".to_owned())?;
+    Ok(entries
+        .iter()
+        .filter_map(|(key, value)| value.as_str().map(|path| (key.clone(), path.to_owned())))
+        .collect())
+}
+
+fn vc27_decode_png_sprite(bytes: &[u8]) -> Result<Sprite, String> {
+    let cursor = std::io::Cursor::new(bytes);
+    let mut decoder = png::Decoder::new(std::io::BufReader::new(cursor));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder.read_info().map_err(|error| error.to_string())?;
-    let mut buffer = vec![0; reader.output_buffer_size()];
+    let buffer_size = reader
+        .output_buffer_size()
+        .ok_or_else(|| "choice PNG output buffer is too large".to_owned())?;
+    let mut buffer = vec![0; buffer_size];
     let info = reader
         .next_frame(&mut buffer)
         .map_err(|error| error.to_string())?;
@@ -172,6 +189,65 @@ fn vc27_decode_png_sprite(reader: impl std::io::Read) -> Result<Sprite, String> 
     Sprite::new(info.width, info.height, pixels).map_err(|error| error.to_string())
 }
 
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn vc27_preload_choice_catalog_web(base_url: &str) -> Result<usize, wasm_bindgen::JsValue> {
+    use wasm_bindgen::JsCast as _;
+
+    async fn fetch_response(url: &str) -> Result<web_sys::Response, wasm_bindgen::JsValue> {
+        let window = web_sys::window()
+            .ok_or_else(|| wasm_bindgen::JsValue::from_str("window is unavailable"))?;
+        let value = wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(url)).await?;
+        let response = value.dyn_into::<web_sys::Response>()?;
+        if response.ok() {
+            Ok(response)
+        } else {
+            Err(wasm_bindgen::JsValue::from_str(&format!(
+                "HTTP {} while loading {url}",
+                response.status()
+            )))
+        }
+    }
+
+    async fn fetch_text(url: &str) -> Result<String, wasm_bindgen::JsValue> {
+        let response = fetch_response(url).await?;
+        let value = wasm_bindgen_futures::JsFuture::from(response.text()?).await?;
+        value
+            .as_string()
+            .ok_or_else(|| wasm_bindgen::JsValue::from_str("response text is not a string"))
+    }
+
+    async fn fetch_bytes(url: &str) -> Result<Vec<u8>, wasm_bindgen::JsValue> {
+        let response = fetch_response(url).await?;
+        let value = wasm_bindgen_futures::JsFuture::from(response.array_buffer()?).await?;
+        Ok(js_sys::Uint8Array::new(&value).to_vec())
+    }
+
+    let base_url = base_url.trim_end_matches('/');
+    let manifest_url = format!("{base_url}/manifest.json");
+    let manifest_text = fetch_text(&manifest_url).await?;
+    let entries = vc27_choice_manifest_entries(&manifest_text)
+        .map_err(|error| wasm_bindgen::JsValue::from_str(&error))?;
+
+    let mut catalog = Vc27ChoiceCatalog::default();
+    for id in Vc27ChoiceArtId::ALL {
+        let Some(filename) = entries.get(id.slug()) else {
+            continue;
+        };
+        let url = format!("{base_url}/{filename}");
+        let Ok(bytes) = fetch_bytes(&url).await else {
+            continue;
+        };
+        let Ok(sprite) = vc27_decode_png_sprite(&bytes) else {
+            continue;
+        };
+        catalog.insert(id, sprite);
+    }
+
+    let loaded = catalog.len();
+    let _ = VC27_CHOICE_CATALOG.set(catalog);
+    Ok(loaded)
+}
+
 #[cfg(test)]
 mod choice_catalog_tests {
     use super::*;
@@ -192,6 +268,16 @@ mod choice_catalog_tests {
     }
 
     #[test]
+    fn manifest_parser_keeps_string_entries_only() {
+        let entries = vc27_choice_manifest_entries(
+            r#"{"death_nova":"death_nova.png","ignored":12}"#,
+        )
+        .expect("valid manifest");
+        assert_eq!(entries.get("death_nova").map(String::as_str), Some("death_nova.png"));
+        assert!(!entries.contains_key("ignored"));
+    }
+
+    #[test]
     fn catalog_can_override_one_art_id_without_touching_other_choices() {
         let mut catalog = Vc27ChoiceCatalog::default();
         let sprite = Sprite::new(1, 1, vec![Pixel::WHITE]).expect("valid test sprite");
@@ -200,7 +286,6 @@ mod choice_catalog_tests {
         assert!(catalog.sprite(Vc27ChoiceArtId::VitalSpark).is_none());
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn png_decoder_preserves_transparency() {
         let mut bytes = Vec::new();
@@ -213,7 +298,7 @@ mod choice_catalog_tests {
                 .write_image_data(&[12, 34, 56, 0])
                 .expect("test PNG pixels");
         }
-        let sprite = vc27_decode_png_sprite(std::io::Cursor::new(bytes)).expect("decode test PNG");
+        let sprite = vc27_decode_png_sprite(&bytes).expect("decode test PNG");
         assert_eq!(sprite.pixels(), &[Pixel::rgba(12, 34, 56, 0)]);
     }
 }
