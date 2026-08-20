@@ -1,4 +1,4 @@
-impl VoidCanticleV27DirectPresentation {
+impl VoidCanticlePresentation {
     fn render_particles_and_bursts(&self, framebuffer: &mut Framebuffer) {
         for burst in &self.game.game.base().bursts {
             let ratio = if burst.duration > 0.0 {
