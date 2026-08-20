@@ -150,8 +150,8 @@ impl<'a> Vc27ChoiceProfile<'a> {
     ) {
         if selected && let Some(sprite) = self.assets.catalog_sprite() {
             let half_extent = sprite.width().max(sprite.height()) / 2;
-            let radius = i32::try_from(half_extent).unwrap_or(i32::MAX).saturating_add(4);
-            let pulse = ((time * 5.0).sin().abs() * 2.0).round() as i32;
+            let radius = half_extent.saturating_add(4);
+            let pulse = ((time * 5.0).sin().abs() * 2.0).round() as u32;
             framebuffer.draw_circle(x, y, radius.saturating_add(pulse), self.accent);
         }
         self.assets.render(framebuffer, x, y, selected, time);
