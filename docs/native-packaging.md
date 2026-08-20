@@ -58,9 +58,10 @@ This dependency is loaded dynamically by the window/input stack, so `ldd` alone
 cannot discover it. The extracted-package launch smoke is intentionally kept in
 addition to the `ldd` check for this reason.
 
-`xvfb` is installed only by CI to provide a virtual X server; it is a test
-harness dependency, not a Void Canticle runtime dependency for an ordinary
-desktop session.
+The GitHub-hosted Linux runner has no real display/GPU. CI therefore installs
+`xvfb` plus Mesa's Lavapipe Vulkan software driver and forces that software ICD
+for the launch smoke. Those packages are test-harness infrastructure: an
+ordinary desktop uses its installed display server and GPU driver instead.
 
 ## GitHub Actions
 
