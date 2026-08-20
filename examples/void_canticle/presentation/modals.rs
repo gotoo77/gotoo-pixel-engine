@@ -1,26 +1,26 @@
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/modals/build_overview.rs"
+    "/examples/void_canticle/presentation/modals/build_overview.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/modals/pause_menu.rs"
+    "/examples/void_canticle/presentation/modals/pause_menu.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/modals/controls.rs"
+    "/examples/void_canticle/presentation/modals/controls.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/modals/run_summary.rs"
+    "/examples/void_canticle/presentation/modals/run_summary.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/modals/stage_clear.rs"
+    "/examples/void_canticle/presentation/modals/stage_clear.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/modals/death.rs"
+    "/examples/void_canticle/presentation/modals/death.rs"
 ));
 
 impl VoidCanticleV27DirectPresentation {

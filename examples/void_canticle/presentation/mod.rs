@@ -14,15 +14,15 @@ enum Vc27EnemyShotStyle {
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/hd_bestiary.rs"
+    "/examples/void_canticle/presentation/hd_bestiary.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/chassis_showcase.rs"
+    "/examples/void_canticle/presentation/chassis_showcase.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/upgrade_showcase.rs"
+    "/examples/void_canticle/presentation/upgrade_showcase.rs"
 ));
 
 struct VoidCanticleV27DirectPresentation {
@@ -37,23 +37,23 @@ struct VoidCanticleV27DirectPresentation {
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/runtime.rs"
+    "/examples/void_canticle/presentation/runtime.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/combat.rs"
+    "/examples/void_canticle/presentation/combat.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/hud.rs"
+    "/examples/void_canticle/presentation/hud.rs"
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/modals.rs"
+    "/examples/void_canticle/presentation/modals.rs"
 ));
 
 #[cfg(test)]
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/v27/vc31_audio_tests.rs"
+    "/examples/void_canticle/presentation/audio_tests.rs"
 ));

@@ -100,12 +100,14 @@ pub(crate) mod v07 {
 
                                                                     pub(crate) mod presentation {
                                                                         use super::*;
-                                                                        legacy_include!("v27.rs");
                                                                         legacy_include!(
-                                                                            "v27/choice_runtime.rs"
+                                                                            "presentation/mod.rs"
                                                                         );
                                                                         legacy_include!(
-                                                                            "presentation_frontend.rs"
+                                                                            "presentation/choice_runtime.rs"
+                                                                        );
+                                                                        legacy_include!(
+                                                                            "presentation/frontend.rs"
                                                                         );
                                                                     }
                                                                 }
