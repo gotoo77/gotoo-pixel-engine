@@ -1,6 +1,6 @@
 # Void Canticle choice asset overrides
 
-VC2.8 can override the presentation attached to each stable choice identity without changing Rust gameplay code.
+VC2.9 can override the presentation attached to each stable choice identity without changing Rust gameplay code.
 
 Each choice may independently override:
 
@@ -8,13 +8,13 @@ Each choice may independently override:
 - `hover_sfx`: WAV played when focus moves to the choice;
 - `confirm_sfx`: WAV played when the choice is confirmed.
 
-Every field is optional. Missing, unreadable or invalid assets keep the existing procedural art or synthesized default SFX.
+Every field is optional. Missing, unreadable or invalid asset files keep the existing procedural art or synthesized default SFX.
 
 ## Default location
 
 The resolver reads `manifest.json` from this directory and loads whichever referenced assets are valid.
 
-Preferred VC2.8 descriptor format:
+Preferred descriptor format:
 
 ```json
 {
@@ -46,6 +46,26 @@ That shorthand is equivalent to:
   }
 }
 ```
+
+## VC2.9 manifest validation
+
+The checked-in manifest is validated by the Void Canticle example tests, so the existing native CI rejects malformed repository descriptors before they can ship.
+
+The canonical manifest contract is strict:
+
+- top-level JSON value must be an object;
+- choice IDs must be one of the stable IDs known by VC;
+- descriptor fields are limited to `icon`, `hover_sfx` and `confirm_sfx`;
+- a descriptor object must contain at least one asset field;
+- every present asset field must be a non-empty string;
+- asset paths are relative to this catalog, use `/` separators and may contain normal subdirectories;
+- absolute paths, backslashes, `.` / `..`, empty path components, URL/query syntax and drive-like `:` paths are rejected;
+- `icon` paths end in lowercase `.png`;
+- `hover_sfx` and `confirm_sfx` paths end in lowercase `.wav`.
+
+Referenced PNG/WAV files are still optional. Validation checks the descriptor contract, not asset existence, so artists can prepare the manifest before the final files land.
+
+Runtime loading intentionally remains tolerant for external development overrides: an unavailable or undecodable optional file falls back independently instead of preventing the game from starting.
 
 ## Fallback contract
 
@@ -93,11 +113,11 @@ The catalog is loaded once during startup, so restart the game after changing an
 
 ## Web
 
-`void_canticle_web` fetches the same `manifest.json` before starting VC2.8, then independently fetches the PNG/WAV files referenced by each descriptor.
+`void_canticle_web` fetches the same `manifest.json` before starting VC2.9, then independently fetches the PNG/WAV files referenced by each descriptor.
 
 `scripts/dev.py build-web` and `serve-web` mirror this source directory into `web/assets/void_canticle/ui/choice`, while the Pages build mirrors it into `dist/assets/void_canticle/ui/choice`.
 
-Missing or invalid optional assets remain valid on Web: each field falls back independently.
+Missing or invalid optional asset files remain valid on Web: each field falls back independently.
 
 Typical local workflow:
 
