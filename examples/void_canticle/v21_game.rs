@@ -9,6 +9,10 @@ const VC21_PLAYER_SHIELD_FLASH_DURATION: f32 = 0.16;
 const VC21_PLAYER_HULL_FLASH_DURATION: f32 = 0.18;
 const VC21_ENEMY_HULL_IMPACT_DURATION: f32 = 0.17;
 const VC21_ENEMY_HULL_IMPACT_SPARKS: usize = 5;
+const VC21_WRAITH_DEATH_SHARDS: usize = 8;
+const VC21_CARRIER_DEATH_SHARDS: usize = 10;
+const VC21_CHOIR_DEATH_SHARDS: usize = 8;
+const VC21_LEECH_DEATH_SHARDS: usize = 11;
 
 const VC21_ELITE_COLLAPSE_DURATION: f32 = 0.42;
 const VC21_ELITE_NOVA_DURATION: f32 = 0.46;
@@ -39,6 +43,8 @@ enum Vc21CombatEvent {
     EnemyArmorImpact,
     EnemyHullImpact,
     EnemyShieldImpact,
+    SpecialDestroyed { kind: SpecialKind, x: f32, y: f32 },
+    ThreatDestroyed { kind: ThreatKind, x: f32, y: f32 },
     PlayerShieldImpact { x: f32, y: f32 },
     PlayerShieldBreak { x: f32, y: f32 },
     PlayerHullImpact { x: f32, y: f32, play_sound: bool },
@@ -51,6 +57,26 @@ struct Vc21EliteSnapshot {
     key: SpecialDefenseKey,
     x: f32,
     y: f32,
+    hit_radius: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Vc21SpecialSnapshot {
+    key: SpecialDefenseKey,
+    kind: SpecialKind,
+    x: f32,
+    y: f32,
+    hp: u32,
+    hit_radius: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Vc21ThreatSnapshot {
+    key: ThreatDefenseKey,
+    kind: ThreatKind,
+    x: f32,
+    y: f32,
+    hp: u32,
     hit_radius: f32,
 }
 
@@ -80,6 +106,8 @@ struct Vc21ImpactSnapshot {
     threat_armor: std::collections::BTreeMap<ThreatDefenseKey, u32>,
     special_hp: std::collections::BTreeMap<SpecialDefenseKey, u32>,
     threat_hp: std::collections::BTreeMap<ThreatDefenseKey, u32>,
+    specials: Vec<Vc21SpecialSnapshot>,
+    threats: Vec<Vc21ThreatSnapshot>,
     boss_shield: u32,
 }
 
@@ -209,7 +237,7 @@ impl VoidCanticleV21 {
 
     fn capture_impact_snapshot(&mut self) -> Vc21ImpactSnapshot {
         self.combat.sync_enemy_armor();
-        let special_hp = self
+        let specials: Vec<Vc21SpecialSnapshot> = self
             .combat
             .game
             .v12()
@@ -217,17 +245,33 @@ impl VoidCanticleV21 {
             .specials
             .iter()
             .filter(|enemy| enemy.alive)
-            .map(|enemy| (vc20_special_key(enemy), enemy.hp))
+            .map(|enemy| Vc21SpecialSnapshot {
+                key: vc20_special_key(enemy),
+                kind: enemy.kind,
+                x: enemy.x,
+                y: enemy.y,
+                hp: enemy.hp,
+                hit_radius: enemy.hit_radius(),
+            })
             .collect();
-        let threat_hp = self
+        let threats: Vec<Vc21ThreatSnapshot> = self
             .combat
             .game
             .v12()
             .threats
             .iter()
             .filter(|threat| threat.alive)
-            .map(|threat| (vc20_threat_key(threat), threat.hp))
+            .map(|threat| Vc21ThreatSnapshot {
+                key: vc20_threat_key(threat),
+                kind: threat.kind,
+                x: threat.x,
+                y: threat.y,
+                hp: threat.hp,
+                hit_radius: threat.hit_radius(),
+            })
             .collect();
+        let special_hp = specials.iter().map(|enemy| (enemy.key, enemy.hp)).collect();
+        let threat_hp = threats.iter().map(|threat| (threat.key, threat.hp)).collect();
 
         Vc21ImpactSnapshot {
             carrion_armor: self.combat.carrion_armor.clone(),
@@ -235,6 +279,8 @@ impl VoidCanticleV21 {
             threat_armor: self.combat.threat_armor.clone(),
             special_hp,
             threat_hp,
+            specials,
+            threats,
             boss_shield: self.combat.boss_shield,
         }
     }
@@ -278,6 +324,124 @@ impl VoidCanticleV21 {
                     color: if spark % 2 == 0 { VC20_HULL } else { ART_GOLD },
                     kind: V17ParticleKind::Shard,
                 });
+            }
+        }
+    }
+
+    fn spawn_family_death_shards(
+        &mut self,
+        x: f32,
+        y: f32,
+        count: usize,
+        speed: f32,
+        life: f32,
+        primary: Pixel,
+        secondary: Pixel,
+        twist: f32,
+    ) {
+        let seed = x * 0.061 + y * 0.043 + twist;
+        for index in 0..count {
+            let angle = seed + twist + index as f32 * std::f32::consts::TAU / count as f32;
+            let velocity = speed * (0.76 + (index % 4) as f32 * 0.10);
+            self.combat.game.ui.game.particles.push(V17Particle {
+                x,
+                y,
+                vx: angle.cos() * velocity,
+                vy: angle.sin() * velocity,
+                life,
+                max_life: life,
+                color: if index % 2 == 0 { primary } else { secondary },
+                kind: V17ParticleKind::Shard,
+            });
+        }
+    }
+
+    fn spawn_special_death_signature(&mut self, kind: SpecialKind, x: f32, y: f32) {
+        match kind {
+            SpecialKind::GraveKnight => {
+                // Grave Knight already owns the V21 implosion -> nova sequence.
+            }
+            SpecialKind::BellWraith => {
+                {
+                    let base = self.base_mut();
+                    base.bursts.push(Burst::new(x, y, 0.30, WRAITH_GLOW));
+                    base.bursts.push(Burst::new(x, y - 4.0, 0.21, WRAITH_CORE));
+                    base.bursts.push(Burst::new(x - 7.0, y + 5.0, 0.16, ART_VOID));
+                    base.bursts.push(Burst::new(x + 7.0, y + 5.0, 0.16, ART_VOID));
+                }
+                self.spawn_family_death_shards(
+                    x,
+                    y,
+                    VC21_WRAITH_DEATH_SHARDS,
+                    74.0,
+                    0.30,
+                    WRAITH_GLOW,
+                    WRAITH_CORE,
+                    0.55,
+                );
+            }
+            SpecialKind::RelicCarrier => {
+                {
+                    let base = self.base_mut();
+                    base.bursts.push(Burst::new(x, y, 0.29, CARRIER_GOLD));
+                    base.bursts.push(Burst::new(x - 8.0, y, 0.20, POWER_RELIC_LIGHT));
+                    base.bursts.push(Burst::new(x + 8.0, y, 0.20, POWER_RELIC_LIGHT));
+                    base.bursts.push(Burst::new(x, y - 7.0, 0.18, PILGRIM_VIOLET));
+                }
+                self.spawn_family_death_shards(
+                    x,
+                    y,
+                    VC21_CARRIER_DEATH_SHARDS,
+                    90.0,
+                    0.34,
+                    CARRIER_GOLD,
+                    POWER_RELIC_LIGHT,
+                    0.16,
+                );
+            }
+        }
+    }
+
+    fn spawn_threat_death_signature(&mut self, kind: ThreatKind, x: f32, y: f32) {
+        match kind {
+            ThreatKind::ChoirNode => {
+                {
+                    let base = self.base_mut();
+                    base.bursts.push(Burst::new(x, y, 0.30, CHOIR_GLOW));
+                    base.bursts.push(Burst::new(x - 7.0, y, 0.18, CHOIR_CORE));
+                    base.bursts.push(Burst::new(x + 7.0, y, 0.18, CHOIR_CORE));
+                    base.bursts.push(Burst::new(x, y - 7.0, 0.18, ART_GOLD));
+                    base.bursts.push(Burst::new(x, y + 7.0, 0.18, ART_GOLD));
+                }
+                self.spawn_family_death_shards(
+                    x,
+                    y,
+                    VC21_CHOIR_DEATH_SHARDS,
+                    82.0,
+                    0.31,
+                    CHOIR_CORE,
+                    ART_GOLD,
+                    0.0,
+                );
+            }
+            ThreatKind::VoidLeech => {
+                {
+                    let base = self.base_mut();
+                    base.bursts.push(Burst::new(x, y, 0.32, LEECH_GLOW));
+                    base.bursts.push(Burst::new(x, y, 0.22, DANGER));
+                    base.bursts.push(Burst::new(x - 8.0, y + 5.0, 0.17, ART_VOID));
+                    base.bursts.push(Burst::new(x + 8.0, y - 5.0, 0.17, ART_VOID));
+                }
+                self.spawn_family_death_shards(
+                    x,
+                    y,
+                    VC21_LEECH_DEATH_SHARDS,
+                    70.0,
+                    0.36,
+                    LEECH_CORE,
+                    ART_VOID,
+                    0.92,
+                );
             }
         }
     }
@@ -333,6 +497,79 @@ impl VoidCanticleV21 {
             self.spawn_enemy_hull_impact_fx(&hull_impacts);
             self.combat_events.push(Vc21CombatEvent::EnemyHullImpact);
         }
+    }
+
+    fn detect_family_deaths(&mut self, before: &Vc21ImpactSnapshot, legacy_hit: bool) {
+        let (active_specials, active_threats, player_x, player_y) = {
+            let v12 = self.combat.game.v12();
+            (
+                v12.combat
+                    .specials
+                    .iter()
+                    .filter(|enemy| enemy.alive)
+                    .map(vc20_special_key)
+                    .collect::<Vec<_>>(),
+                v12.threats
+                    .iter()
+                    .filter(|threat| threat.alive)
+                    .map(vc20_threat_key)
+                    .collect::<Vec<_>>(),
+                self.base().player_x,
+                self.base().player_y,
+            )
+        };
+
+        let mut events = Vec::new();
+        for enemy in &before.specials {
+            if enemy.kind == SpecialKind::GraveKnight
+                || active_specials.contains(&enemy.key)
+                || !vc21_visible_death_position(enemy.x, enemy.y)
+            {
+                continue;
+            }
+            if legacy_hit
+                && point_near(
+                    enemy.x,
+                    enemy.y,
+                    player_x,
+                    player_y,
+                    enemy.hit_radius + 2.0,
+                )
+            {
+                continue;
+            }
+            events.push(Vc21CombatEvent::SpecialDestroyed {
+                kind: enemy.kind,
+                x: enemy.x,
+                y: enemy.y,
+            });
+        }
+
+        for threat in &before.threats {
+            if active_threats.contains(&threat.key)
+                || !vc21_visible_death_position(threat.x, threat.y)
+            {
+                continue;
+            }
+            if legacy_hit
+                && point_near(
+                    threat.x,
+                    threat.y,
+                    player_x,
+                    player_y,
+                    threat.hit_radius + 2.0,
+                )
+            {
+                continue;
+            }
+            events.push(Vc21CombatEvent::ThreatDestroyed {
+                kind: threat.kind,
+                x: threat.x,
+                y: threat.y,
+            });
+        }
+
+        self.combat_events.extend(events);
     }
 
     fn translate_legacy_player_hit(
@@ -527,6 +764,12 @@ impl VoidCanticleV21 {
                         impact_sound_used = true;
                     }
                 }
+                Vc21CombatEvent::SpecialDestroyed { kind, x, y } => {
+                    self.spawn_special_death_signature(kind, x, y);
+                }
+                Vc21CombatEvent::ThreatDestroyed { kind, x, y } => {
+                    self.spawn_threat_death_signature(kind, x, y);
+                }
                 Vc21CombatEvent::PlayerShieldImpact { x, y } => {
                     let base = self.base_mut();
                     base.bursts.push(Burst::new(x, y, 0.20, VC20_ARMOR));
@@ -657,6 +900,7 @@ impl Game for VoidCanticleV21 {
             let legacy_hit = self.translate_legacy_player_hit(lives_before, power_before);
             if let Some(snapshot) = impact_before.as_ref() {
                 self.detect_impact_events(snapshot);
+                self.detect_family_deaths(snapshot, legacy_hit);
             }
             self.detect_elite_deaths(&elites_before, legacy_hit);
             let nova_hit = self.update_elite_deaths(dt);
@@ -674,6 +918,13 @@ impl Game for VoidCanticleV21 {
 
         GameResult::Continue
     }
+}
+
+fn vc21_visible_death_position(x: f32, y: f32) -> bool {
+    x >= 0.0
+        && x <= FRAMEBUFFER_WIDTH as f32
+        && y >= 0.0
+        && y <= FRAMEBUFFER_HEIGHT as f32
 }
 
 fn vc21_apply_damage_to_layers(shield: &mut f32, hull: &mut f32, damage: f32) -> (f32, f32) {
@@ -780,5 +1031,45 @@ mod v21_tests {
             game.combat.game.ui.game.particles.len(),
             particles_before + VC21_ENEMY_HULL_IMPACT_SPARKS
         );
+    }
+
+    #[test]
+    fn family_death_signatures_have_distinct_particle_density() {
+        let mut game = VoidCanticleV21::new();
+        let mut particles = game.combat.game.ui.game.particles.len();
+
+        game.spawn_special_death_signature(SpecialKind::BellWraith, 90.0, 90.0);
+        assert_eq!(
+            game.combat.game.ui.game.particles.len() - particles,
+            VC21_WRAITH_DEATH_SHARDS
+        );
+        particles = game.combat.game.ui.game.particles.len();
+
+        game.spawn_special_death_signature(SpecialKind::RelicCarrier, 90.0, 90.0);
+        assert_eq!(
+            game.combat.game.ui.game.particles.len() - particles,
+            VC21_CARRIER_DEATH_SHARDS
+        );
+        particles = game.combat.game.ui.game.particles.len();
+
+        game.spawn_threat_death_signature(ThreatKind::ChoirNode, 90.0, 90.0);
+        assert_eq!(
+            game.combat.game.ui.game.particles.len() - particles,
+            VC21_CHOIR_DEATH_SHARDS
+        );
+        particles = game.combat.game.ui.game.particles.len();
+
+        game.spawn_threat_death_signature(ThreatKind::VoidLeech, 90.0, 90.0);
+        assert_eq!(
+            game.combat.game.ui.game.particles.len() - particles,
+            VC21_LEECH_DEATH_SHARDS
+        );
+    }
+
+    #[test]
+    fn death_signature_filter_rejects_escaped_entities() {
+        assert!(vc21_visible_death_position(90.0, 120.0));
+        assert!(!vc21_visible_death_position(-1.0, 120.0));
+        assert!(!vc21_visible_death_position(90.0, FRAMEBUFFER_HEIGHT as f32 + 1.0));
     }
 }
