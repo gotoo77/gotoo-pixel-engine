@@ -58,7 +58,7 @@ fn vc27_title_prompt_intensity(time: f32) -> f32 {
 fn vc27_title_glitch_offset(time: f32, scale: u32) -> i32 {
     let frame = (time.max(0.0) * 30.0).floor() as u32;
     let hash = frame.wrapping_mul(2_654_435_761).rotate_left(7);
-    if hash % 101 == 0 {
+    if hash.is_multiple_of(101) {
         let offset = scale.max(1) as i32;
         if hash & 1 == 0 {
             offset
