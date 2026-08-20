@@ -7,6 +7,8 @@ const VC21_SHIELD_REGEN_DELAY: f32 = 2.75;
 const VC21_SHIELD_REGEN_PER_SECOND: f32 = 15.0;
 const VC21_PLAYER_SHIELD_FLASH_DURATION: f32 = 0.16;
 const VC21_PLAYER_HULL_FLASH_DURATION: f32 = 0.18;
+const VC21_ENEMY_HULL_IMPACT_DURATION: f32 = 0.17;
+const VC21_ENEMY_HULL_IMPACT_SPARKS: usize = 5;
 
 const VC21_ELITE_COLLAPSE_DURATION: f32 = 0.42;
 const VC21_ELITE_NOVA_DURATION: f32 = 0.46;
@@ -254,6 +256,32 @@ impl VoidCanticleV21 {
             .collect()
     }
 
+    fn spawn_enemy_hull_impact_fx(&mut self, impacts: &[(f32, f32)]) {
+        for (impact_index, &(x, y)) in impacts.iter().enumerate() {
+            self.base_mut()
+                .bursts
+                .push(Burst::new(x, y, VC21_ENEMY_HULL_IMPACT_DURATION, VC20_HULL));
+
+            let seed = x * 0.053 + y * 0.079 + impact_index as f32 * 0.47;
+            for spark in 0..VC21_ENEMY_HULL_IMPACT_SPARKS {
+                let angle = seed
+                    + spark as f32 * std::f32::consts::TAU
+                        / VC21_ENEMY_HULL_IMPACT_SPARKS as f32;
+                let speed = 58.0 + (spark % 3) as f32 * 21.0;
+                self.combat.game.ui.game.particles.push(V17Particle {
+                    x,
+                    y,
+                    vx: angle.cos() * speed,
+                    vy: angle.sin() * speed,
+                    life: VC21_ENEMY_HULL_IMPACT_DURATION,
+                    max_life: VC21_ENEMY_HULL_IMPACT_DURATION,
+                    color: if spark % 2 == 0 { VC20_HULL } else { ART_GOLD },
+                    kind: V17ParticleKind::Shard,
+                });
+            }
+        }
+    }
+
     fn detect_impact_events(&mut self, before: &Vc21ImpactSnapshot) {
         let armor_hit = before
             .carrion_armor
@@ -279,32 +307,30 @@ impl VoidCanticleV21 {
             self.combat_events.push(Vc21CombatEvent::EnemyShieldImpact);
         }
 
-        let current_special_hp: std::collections::BTreeMap<SpecialDefenseKey, u32> = self
-            .combat
-            .game
-            .v12()
-            .combat
-            .specials
-            .iter()
-            .filter(|enemy| enemy.alive)
-            .map(|enemy| (vc20_special_key(enemy), enemy.hp))
-            .collect();
-        let current_threat_hp: std::collections::BTreeMap<ThreatDefenseKey, u32> = self
-            .combat
-            .game
-            .v12()
-            .threats
-            .iter()
-            .filter(|threat| threat.alive)
-            .map(|threat| (vc20_threat_key(threat), threat.hp))
-            .collect();
-        let hull_hit = before.special_hp.iter().any(|(key, value)| {
-            current_special_hp.get(key).is_some_and(|now| now < value)
-        }) || before
-            .threat_hp
-            .iter()
-            .any(|(key, value)| current_threat_hp.get(key).is_some_and(|now| now < value));
-        if hull_hit {
+        let hull_impacts: Vec<(f32, f32)> = {
+            let v12 = self.combat.game.v12();
+            let mut impacts = Vec::new();
+            impacts.extend(v12.combat.specials.iter().filter_map(|enemy| {
+                let key = vc20_special_key(enemy);
+                before
+                    .special_hp
+                    .get(&key)
+                    .is_some_and(|old_hp| enemy.hp < *old_hp)
+                    .then_some((enemy.x, enemy.y))
+            }));
+            impacts.extend(v12.threats.iter().filter_map(|threat| {
+                let key = vc20_threat_key(threat);
+                before
+                    .threat_hp
+                    .get(&key)
+                    .is_some_and(|old_hp| threat.hp < *old_hp)
+                    .then_some((threat.x, threat.y))
+            }));
+            impacts
+        };
+
+        if !hull_impacts.is_empty() {
+            self.spawn_enemy_hull_impact_fx(&hull_impacts);
             self.combat_events.push(Vc21CombatEvent::EnemyHullImpact);
         }
     }
@@ -739,5 +765,20 @@ mod v21_tests {
         manifest
             .require_keys(&VC21_REQUIRED_SFX)
             .expect("VC2.1 SFX manifest should cover combat events");
+    }
+
+    #[test]
+    fn hull_impact_fx_emits_local_burst_and_shards() {
+        let mut game = VoidCanticleV21::new();
+        let bursts_before = game.base().bursts.len();
+        let particles_before = game.combat.game.ui.game.particles.len();
+
+        game.spawn_enemy_hull_impact_fx(&[(90.0, 120.0)]);
+
+        assert_eq!(game.base().bursts.len(), bursts_before + 1);
+        assert_eq!(
+            game.combat.game.ui.game.particles.len(),
+            particles_before + VC21_ENEMY_HULL_IMPACT_SPARKS
+        );
     }
 }
