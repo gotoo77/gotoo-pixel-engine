@@ -29,7 +29,7 @@ struct VoidCanticlePresentation {
     legacy_sink: Framebuffer,
     clean_background: Framebuffer,
     presentation_time: f32,
-    hit_reactions: Vc27HitReactionState,
+    hit_reactions: HitReactionState,
     projectile_provenance: ProjectileProvenance,
 }
 
