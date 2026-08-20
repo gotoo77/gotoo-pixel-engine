@@ -48,15 +48,15 @@ struct ChoiceConfirmation {
     duration: f32,
 }
 
-struct VoidCanticleV27ChoicePresentation {
-    presentation: VoidCanticleV27DirectPresentation,
+struct VoidCanticleChoicePresentation {
+    presentation: VoidCanticlePresentation,
     last_focus: Option<ChoiceFocus>,
     confirmation: Option<ChoiceConfirmation>,
 }
 
-impl VoidCanticleV27ChoicePresentation {
+impl VoidCanticleChoicePresentation {
     fn new() -> Self {
-        let mut presentation = VoidCanticleV27DirectPresentation::new();
+        let mut presentation = VoidCanticlePresentation::new();
         vc27_register_choice_sounds(
             &mut presentation.game.combat_model_mut().base_mut().sounds,
         );
@@ -208,7 +208,7 @@ impl VoidCanticleV27ChoicePresentation {
     }
 }
 
-impl Game for VoidCanticleV27ChoicePresentation {
+impl Game for VoidCanticleChoicePresentation {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         let dt = frame.delta_time.as_secs_f32().min(0.05);
         self.tick_confirmation(dt);
@@ -260,7 +260,7 @@ mod choice_runtime_tests {
 
     #[test]
     fn choice_runtime_keeps_presentation_dimensions() {
-        let game = VoidCanticleV27ChoicePresentation::new();
+        let game = VoidCanticleChoicePresentation::new();
         assert_eq!(game.presentation.legacy_sink.width(), FRAMEBUFFER_WIDTH);
         assert_eq!(VC_VISUAL_PRESENTATION_WIDTH, FRAMEBUFFER_WIDTH * 2);
         assert_eq!(VC_VISUAL_PRESENTATION_HEIGHT, FRAMEBUFFER_HEIGHT * 2);
@@ -268,7 +268,7 @@ mod choice_runtime_tests {
 
     #[test]
     fn hover_event_is_edge_triggered_per_focused_choice() {
-        let mut game = VoidCanticleV27ChoicePresentation::new();
+        let mut game = VoidCanticleChoicePresentation::new();
         assert_eq!(
             game.choice_hover_event(),
             Some(Vc27ChoiceArtId::Bulwark.hover_override_sound())
