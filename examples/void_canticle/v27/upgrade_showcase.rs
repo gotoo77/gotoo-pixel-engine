@@ -1,3 +1,12 @@
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice_showcase.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/mutation_support_showcase.rs"
+));
+
 fn vc27_upgrade_accent(upgrade: UpgradeKind) -> Pixel {
     match upgrade {
         UpgradeKind::RapidFire => BOLT_EDGE,
@@ -60,18 +69,13 @@ fn vc27_render_upgrade_showcase(
     time: f32,
 ) {
     let accent = vc27_echo_level_color(progression.level);
-    vc_visual_draw_centered_text(framebuffer, 24, "LEVEL UP", 3, accent);
-    vc_visual_draw_centered_text(
+    vc27_choice_header(
         framebuffer,
-        57,
+        "LEVEL UP",
         &format!("ECHO LEVEL {} / CHOOSE AN AUGMENT", progression.level),
-        1,
-        WRECK_LIGHT,
+        accent,
+        time,
     );
-
-    framebuffer.draw_line(36, 78, 324, 78, WRECK_MID);
-    let spark = ((time * 55.0) as i32).rem_euclid(272);
-    framebuffer.draw_line(44 + spark, 78, 54 + spark, 78, accent);
 
     let card_x = 12_i32;
     let card_width = VC_VISUAL_PRESENTATION_WIDTH.saturating_sub(24);
@@ -95,21 +99,10 @@ fn vc27_render_upgrade_showcase(
         );
     }
 
-    framebuffer.draw_line(36, 505, 324, 505, WRECK_MID);
-    vc_visual_draw_centered_text(framebuffer, 523, "UP DOWN / DPAD", 1, TEXT);
-    vc_visual_draw_centered_text(
+    vc27_choice_footer(
         framebuffer,
-        544,
-        "SPACE / SOUTH  SELECT",
-        1,
         accent,
-    );
-    vc_visual_draw_centered_text(
-        framebuffer,
-        581,
         "BUILD THE PILGRIM / SURVIVE THE CANTICLE",
-        1,
-        WRECK_LIGHT,
     );
 }
 
@@ -126,50 +119,25 @@ fn vc27_render_upgrade_card(
     time: f32,
 ) {
     let accent = vc27_upgrade_accent(upgrade);
-    let panel = if selected {
-        Pixel::rgb(10, 17, 29)
-    } else {
-        Pixel::rgb(7, 10, 19)
-    };
-    let edge = if selected { accent } else { WRECK_MID };
-
-    framebuffer.fill_rect(x, y, width, height, panel);
-    framebuffer.draw_rect(x, y, width, height, edge);
-    vc27_render_card_corner(framebuffer, x + 5, y + 5, 1, 1, edge);
-    vc27_render_card_corner(
+    vc27_choice_card_frame(
         framebuffer,
-        x + width as i32 - 6,
-        y + 5,
-        -1,
-        1,
-        edge,
+        x,
+        y,
+        width,
+        height,
+        selected,
+        Vc27ChoiceCardStyle::new(
+            accent,
+            Pixel::rgb(7, 10, 19),
+            Pixel::rgb(10, 17, 29),
+        ),
+        time,
     );
-    vc27_render_card_corner(
-        framebuffer,
-        x + 5,
-        y + height as i32 - 6,
-        1,
-        -1,
-        edge,
-    );
-    vc27_render_card_corner(
-        framebuffer,
-        x + width as i32 - 6,
-        y + height as i32 - 6,
-        -1,
-        -1,
-        edge,
-    );
-
-    if selected {
-        framebuffer.draw_rect(x + 3, y + 3, width - 6, height - 6, WRECK_LIGHT);
-        let travel = ((time * 76.0) as i32).rem_euclid(width.saturating_sub(42) as i32);
-        framebuffer.draw_line(x + 20 + travel, y + 1, x + 36 + travel, y + 1, accent);
-    }
 
     let icon_x = x + 58;
     let icon_y = y + 64;
-    vc27_render_upgrade_icon(framebuffer, upgrade, icon_x, icon_y, selected, time);
+    vc27_choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
+    vc27_render_upgrade_icon(framebuffer, upgrade, icon_x, icon_y);
 
     let info_x = x + 112;
     framebuffer.draw_text(info_x, y + 12, vc27_upgrade_category(upgrade), WRECK_LIGHT);
@@ -178,22 +146,17 @@ fn vc27_render_upgrade_card(
     framebuffer.draw_text(info_x, y + 70, vc27_upgrade_detail(upgrade), WRECK_LIGHT);
 
     let stack = vc27_upgrade_stack(build, upgrade);
+    let next = stack.saturating_add(1);
     framebuffer.draw_text(
         info_x,
         y + 94,
-        &format!("STACK {:02}  >  {:02}", stack, stack.saturating_add(1)),
+        &format!("STACK {:02}  >  {:02}", stack, next),
         if selected { accent } else { WRECK_LIGHT },
     );
     if selected {
         framebuffer.draw_text(x + width as i32 - 53, y + 13, "SELECT", accent);
     }
-
-    let nodes = (stack.min(8) + 1) as i32;
-    for node in 0..8_i32 {
-        let color = if node < nodes { accent } else { WRECK_MID };
-        let nx = info_x + node * 15;
-        framebuffer.fill_rect(nx, y + 112, 9, 3, color);
-    }
+    vc27_choice_stack_nodes(framebuffer, info_x, y + 112, next, 8, accent);
 }
 
 fn vc27_render_upgrade_icon(
@@ -201,18 +164,7 @@ fn vc27_render_upgrade_icon(
     upgrade: UpgradeKind,
     x: i32,
     y: i32,
-    selected: bool,
-    time: f32,
 ) {
-    let accent = vc27_upgrade_accent(upgrade);
-    let pulse = if selected {
-        ((time * 5.0).sin().abs() * 3.0).round() as u32
-    } else {
-        0
-    };
-    framebuffer.draw_circle(x, y, 34 + pulse, if selected { accent } else { WRECK_MID });
-    framebuffer.draw_circle(x, y, 28, WRECK_LIGHT);
-
     match upgrade {
         UpgradeKind::RapidFire => {
             for dx in [-12, 0, 12] {
