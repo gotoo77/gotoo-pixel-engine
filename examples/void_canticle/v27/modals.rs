@@ -1,3 +1,8 @@
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/modals/build_overview.rs"
+));
+
 impl VoidCanticleV27DirectPresentation {
     fn render_clean_modal(&mut self, framebuffer: &mut Framebuffer, mode: VcVisualMode) {
         self.render_clean_background(framebuffer);
@@ -13,6 +18,16 @@ impl VoidCanticleV27DirectPresentation {
                     self.presentation_time,
                 );
             }
+            return;
+        }
+
+        if matches!(&mode, VcVisualMode::Pause)
+            && matches!(
+                &self.game.survival_model().game.pause_ui().state,
+                VcPauseState::BuildInfo
+            )
+        {
+            vc27_render_build_overview(framebuffer, &self.game, self.presentation_time);
             return;
         }
 
@@ -34,7 +49,7 @@ impl VoidCanticleV27DirectPresentation {
                 let pause = self.game.survival_model().game.pause_ui();
                 match &pause.state {
                     VcPauseState::Controls => pause.render_controls(&mut self.clean_background),
-                    VcPauseState::BuildInfo => pause.render_build_info(&mut self.clean_background),
+                    VcPauseState::BuildInfo => {}
                     VcPauseState::Menu | VcPauseState::ResumeGate | VcPauseState::Running => {
                         pause.render_menu(&mut self.clean_background)
                     }
