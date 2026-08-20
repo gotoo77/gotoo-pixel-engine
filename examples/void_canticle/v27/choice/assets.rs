@@ -28,6 +28,7 @@ impl Vc27ChoiceArt<'_> {
 #[derive(Clone, Copy)]
 struct Vc27ChoiceAssets<'a> {
     art: Vc27ChoiceArt<'a>,
+    catalog_id: Option<Vc27ChoiceArtId>,
     hover_sound: Option<SoundId>,
     confirm_sound: Option<SoundId>,
 }
@@ -40,6 +41,7 @@ impl<'a> Vc27ChoiceAssets<'a> {
     ) -> Self {
         Self {
             art,
+            catalog_id: None,
             hover_sound,
             confirm_sound,
         }
@@ -51,6 +53,11 @@ impl<'a> Vc27ChoiceAssets<'a> {
             Some(VC27_CHOICE_HOVER_SOUND),
             Some(VC27_CHOICE_CONFIRM_SOUND),
         )
+    }
+
+    const fn with_catalog_id(mut self, catalog_id: Option<Vc27ChoiceArtId>) -> Self {
+        self.catalog_id = catalog_id;
+        self
     }
 
     const fn hover_sound(self) -> Option<SoundId> {
@@ -69,6 +76,12 @@ impl<'a> Vc27ChoiceAssets<'a> {
         selected: bool,
         time: f32,
     ) {
+        if let Some(catalog_id) = self.catalog_id
+            && let Some(sprite) = vc27_choice_catalog().sprite(catalog_id)
+        {
+            sprite.draw_centered(framebuffer, x, y);
+            return;
+        }
         self.art.render(framebuffer, x, y, selected, time);
     }
 }
@@ -82,7 +95,7 @@ struct Vc27ChoiceProfile<'a> {
 }
 
 impl<'a> Vc27ChoiceProfile<'a> {
-    const fn new(
+    fn new(
         label: &'static str,
         category: &'static str,
         accent: Pixel,
@@ -92,7 +105,7 @@ impl<'a> Vc27ChoiceProfile<'a> {
             label,
             category,
             accent,
-            assets,
+            assets: assets.with_catalog_id(Vc27ChoiceArtId::from_label(label)),
         }
     }
 
@@ -191,5 +204,17 @@ mod choice_asset_tests {
         assert_eq!(profile.accent(), Pixel::WHITE);
         assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
         assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+        assert_eq!(profile.assets().catalog_id, None);
+    }
+
+    #[test]
+    fn known_choice_profile_binds_to_stable_catalog_id() {
+        let profile = Vc27ChoiceProfile::new(
+            "DEATH NOVA",
+            "DEATH FIELD",
+            DANGER,
+            Vc27ChoiceAssets::procedural(test_art),
+        );
+        assert_eq!(profile.assets().catalog_id, Some(Vc27ChoiceArtId::DeathNova));
     }
 }
