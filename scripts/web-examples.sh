@@ -9,5 +9,7 @@ GPE_WEB_GAME_EXAMPLES=(
     tetris_web
     pong_web
     space_invaders_web
+    smart_boy_hero_web
+    smart_boy_hero_iso_web
     arcade_web
 )

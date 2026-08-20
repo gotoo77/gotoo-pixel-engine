@@ -5,6 +5,9 @@ mod breakout;
 #[path = "../pong/game.rs"]
 mod pong;
 #[allow(dead_code)]
+#[path = "../smart_boy_hero/game.rs"]
+mod smart_boy_hero;
+#[allow(dead_code)]
 #[path = "../snake/game.rs"]
 mod snake;
 #[allow(dead_code)]
@@ -23,6 +26,7 @@ use gotoo_pixel_engine::{
     },
 };
 use pong::PongGame;
+use smart_boy_hero::SmartBoyHeroGame;
 use snake::{SnakeGame, SnakeInteractionMode};
 use space_invaders::EnhancedSpaceInvadersGame;
 use tetris::TetrisGame;
@@ -31,7 +35,14 @@ const CATALOG_UP: ActionId = ActionId::new("arcade.catalog.up");
 const CATALOG_DOWN: ActionId = ActionId::new("arcade.catalog.down");
 const CATALOG_SELECT: ActionId = ActionId::new("arcade.catalog.select");
 
-const GAME_LABELS: [&str; 5] = ["SNAKE", "TETRIS", "SPACE INVADERS", "PONG", "BREAKOUT"];
+const GAME_LABELS: [&str; 6] = [
+    "SNAKE",
+    "TETRIS",
+    "SPACE INVADERS",
+    "SMART BOY HERO",
+    "PONG",
+    "BREAKOUT",
+];
 
 const BG: Pixel = Pixel::rgb(7, 10, 14);
 const PANEL: Pixel = Pixel::rgb(12, 18, 24);
@@ -352,10 +363,12 @@ fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>
         (ArcadeInteractionMode::Touch, 2) => {
             pause_game(EnhancedSpaceInvadersGame::new_touch(), mode)
         }
-        (ArcadeInteractionMode::Native, 3) => pause_game(PongGame::new(), mode),
-        (ArcadeInteractionMode::Touch, 3) => pause_game(PongGame::new_touch(), mode),
-        (ArcadeInteractionMode::Native, 4) => pause_game(BreakoutGame::new(), mode),
-        (ArcadeInteractionMode::Touch, 4) => pause_game(BreakoutGame::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 3) => Box::new(SmartBoyHeroGame::new()),
+        (ArcadeInteractionMode::Touch, 3) => Box::new(SmartBoyHeroGame::new_touch()),
+        (ArcadeInteractionMode::Native, 4) => pause_game(PongGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 4) => pause_game(PongGame::new_touch(), mode),
+        (ArcadeInteractionMode::Native, 5) => pause_game(BreakoutGame::new(), mode),
+        (ArcadeInteractionMode::Touch, 5) => pause_game(BreakoutGame::new_touch(), mode),
         (_, _) => return None,
     };
     Some(game)
@@ -421,6 +434,10 @@ mod tests {
                 space_invaders::TOUCH_FRAMEBUFFER_WIDTH,
                 space_invaders::FRAMEBUFFER_HEIGHT,
             ),
+            (
+                smart_boy_hero::TOUCH_FRAMEBUFFER_WIDTH,
+                smart_boy_hero::TOUCH_FRAMEBUFFER_HEIGHT,
+            ),
             (pong::FRAMEBUFFER_WIDTH, pong::TOUCH_FRAMEBUFFER_HEIGHT),
         ];
 
@@ -441,6 +458,10 @@ mod tests {
             (
                 space_invaders::FRAMEBUFFER_WIDTH,
                 space_invaders::FRAMEBUFFER_HEIGHT,
+            ),
+            (
+                smart_boy_hero::FRAMEBUFFER_WIDTH,
+                smart_boy_hero::FRAMEBUFFER_HEIGHT,
             ),
             (pong::FRAMEBUFFER_WIDTH, pong::FRAMEBUFFER_HEIGHT),
         ];
@@ -465,6 +486,10 @@ mod tests {
                 space_invaders::TOUCH_FRAMEBUFFER_WIDTH,
                 space_invaders::FRAMEBUFFER_HEIGHT,
             ),
+            (
+                smart_boy_hero::TOUCH_FRAMEBUFFER_WIDTH,
+                smart_boy_hero::TOUCH_FRAMEBUFFER_HEIGHT,
+            ),
             (pong::FRAMEBUFFER_WIDTH, pong::TOUCH_FRAMEBUFFER_HEIGHT),
         ];
 
@@ -474,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_builds_all_five_games_in_both_modes() {
+    fn catalog_builds_all_games_in_both_modes() {
         for mode in [ArcadeInteractionMode::Native, ArcadeInteractionMode::Touch] {
             for index in 0..GAME_LABELS.len() {
                 assert!(build_game(mode, index).is_some());

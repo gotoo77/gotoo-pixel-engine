@@ -17,6 +17,15 @@ impl SoundId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PlaybackId(u64);
+
+impl PlaybackId {
+    pub const fn new(id: u64) -> Self {
+        Self(id)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioError {
     message: String,
@@ -41,6 +50,18 @@ impl std::error::Error for AudioError {}
 pub trait Audio {
     fn register_wav(&mut self, id: SoundId, bytes: &[u8]) -> Result<(), AudioError>;
     fn play(&mut self, id: SoundId) -> Result<(), AudioError>;
+    fn start_loop(&mut self, id: SoundId) -> Result<PlaybackId, AudioError> {
+        Err(AudioError::new(format!(
+            "looped playback is not supported for sound '{}'",
+            id.as_str()
+        )))
+    }
+    fn stop_loop(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        Err(AudioError::new(format!(
+            "looped playback '{}' is not active",
+            playback.0
+        )))
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -82,6 +103,23 @@ impl SoundBank {
         audio.play(id)
     }
 
+    pub fn start_loop(
+        &mut self,
+        audio: &mut dyn Audio,
+        id: SoundId,
+    ) -> Result<PlaybackId, AudioError> {
+        self.ensure_registered(audio, id)?;
+        audio.start_loop(id)
+    }
+
+    pub fn stop_loop(
+        &mut self,
+        audio: &mut dyn Audio,
+        playback: PlaybackId,
+    ) -> Result<(), AudioError> {
+        audio.stop_loop(playback)
+    }
+
     fn ensure_registered(&mut self, audio: &mut dyn Audio, id: SoundId) -> Result<(), AudioError> {
         if self.registered.contains(&id) {
             return Ok(());
@@ -101,6 +139,8 @@ impl SoundBank {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct NoopAudio {
     sounds: HashMap<SoundId, DecodedSound>,
+    loop_playbacks: HashMap<PlaybackId, SoundId>,
+    next_playback_id: u64,
 }
 
 impl Audio for NoopAudio {
@@ -115,6 +155,30 @@ impl Audio for NoopAudio {
             Err(AudioError::new(format!(
                 "sound '{}' is not registered",
                 id.as_str()
+            )))
+        }
+    }
+
+    fn start_loop(&mut self, id: SoundId) -> Result<PlaybackId, AudioError> {
+        if !self.sounds.contains_key(&id) {
+            return Err(AudioError::new(format!(
+                "sound '{}' is not registered",
+                id.as_str()
+            )));
+        }
+        self.next_playback_id += 1;
+        let playback = PlaybackId::new(self.next_playback_id);
+        self.loop_playbacks.insert(playback, id);
+        Ok(playback)
+    }
+
+    fn stop_loop(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        if self.loop_playbacks.remove(&playback).is_some() {
+            Ok(())
+        } else {
+            Err(AudioError::new(format!(
+                "looped playback '{}' is not active",
+                playback.0
             )))
         }
     }
@@ -221,13 +285,14 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedSound, AudioError> {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use rodio::buffer::SamplesBuffer;
     use rodio::cpal::StreamError;
-    use rodio::{DeviceSinkBuilder, MixerDeviceSink};
+    use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 
+    use super::PlaybackId;
     use super::{Audio, AudioError, DecodedSound, PlatformAudio, SoundId, register_decoded_wav};
 
     static XRUN_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -249,6 +314,9 @@ mod native {
     pub(crate) struct NativeAudio {
         sink: Option<MixerDeviceSink>,
         sounds: HashMap<SoundId, DecodedSound>,
+        active_loops: HashSet<PlaybackId>,
+        loop_players: HashMap<PlaybackId, Player>,
+        next_playback_id: u64,
     }
 
     impl NativeAudio {
@@ -264,6 +332,9 @@ mod native {
             Ok(Self {
                 sink: Some(sink),
                 sounds: HashMap::new(),
+                active_loops: HashSet::new(),
+                loop_players: HashMap::new(),
+                next_playback_id: 0,
             })
         }
     }
@@ -291,6 +362,43 @@ mod native {
             ));
             Ok(())
         }
+
+        fn start_loop(&mut self, id: SoundId) -> Result<PlaybackId, AudioError> {
+            let Some(sound) = self.sounds.get(&id) else {
+                return Err(AudioError::new(format!(
+                    "sound '{}' is not registered",
+                    id.as_str()
+                )));
+            };
+
+            self.next_playback_id += 1;
+            let playback = PlaybackId::new(self.next_playback_id);
+            self.active_loops.insert(playback);
+
+            if let Some(sink) = self.sink.as_ref() {
+                let player = Player::connect_new(sink.mixer());
+                player.append(
+                    SamplesBuffer::new(sound.channels, sound.sample_rate, sound.samples.to_vec())
+                        .repeat_infinite(),
+                );
+                self.loop_players.insert(playback, player);
+            }
+
+            Ok(playback)
+        }
+
+        fn stop_loop(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+            if !self.active_loops.remove(&playback) {
+                return Err(AudioError::new(format!(
+                    "looped playback '{}' is not active",
+                    playback.0
+                )));
+            }
+            if let Some(player) = self.loop_players.remove(&playback) {
+                player.stop();
+            }
+            Ok(())
+        }
     }
 
     impl PlatformAudio for NativeAudio {}
@@ -298,10 +406,11 @@ mod native {
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
-    use web_sys::{AudioBuffer, AudioContext, AudioContextState};
+    use web_sys::{AudioBuffer, AudioBufferSourceNode, AudioContext, AudioContextState};
 
+    use super::PlaybackId;
     use super::{
         Audio, AudioError, DecodedSound, PlatformAudio, SoundId, decode_wav, ensure_same_sound,
     };
@@ -312,6 +421,9 @@ mod web {
         unavailable: bool,
         sounds: HashMap<SoundId, AudioBuffer>,
         decoded_sounds: HashMap<SoundId, DecodedSound>,
+        active_loops: HashSet<PlaybackId>,
+        loop_sources: HashMap<PlaybackId, AudioBufferSourceNode>,
+        next_playback_id: u64,
     }
 
     impl WebAudio {
@@ -416,6 +528,55 @@ mod web {
                 .start()
                 .map_err(|err| AudioError::new(js_error_message("failed to start sound", err)))
         }
+
+        fn start_loop(&mut self, id: SoundId) -> Result<PlaybackId, AudioError> {
+            let Some(buffer) = self.sounds.get(&id).cloned() else {
+                return Err(AudioError::new(format!(
+                    "sound '{}' is not registered",
+                    id.as_str()
+                )));
+            };
+            let context = self.context()?;
+
+            self.next_playback_id += 1;
+            let playback = PlaybackId::new(self.next_playback_id);
+            self.active_loops.insert(playback);
+
+            let source = context.create_buffer_source().map_err(|err| {
+                AudioError::new(js_error_message(
+                    "failed to create looping AudioBufferSourceNode",
+                    err,
+                ))
+            })?;
+            source.set_buffer(Some(&buffer));
+            source.set_loop(true);
+            source
+                .connect_with_audio_node(&context.destination())
+                .map_err(|err| {
+                    AudioError::new(js_error_message(
+                        "failed to connect looping AudioBufferSourceNode",
+                        err,
+                    ))
+                })?;
+            source.start().map_err(|err| {
+                AudioError::new(js_error_message("failed to start looping sound", err))
+            })?;
+            self.loop_sources.insert(playback, source);
+            Ok(playback)
+        }
+
+        fn stop_loop(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+            if !self.active_loops.remove(&playback) {
+                return Err(AudioError::new(format!(
+                    "looped playback '{}' is not active",
+                    playback.0
+                )));
+            }
+            if let Some(source) = self.loop_sources.remove(&playback) {
+                stop_source(&source);
+            }
+            Ok(())
+        }
     }
 
     impl PlatformAudio for WebAudio {
@@ -433,6 +594,11 @@ mod web {
             Some(error) => format!("{context}: {error}"),
             None => context.into(),
         }
+    }
+
+    #[allow(deprecated)]
+    fn stop_source(source: &AudioBufferSourceNode) {
+        let _ = source.stop();
     }
 }
 
@@ -527,6 +693,55 @@ mod tests {
 
         assert!(audio.play(TEST_SOUND).is_ok());
         assert!(audio.play(TEST_SOUND).is_ok());
+    }
+
+    #[test]
+    fn noop_audio_starts_and_stops_identifiable_loop() {
+        let mut audio = NoopAudio::default();
+        audio
+            .register_wav(TEST_SOUND, VALID_WAV)
+            .expect("register should succeed");
+
+        let playback = audio
+            .start_loop(TEST_SOUND)
+            .expect("registered sound should loop");
+
+        assert_eq!(audio.loop_playbacks.get(&playback), Some(&TEST_SOUND));
+        assert!(audio.stop_loop(playback).is_ok());
+        assert!(!audio.loop_playbacks.contains_key(&playback));
+    }
+
+    #[test]
+    fn noop_audio_double_stop_reports_inactive_loop() {
+        let mut audio = NoopAudio::default();
+        audio
+            .register_wav(TEST_SOUND, VALID_WAV)
+            .expect("register should succeed");
+
+        let playback = audio
+            .start_loop(TEST_SOUND)
+            .expect("registered sound should loop");
+
+        assert!(audio.stop_loop(playback).is_ok());
+        let error = audio
+            .stop_loop(playback)
+            .expect_err("double stop should be explicit");
+        assert!(error.to_string().contains("is not active"));
+    }
+
+    #[test]
+    fn sound_bank_starts_loop_without_regressing_one_shots() {
+        let mut bank = SoundBank::new();
+        bank.insert_wav(TEST_SOUND, VALID_WAV)
+            .expect("bank insert should succeed");
+        let mut audio = NoopAudio::default();
+
+        let playback = bank
+            .start_loop(&mut audio, TEST_SOUND)
+            .expect("bank should start registered loop");
+
+        assert!(bank.play(&mut audio, TEST_SOUND).is_ok());
+        assert!(bank.stop_loop(&mut audio, playback).is_ok());
     }
 
     #[test]

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="./favicon.ico" sizes="any">
+    <title>Smart Boy Hero Iso Slice</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #111;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+      }
+
+      canvas {
+        display: block;
+        width: 1040px;
+        height: 640px;
+        max-width: 100vw;
+        max-height: 100vh;
+        touch-action: none;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="./audio-unlock.js"></script>
+    <script type="module">
+      import init from "./pkg/smart_boy_hero_iso_web.js";
+
+      init();
+    </script>
+    <script type="module" src="./fullscreen.js"></script>
+  </body>
+</html>
