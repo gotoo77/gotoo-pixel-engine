@@ -1,5 +1,10 @@
 {
   "player_fire": "assets/void_canticle/sfx/player_fire.wav",
+  "enemy_fire_carrion": "assets/void_canticle/sfx/enemy_fire_carrion.wav",
+  "enemy_fire_wraith": "assets/void_canticle/sfx/enemy_fire_wraith.wav",
+  "enemy_fire_void_pulse": "assets/void_canticle/sfx/enemy_fire_void_pulse.wav",
+  "enemy_fire_void": "assets/void_canticle/sfx/enemy_fire_void.wav",
+  "enemy_fire_bellkeeper": "assets/void_canticle/sfx/enemy_fire_bellkeeper.wav",
   "enemy_hit": "assets/void_canticle/sfx/enemy_hit.wav",
   "enemy_destroy": "assets/void_canticle/sfx/enemy_destroy.wav",
   "boss_hit": "assets/void_canticle/sfx/boss_hit.wav",
