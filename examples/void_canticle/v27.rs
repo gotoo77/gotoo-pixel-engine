@@ -1,5 +1,10 @@
 const VC27_PRESENTATION_VERSION: &str = "VC2.7";
 
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/hd_bestiary.rs"
+));
+
 struct VoidCanticleV27DirectPresentation {
     game: VoidCanticleV23Sustain,
     simulation_framebuffer: Framebuffer,
@@ -112,7 +117,7 @@ impl VoidCanticleV27DirectPresentation {
 
     fn render_presentation_bestiary(&self, framebuffer: &mut Framebuffer) {
         for enemy in &self.game.game.base().enemies {
-            vc27_render_carrion_hd(
+            vc27_hd_render_carrion(
                 framebuffer,
                 vc27_present(enemy.x),
                 vc27_present(enemy.y),
@@ -123,14 +128,49 @@ impl VoidCanticleV27DirectPresentation {
 
         let v12 = &self.game.game.v20().game.v14().progression.combat;
         for enemy in &v12.combat.specials {
-            if enemy.kind == SpecialKind::GraveKnight {
-                vc27_render_grave_knight_hd(
+            let x = vc27_present(enemy.x);
+            let y = vc27_present(enemy.y);
+            match enemy.kind {
+                SpecialKind::GraveKnight => {
+                    vc27_hd_render_grave_knight(framebuffer, x, y, enemy.age)
+                }
+                SpecialKind::BellWraith => {
+                    vc27_hd_render_bell_wraith(framebuffer, x, y, enemy.age, enemy.phase)
+                }
+                SpecialKind::RelicCarrier => vc27_hd_render_relic_carrier(
                     framebuffer,
-                    vc27_present(enemy.x),
-                    vc27_present(enemy.y),
+                    x,
+                    y,
                     enemy.age,
-                );
+                    enemy.phase,
+                    enemy.direction,
+                ),
             }
+        }
+
+        for threat in &v12.threats {
+            let x = vc27_present(threat.x);
+            let y = vc27_present(threat.y);
+            match threat.kind {
+                ThreatKind::ChoirNode => {
+                    vc27_hd_render_choir_node(framebuffer, x, y, threat.age, threat.phase)
+                }
+                ThreatKind::VoidLeech => vc27_hd_render_void_leech(
+                    framebuffer,
+                    x,
+                    y,
+                    threat.age,
+                    threat.phase,
+                    threat.charge,
+                ),
+            }
+        }
+
+        let base = self.game.game.base();
+        if base.encounter_phase != EncounterPhase::Cleared
+            && let Some(boss) = base.boss
+        {
+            vc27_hd_render_bellkeeper(framebuffer, boss);
         }
     }
 
@@ -315,7 +355,7 @@ impl VoidCanticleV27DirectPresentation {
             VC_VISUAL_PRESENTATION_SCALE,
             true,
         );
-        vc27_render_pilgrim_hd(
+        vc27_hd_render_pilgrim(
             framebuffer,
             vc27_present(base.player_x),
             vc27_present(base.player_y),
@@ -409,8 +449,6 @@ impl Game for VoidCanticleV27DirectPresentation {
             return GameResult::Continue;
         }
 
-        // VC2.7 rule: gameplay is copied intact. Legacy screen-space HUD
-        // producers are retired at their source instead of erased afterward.
         vc_visual_blit_nearest(
             &self.simulation_framebuffer,
             frame.framebuffer,
@@ -423,137 +461,6 @@ impl Game for VoidCanticleV27DirectPresentation {
         }
 
         GameResult::Continue
-    }
-}
-
-fn vc27_present(value: f32) -> i32 {
-    (value * VC_VISUAL_PRESENTATION_SCALE as f32).round() as i32
-}
-
-fn vc27_render_carrion_hd(
-    framebuffer: &mut Framebuffer,
-    x: i32,
-    y: i32,
-    age: f32,
-    phase: f32,
-) {
-    let flap = ((age * 7.0 + phase).sin() * 4.0).round() as i32;
-    let eye_hot = ((age * 11.0 + phase).sin() * 0.5 + 0.5) > 0.42;
-
-    // Filled manta silhouette intentionally covers the low-res base while the
-    // ribs/highlights are native presentation pixels (1 real screen pixel).
-    for dy in -9_i32..=9 {
-        let taper = dy.unsigned_abs() as i32 * 2;
-        let half_width = (33 - taper).max(13);
-        framebuffer.draw_line(x - half_width, y + dy, x + half_width, y + dy, ART_SHADOW);
-    }
-
-    framebuffer.draw_line(x - 33, y - 1 - flap, x - 9, y - 7, ART_RUST);
-    framebuffer.draw_line(x + 33, y - 1 - flap, x + 9, y - 7, ART_RUST);
-    framebuffer.draw_line(x - 31, y + 2 + flap, x - 8, y + 7, ART_BONE);
-    framebuffer.draw_line(x + 31, y + 2 + flap, x + 8, y + 7, ART_BONE);
-
-    for rib in [12, 18, 24, 30] {
-        framebuffer.draw_line(x - 5, y - 3, x - rib, y - 6 + rib / 8 - flap / 2, ART_BONE);
-        framebuffer.draw_line(x + 5, y - 3, x + rib, y - 6 + rib / 8 - flap / 2, ART_BONE);
-    }
-
-    framebuffer.draw_line(x - 9, y - 7, x, y - 15, ART_BONE);
-    framebuffer.draw_line(x + 9, y - 7, x, y - 15, ART_BONE);
-    framebuffer.draw_line(x - 9, y + 7, x, y + 15, ART_RUST);
-    framebuffer.draw_line(x + 9, y + 7, x, y + 15, ART_RUST);
-    framebuffer.fill_circle(x, y, 7, ART_VOID);
-    framebuffer.draw_circle(x, y, 8, ART_BONE);
-    framebuffer.fill_circle(x, y, 3, if eye_hot { ENEMY_EYE } else { ART_RUST });
-    framebuffer.draw(x, y, CANTICLE_COLOR);
-
-    // Fine asymmetry/detail that cannot exist at 180x320.
-    framebuffer.draw(x - 14, y + 3, ART_GOLD);
-    framebuffer.draw(x + 17, y - 2, ART_GOLD);
-    framebuffer.draw(x - 25, y - 2 - flap, ART_RUST);
-    framebuffer.draw(x + 27, y + flap / 2, ART_BONE);
-}
-
-fn vc27_render_grave_knight_hd(
-    framebuffer: &mut Framebuffer,
-    x: i32,
-    y: i32,
-    age: f32,
-) {
-    let charging = (0.90..1.55).contains(&age);
-    let pulse = ((age * 9.0).sin() * 0.5 + 0.5) > 0.5;
-
-    // Broad dark underbody covers the coarse sprite. Metallic framing is then
-    // drawn with single-pixel engravings and chapel-window details.
-    framebuffer.fill_rect(x - 17, y - 23, 35, 46, ART_SHADOW);
-    framebuffer.fill_rect(x - 31, y - 10, 14, 22, ART_SHADOW);
-    framebuffer.fill_rect(x + 18, y - 10, 14, 22, ART_SHADOW);
-    framebuffer.draw_rect(x - 17, y - 23, 35, 46, ART_METAL);
-    framebuffer.draw_rect(x - 31, y - 10, 14, 22, ART_METAL);
-    framebuffer.draw_rect(x + 18, y - 10, 14, 22, ART_METAL);
-
-    framebuffer.draw_line(x - 16, y - 22, x, y - 35, ART_GOLD);
-    framebuffer.draw_line(x + 16, y - 22, x, y - 35, ART_GOLD);
-    framebuffer.draw_line(x - 31, y - 10, x - 38, y + 2, ART_GOLD);
-    framebuffer.draw_line(x + 31, y - 10, x + 38, y + 2, ART_GOLD);
-    framebuffer.draw_line(x, y + 22, x, y + 34, ART_METAL_LIGHT);
-
-    framebuffer.fill_rect(x - 7, y - 11, 15, 15, DANGER);
-    framebuffer.draw_rect(x - 8, y - 12, 17, 17, ART_GOLD);
-    framebuffer.fill_rect(x - 3, y - 7, 7, 7, ART_SHADOW);
-    framebuffer.draw(x, y - 4, if pulse { CANTICLE_COLOR } else { ENEMY_EYE });
-
-    for offset in [-11, -6, 6, 11] {
-        framebuffer.draw_line(x + offset, y + 7, x + offset, y + 18, ART_METAL_LIGHT);
-    }
-    framebuffer.draw_line(x - 14, y + 14, x + 14, y + 14, ART_GOLD);
-
-    if charging {
-        framebuffer.draw_line(x - 3, y + 35, x - 5, y + 43, PILGRIM_THRUSTER);
-        framebuffer.draw_line(x + 3, y + 35, x + 5, y + 43, PILGRIM_THRUSTER);
-    }
-}
-
-fn vc27_render_pilgrim_hd(
-    framebuffer: &mut Framebuffer,
-    x: i32,
-    y: i32,
-    focused: bool,
-    invulnerability: f32,
-    animation_time: f32,
-) {
-    if invulnerability > 0.0 && ((invulnerability * 16.0) as i32 & 1) != 0 {
-        return;
-    }
-
-    let flame = if ((animation_time * 12.0) as i32 & 1) == 0 { 7 } else { 10 };
-    let wing = if focused { 15 } else { 22 };
-
-    framebuffer.draw_line(x, y - 29, x - 9, y - 16, PILGRIM_GOLD);
-    framebuffer.draw_line(x, y - 29, x + 9, y - 16, PILGRIM_GOLD);
-    framebuffer.draw_line(x - 9, y - 16, x - wing, y + 4, PILGRIM);
-    framebuffer.draw_line(x + 9, y - 16, x + wing, y + 4, PILGRIM);
-    framebuffer.draw_line(x - wing, y + 4, x - 7, y + 14, PILGRIM_DARK);
-    framebuffer.draw_line(x + wing, y + 4, x + 7, y + 14, PILGRIM_DARK);
-
-    framebuffer.draw_line(x - 6, y - 15, x - 3, y + 18, ART_METAL_LIGHT);
-    framebuffer.draw_line(x + 6, y - 15, x + 3, y + 18, ART_METAL_LIGHT);
-    framebuffer.draw_line(x - 3, y + 18, x, y + 24, PILGRIM_GOLD);
-    framebuffer.draw_line(x + 3, y + 18, x, y + 24, PILGRIM_GOLD);
-
-    framebuffer.fill_circle(x, y - 3, 6, PILGRIM_VIOLET);
-    framebuffer.draw_circle(x, y - 3, 8, PILGRIM_GOLD);
-    framebuffer.fill_circle(x, y - 3, 2, CANTICLE_COLOR);
-
-    framebuffer.draw_line(x - 5, y + 19, x - 7, y + 19 + flame, PILGRIM_THRUSTER);
-    framebuffer.draw_line(x + 5, y + 19, x + 7, y + 19 + flame, PILGRIM_THRUSTER);
-    framebuffer.draw(x - 8, y - 9, ART_GOLD);
-    framebuffer.draw(x + 8, y - 9, ART_GOLD);
-    framebuffer.draw(x, y - 24, ART_METAL_LIGHT);
-
-    if focused {
-        framebuffer.draw_circle(x, y - 3, 4, PILGRIM_GOLD);
-        framebuffer.fill_circle(x, y - 3, 1, FOCUS_COLOR);
     }
 }
 
@@ -741,6 +648,16 @@ mod v27_tests {
         );
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
         assert_eq!(framebuffer.pixel(39, 39), Some(Pixel::BLUE));
+    }
+
+    #[test]
+    fn hd_choir_node_keeps_changes_local() {
+        let mut framebuffer = Framebuffer::new(96, 96);
+        framebuffer.clear(Pixel::BLUE);
+        vc27_hd_render_choir_node(&mut framebuffer, 48, 48, 1.0, 0.0);
+        assert_ne!(framebuffer.pixel(48, 48), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(95, 95), Some(Pixel::BLUE));
     }
 
     #[test]
