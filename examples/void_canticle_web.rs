@@ -11,9 +11,7 @@ pub fn start() -> Result<(), JsValue> {
         )
         .await;
 
-        if let Err(error) =
-            void_canticle::game::run_v27_showcase_presentation_with_obs_mirror()
-        {
+        if let Err(error) = void_canticle::game::run_v27_showcase_presentation_with_obs_mirror() {
             panic!("Void Canticle Web failed to start: {error}");
         }
     });
