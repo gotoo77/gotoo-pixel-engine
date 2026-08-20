@@ -1,21 +1,66 @@
 use std::io::{BufReader, Cursor};
 
 const ICONS: [(&str, &[u8]); 15] = [
-    ("bulwark", include_bytes!("../assets/void_canticle/ui/choice/bulwark.png")),
-    ("pilgrim", include_bytes!("../assets/void_canticle/ui/choice/pilgrim.png")),
-    ("wraith", include_bytes!("../assets/void_canticle/ui/choice/wraith.png")),
-    ("rapid_fire", include_bytes!("../assets/void_canticle/ui/choice/rapid_fire.png")),
-    ("magnet_field", include_bytes!("../assets/void_canticle/ui/choice/magnet_field.png")),
-    ("stellar_power", include_bytes!("../assets/void_canticle/ui/choice/stellar_power.png")),
-    ("xp_hunger", include_bytes!("../assets/void_canticle/ui/choice/xp_hunger.png")),
-    ("vital_spark", include_bytes!("../assets/void_canticle/ui/choice/vital_spark.png")),
-    ("core_surge", include_bytes!("../assets/void_canticle/ui/choice/core_surge.png")),
-    ("piercing_lance", include_bytes!("../assets/void_canticle/ui/choice/piercing_lance.png")),
-    ("split_volley", include_bytes!("../assets/void_canticle/ui/choice/split_volley.png")),
-    ("death_nova", include_bytes!("../assets/void_canticle/ui/choice/death_nova.png")),
-    ("orbitals", include_bytes!("../assets/void_canticle/ui/choice/orbitals.png")),
-    ("nanite_repair", include_bytes!("../assets/void_canticle/ui/choice/nanite_repair.png")),
-    ("shield_capacitor", include_bytes!("../assets/void_canticle/ui/choice/shield_capacitor.png")),
+    (
+        "bulwark",
+        include_bytes!("../assets/void_canticle/ui/choice/bulwark.png"),
+    ),
+    (
+        "pilgrim",
+        include_bytes!("../assets/void_canticle/ui/choice/pilgrim.png"),
+    ),
+    (
+        "wraith",
+        include_bytes!("../assets/void_canticle/ui/choice/wraith.png"),
+    ),
+    (
+        "rapid_fire",
+        include_bytes!("../assets/void_canticle/ui/choice/rapid_fire.png"),
+    ),
+    (
+        "magnet_field",
+        include_bytes!("../assets/void_canticle/ui/choice/magnet_field.png"),
+    ),
+    (
+        "stellar_power",
+        include_bytes!("../assets/void_canticle/ui/choice/stellar_power.png"),
+    ),
+    (
+        "xp_hunger",
+        include_bytes!("../assets/void_canticle/ui/choice/xp_hunger.png"),
+    ),
+    (
+        "vital_spark",
+        include_bytes!("../assets/void_canticle/ui/choice/vital_spark.png"),
+    ),
+    (
+        "core_surge",
+        include_bytes!("../assets/void_canticle/ui/choice/core_surge.png"),
+    ),
+    (
+        "piercing_lance",
+        include_bytes!("../assets/void_canticle/ui/choice/piercing_lance.png"),
+    ),
+    (
+        "split_volley",
+        include_bytes!("../assets/void_canticle/ui/choice/split_volley.png"),
+    ),
+    (
+        "death_nova",
+        include_bytes!("../assets/void_canticle/ui/choice/death_nova.png"),
+    ),
+    (
+        "orbitals",
+        include_bytes!("../assets/void_canticle/ui/choice/orbitals.png"),
+    ),
+    (
+        "nanite_repair",
+        include_bytes!("../assets/void_canticle/ui/choice/nanite_repair.png"),
+    ),
+    (
+        "shield_capacitor",
+        include_bytes!("../assets/void_canticle/ui/choice/shield_capacitor.png"),
+    ),
 ];
 
 #[test]
