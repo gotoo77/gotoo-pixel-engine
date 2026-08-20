@@ -1,0 +1,144 @@
+{
+  "style": {
+    "font": "builtin",
+    "title_color": "menu_accent",
+    "text_color": "text",
+    "muted_color": "muted",
+    "selected_color": "menu_selected",
+    "accent_color": "menu_accent",
+    "title_scale": 2,
+    "body_scale": 1,
+    "item_scale": 1
+  },
+  "feedback": {
+    "default": {
+      "font": "builtin",
+      "x": 178,
+      "y": 55,
+      "scale": 3,
+      "color": "power",
+      "shadow_color": "bg",
+      "backdrop_color": "#121419cc",
+      "backdrop_padding": 5,
+      "sound": null
+    },
+    "events": {
+      "rock_prompt": { "text": "ROCK?", "color": "rock", "scale": 2 },
+      "target_cancel": { "text": "CANCEL", "color": "muted", "scale": 2 },
+      "target_invalid": { "text": "NOPE", "color": "danger", "scale": 2 },
+      "rock_throw": { "text": "THROW", "color": "rock_valid", "scale": 2 },
+      "shout_empty": { "text": "SHOUT", "color": "shout", "sound": "shout" },
+      "shout_heard": { "text": "HEARD!", "color": "shout", "sound": "shout" },
+      "rock_impact": { "text": "CLACK", "color": "rock", "sound": "rock_impact" },
+      "rock_lured": { "text": "LURED!", "color": "rock_valid", "sound": "rock_impact" },
+      "smart_chain": { "text": "SMART!", "color": "smart", "sound": "enemy_kill" },
+      "boulder_release": { "text": "RUN!", "color": "bronze", "sound": "boulder_release" },
+      "boulder_crush": { "text": "CRUSH!", "color": "danger", "sound": "boulder_crush" },
+      "boulder_stop": { "text": "THUD!", "color": "muted", "sound": "boulder_stop" },
+      "boulder_genius": { "text": "GENIUS!", "color": "smart", "scale": 3, "sound": "boulder_crush" },
+      "trap_trigger": { "text": "SNAP!", "color": "danger", "sound": "trap_trigger" },
+      "enemy_alert": { "text": "SPOTTED!", "color": "danger", "sound": "enemy_alert" },
+      "key_drop": { "text": "KEY DROP", "color": "locked", "sound": "key_pickup" },
+      "key_pickup": { "text": "KEY!", "color": "locked", "sound": "key_pickup" },
+      "locked": { "text": "LOCKED", "color": "locked", "sound": "door_close" },
+      "gate_open": { "text": "OPEN!", "color": "menu_accent", "sound": "key_unlock" },
+      "hero_dead": { "text": "OUCH!", "color": "danger", "sound": "death" },
+      "victory": { "text": "CLEAR!", "color": "smart", "sound": "victory" }
+    }
+  },
+  "screens": [
+    {
+      "id": "pause",
+      "title": "PAUSE",
+      "items": [
+        {
+          "label": "RESUME",
+          "action": { "kind": "resume" }
+        },
+        {
+          "label": "COMMANDS",
+          "action": { "kind": "submenu", "target": "commands" }
+        },
+        {
+          "label": "QUIT",
+          "action": { "kind": "quit" }
+        }
+      ]
+    },
+    {
+      "id": "commands",
+      "title": "COMMANDS",
+      "body": [
+        "MOVE: WASD / ARROWS / DPAD",
+        "WAIT: SPACE / GAMEPAD SOUTH",
+        "SHOUT: E / GAMEPAD NORTH",
+        "ROCK: F / GAMEPAD RB, THEN MOVE + SPACE",
+        "RETRY AFTER DEATH: R / SPACE",
+        "PAUSE: ESC / START"
+      ],
+      "items": [
+        {
+          "label": "BACK",
+          "action": { "kind": "back" }
+        },
+        {
+          "label": "QUIT",
+          "action": { "kind": "quit" }
+        }
+      ]
+    },
+    {
+      "id": "game_over",
+      "title": "GAME OVER",
+      "style": {
+        "title_color": "danger",
+        "accent_color": "danger",
+        "selected_color": "locked"
+      },
+      "body": [
+        "RETRY RESTORES THE CURRENT ISO SLICE"
+      ],
+      "items": [
+        {
+          "label": "RETRY",
+          "action": { "kind": "retry" }
+        },
+        {
+          "label": "COMMANDS",
+          "action": { "kind": "submenu", "target": "commands" }
+        },
+        {
+          "label": "QUIT",
+          "action": { "kind": "quit" }
+        }
+      ]
+    },
+    {
+      "id": "victory",
+      "title": "CLEAR!",
+      "style": {
+        "title_color": "smart",
+        "accent_color": "smart",
+        "selected_color": "menu_selected"
+      },
+      "body": [
+        "CHECKPOINT REACHED",
+        "THE CLOCKWORK KEEP IS CLEAR"
+      ],
+      "items": [
+        {
+          "label": "RETRY",
+          "action": { "kind": "retry" }
+        },
+        {
+          "label": "COMMANDS",
+          "action": { "kind": "submenu", "target": "commands" }
+        },
+        {
+          "label": "QUIT",
+          "action": { "kind": "quit" }
+        }
+      ]
+    }
+  ]
+}

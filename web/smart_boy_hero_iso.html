@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="./favicon.ico" sizes="any">
-    <title>Pong</title>
+    <title>Smart Boy Hero Iso Slice</title>
     <style>
       html,
       body {
@@ -17,12 +17,13 @@
       body {
         display: grid;
         place-items: center;
+        overflow: hidden;
       }
 
       canvas {
         display: block;
-        width: 960px;
-        height: 780px;
+        width: 1040px;
+        height: 640px;
         max-width: 100vw;
         max-height: 100vh;
         touch-action: none;
@@ -33,7 +34,8 @@
   <body>
     <script src="./audio-unlock.js"></script>
     <script type="module">
-      import init from "./pkg/pong_web.js";
+      import init from "./pkg/smart_boy_hero_iso_web.js";
+
       init();
     </script>
     <script type="module" src="./fullscreen.js"></script>

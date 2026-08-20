@@ -1,0 +1,71 @@
+{
+  "name": "SMELL A RAT",
+  "width": 12,
+  "height": 8,
+  "timing": "semi_continuous",
+  "hero": {
+    "x": 1,
+    "y": 4,
+    "power": 6
+  },
+  "exit": {
+    "x": 10,
+    "y": 4
+  },
+  "walls": [
+    { "x": 7, "y": 0 },
+    { "x": 7, "y": 1 },
+    { "x": 7, "y": 3 },
+    { "x": 7, "y": 5 },
+    { "x": 7, "y": 6 },
+    { "x": 7, "y": 7 },
+    { "x": 4, "y": 1 },
+    { "x": 6, "y": 1 },
+    { "x": 6, "y": 6 }
+  ],
+  "doors": [
+    {
+      "x": 7,
+      "y": 4,
+      "group": 1,
+      "initially_open": false
+    }
+  ],
+  "levers": [
+    {
+      "x": 5,
+      "y": 2,
+      "group": 1,
+      "kind": "pressure_plate"
+    }
+  ],
+  "traps": [],
+  "pits": [
+    { "x": 5, "y": 6 }
+  ],
+  "boulders": [],
+  "foods": [
+    { "x": 5, "y": 2 }
+  ],
+  "bonuses": [],
+  "enemies": [
+    {
+      "x": 5,
+      "y": 5,
+      "power": 1,
+      "kind": "rat"
+    },
+    {
+      "x": 4,
+      "y": 6,
+      "power": 1,
+      "kind": "rat"
+    },
+    {
+      "x": 3,
+      "y": 6,
+      "power": 2,
+      "kind": "cat"
+    }
+  ]
+}

@@ -265,6 +265,70 @@ mono/stéréo en 44100 ou 48000 Hz.
 
 Le moteur ne fournit pas encore de mixer public, streaming ou pipeline d'assets.
 
+### Résolution d'assets
+
+GPE sait aujourd'hui consommer des bytes explicites, notamment via
+`SoundBank::insert_wav`, mais il ne possède pas encore de stratégie générique
+cross-platform pour résoudre un chemin logique d'asset en bytes.
+
+Le besoin a été observé avec les SFX temporaires de Smart Boy Hero :
+
+```text
+sfx.json + WAV
+     ↓
+include_dir / compilation
+     ↓
+bytes
+     ↓
+SoundBank
+```
+
+Cette solution locale est acceptable pour SBH maintenant :
+
+- simple ;
+- robuste ;
+- identique en natif et Web ;
+- offline ;
+- peu d'erreurs runtime.
+
+Elle n'est pas considérée comme la stratégie définitive d'assets du moteur. Ses
+limites sont claires : modifier un asset exige un rebuild, les fichiers sont
+embarqués dans le binaire ou le WASM, et il n'y a pas de hot-swap, modding ou
+remplacement runtime.
+
+Le besoin futur potentiel ressemble plutôt à :
+
+```text
+path logique
+   ↓
+AssetSource
+   ↓
+bytes
+```
+
+Avec des implémentations possibles :
+
+- natif : filesystem ;
+- Web : HTTP/fetch ou bundle ;
+- tests : mémoire.
+
+Le contrat minimal d'une future abstraction devrait probablement rester au
+niveau bytes : résoudre un chemin logique, retourner des bytes ou une erreur
+explicite, et laisser les consommateurs spécialisés valider le format
+(`Audio` pour WAV, futur décodeur image pour sprites, parseur de maps, etc.).
+Elle ne devrait pas devenir un `AssetManager` global mêlant cache, décodage,
+hot-reload, formats, volumes, streaming et politiques de packaging sans besoin
+démontré.
+
+Évaluation actuelle : le besoin n'est pas encore suffisamment démontré par
+plusieurs consommateurs pour justifier une abstraction moteur. SBH est un premier
+signal, mais il ne couvre qu'un mapping déclaratif audio vers des WAV courts. La
+préférence architecturale reste donc : assets embarqués par défaut aujourd'hui,
+configuration déclarative locale lorsque c'est utile, puis réévaluation du
+chargement runtime lorsqu'un second type d'asset concret, par exemple sprites,
+maps, dialogues ou musiques, réclamera lui aussi une résolution de chemins
+cross-platform.
+
 ### `ui`
 
 UI immediate-mode minimale, introduite uniquement après duplication observée :
@@ -329,8 +393,9 @@ zones vers ses quatre actions et ses règles propres ; la mécanique générique
 contacts tactiles est testée dans `VirtualPad` lui-même. Aucun `WorldSystem`,
 scene framework ou autre abstraction moteur n'a été créé pour ce découpage.
 
-Tetris, Space Invaders, Pong et Breakout ont ensuite validé d'autres besoins :
-menus, gamepad, tactile, audio, deux joueurs, collisions et feedback.
+Tetris, Space Invaders, Pong, Breakout et Smart Boy Hero ont ensuite validé
+d'autres besoins : menus, gamepad, tactile, audio, deux joueurs, collisions,
+feedback et micro-puzzle tour par tour à monde pur.
 
 Le probe gamepad et le menu standalone de Space Invaders sont les consommateurs
 concrets de `Frame::set_gamepad_profile`. Les autres jeux lisent simplement
