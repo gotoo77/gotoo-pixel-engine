@@ -1,13 +1,15 @@
 const PRESENTATION_VERSION: &str = "VC3.2";
 const TITLE_LAUNCH_DURATION: f32 = 0.42;
-const TITLE_BACKGROUND_PNG: &[u8] = include_bytes!(concat!(
+
+const FRONT_WIDTH: u32 = 540;
+const FRONT_HEIGHT: u32 = 960;
+const FRONT_SCALE: u32 = 3;
+
+const FRONT_ART_PNG: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/assets/title_background_90x160.png"
+    "/examples/void_canticle/assets/front_cathedral_540x960.png"
 ));
-const CREDITS_BACKGROUND_PNG: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/examples/void_canticle/assets/credits_background_90x160.png"
-));
+const CREDITS_BACKGROUND_BRIGHTNESS: f32 = 0.42;
 
 const START_PROMPT_BASE: gotoo_pixel_engine::Rect = gotoo_pixel_engine::Rect {
     x: 27,
@@ -72,7 +74,7 @@ impl NeonPrompt {
     }
 
     fn rect(self) -> gotoo_pixel_engine::Rect {
-        scale_presentation_rect(self.base_rect)
+        scale_front_rect(self.base_rect)
     }
 
     fn render(
@@ -83,7 +85,7 @@ impl NeonPrompt {
         forced_intensity: Option<f32>,
         launch_progress: f32,
     ) {
-        let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
+        let scale = FRONT_SCALE.max(1);
         let scale_i = scale as i32;
         let rect = self.rect();
         let intensity = forced_intensity.unwrap_or_else(|| {
@@ -188,6 +190,7 @@ type LegacyPresentationFrontState = Vc27FrontState;
 
 struct VoidCanticleApp {
     game: GameplayPresentation,
+    gameplay_framebuffer: Framebuffer,
     title_background: Framebuffer,
     credits_background: Framebuffer,
     screen: FrontScreen,
@@ -198,23 +201,27 @@ struct VoidCanticleApp {
 
 impl VoidCanticleApp {
     fn new() -> Self {
-        let title_image = gotoo_pixel_engine::Image::decode_png(TITLE_BACKGROUND_PNG)
-            .expect("checked-in Void Canticle title background should decode");
-        let credits_image = gotoo_pixel_engine::Image::decode_png(CREDITS_BACKGROUND_PNG)
-            .expect("checked-in Void Canticle credits background should decode");
-        assert_eq!((title_image.width(), title_image.height()), (90, 160));
-        assert_eq!((credits_image.width(), credits_image.height()), (90, 160));
-        let mut title_background = Framebuffer::new(90, 160);
-        title_background.draw_image(0, 0, &title_image);
-        let mut credits_background = Framebuffer::new(90, 160);
-        credits_background.draw_image(0, 0, &credits_image);
-        let mut game = GameplayPresentation::new();
+        let front_art = gotoo_pixel_engine::Image::decode_png(FRONT_ART_PNG)
+            .expect("checked-in Void Canticle HD front art should decode");
+        assert_eq!(
+            (front_art.width(), front_art.height()),
+            (FRONT_WIDTH, FRONT_HEIGHT)
+        );
 
+        let title_framebuffer = front_background(&front_art, 1.0);
+        let credits_framebuffer = front_background(&front_art, CREDITS_BACKGROUND_BRIGHTNESS);
+
+        let mut game = GameplayPresentation::new();
         game.presentation.front_state = LegacyPresentationFrontState::Run;
+
         Self {
             game,
-            title_background,
-            credits_background,
+            gameplay_framebuffer: Framebuffer::new(
+                VC_VISUAL_PRESENTATION_WIDTH,
+                VC_VISUAL_PRESENTATION_HEIGHT,
+            ),
+            title_background: title_framebuffer,
+            credits_background: credits_framebuffer,
             screen: FrontScreen::Title,
             title_choice: TitleChoice::StartGame,
             presentation_time: 0.0,
@@ -222,18 +229,13 @@ impl VoidCanticleApp {
         }
     }
 
-    fn begin_launch(&mut self, _frame: &mut Frame<'_>) {
+    fn begin_launch(&mut self) {
         self.screen = FrontScreen::TitleLaunch;
         self.launch_timer = 0.0;
     }
 
     fn render_title(&self, framebuffer: &mut Framebuffer, launch_progress: f32) {
-        vc_visual_blit_nearest(
-            &self.title_background,
-            framebuffer,
-            2 * VC_VISUAL_PRESENTATION_SCALE,
-            false,
-        );
+        framebuffer.clone_from(&self.title_background);
 
         START_PROMPT.render(
             framebuffer,
@@ -253,9 +255,9 @@ impl VoidCanticleApp {
         }
 
         if launch_progress > 0.0 {
-            let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
+            let scale = FRONT_SCALE.max(1);
             let scale_i = scale as i32;
-            let center_x = (VC_VISUAL_PRESENTATION_WIDTH / 2) as i32;
+            let center_x = (FRONT_WIDTH / 2) as i32;
             let portal_y = 166 * scale_i;
             let pulse_radius = ((10.0 + launch_progress * 52.0) * scale as f32).round() as u32;
             framebuffer.draw_circle(
@@ -277,7 +279,7 @@ impl VoidCanticleApp {
             framebuffer.draw_line(
                 11 * scale_i,
                 sweep_y,
-                VC_VISUAL_PRESENTATION_WIDTH as i32 - 11 * scale_i,
+                FRONT_WIDTH as i32 - 11 * scale_i,
                 sweep_y,
                 Pixel::rgb(235, 244, 255),
             );
@@ -285,30 +287,24 @@ impl VoidCanticleApp {
     }
 
     fn render_credits(&self, framebuffer: &mut Framebuffer) {
-        vc_visual_blit_nearest(
-            &self.credits_background,
-            framebuffer,
-            2 * VC_VISUAL_PRESENTATION_SCALE,
-            false,
-        );
-        let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
-        let scale_i = scale as i32;
+        framebuffer.clone_from(&self.credits_background);
 
-        draw_neon_heading(framebuffer, 82 * scale_i, "CREDITS", 2 * scale);
-        draw_credit_line(framebuffer, 126 * scale_i, "A GAME BY GOTOO", scale);
-        draw_credit_line(
+        let scale = FRONT_SCALE.max(1);
+        let scale_i = scale as i32;
+        draw_front_neon_heading(framebuffer, 82 * scale_i, "CREDITS", 2 * scale);
+        draw_front_credit_line(framebuffer, 126 * scale_i, "A GAME BY GOTOO", scale);
+        draw_front_credit_line(
             framebuffer,
             158 * scale_i,
             "BUILT WITH GOTOO PIXEL ENGINE",
             scale,
         );
-        draw_credit_line(
+        draw_front_credit_line(
             framebuffer,
             190 * scale_i,
             "DESIGN / CODE / LORE - GOTOO",
             scale,
         );
-
         BACK_PROMPT.render(framebuffer, self.presentation_time, true, None, 0.0);
     }
 
@@ -324,14 +320,14 @@ impl VoidCanticleApp {
         if let Some(position) = front_pointer_press(frame) {
             if START_PROMPT.rect().contains(position) {
                 self.title_choice = TitleChoice::StartGame;
-                self.begin_launch(frame);
+                self.begin_launch();
             } else if CREDITS_PROMPT.rect().contains(position) {
                 self.title_choice = TitleChoice::Credits;
                 self.screen = FrontScreen::Credits;
             }
         } else if front_confirm_pressed(frame.input) {
             match self.title_choice {
-                TitleChoice::StartGame => self.begin_launch(frame),
+                TitleChoice::StartGame => self.begin_launch(),
                 TitleChoice::Credits => self.screen = FrontScreen::Credits,
             }
         }
@@ -350,7 +346,6 @@ impl VoidCanticleApp {
         self.render_title(frame.framebuffer, progress);
         if self.launch_timer >= TITLE_LAUNCH_DURATION {
             self.screen = FrontScreen::Game;
-            self.game.presentation.render_chassis_selection_presentation(frame.framebuffer);
         }
         GameResult::Continue
     }
@@ -368,6 +363,31 @@ impl VoidCanticleApp {
         self.render_credits(frame.framebuffer);
         GameResult::Continue
     }
+
+    fn update_game(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        let gameplay_viewport = gotoo_pixel_engine::Viewport::new(
+            frame.surface_size,
+            gotoo_pixel_engine::Size {
+                width: VC_VISUAL_PRESENTATION_WIDTH,
+                height: VC_VISUAL_PRESENTATION_HEIGHT,
+            },
+        );
+        let result = {
+            let mut gameplay_frame = Frame {
+                framebuffer: &mut self.gameplay_framebuffer,
+                input: frame.input,
+                delta_time: frame.delta_time,
+                storage: &mut *frame.storage,
+                audio: &mut *frame.audio,
+                surface_size: frame.surface_size,
+                viewport: gameplay_viewport,
+            };
+            self.game.update(&mut gameplay_frame)
+        };
+
+        blit_gameplay_to_front(&self.gameplay_framebuffer, frame.framebuffer);
+        result
+    }
 }
 
 impl Game for VoidCanticleApp {
@@ -379,18 +399,68 @@ impl Game for VoidCanticleApp {
             FrontScreen::Title => self.update_title(frame),
             FrontScreen::TitleLaunch => self.update_title_launch(frame, dt),
             FrontScreen::Credits => self.update_credits(frame),
-            FrontScreen::Game => self.game.update(frame),
+            FrontScreen::Game => self.update_game(frame),
         }
     }
 }
 
-fn scale_presentation_rect(rect: gotoo_pixel_engine::Rect) -> gotoo_pixel_engine::Rect {
-    let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
+fn front_background(image: &gotoo_pixel_engine::Image, brightness: f32) -> Framebuffer {
+    debug_assert_eq!(image.width(), FRONT_WIDTH);
+    debug_assert_eq!(image.height(), FRONT_HEIGHT);
+
+    let brightness = brightness.clamp(0.0, 1.0);
+    let mut framebuffer = Framebuffer::new(FRONT_WIDTH, FRONT_HEIGHT);
+    for y in 0..FRONT_HEIGHT {
+        for x in 0..FRONT_WIDTH {
+            let index = ((y * FRONT_WIDTH + x) * 4) as usize;
+            let source = &image.as_rgba8()[index..index + 4];
+            framebuffer.set_pixel_in_bounds(
+                x,
+                y,
+                Pixel::rgba(
+                    (source[0] as f32 * brightness).round() as u8,
+                    (source[1] as f32 * brightness).round() as u8,
+                    (source[2] as f32 * brightness).round() as u8,
+                    source[3],
+                ),
+            );
+        }
+    }
+    framebuffer
+}
+
+fn scale_front_rect(rect: gotoo_pixel_engine::Rect) -> gotoo_pixel_engine::Rect {
     gotoo_pixel_engine::Rect {
-        x: rect.x * scale as i32,
-        y: rect.y * scale as i32,
-        width: rect.width * scale,
-        height: rect.height * scale,
+        x: rect.x * FRONT_SCALE as i32,
+        y: rect.y * FRONT_SCALE as i32,
+        width: rect.width * FRONT_SCALE,
+        height: rect.height * FRONT_SCALE,
+    }
+}
+
+fn blit_gameplay_to_front(source: &Framebuffer, destination: &mut Framebuffer) {
+    debug_assert_eq!(source.width(), VC_VISUAL_PRESENTATION_WIDTH);
+    debug_assert_eq!(source.height(), VC_VISUAL_PRESENTATION_HEIGHT);
+    debug_assert_eq!(destination.width(), FRONT_WIDTH);
+    debug_assert_eq!(destination.height(), FRONT_HEIGHT);
+
+    let source_rgba = source.as_rgba8();
+    for destination_y in 0..FRONT_HEIGHT {
+        let source_y = destination_y * source.height() / FRONT_HEIGHT;
+        for destination_x in 0..FRONT_WIDTH {
+            let source_x = destination_x * source.width() / FRONT_WIDTH;
+            let source_index = ((source_y * source.width() + source_x) * 4) as usize;
+            destination.set_pixel_in_bounds(
+                destination_x,
+                destination_y,
+                Pixel::rgba(
+                    source_rgba[source_index],
+                    source_rgba[source_index + 1],
+                    source_rgba[source_index + 2],
+                    source_rgba[source_index + 3],
+                ),
+            );
+        }
     }
 }
 
@@ -461,34 +531,31 @@ fn neon_color(red: u8, green: u8, blue: u8, intensity: f32) -> Pixel {
     )
 }
 
-fn draw_neon_heading(framebuffer: &mut Framebuffer, y: i32, text: &str, scale: u32) {
+fn draw_front_neon_heading(framebuffer: &mut Framebuffer, y: i32, text: &str, scale: u32) {
     let (width, _) = Framebuffer::text_size(text, scale);
-    let x = ((VC_VISUAL_PRESENTATION_WIDTH.saturating_sub(width)) / 2) as i32;
-    let pixel = VC_VISUAL_PRESENTATION_SCALE.max(1) as i32;
+    let x = ((FRONT_WIDTH.saturating_sub(width)) / 2) as i32;
+    let pixel = FRONT_SCALE.max(1) as i32;
     framebuffer.draw_text_scaled(x - pixel, y, text, scale, Pixel::rgb(111, 20, 111));
     framebuffer.draw_text_scaled(x + pixel, y, text, scale, Pixel::rgb(24, 112, 132));
     framebuffer.draw_text_scaled(x, y, text, scale, Pixel::rgb(255, 218, 255));
 }
 
-fn draw_credit_line(framebuffer: &mut Framebuffer, y: i32, text: &str, scale: u32) {
-    vc_visual_draw_centered_text(framebuffer, y, text, scale, Pixel::rgb(236, 218, 246));
+fn draw_front_credit_line(framebuffer: &mut Framebuffer, y: i32, text: &str, scale: u32) {
+    let (width, _) = Framebuffer::text_size(text, scale);
+    let x = ((FRONT_WIDTH.saturating_sub(width)) / 2) as i32;
+    framebuffer.draw_text_scaled(x, y, text, scale, Pixel::rgb(236, 218, 246));
 }
 
 pub fn run_void_canticle_with_obs_mirror() -> Result<(), EngineError> {
-    let (window_width, window_height) = window_size();
     run(
         EngineConfig {
             title: format!("Void Canticle {PRESENTATION_VERSION} - Gotoo Pixel Engine"),
-            framebuffer_width: VC_VISUAL_PRESENTATION_WIDTH,
-            framebuffer_height: VC_VISUAL_PRESENTATION_HEIGHT,
-            window_width,
-            window_height,
+            framebuffer_width: FRONT_WIDTH,
+            framebuffer_height: FRONT_HEIGHT,
+            window_width: FRONT_WIDTH,
+            window_height: FRONT_HEIGHT,
         },
-        gotoo_pixel_engine::ObsMirrorGame::from_env(
-            VoidCanticleApp::new(),
-            VC_VISUAL_PRESENTATION_WIDTH,
-            VC_VISUAL_PRESENTATION_HEIGHT,
-        ),
+        gotoo_pixel_engine::ObsMirrorGame::from_env(VoidCanticleApp::new(), FRONT_WIDTH, FRONT_HEIGHT),
     )
 }
 
@@ -497,28 +564,73 @@ mod presentation_frontend_tests {
     use super::*;
 
     #[test]
-    fn checked_in_front_backgrounds_match_current_presentation_size() {
-        let title = gotoo_pixel_engine::Image::decode_png(TITLE_BACKGROUND_PNG).unwrap();
-        let credits = gotoo_pixel_engine::Image::decode_png(CREDITS_BACKGROUND_PNG).unwrap();
-        assert_eq!((title.width(), title.height()), (90, 160));
-        assert_eq!((credits.width(), credits.height()), (90, 160));
+    fn checked_in_front_art_matches_hd_front_size() {
+        let art = gotoo_pixel_engine::Image::decode_png(FRONT_ART_PNG).unwrap();
+        assert_eq!((art.width(), art.height()), (FRONT_WIDTH, FRONT_HEIGHT));
     }
 
     #[test]
-    fn prompts_fit_inside_portrait_frame() {
-        for rect in [START_PROMPT.rect(), CREDITS_PROMPT.rect(), BACK_PROMPT.rect()] {
+    fn credits_background_is_derived_from_the_same_front_art() {
+        let art = gotoo_pixel_engine::Image::decode_png(FRONT_ART_PNG).unwrap();
+        let title = front_background(&art, 1.0);
+        let credits = front_background(&art, CREDITS_BACKGROUND_BRIGHTNESS);
+        let title_pixel = title.pixel(FRONT_WIDTH as i32 / 2, FRONT_HEIGHT as i32 / 2).unwrap();
+        let credits_pixel = credits
+            .pixel(FRONT_WIDTH as i32 / 2, FRONT_HEIGHT as i32 / 2)
+            .unwrap();
+        assert!(credits_pixel.r <= title_pixel.r);
+        assert!(credits_pixel.g <= title_pixel.g);
+        assert!(credits_pixel.b <= title_pixel.b);
+    }
+
+    #[test]
+    fn prompts_fit_inside_hd_portrait_frame() {
+        for rect in [
+            START_PROMPT.rect(),
+            CREDITS_PROMPT.rect(),
+            BACK_PROMPT.rect(),
+        ] {
             assert!(rect.x >= 0);
             assert!(rect.y >= 0);
-            assert!(rect.x as u32 + rect.width <= VC_VISUAL_PRESENTATION_WIDTH);
-            assert!(rect.y as u32 + rect.height <= VC_VISUAL_PRESENTATION_HEIGHT);
+            assert!(rect.x as u32 + rect.width <= FRONT_WIDTH);
+            assert!(rect.y as u32 + rect.height <= FRONT_HEIGHT);
         }
     }
 
     #[test]
-    fn fresh_application_starts_on_title_and_bypasses_legacy_title() {
+    fn fresh_application_starts_on_hd_title_and_bypasses_legacy_title() {
         let app = VoidCanticleApp::new();
         assert_eq!(app.screen, FrontScreen::Title);
         assert_eq!(app.title_choice, TitleChoice::StartGame);
-        assert!(matches!(app.game.presentation.front_state, LegacyPresentationFrontState::Run));
+        assert_eq!(app.gameplay_framebuffer.width(), VC_VISUAL_PRESENTATION_WIDTH);
+        assert_eq!(app.gameplay_framebuffer.height(), VC_VISUAL_PRESENTATION_HEIGHT);
+        assert!(matches!(
+            app.game.presentation.front_state,
+            LegacyPresentationFrontState::Run
+        ));
+    }
+
+    #[test]
+    fn gameplay_scaler_fills_hd_front_without_changing_source_dimensions() {
+        let mut source = Framebuffer::new(
+            VC_VISUAL_PRESENTATION_WIDTH,
+            VC_VISUAL_PRESENTATION_HEIGHT,
+        );
+        source.draw(0, 0, Pixel::RED);
+        source.draw(
+            VC_VISUAL_PRESENTATION_WIDTH as i32 - 1,
+            VC_VISUAL_PRESENTATION_HEIGHT as i32 - 1,
+            Pixel::WHITE,
+        );
+        let mut destination = Framebuffer::new(FRONT_WIDTH, FRONT_HEIGHT);
+        blit_gameplay_to_front(&source, &mut destination);
+
+        assert_eq!(destination.pixel(0, 0), Some(Pixel::RED));
+        assert_eq!(
+            destination.pixel(FRONT_WIDTH as i32 - 1, FRONT_HEIGHT as i32 - 1),
+            Some(Pixel::WHITE)
+        );
+        assert_eq!(source.width(), VC_VISUAL_PRESENTATION_WIDTH);
+        assert_eq!(source.height(), VC_VISUAL_PRESENTATION_HEIGHT);
     }
 }
