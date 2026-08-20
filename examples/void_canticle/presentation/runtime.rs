@@ -109,6 +109,18 @@ impl VoidCanticleV27DirectPresentation {
     }
 }
 
+fn pause_restart_completed(
+    restart_selected_before_update: bool,
+    confirm_pressed: bool,
+    toggle_pressed: bool,
+    state_after_update: &VcPauseState,
+) -> bool {
+    restart_selected_before_update
+        && confirm_pressed
+        && !toggle_pressed
+        && matches!(state_after_update, VcPauseState::ResumeGate)
+}
+
 fn restart_completed(
     was_game_over: bool,
     is_game_over: bool,
@@ -133,8 +145,6 @@ impl Game for VoidCanticleV27DirectPresentation {
             let pause = self.game.survival_model().game.pause_ui();
             matches!(&pause.state, VcPauseState::Menu) && pause.menu.selected() == Some(1)
         };
-        let pause_restart_requested = pause_restart_selected
-            && gotoo_pixel_engine::ui::menu_confirm_pressed(frame.input);
         let hit_snapshot = Vc27HitSnapshot::capture(&self.game);
         let projectile_snapshot = Vc27ProjectileSourceSnapshot::capture(&self.game);
 
@@ -161,11 +171,15 @@ impl Game for VoidCanticleV27DirectPresentation {
             return result;
         }
 
-        let pause_restart_completed = pause_restart_requested
-            && matches!(
-                &self.game.survival_model().game.pause_ui().state,
-                VcPauseState::Running
-            );
+        let pause_restart_completed = {
+            let pause = self.game.survival_model().game.pause_ui();
+            pause_restart_completed(
+                pause_restart_selected,
+                pause.controls.action(VC_PAUSE_CONFIRM).pressed(),
+                pause.controls.action(VC_PAUSE_TOGGLE).pressed(),
+                &pause.state,
+            )
+        };
         if pause_restart_completed {
             self.reset_gameplay_selection_after_restart();
         }
@@ -216,6 +230,28 @@ mod presentation_runtime_tests {
     fn chassis_selection_is_explicit_precombat_state() {
         let game = VoidCanticleV27DirectPresentation::new();
         assert!(game.chassis_selection_active());
+    }
+
+    #[test]
+    fn pause_restart_is_completed_when_pause_enters_resume_gate_after_confirm() {
+        assert!(pause_restart_completed(
+            true,
+            true,
+            false,
+            &VcPauseState::ResumeGate,
+        ));
+        assert!(!pause_restart_completed(
+            true,
+            true,
+            false,
+            &VcPauseState::Running,
+        ));
+        assert!(!pause_restart_completed(
+            true,
+            true,
+            true,
+            &VcPauseState::ResumeGate,
+        ));
     }
 
     #[test]
