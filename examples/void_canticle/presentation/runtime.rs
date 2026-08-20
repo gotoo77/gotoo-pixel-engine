@@ -5,7 +5,7 @@ impl VoidCanticlePresentation {
             legacy_sink: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             presentation_time: 0.0,
-            hit_reactions: Vc27HitReactionState::default(),
+            hit_reactions: HitReactionState::default(),
             projectile_provenance: ProjectileProvenance::default(),
         }
     }
@@ -33,7 +33,7 @@ impl VoidCanticlePresentation {
 
     fn reset_presentation_after_restart(&mut self) {
         self.presentation_time = 0.0;
-        self.hit_reactions = Vc27HitReactionState::default();
+        self.hit_reactions = HitReactionState::default();
         self.projectile_provenance = ProjectileProvenance::default();
     }
 
@@ -136,7 +136,7 @@ impl Game for VoidCanticlePresentation {
             let pause = self.game.survival_model().game.pause_ui();
             matches!(&pause.state, VcPauseState::Menu) && pause.menu.selected() == Some(1)
         };
-        let hit_snapshot = Vc27HitSnapshot::capture(&self.game);
+        let hit_snapshot = HitSnapshot::capture(&self.game);
         let projectile_snapshot = ProjectileSourceSnapshot::capture(&self.game);
 
         let result = {
