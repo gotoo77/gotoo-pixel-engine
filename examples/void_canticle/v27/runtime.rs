@@ -5,6 +5,7 @@ impl VoidCanticleV27DirectPresentation {
             legacy_sink: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             presentation_time: 0.0,
+            hit_reactions: Vc27HitReactionState::default(),
         }
     }
 
@@ -71,7 +72,9 @@ impl VoidCanticleV27DirectPresentation {
 
 impl Game for VoidCanticleV27DirectPresentation {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        self.presentation_time += frame.delta_time.as_secs_f32().min(0.05);
+        let dt = frame.delta_time.as_secs_f32().min(0.05);
+        self.presentation_time += dt;
+        let hit_snapshot = Vc27HitSnapshot::capture(&self.game);
 
         let result = {
             let mut legacy_frame = Frame {
@@ -94,6 +97,8 @@ impl Game for VoidCanticleV27DirectPresentation {
         if result == GameResult::Exit {
             return result;
         }
+
+        self.hit_reactions.update(dt, &hit_snapshot, &self.game);
 
         if self.chassis_selection_active() {
             self.render_chassis_selection_presentation(frame.framebuffer);
