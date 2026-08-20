@@ -2,6 +2,14 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/modals/build_overview.rs"
 ));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/modals/pause_menu.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/modals/controls.rs"
+));
 
 impl VoidCanticleV27DirectPresentation {
     fn render_clean_modal(&mut self, framebuffer: &mut Framebuffer, mode: VcVisualMode) {
@@ -21,13 +29,24 @@ impl VoidCanticleV27DirectPresentation {
             return;
         }
 
-        if matches!(&mode, VcVisualMode::Pause)
-            && matches!(
-                &self.game.survival_model().game.pause_ui().state,
-                VcPauseState::BuildInfo
-            )
-        {
-            vc27_render_build_overview(framebuffer, &self.game, self.presentation_time);
+        if matches!(&mode, VcVisualMode::Pause) {
+            let pause = self.game.survival_model().game.pause_ui();
+            match &pause.state {
+                VcPauseState::BuildInfo => {
+                    vc27_render_build_overview(framebuffer, &self.game, self.presentation_time);
+                }
+                VcPauseState::Controls => {
+                    vc27_render_controls_reference(framebuffer, self.presentation_time);
+                }
+                VcPauseState::Menu | VcPauseState::ResumeGate | VcPauseState::Running => {
+                    vc27_render_pause_menu(
+                        framebuffer,
+                        &self.game,
+                        pause,
+                        self.presentation_time,
+                    );
+                }
+            }
             return;
         }
 
@@ -45,16 +64,7 @@ impl VoidCanticleV27DirectPresentation {
                     v14.render_mutation_choice(&mut self.clean_background, choice);
                 }
             }
-            VcVisualMode::Pause => {
-                let pause = self.game.survival_model().game.pause_ui();
-                match &pause.state {
-                    VcPauseState::Controls => pause.render_controls(&mut self.clean_background),
-                    VcPauseState::BuildInfo => {}
-                    VcPauseState::Menu | VcPauseState::ResumeGate | VcPauseState::Running => {
-                        pause.render_menu(&mut self.clean_background)
-                    }
-                }
-            }
+            VcVisualMode::Pause => {}
             VcVisualMode::StageClear => {
                 self.game
                     .survival_model()
