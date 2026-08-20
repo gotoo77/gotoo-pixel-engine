@@ -19,6 +19,7 @@ WEB_GAME_EXAMPLES = [
     "pong_web",
     "space_invaders_web",
     "arcade_web",
+    "void_canticle_web",
 ]
 PAGES_STATIC_FILES = [
     "index.html",
@@ -27,6 +28,7 @@ PAGES_STATIC_FILES = [
     "tetris.html",
     "space_invaders.html",
     "pong.html",
+    "void_canticle.html",
     "favicon.svg",
     "audio-unlock.js",
     "fullscreen.js",
@@ -85,6 +87,15 @@ def wasm_bindgen(wasm: Path, out_dir: Path) -> None:
     )
 
 
+def sync_void_canticle_web_assets(destination_root: Path) -> None:
+    source = ROOT / "assets" / "void_canticle" / "ui" / "choice"
+    destination = destination_root / "assets" / "void_canticle" / "ui" / "choice"
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination)
+
+
 def command_check(args: argparse.Namespace) -> None:
     run(["cargo", "fmt", "--check"])
     run(["cargo", "test", "--lib", "--bins", "--examples", "--tests"])
@@ -112,6 +123,7 @@ def prepare_pages() -> Path:
     pkg.mkdir(parents=True)
     for name in PAGES_STATIC_FILES:
         shutil.copy2(ROOT / "web" / name, dist / name)
+    sync_void_canticle_web_assets(dist)
     return pkg
 
 
@@ -123,6 +135,7 @@ def command_build_web(args: argparse.Namespace) -> None:
         print(f"==> Pages artifact ready: {ROOT / 'dist'}")
         return
 
+    sync_void_canticle_web_assets(ROOT / "web")
     out_dir = ROOT / "web" / "pkg"
     for example in WEB_GAME_EXAMPLES:
         wasm_bindgen(cargo_build_web(example, release=args.release), out_dir)
@@ -131,6 +144,7 @@ def command_build_web(args: argparse.Namespace) -> None:
 
 
 def command_serve_web(args: argparse.Namespace) -> None:
+    sync_void_canticle_web_assets(ROOT / "web")
     directory = str(ROOT / "web")
     handler = partial(http.server.SimpleHTTPRequestHandler, directory=directory)
     server = http.server.ThreadingHTTPServer((args.bind, args.port), handler)
