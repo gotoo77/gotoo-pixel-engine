@@ -6,6 +6,7 @@ impl VoidCanticleV27DirectPresentation {
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             presentation_time: 0.0,
             hit_reactions: Vc27HitReactionState::default(),
+            projectile_provenance: Vc27ProjectileProvenance::default(),
         }
     }
 
@@ -75,14 +76,16 @@ impl Game for VoidCanticleV27DirectPresentation {
         let dt = frame.delta_time.as_secs_f32().min(0.05);
         self.presentation_time += dt;
         let hit_snapshot = Vc27HitSnapshot::capture(&self.game);
+        let projectile_snapshot = Vc27ProjectileSourceSnapshot::capture(&self.game);
 
         let result = {
+            let mut legacy_audio = Vc27LegacyAttackAudioFilter::new(&mut *frame.audio);
             let mut legacy_frame = Frame {
                 framebuffer: &mut self.legacy_sink,
                 input: frame.input,
                 delta_time: frame.delta_time,
                 storage: &mut *frame.storage,
-                audio: &mut *frame.audio,
+                audio: &mut legacy_audio,
                 surface_size: frame.surface_size,
                 viewport: gotoo_pixel_engine::Viewport::new(
                     frame.surface_size,
@@ -99,6 +102,10 @@ impl Game for VoidCanticleV27DirectPresentation {
         }
 
         self.hit_reactions.update(dt, &hit_snapshot, &self.game);
+        let attack_sounds =
+            self.projectile_provenance
+                .reconcile(dt, &projectile_snapshot, &self.game);
+        self.game.play_attack_sounds(frame, &attack_sounds);
 
         if self.chassis_selection_active() {
             self.render_chassis_selection_presentation(frame.framebuffer);
