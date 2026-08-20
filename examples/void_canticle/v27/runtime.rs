@@ -14,6 +14,13 @@ impl VoidCanticleV27DirectPresentation {
         self.game.game.game.game.game.chassis.is_none()
     }
 
+    fn reset_to_fresh_launch(&mut self) {
+        self.game = VoidCanticleV23Sustain::new();
+        self.presentation_time = 0.0;
+        self.hit_reactions = Vc27HitReactionState::default();
+        self.projectile_provenance = Vc27ProjectileProvenance::default();
+    }
+
     fn render_chassis_selection_presentation(&mut self, framebuffer: &mut Framebuffer) {
         let selector = &self.game.game.game.game.game;
         vc27_render_chassis_showcase(
@@ -71,10 +78,32 @@ impl VoidCanticleV27DirectPresentation {
     }
 }
 
+fn vc27_full_restart_completed(
+    was_game_over: bool,
+    is_game_over: bool,
+    was_stage_clear: bool,
+    encounter_phase: EncounterPhase,
+    pause_restart_selected: bool,
+    pause_confirm_pressed: bool,
+) -> bool {
+    let death_restart = was_game_over && !is_game_over;
+    let stage_restart = was_stage_clear && encounter_phase != EncounterPhase::Cleared;
+    let pause_restart = pause_restart_selected && pause_confirm_pressed;
+
+    death_restart || stage_restart || pause_restart
+}
+
 impl Game for VoidCanticleV27DirectPresentation {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         let dt = frame.delta_time.as_secs_f32().min(0.05);
         self.presentation_time += dt;
+
+        let was_game_over = self.game.game.base().game_over;
+        let was_stage_clear = self.game.survival_model().game.stage_clear_visible();
+        let pause_restart_selected = {
+            let pause = self.game.survival_model().game.pause_ui();
+            matches!(&pause.state, VcPauseState::Menu) && pause.menu.selected() == Some(1)
+        };
         let hit_snapshot = Vc27HitSnapshot::capture(&self.game);
         let projectile_snapshot = Vc27ProjectileSourceSnapshot::capture(&self.game);
 
@@ -99,6 +128,27 @@ impl Game for VoidCanticleV27DirectPresentation {
         };
         if result == GameResult::Exit {
             return result;
+        }
+
+        let pause_confirm_pressed = self
+            .game
+            .survival_model()
+            .game
+            .pause_ui()
+            .controls
+            .action(VC_PAUSE_CONFIRM)
+            .pressed();
+        if vc27_full_restart_completed(
+            was_game_over,
+            self.game.game.base().game_over,
+            was_stage_clear,
+            self.game.game.base().encounter_phase,
+            pause_restart_selected,
+            pause_confirm_pressed,
+        ) {
+            self.reset_to_fresh_launch();
+            self.render_chassis_selection_presentation(frame.framebuffer);
+            return GameResult::Continue;
         }
 
         self.hit_reactions.update(dt, &hit_snapshot, &self.game);
@@ -159,6 +209,52 @@ mod v27_runtime_tests {
     #[test]
     fn chassis_selection_is_explicit_precombat_state() {
         let game = VoidCanticleV27DirectPresentation::new();
+        assert!(game.chassis_selection_active());
+    }
+
+    #[test]
+    fn every_restart_path_requests_a_fresh_launch() {
+        assert!(vc27_full_restart_completed(
+            true,
+            false,
+            false,
+            EncounterPhase::Waves,
+            false,
+            false,
+        ));
+        assert!(vc27_full_restart_completed(
+            false,
+            false,
+            true,
+            EncounterPhase::Waves,
+            false,
+            false,
+        ));
+        assert!(vc27_full_restart_completed(
+            false,
+            false,
+            false,
+            EncounterPhase::Waves,
+            true,
+            true,
+        ));
+        assert!(!vc27_full_restart_completed(
+            false,
+            false,
+            false,
+            EncounterPhase::Waves,
+            true,
+            false,
+        ));
+    }
+
+    #[test]
+    fn fresh_launch_resets_presentation_state_and_returns_to_chassis_select() {
+        let mut game = VoidCanticleV27DirectPresentation::new();
+        game.presentation_time = 42.0;
+        game.reset_to_fresh_launch();
+
+        assert_eq!(game.presentation_time, 0.0);
         assert!(game.chassis_selection_active());
     }
 
