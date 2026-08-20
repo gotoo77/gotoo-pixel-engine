@@ -5,9 +5,31 @@ const VC23_CAPACITOR_DELAY: f32 = 2.5;
 const VC23_CAPACITOR_REGEN_PER_SECOND: f32 = 8.0;
 const VC23_SUSTAIN_FLASH_DURATION: f32 = 0.32;
 
+const VC23_ATTACK_SFX_KEYS: [&str; 5] = [
+    "enemy_fire_carrion",
+    "enemy_fire_wraith",
+    "enemy_fire_void_pulse",
+    "enemy_fire_void",
+    "enemy_fire_bellkeeper",
+];
+const VC23_CARRION_FIRE_SOUND: SoundId = SoundId::new("void_canticle.enemy_fire_carrion");
+const VC23_WRAITH_FIRE_SOUND: SoundId = SoundId::new("void_canticle.enemy_fire_wraith");
+const VC23_VOID_PULSE_FIRE_SOUND: SoundId = SoundId::new("void_canticle.enemy_fire_void_pulse");
+const VC23_VOID_FIRE_SOUND: SoundId = SoundId::new("void_canticle.enemy_fire_void");
+const VC23_BELLKEEPER_FIRE_SOUND: SoundId = SoundId::new("void_canticle.enemy_fire_bellkeeper");
+
 const VC23_SUPPORT_UP: ActionId = ActionId::new("void_canticle.support.up");
 const VC23_SUPPORT_DOWN: ActionId = ActionId::new("void_canticle.support.down");
 const VC23_SUPPORT_CONFIRM: ActionId = ActionId::new("void_canticle.support.confirm");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Vc23AttackSound {
+    Carrion,
+    Wraith,
+    VoidPulse,
+    Void,
+    Bellkeeper,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Vc23SustainAugment {
@@ -50,7 +72,13 @@ struct VoidCanticleV23Sustain {
 
 impl VoidCanticleV23Sustain {
     fn new() -> Self {
-        Self {
+        let manifest = gotoo_pixel_engine::SfxManifest::parse(VC20_SFX_MANIFEST)
+            .expect("checked-in VC SFX manifest should parse");
+        manifest
+            .require_keys(&VC23_ATTACK_SFX_KEYS)
+            .expect("checked-in VC SFX manifest should contain attack family events");
+
+        let mut sustain = Self {
             game: VoidCanticleV23::new(),
             augment: None,
             support_offered: false,
@@ -64,7 +92,39 @@ impl VoidCanticleV23Sustain {
             ),
             quiet_timer: 0.0,
             sustain_flash_timer: 0.0,
+        };
+
+        for (id, wav) in [
+            (
+                VC23_CARRION_FIRE_SOUND,
+                synthesize_chirp(330.0, 510.0, 0.048, 0.045),
+            ),
+            (
+                VC23_WRAITH_FIRE_SOUND,
+                synthesize_chirp(880.0, 250.0, 0.095, 0.060),
+            ),
+            (
+                VC23_VOID_PULSE_FIRE_SOUND,
+                synthesize_chirp(180.0, 72.0, 0.130, 0.070),
+            ),
+            (
+                VC23_VOID_FIRE_SOUND,
+                synthesize_chirp(350.0, 112.0, 0.105, 0.055),
+            ),
+            (
+                VC23_BELLKEEPER_FIRE_SOUND,
+                synthesize_chirp(215.0, 82.0, 0.155, 0.075),
+            ),
+        ] {
+            sustain
+                .combat_model_mut()
+                .base_mut()
+                .sounds
+                .insert_wav(id, wav)
+                .expect("VC2.3 attack family sound ids should be unique");
         }
+
+        sustain
     }
 
     fn combat_model(&self) -> &VoidCanticleV21 {
@@ -90,6 +150,67 @@ impl VoidCanticleV23Sustain {
 
     fn progression_level(&self) -> u32 {
         self.game.v20().game.v14().progression.level
+    }
+
+    fn attack_audio_snapshot(&self) -> (usize, bool) {
+        (
+            self.game.base().enemy_bullets.len(),
+            self.game
+                .v20()
+                .game
+                .ui
+                .game
+                .combat
+                .combat
+                .pending_attack
+                .is_some(),
+        )
+    }
+
+    fn detect_attack_sounds(
+        &self,
+        bullet_count_before: usize,
+        void_pending_before: bool,
+    ) -> Vec<Vc23AttackSound> {
+        let bullets = &self.game.base().enemy_bullets;
+        let new_count = bullets.len().saturating_sub(bullet_count_before);
+        if new_count == 0 {
+            return Vec::new();
+        }
+
+        let void_pending_after = self
+            .game
+            .v20()
+            .game
+            .ui
+            .game
+            .combat
+            .combat
+            .pending_attack
+            .is_some();
+        let void_attack_fired = void_pending_before && !void_pending_after;
+        let encounter_phase = self.game.base().encounter_phase;
+        let mut sounds = Vec::new();
+
+        for bullet in &bullets[bullets.len() - new_count..] {
+            let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt();
+            let sound = vc23_attack_sound_style(encounter_phase, speed, void_attack_fired);
+            if !sounds.contains(&sound) {
+                sounds.push(sound);
+            }
+        }
+        sounds
+    }
+
+    fn play_attack_sounds(&mut self, frame: &mut Frame<'_>, sounds: &[Vc23AttackSound]) {
+        for sound in sounds {
+            let id = vc23_attack_sound_id(*sound);
+            let _ = self
+                .combat_model_mut()
+                .base_mut()
+                .sounds
+                .play(frame.audio, id);
+        }
     }
 
     fn support_choice_can_start(&self) -> bool {
@@ -241,11 +362,15 @@ impl Game for VoidCanticleV23Sustain {
         let stage_time_before = self.game.base().stage_time;
         let hull_before = self.combat_model().player_hull;
         let shield_before = self.combat_model().player_shield;
+        let (bullet_count_before, void_pending_before) = self.attack_audio_snapshot();
 
         let result = self.game.update(frame);
         if result == GameResult::Exit {
             return result;
         }
+
+        let attack_sounds = self.detect_attack_sounds(bullet_count_before, void_pending_before);
+        self.play_attack_sounds(frame, &attack_sounds);
 
         if self.game.base().stage_time + 0.05 < stage_time_before {
             self.reset_for_new_run();
@@ -258,6 +383,44 @@ impl Game for VoidCanticleV23Sustain {
             self.render_support_choice(frame.framebuffer);
         }
         GameResult::Continue
+    }
+}
+
+fn vc23_attack_sound_id(sound: Vc23AttackSound) -> SoundId {
+    match sound {
+        Vc23AttackSound::Carrion => VC23_CARRION_FIRE_SOUND,
+        Vc23AttackSound::Wraith => VC23_WRAITH_FIRE_SOUND,
+        Vc23AttackSound::VoidPulse => VC23_VOID_PULSE_FIRE_SOUND,
+        Vc23AttackSound::Void => VC23_VOID_FIRE_SOUND,
+        Vc23AttackSound::Bellkeeper => VC23_BELLKEEPER_FIRE_SOUND,
+    }
+}
+
+fn vc23_void_attack_speed(speed: f32) -> bool {
+    [62.0, 70.0, 76.0, 78.0, 86.0, 90.0, 96.0, 108.0, 110.0, 132.0]
+        .into_iter()
+        .any(|candidate| (speed - candidate).abs() <= 1.0)
+}
+
+fn vc23_attack_sound_style(
+    encounter_phase: EncounterPhase,
+    speed: f32,
+    void_attack_fired: bool,
+) -> Vc23AttackSound {
+    if void_attack_fired && vc23_void_attack_speed(speed) {
+        return Vc23AttackSound::Void;
+    }
+    if encounter_phase == EncounterPhase::BossFight {
+        return Vc23AttackSound::Bellkeeper;
+    }
+    if (speed - 48.0).abs() <= 1.0 {
+        Vc23AttackSound::Wraith
+    } else if (speed - 62.0).abs() <= 1.0 {
+        Vc23AttackSound::VoidPulse
+    } else if (speed - ENEMY_SHOT_SPEED).abs() <= 1.0 {
+        Vc23AttackSound::Carrion
+    } else {
+        Vc23AttackSound::Void
     }
 }
 
@@ -306,5 +469,42 @@ mod v23_sustain_tests {
     #[test]
     fn support_choice_waits_until_progression_is_established() {
         assert!(VC23_SUPPORT_LEVEL >= 3);
+    }
+
+    #[test]
+    fn attack_family_events_are_declared_in_sfx_manifest() {
+        let manifest = gotoo_pixel_engine::SfxManifest::parse(VC20_SFX_MANIFEST)
+            .expect("VC SFX manifest should parse");
+        manifest
+            .require_keys(&VC23_ATTACK_SFX_KEYS)
+            .expect("VC SFX manifest should cover attack family events");
+    }
+
+    #[test]
+    fn attack_sound_style_follows_existing_projectile_language() {
+        assert_eq!(
+            vc23_attack_sound_style(EncounterPhase::Waves, 68.0, false),
+            Vc23AttackSound::Carrion
+        );
+        assert_eq!(
+            vc23_attack_sound_style(EncounterPhase::Waves, 48.0, false),
+            Vc23AttackSound::Wraith
+        );
+        assert_eq!(
+            vc23_attack_sound_style(EncounterPhase::Waves, 62.0, false),
+            Vc23AttackSound::VoidPulse
+        );
+        assert_eq!(
+            vc23_attack_sound_style(EncounterPhase::Waves, 96.0, true),
+            Vc23AttackSound::Void
+        );
+        assert_eq!(
+            vc23_attack_sound_style(EncounterPhase::BossFight, 48.0, false),
+            Vc23AttackSound::Bellkeeper
+        );
+        assert_eq!(
+            vc23_attack_sound_style(EncounterPhase::BossFight, 96.0, true),
+            Vc23AttackSound::Void
+        );
     }
 }
