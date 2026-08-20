@@ -23,6 +23,8 @@ const VC20_REQUIRED_SFX: [&str; 14] = [
 const VC20_BOSS_SHIELD_MAX: u32 = 120;
 const VC20_BOSS_SHIELD_BREAK_DURATION: f32 = 1.15;
 const VC20_BOSS_SHIELD_FLASH_DURATION: f32 = 0.10;
+const VC20_ARMOR_IMPACT_DURATION: f32 = 0.14;
+const VC20_ARMOR_IMPACT_SPARKS: usize = 6;
 const VC20_ARMOR: Pixel = Pixel::rgb(82, 202, 255);
 const VC20_ARMOR_LIGHT: Pixel = Pixel::rgb(214, 246, 255);
 const VC20_ARMOR_BG: Pixel = Pixel::rgb(24, 47, 64);
@@ -144,6 +146,39 @@ impl VoidCanticleV20 {
         }
     }
 
+    fn spawn_armor_impact_fx(&mut self, impacts: &[(f32, f32)]) {
+        for (impact_index, &(x, y)) in impacts.iter().enumerate() {
+            self.game
+                .ui
+                .game
+                .combat
+                .base_mut()
+                .bursts
+                .push(Burst::new(x, y, VC20_ARMOR_IMPACT_DURATION, VC20_ARMOR_LIGHT));
+
+            let seed = x * 0.071 + y * 0.043 + impact_index as f32 * 0.61;
+            for spark in 0..VC20_ARMOR_IMPACT_SPARKS {
+                let angle = seed
+                    + spark as f32 * std::f32::consts::TAU / VC20_ARMOR_IMPACT_SPARKS as f32;
+                let speed = 72.0 + (spark % 3) as f32 * 18.0;
+                self.game.ui.game.particles.push(V17Particle {
+                    x,
+                    y,
+                    vx: angle.cos() * speed,
+                    vy: angle.sin() * speed,
+                    life: VC20_ARMOR_IMPACT_DURATION,
+                    max_life: VC20_ARMOR_IMPACT_DURATION,
+                    color: if spark % 2 == 0 {
+                        VC20_ARMOR_LIGHT
+                    } else {
+                        BOLT_CORE
+                    },
+                    kind: V17ParticleKind::Spark,
+                });
+            }
+        }
+    }
+
     fn preprocess_projectile_defenses(&mut self, dt: f32) {
         self.sync_enemy_armor();
 
@@ -202,6 +237,7 @@ impl VoidCanticleV20 {
 
         let mut shield_hit = false;
         let mut shield_broken = false;
+        let mut armor_impacts = Vec::new();
 
         {
             let carrion_armor = &mut self.carrion_armor;
@@ -218,6 +254,7 @@ impl VoidCanticleV20 {
                         if let Some(armor) = carrion_armor.get_mut(key) {
                             *armor = armor.saturating_sub(1);
                         }
+                        armor_impacts.push((*enemy_x, *enemy_y));
                         return false;
                     }
                 }
@@ -230,6 +267,7 @@ impl VoidCanticleV20 {
                     *boss_shield = boss_shield.saturating_sub(1);
                     shield_hit = true;
                     shield_broken |= before > 0 && *boss_shield == 0;
+                    armor_impacts.push((boss_x, boss_y + 4.0));
                     return false;
                 }
 
@@ -268,6 +306,7 @@ impl VoidCanticleV20 {
                         if let Some(armor) = threat_armor.get_mut(key) {
                             *armor = armor.saturating_sub(damage);
                         }
+                        armor_impacts.push((*enemy_x, *enemy_y));
                         return false;
                     }
                 }
@@ -279,6 +318,7 @@ impl VoidCanticleV20 {
                         if let Some(armor) = special_armor.get_mut(key) {
                             *armor = armor.saturating_sub(damage);
                         }
+                        armor_impacts.push((*enemy_x, *enemy_y));
                         return false;
                     }
                 }
@@ -290,6 +330,7 @@ impl VoidCanticleV20 {
                         if let Some(armor) = carrion_armor.get_mut(key) {
                             *armor = armor.saturating_sub(damage);
                         }
+                        armor_impacts.push((*enemy_x, *enemy_y));
                         return false;
                     }
                 }
@@ -302,12 +343,15 @@ impl VoidCanticleV20 {
                     *boss_shield = boss_shield.saturating_sub(damage);
                     shield_hit = true;
                     shield_broken |= before > 0 && *boss_shield == 0;
+                    armor_impacts.push((boss_x, boss_y + 4.0));
                     return false;
                 }
 
                 true
             });
         }
+
+        self.spawn_armor_impact_fx(&armor_impacts);
 
         if shield_hit {
             self.boss_shield_flash_timer = VC20_BOSS_SHIELD_FLASH_DURATION;
@@ -679,5 +723,20 @@ mod v20_tests {
     #[test]
     fn bellkeeper_shield_doubles_initial_defense_budget() {
         assert_eq!(VC20_BOSS_SHIELD_MAX, BELLKEEPER_MAX_HP);
+    }
+
+    #[test]
+    fn armor_impact_fx_emits_local_burst_and_sparks() {
+        let mut game = VoidCanticleV20::new();
+        let bursts_before = game.game.base().bursts.len();
+        let particles_before = game.game.ui.game.particles.len();
+
+        game.spawn_armor_impact_fx(&[(90.0, 120.0)]);
+
+        assert_eq!(game.game.base().bursts.len(), bursts_before + 1);
+        assert_eq!(
+            game.game.ui.game.particles.len(),
+            particles_before + VC20_ARMOR_IMPACT_SPARKS
+        );
     }
 }
