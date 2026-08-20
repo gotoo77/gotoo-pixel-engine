@@ -153,7 +153,7 @@ mod v27_runtime_tests {
 
     #[test]
     fn version_is_explicit() {
-        assert_eq!(VC27_PRESENTATION_VERSION, "VC2.8");
+        assert_eq!(VC27_PRESENTATION_VERSION, "VC2.9");
     }
 
     #[test]
