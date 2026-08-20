@@ -102,7 +102,12 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-x11-0 xvfb
+          sudo apt-get install -y \
+            libxkbcommon-x11-0 \
+            libvulkan1 \
+            libx11-xcb1 \
+            mesa-vulkan-drivers \
+            xvfb
 
       - name: Extract and launch Linux package
         if: runner.os == 'Linux'
@@ -117,9 +122,13 @@ jobs:
             echo "Unresolved Linux runtime dependency after extraction"
             exit 1
           fi
+          test -f /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           pushd extracted >/dev/null
           set +e
-          timeout 8s xvfb-run -a ./void_canticle > ../launch.log 2>&1
+          VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+            LIBGL_ALWAYS_SOFTWARE=1 \
+            timeout 8s xvfb-run -a -s "-screen 0 1280x720x24" ./void_canticle \
+            > ../launch.log 2>&1
           status=$?
           set -e
           popd >/dev/null
