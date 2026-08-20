@@ -156,9 +156,9 @@ pub(crate) mod game {
         pub(crate) use super::legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::presentation::vc27_preload_choice_catalog_web as preload_choice_catalog_web;
     }
 
-    pub(crate) use current::run_void_canticle_with_obs_mirror;
     #[cfg(target_arch = "wasm32")]
     pub(crate) use current::preload_choice_catalog_web;
+    pub(crate) use current::run_void_canticle_with_obs_mirror;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
