@@ -23,7 +23,7 @@ include!(concat!(
     "/examples/void_canticle/presentation/modals/death.rs"
 ));
 
-impl VoidCanticleV27DirectPresentation {
+impl VoidCanticlePresentation {
     fn render_clean_modal(&mut self, framebuffer: &mut Framebuffer, mode: VcVisualMode) {
         self.render_clean_background(framebuffer);
 
