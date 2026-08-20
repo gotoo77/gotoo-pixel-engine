@@ -1,6 +1,7 @@
 pub(crate) mod game {
     // Historical implementation is isolated behind one semantic boundary.
     // Current callers never depend on the old vXX module graph directly.
+    #[allow(dead_code, clippy::collapsible_if, clippy::too_many_arguments)]
     mod legacy {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),

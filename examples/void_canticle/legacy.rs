@@ -1,5 +1,3 @@
-#![allow(dead_code, clippy::collapsible_if, clippy::too_many_arguments)]
-
 macro_rules! legacy_include {
     ($path:literal) => {
         include!(concat!(
