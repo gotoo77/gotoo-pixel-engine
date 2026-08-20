@@ -20,6 +20,7 @@ pub enum Key {
     W,
     X,
     LeftShift,
+    C,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -363,7 +364,7 @@ impl Default for Input {
     }
 }
 
-const KEY_COUNT: usize = 15;
+const KEY_COUNT: usize = 16;
 const MOUSE_BUTTON_COUNT: usize = 3;
 const GAMEPAD_BUTTON_COUNT: usize = 16;
 
@@ -384,6 +385,7 @@ fn key_index(key: Key) -> usize {
         Key::W => 12,
         Key::X => 13,
         Key::LeftShift => 14,
+        Key::C => 15,
     }
 }
 
@@ -468,16 +470,19 @@ mod tests {
     }
 
     #[test]
-    fn x_and_left_shift_use_independent_key_slots() {
+    fn c_x_and_left_shift_use_independent_key_slots() {
         let mut input = Input::default();
 
         input.press_key(Key::LeftShift);
         assert!(input.key(Key::LeftShift).held());
         assert!(!input.key(Key::X).held());
+        assert!(!input.key(Key::C).held());
 
         input.press_key(Key::X);
+        input.press_key(Key::C);
         assert!(input.key(Key::LeftShift).held());
         assert!(input.key(Key::X).pressed());
+        assert!(input.key(Key::C).pressed());
     }
 
     #[test]

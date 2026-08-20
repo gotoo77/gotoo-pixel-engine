@@ -1,4 +1,4 @@
-mod game {
+pub(crate) mod game {
     mod legacy_base {
         #![allow(dead_code, clippy::collapsible_if, clippy::too_many_arguments)]
 
@@ -65,10 +65,67 @@ mod game {
                                                             include!("void_canticle/v19_game.rs");
 
                                                             pub(crate) mod v20 {
+                                                                #![allow(unused_assignments)]
+
                                                                 use super::*;
                                                                 include!(
                                                                     "void_canticle/v20_game.rs"
                                                                 );
+
+                                                                pub(crate) mod v21 {
+                                                                    use super::*;
+                                                                    include!(
+                                                                        "void_canticle/v21_game.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_runtime.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_tuning.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_stabilization.rs"
+                                                                    );
+                                                                    include!(
+                                                                        "void_canticle/v21_survival_cleanup.rs"
+                                                                    );
+
+                                                                    pub(crate) mod v22 {
+                                                                        use super::*;
+                                                                        include!(
+                                                                            "void_canticle/v22_game.rs"
+                                                                        );
+                                                                        include!(
+                                                                            "void_canticle/v22_movement.rs"
+                                                                        );
+                                                                        include!(
+                                                                            "void_canticle/v22_passives.rs"
+                                                                        );
+
+                                                                        pub(crate) mod v23 {
+                                                                            use super::*;
+                                                                            include!(
+                                                                                "void_canticle/v23_game.rs"
+                                                                            );
+                                                                            include!(
+                                                                                "void_canticle/v23_sustain.rs"
+                                                                            );
+                                                                            include!(
+                                                                                "void_canticle/v23_visual_foundation.rs"
+                                                                            );
+
+                                                                            pub(crate) mod v27 {
+                                                                                use super::*;
+                                                                                include!(
+                                                                                    "void_canticle/v27.rs"
+                                                                                );
+                                                                                include!(
+                                                                                    "void_canticle/v27/choice_runtime.rs"
+                                                                                );
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -85,9 +142,12 @@ mod game {
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::run_v20_with_obs_mirror;
+    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::v27::run_v27_showcase_presentation_with_obs_mirror;
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::v27::vc27_preload_choice_catalog_web;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_v20_with_obs_mirror()
+    game::run_v27_showcase_presentation_with_obs_mirror()
 }

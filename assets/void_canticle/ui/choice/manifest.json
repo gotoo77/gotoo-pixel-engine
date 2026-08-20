@@ -1,0 +1,17 @@
+{
+  "bulwark": { "icon": "bulwark.png" },
+  "pilgrim": { "icon": "pilgrim.png" },
+  "wraith": { "icon": "wraith.png" },
+  "rapid_fire": { "icon": "rapid_fire.png" },
+  "magnet_field": { "icon": "magnet_field.png" },
+  "stellar_power": { "icon": "stellar_power.png" },
+  "xp_hunger": { "icon": "xp_hunger.png" },
+  "vital_spark": { "icon": "vital_spark.png" },
+  "core_surge": { "icon": "core_surge.png" },
+  "piercing_lance": { "icon": "piercing_lance.png" },
+  "split_volley": { "icon": "split_volley.png" },
+  "death_nova": { "icon": "death_nova.png" },
+  "orbitals": { "icon": "orbitals.png" },
+  "nanite_repair": { "icon": "nanite_repair.png" },
+  "shield_capacitor": { "icon": "shield_capacitor.png" }
+}

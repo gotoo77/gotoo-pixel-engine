@@ -3,6 +3,12 @@ const VC11_VERSION: &str = "VC1.1";
 const KNIGHT_METAL: Pixel = Pixel::rgb(118, 124, 142);
 const WRAITH_GLOW: Pixel = Pixel::rgb(174, 105, 232);
 const CARRIER_GOLD: Pixel = Pixel::rgb(232, 184, 86);
+const CARRION_BONE: Pixel = Pixel::rgb(184, 86, 108);
+const CARRION_VOID: Pixel = Pixel::rgb(46, 25, 47);
+const KNIGHT_GOLD: Pixel = Pixel::rgb(206, 166, 88);
+const KNIGHT_SHADOW: Pixel = Pixel::rgb(52, 54, 70);
+const WRAITH_CORE: Pixel = Pixel::rgb(236, 210, 255);
+const CARRIER_VOID: Pixel = Pixel::rgb(61, 38, 72);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpecialKind {
@@ -666,7 +672,7 @@ impl VoidCanticleV11 {
         }
 
         for enemy in &base.enemies {
-            base.visuals.render_carrion(framebuffer, *enemy);
+            render_carrion_v18(framebuffer, *enemy);
         }
         for enemy in &self.specials {
             render_special(framebuffer, *enemy);
@@ -675,7 +681,7 @@ impl VoidCanticleV11 {
         if let Some(boss) = base.boss
             && base.encounter_phase != EncounterPhase::Cleared
         {
-            base.visuals.render_bellkeeper(framebuffer, boss);
+            render_bellkeeper_v18(framebuffer, boss);
         }
 
         for shot in &game.power_shots {
@@ -794,40 +800,143 @@ fn special_color(kind: SpecialKind) -> Pixel {
     }
 }
 
+fn render_carrion_v18(framebuffer: &mut Framebuffer, enemy: CarrionDrone) {
+    let x = enemy.x.round() as i32;
+    let y = enemy.y.round() as i32;
+    let flap = ((enemy.age * 7.0 + enemy.phase).sin() * 2.5).round() as i32;
+    let pulse = ((enemy.age * 10.0 + enemy.phase).sin() * 0.5 + 0.5) > 0.45;
+
+    // Manta-like ossuary silhouette: a recognizable predator at a glance,
+    // with thin ribs so dense bullet fields remain readable through it.
+    framebuffer.draw_line(x - 3, y - 2, x - 13, y - 7 - flap, CARRION_BONE);
+    framebuffer.draw_line(x - 4, y, x - 16, y - flap, CARRION_BONE);
+    framebuffer.draw_line(x - 3, y + 2, x - 11, y + 7 + flap, ENEMY_DARK);
+    framebuffer.draw_line(x + 3, y - 2, x + 13, y - 7 - flap, CARRION_BONE);
+    framebuffer.draw_line(x + 4, y, x + 16, y - flap, CARRION_BONE);
+    framebuffer.draw_line(x + 3, y + 2, x + 11, y + 7 + flap, ENEMY_DARK);
+
+    framebuffer.fill_rect(x - 4, y - 4, 9, 9, CARRION_VOID);
+    framebuffer.draw_line(x - 4, y - 4, x, y - 8, CARRION_BONE);
+    framebuffer.draw_line(x + 4, y - 4, x, y - 8, CARRION_BONE);
+    framebuffer.draw_line(x - 4, y + 4, x, y + 8, CARRION_BONE);
+    framebuffer.draw_line(x + 4, y + 4, x, y + 8, CARRION_BONE);
+    framebuffer.draw_circle(x, y, 4, CARRION_BONE);
+    framebuffer.fill_circle(x, y, 2, if pulse { ENEMY_EYE } else { ENEMY });
+    framebuffer.draw(x, y, CANTICLE_COLOR);
+}
+
+fn render_bellkeeper_v18(framebuffer: &mut Framebuffer, boss: Bellkeeper) {
+    let x = boss.x.round() as i32;
+    let y = boss.y.round() as i32;
+    let pulse = ((boss.age * 5.0) as i32 & 1) == 0;
+    let glow = if pulse { BELL_LIGHT } else { BELL_METAL };
+    let sway = ((boss.age * 2.2).sin() * 2.0).round() as i32;
+
+    // Cathedral halo and suspended side censers.
+    framebuffer.draw_circle(x, y - 3, 27, BELL_DARK);
+    framebuffer.draw_circle(x, y - 3, 24, BELL_METAL);
+    framebuffer.draw_line(x - 13, y - 14, x - 31, y - 21 + sway, BELL_METAL);
+    framebuffer.draw_line(x + 13, y - 14, x + 31, y - 21 - sway, BELL_METAL);
+    framebuffer.draw_circle(x - 33, y - 21 + sway, 5, glow);
+    framebuffer.draw_circle(x + 33, y - 21 - sway, 5, glow);
+    framebuffer.fill_circle(x - 33, y - 21 + sway, 2, BELL_DARK);
+    framebuffer.fill_circle(x + 33, y - 21 - sway, 2, BELL_DARK);
+
+    // Bell/cathedral body. The empty centre reads as a mouth/portal rather
+    // than a generic mechanical boss face.
+    framebuffer.draw_line(x - 10, y - 18, x - 15, y + 9, BELL_LIGHT);
+    framebuffer.draw_line(x + 10, y - 18, x + 15, y + 9, BELL_LIGHT);
+    framebuffer.draw_line(x - 10, y - 18, x, y - 25, BELL_METAL);
+    framebuffer.draw_line(x + 10, y - 18, x, y - 25, BELL_METAL);
+    framebuffer.fill_rect(x - 10, y - 15, 21, 19, BELL_DARK);
+    framebuffer.draw_rect(x - 10, y - 15, 21, 19, BELL_METAL);
+    framebuffer.draw_circle(x, y - 6, 7, BELL_LIGHT);
+    framebuffer.fill_circle(x, y - 6, 4, BG);
+    framebuffer.fill_circle(x, y - 6, 1, DANGER);
+    framebuffer.draw_line(x - 15, y + 9, x + 15, y + 9, BELL_LIGHT);
+    framebuffer.draw_line(x - 12, y + 13, x + 12, y + 13, BELL_METAL);
+    framebuffer.draw_line(x, y + 4, x, y + 17, BELL_LIGHT);
+    framebuffer.fill_circle(x, y + 19 + sway, 3, DANGER);
+
+    match boss.phase() {
+        BellPhase::Procession => {}
+        BellPhase::Resonance => {
+            framebuffer.draw_circle(x, y - 3, 31, BELL_LIGHT);
+            framebuffer.draw_circle(x, y - 3, 35, BELL_DARK);
+        }
+        BellPhase::FinalToll => {
+            framebuffer.draw_circle(x, y - 3, 31, DANGER);
+            framebuffer.draw_circle(x, y - 3, 36, BELL_LIGHT);
+            framebuffer.draw_line(x - 40, y - 3, x + 40, y - 3, BELL_DARK);
+        }
+    }
+}
+
 fn render_special(framebuffer: &mut Framebuffer, enemy: SpecialEnemy) {
     let x = enemy.x.round() as i32;
     let y = enemy.y.round() as i32;
 
     match enemy.kind {
         SpecialKind::GraveKnight => {
-            if (0.90..1.55).contains(&enemy.age) {
-                framebuffer.draw_line(x, y + 8, x, FRAMEBUFFER_HEIGHT as i32 - 18, DANGER);
+            let charge = (0.90..1.55).contains(&enemy.age);
+            if charge {
+                framebuffer.draw_line(x, y + 11, x, FRAMEBUFFER_HEIGHT as i32 - 18, DANGER);
             }
-            framebuffer.fill_rect(x - 3, y - 8, 7, 17, KNIGHT_METAL);
-            framebuffer.fill_rect(x - 8, y - 4, 17, 5, KNIGHT_METAL);
-            framebuffer.draw_rect(x - 5, y - 10, 11, 7, PILGRIM_GOLD);
-            framebuffer.fill_rect(x - 1, y - 7, 3, 3, DANGER);
-            framebuffer.draw_line(x - 4, y + 8, x - 6, y + 13, WRECK_LIGHT);
-            framebuffer.draw_line(x + 4, y + 8, x + 6, y + 13, WRECK_LIGHT);
+
+            // Armoured reliquary/ram: broad shoulders, narrow lance, one red
+            // chapel-window eye. It should read as "heavy" before it moves.
+            framebuffer.fill_rect(x - 5, y - 8, 11, 17, KNIGHT_SHADOW);
+            framebuffer.draw_rect(x - 5, y - 8, 11, 17, KNIGHT_METAL);
+            framebuffer.fill_rect(x - 10, y - 4, 5, 7, KNIGHT_METAL);
+            framebuffer.fill_rect(x + 6, y - 4, 5, 7, KNIGHT_METAL);
+            framebuffer.draw_line(x - 10, y - 4, x - 14, y + 2, KNIGHT_GOLD);
+            framebuffer.draw_line(x + 10, y - 4, x + 14, y + 2, KNIGHT_GOLD);
+            framebuffer.draw_line(x - 4, y - 9, x, y - 14, KNIGHT_GOLD);
+            framebuffer.draw_line(x + 4, y - 9, x, y - 14, KNIGHT_GOLD);
+            framebuffer.fill_rect(x - 2, y - 5, 5, 5, DANGER);
+            framebuffer.draw(x, y - 3, CANTICLE_COLOR);
+            framebuffer.draw_line(x, y + 8, x, y + 15, KNIGHT_METAL);
+            framebuffer.draw_line(x - 2, y + 12, x, y + 17, WRECK_LIGHT);
+            framebuffer.draw_line(x + 2, y + 12, x, y + 17, WRECK_LIGHT);
         }
         SpecialKind::BellWraith => {
-            let pulse = 7 + ((enemy.age * 5.0).sin().abs() * 3.0) as u32;
-            framebuffer.draw_circle(x, y, pulse, WRAITH_GLOW);
-            framebuffer.draw_circle(x, y, pulse.saturating_add(4), ENEMY_DARK);
-            framebuffer.draw_line(x - 8, y, x, y - 10, WRAITH_GLOW);
-            framebuffer.draw_line(x, y - 10, x + 8, y, WRAITH_GLOW);
-            framebuffer.draw_line(x + 8, y, x, y + 10, WRAITH_GLOW);
-            framebuffer.draw_line(x, y + 10, x - 8, y, WRAITH_GLOW);
-            framebuffer.fill_rect(x - 1, y - 1, 3, 3, POWER_RELIC_LIGHT);
+            let breathe = ((enemy.age * 4.5).sin() * 2.0).round() as i32;
+            let radius = (9 + breathe).max(6) as u32;
+
+            // Spectral bell rather than a generic diamond: luminous crown,
+            // hollow body and drifting ribbons beneath it.
+            framebuffer.draw_circle(x, y - 3, radius + 4, ENEMY_DARK);
+            framebuffer.draw_line(x - 8, y - 2, x - 4, y - 10, WRAITH_GLOW);
+            framebuffer.draw_line(x + 8, y - 2, x + 4, y - 10, WRAITH_GLOW);
+            framebuffer.draw_line(x - 4, y - 10, x + 4, y - 10, WRAITH_CORE);
+            framebuffer.draw_line(x - 8, y - 2, x - 10, y + 5, WRAITH_GLOW);
+            framebuffer.draw_line(x + 8, y - 2, x + 10, y + 5, WRAITH_GLOW);
+            framebuffer.draw_line(x - 10, y + 5, x + 10, y + 5, WRAITH_GLOW);
+            framebuffer.draw_circle(x, y - 2, 4, WRAITH_CORE);
+            framebuffer.fill_circle(x, y - 2, 2, CARRIER_VOID);
+            framebuffer.draw(x, y - 2, POWER_RELIC_LIGHT);
+            framebuffer.draw_line(x - 6, y + 6, x - 9 - breathe, y + 14, WRAITH_GLOW);
+            framebuffer.draw_line(x, y + 6, x + breathe, y + 16, WRAITH_CORE);
+            framebuffer.draw_line(x + 6, y + 6, x + 9 + breathe, y + 14, WRAITH_GLOW);
         }
         SpecialKind::RelicCarrier => {
-            framebuffer.draw_rect(x - 9, y - 6, 19, 13, CARRIER_GOLD);
-            framebuffer.draw_line(x - 9, y - 6, x - 14, y, WRECK_LIGHT);
-            framebuffer.draw_line(x + 9, y - 6, x + 14, y, WRECK_LIGHT);
-            framebuffer.draw_line(x - 9, y + 6, x - 14, y, WRECK_LIGHT);
-            framebuffer.draw_line(x + 9, y + 6, x + 14, y, WRECK_LIGHT);
-            framebuffer.draw_circle(x, y, 4, POWER_RELIC);
-            framebuffer.fill_rect(x - 1, y - 3, 3, 7, POWER_RELIC_LIGHT);
+            let flutter = ((enemy.age * 7.0 + enemy.phase).sin() * 2.0).round() as i32;
+
+            // A flying reliquary with articulated gilded vanes around a violet
+            // payload. The relic itself is the visual centre, not the chassis.
+            framebuffer.fill_rect(x - 7, y - 6, 15, 13, CARRIER_VOID);
+            framebuffer.draw_rect(x - 7, y - 6, 15, 13, CARRIER_GOLD);
+            framebuffer.draw_line(x - 7, y - 5, x - 15, y - 9 - flutter, CARRIER_GOLD);
+            framebuffer.draw_line(x - 7, y + 5, x - 15, y + 9 + flutter, CARRIER_GOLD);
+            framebuffer.draw_line(x + 7, y - 5, x + 15, y - 9 - flutter, CARRIER_GOLD);
+            framebuffer.draw_line(x + 7, y + 5, x + 15, y + 9 + flutter, CARRIER_GOLD);
+            framebuffer.draw_line(x - 15, y - 9 - flutter, x - 12, y + flutter, WRECK_LIGHT);
+            framebuffer.draw_line(x + 15, y - 9 - flutter, x + 12, y + flutter, WRECK_LIGHT);
+            framebuffer.draw_circle(x, y, 5, POWER_RELIC_LIGHT);
+            framebuffer.fill_circle(x, y, 3, POWER_RELIC);
+            framebuffer.draw(x, y, CANTICLE_COLOR);
+            framebuffer.draw_line(x - 4, y - 7, x + 4, y - 7, KNIGHT_GOLD);
+            framebuffer.draw_line(x - 4, y + 7, x + 4, y + 7, KNIGHT_GOLD);
         }
     }
 }
@@ -911,6 +1020,35 @@ mod v11_tests {
         assert_eq!(knight.hp, 3);
         assert_eq!(wraith.hp, 4);
         assert_eq!(carrier.hp, 2);
+    }
+
+    #[test]
+    fn art_pass_draws_each_special_without_touching_far_corners() {
+        let mut framebuffer = Framebuffer::new(64, 64);
+        framebuffer.clear(Pixel::BLUE);
+        for kind in [
+            SpecialKind::GraveKnight,
+            SpecialKind::BellWraith,
+            SpecialKind::RelicCarrier,
+        ] {
+            render_special(
+                &mut framebuffer,
+                SpecialEnemy {
+                    kind,
+                    base_x: 32.0,
+                    x: 32.0,
+                    y: 32.0,
+                    age: 1.1,
+                    phase: 0.0,
+                    direction: 1.0,
+                    fire_timer: 1.0,
+                    hp: 1,
+                    alive: true,
+                },
+            );
+        }
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(63, 63), Some(Pixel::BLUE));
     }
 
     #[test]

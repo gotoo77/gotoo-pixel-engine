@@ -1,3 +1,5 @@
+const PLAYER_SHOT_TOP_CULL_Y: f32 = -12.0;
+
 struct VoidCanticleV07 {
     base: VoidCanticleGame,
     pilgrim_visuals: PilgrimV07Visuals,
@@ -55,7 +57,7 @@ impl VoidCanticleV07 {
         for shot in &mut self.power_shots {
             shot.x += shot.vx * dt;
             shot.y += shot.vy * dt;
-            shot.alive = shot.y > 18.0
+            shot.alive = shot.y > PLAYER_SHOT_TOP_CULL_Y
                 && shot.x > -12.0
                 && shot.x < FRAMEBUFFER_WIDTH as f32 + 12.0;
         }
@@ -382,3 +384,14 @@ impl Game for VoidCanticleV07 {
     }
 }
 
+#[cfg(test)]
+mod v07_projectile_bounds_tests {
+    use super::*;
+
+    #[test]
+    fn player_shots_survive_until_they_are_past_the_top_edge() {
+        assert!(0.0 > PLAYER_SHOT_TOP_CULL_Y);
+        assert!(-11.0 > PLAYER_SHOT_TOP_CULL_Y);
+        assert!(!(-13.0 > PLAYER_SHOT_TOP_CULL_Y));
+    }
+}

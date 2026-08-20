@@ -44,7 +44,7 @@ Capacités disponibles :
 - viewport conservant le ratio du framebuffer ;
 - mapping cohérent surface -> viewport -> framebuffer pour souris/tactile ;
 - stockage local persistant natif/Web via `LocalStorage` ;
-- audio one-shot natif/Web via `Audio` et `SoundBank` ;
+- audio one-shot et boucles identifiables natif/Web via `Audio` et `SoundBank` ;
 - UI immediate-mode minimale : panneaux, texte centré, menus, contrôles virtuels et pause ;
 - backend natif via `winit`/`wgpu` ;
 - cible WebAssembly/WebGPU.
@@ -64,16 +64,18 @@ Le moteur est désormais exercé par plusieurs jeux réels :
 - Pong deux joueurs ;
 - Breakout ;
 - Smart Boy Hero ;
-- `GPE Arcade`, qui compose ces jeux dans un même runtime et sert aussi de test
-  architectural multi-jeux.
+- Void Canticle ;
+- `GPE Arcade`, qui compose plusieurs jeux dans un même runtime et sert aussi de
+  test architectural multi-jeux.
 
 Version publique de l'Arcade :
 
 <https://gotoo77.github.io/gotoo-pixel-engine/>
 
-Les jeux restent également accessibles individuellement via les pages
-`snake.html`, `tetris.html`, `space_invaders.html`, `pong.html` et
-`breakout.html`, ainsi que `smart_boy_hero.html`.
+Les jeux Web restent également accessibles individuellement, notamment via
+`snake.html`, `tetris.html`, `space_invaders.html`, `pong.html`,
+`breakout.html`, `smart_boy_hero.html`, `smart_boy_hero_iso.html` et
+`void_canticle.html`.
 
 ## Exemple minimal
 
@@ -135,41 +137,47 @@ suspension ne transmet pas toute la durée murale au jeu en une seule frame.
 
 ## Commandes utiles
 
+Les commandes de développement sont centralisées dans `scripts/dev.py`. Elles
+sont utilisables sous Windows, Linux et macOS dès que Python 3 est disponible ;
+les scripts `.sh` restent des wrappers de compatibilité Unix.
+
 Lancer le sélecteur de jeux natif :
 
 ```bash
-./scripts/run-game
+python scripts/dev.py run-game
 ```
 
-Lancer directement un jeu :
+Lancer directement un jeu, éventuellement en release :
 
 ```bash
-cargo run --example snake
-cargo run --example tetris
-cargo run --example space_invaders
-cargo run --example pong
-cargo run --example breakout
-cargo run --example smart_boy_hero
-cargo run --example arcade
+python scripts/dev.py run-game snake
+python scripts/dev.py run-game smart-boy-hero
+python scripts/dev.py run-game void-canticle --release
 ```
 
 Construire tous les entrypoints Web/WASM :
 
 ```bash
 rustup target add wasm32-unknown-unknown
-./scripts/check-web.sh
+python scripts/dev.py check-web
 ```
 
 Construire les paquets Web locaux avec `wasm-bindgen` :
 
 ```bash
-./scripts/build-web.sh
+python scripts/dev.py build-web
 ```
 
 Puis servir le dossier `web` :
 
 ```bash
-./scripts/serve-web.sh
+python scripts/dev.py serve-web
+```
+
+Construire un paquet natif Void Canticle pour la plateforme courante :
+
+```bash
+python scripts/dev.py package-native void-canticle
 ```
 
 ## Validation
@@ -177,20 +185,23 @@ Puis servir le dossier `web` :
 Validation native complète :
 
 ```bash
-./scripts/check.sh
+python scripts/dev.py check
 ```
 
 Validation de tous les entrypoints Web :
 
 ```bash
-./scripts/check-web.sh
+python scripts/dev.py check-web
 ```
 
-La CI GitHub compile tous les entrypoints Web puis exécute également
-`build-web.sh` avec la version verrouillée de `wasm-bindgen-cli`, afin qu'une PR
-valide aussi le packaging JavaScript/WASM réellement requis par les pages Web.
-Le workflow GitHub Pages reste responsable de la construction release et du
-déploiement.
+La CI GitHub utilise la même CLI Python pour les validations natives/Web et le
+packaging JavaScript/WASM. Le workflow GitHub Pages appelle également
+`scripts/dev.py build-web --pages` pour construire le bundle release et
+assembler `dist/`.
+
+Le packaging natif Windows/Linux de Void Canticle est volontairement plus lourd :
+il s'exécute manuellement, sur les merges pertinents dans `main` et sur les tags
+de release `void-canticle-v*`, pas à chaque petit commit de PR.
 
 ## Licence
 

@@ -31,7 +31,7 @@ jobs:
           rustup default 1.97.1
 
       - name: Validate native targets
-        run: ./scripts/check.sh
+        run: python3 scripts/dev.py check --print-lock-base64
 
   web:
     runs-on: ubuntu-latest
@@ -52,7 +52,7 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
 
       - name: Validate Web targets
-        run: ./scripts/check-web.sh
+        run: python3 scripts/dev.py check-web
 
       - name: Validate Web packaging
-        run: ./scripts/build-web.sh
+        run: python3 scripts/dev.py build-web

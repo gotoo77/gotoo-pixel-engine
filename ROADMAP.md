@@ -62,6 +62,7 @@ Le moteur est désormais exercé par :
 - Pong deux joueurs ;
 - Breakout ;
 - Smart Boy Hero ;
+- Void Canticle ;
 - GPE Arcade, qui compose ces jeux dans un même runtime.
 
 Cette phase a validé plusieurs abstractions qui possèdent maintenant plusieurs
@@ -261,7 +262,7 @@ Le moteur possède maintenant :
 - timing de simulation borné par frame ;
 - viewport et mapping surface -> framebuffer ;
 - stockage local natif/Web ;
-- audio one-shot natif/Web ;
+- audio one-shot et boucles identifiables natif/Web ;
 - cible native ;
 - cible WebAssembly/WebGPU ;
 - UI immediate-mode minimale ;
@@ -279,9 +280,35 @@ suivantes lorsqu'un nouveau consommateur réel les impose.
 
 ### Sprites et images
 
-Besoin attendu : chargement d'image, représentation `Sprite`, dessin
-complet/partiel, transparence et ownership Rust clair. À engager avec un jeu
-consommateur concret.
+Le premier chemin d'image partagé existe maintenant (`Image`, `Sprite`, blit et
+alpha). Continuer à l'étendre seulement lorsqu'un consommateur réel démontre le
+besoin d'atlas, d'animation ou d'un pipeline plus riche.
+
+### Texte, fontes custom et i18n
+
+Void Canticle fournit maintenant un besoin concret : interface et narration
+destinées à être traduites dans plusieurs langues, dont le japonais, avec une
+direction artistique typographique propre au jeu plutôt que la seule fonte ASCII
+intégrée au framebuffer.
+
+Capacités à valider par slices, sans créer d'abord un framework de localisation
+généraliste :
+
+- chaîne texte UTF-8 de bout en bout ;
+- fonte asset configurable, avec possibilité de fontes bitmap/pixel custom ;
+- mapping Unicode -> glyphes au lieu de supposer un alphabet ASCII fixe ;
+- stratégie de glyphes japonais/CJK à partir du corpus réel de traductions ;
+- métriques de glyphes, alignement, largeur variable et mesure de texte ;
+- retour à la ligne/wrapping et layouts tolérant des traductions plus longues ;
+- fallback de fonte/glyphe visible et diagnostic des caractères absents ;
+- séparation entre identifiants stables de texte et traductions ;
+- catalogues de locale, premiers objectifs anglais/français/japonais ;
+- plusieurs rôles typographiques par jeu sans imposer ces choix au moteur.
+
+Le premier vertical slice devra prouver un même écran Void Canticle rendu en
+anglais, français et japonais avec une fonte custom, en natif et sur Web. Le
+catalogue i18n peut rester local à Void Canticle tant qu'un second jeu ne justifie
+pas une petite abstraction partagée dans GPE.
 
 ### Rendu GPU / decals
 
@@ -290,8 +317,8 @@ framebuffer CPU ne suffit plus.
 
 ### Audio avancé
 
-Le one-shot nécessaire aux jeux actuels existe. Mixer exposé, streaming ou
-pipeline d'assets restent non engagés.
+One-shots et boucles identifiables existent. Streaming ou pipeline d'assets plus
+riche restent non engagés tant qu'un jeu ne les exige pas.
 
 ### Grimoire Javidx9
 
@@ -302,7 +329,111 @@ ou ludique concret apparaît.
 
 Pas d'ECS actuellement.
 
-Snake, Tetris, Space Invaders, Pong, Breakout, Smart Boy Hero et Arcade ne le
-justifient pas.
-Une décision ECS ne serait défendable qu'à partir d'une duplication ou friction
-observée sur plusieurs jeux plus complexes.
+Snake, Tetris, Space Invaders, Pong, Breakout, Smart Boy Hero, Void Canticle et
+Arcade ne le justifient pas. Une décision ECS ne serait défendable qu'à partir
+d'une duplication ou friction observée sur plusieurs jeux plus complexes.
+
+## Phase distribution native — P1 ✅
+
+Void Canticle est le premier consommateur de distribution native GPE :
+
+- `scripts/dev.py package-native void-canticle` effectue un build `--release` ;
+- Windows x86_64 est construit sur `windows-latest` ;
+- Linux x86_64 est construit sur `ubuntu-latest` ;
+- les archives contiennent le binaire public, la licence et les assets runtime
+  explicitement requis par le jeu ;
+- les archives sont publiées comme artefacts GitHub Actions ;
+- un second job sans checkout du dépôt ni installation de Rust télécharge,
+  extrait et lance le livrable pour tester le package lui-même ;
+- le smoke Linux vérifie également les dépendances dynamiques avec `ldd` ;
+- un tag `void-canticle-v*` crée ou met à jour la GitHub Release correspondante
+  après succès des deux plateformes.
+
+Le packaging complet reste hors de la boucle de chaque petit commit : il est
+manuel, exécuté sur les merges pertinents dans `main`, et sur les tags de
+release. Le premier slice reste volontairement descriptif par jeu dans
+`scripts/dev.py`, sans `xtask`, asset manager ou framework de distribution.
+
+## Cible officielle future — GPE Android natif
+
+Android devient une cible GPE distincte du Web/WASM. L'objectif n'est pas une
+WebView ou Chrome mais un moteur Rust natif produisant à terme un APK/AAB.
+
+La stack actuellement versionnée est déjà proche de cette cible mais la frontière
+« natif = tout ce qui n'est pas WASM » doit être affinée :
+
+- `winit 0.30.13` fournit le chemin Android basé sur `AndroidApp` /
+  `android_main` et impose de traiter correctement le lifecycle ;
+- `wgpu 30.0.0` fournit le rendu Android, avec Vulkan comme premier backend à
+  valider ;
+- `rodio 0.22.2` via `cpal 0.17.3` est un candidat pour l'audio Android et doit
+  être testé avant d'introduire un backend différent ;
+- `gilrs 0.11.2` n'est pas un backend Android générique : le premier slice
+  Android utilisera le tactile et pourra fournir un backend gamepad no-op ;
+- le stockage desktop basé sur `directories` ne doit pas être supposé correct
+  sur Android ;
+- `Game`, `Frame`, `Framebuffer`, `ControlMap` et `VirtualPad` doivent rester le
+  contrat commun consommé par les jeux.
+
+```text
+                    GPE Game
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+       Desktop        Web        Android
+      Win/Linux       WASM        Native
+```
+
+### A0 — Frontière plateforme Android
+
+- distinguer explicitement Desktop / Web / Android dans les `cfg` nécessaires ;
+- créer l'event loop Android avec `AndroidApp` sans changer le contrat `Game` ;
+- conserver un backend gamepad Android minimal/no-op pour le premier slice ;
+- obtenir une compilation `aarch64-linux-android` du moteur et de Snake.
+
+### A1 — Snake Android vertical slice
+
+```text
+Snake GPE
+   ↓
+backend Android minimal
+   ↓
+APK ARM64
+   ↓
+installation sur smartphone réel
+   ↓
+rendu + input touch + son
+```
+
+Le même `SnakeGame` doit fonctionner avec un minimum de code spécifique au jeu
+sur Windows, Linux, Web et Android.
+
+### A2 — Lifecycle
+
+- libérer/recréer les ressources de surface GPU lors des transitions
+  suspend/resume ;
+- réinitialiser timing et input lors des transitions de lifecycle ;
+- valider reprise après verrouillage écran, changement d'application et retour.
+
+### A3 — Services Android
+
+- `LocalStorage` dans le répertoire applicatif Android ;
+- orientation explicite ;
+- fullscreen / system UI ;
+- politique audio suspend/resume ;
+- validation tactile sur appareil réel.
+
+### A4 — Packaging Android
+
+- chaîne NDK/Gradle minimale ;
+- APK debug puis release ;
+- signature ;
+- AAB lorsque le vertical slice APK est stable ;
+- CI Android seulement après validation locale sur appareil réel.
+
+### A5 — Second consommateur
+
+Porter ensuite SBH ou Void Canticle sans fork majeur du gameplay. Le second
+consommateur doit démontrer que le backend Android appartient à GPE et non à
+Snake. Void Canticle est un candidat naturel pour valider ensuite le portrait
+vertical sur smartphone.

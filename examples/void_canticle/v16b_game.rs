@@ -1,8 +1,15 @@
 const VC16B_VERSION: &str = "VC1.6b";
 
-const VOID_REVEAL_DURATION: f32 = 2.65;
+const VOID_REVEAL_DURATION: f32 = 1.45;
 const VOID_TELEGRAPH_DURATION: f32 = 0.78;
-const BOSS_PHASE_BANNER_DURATION: f32 = 1.35;
+const BOSS_PHASE_BANNER_DURATION: f32 = 0.95;
+const PICKUP_SNAP_RADIUS: f32 = 13.0;
+const CANTICLE_READY_FLASH_DURATION: f32 = 0.72;
+const BOSS_HIT_FLASH_DURATION: f32 = 0.11;
+const BOSS_HIT_SOUND_COOLDOWN: f32 = 0.055;
+
+const CANTICLE_READY_SOUND: SoundId = SoundId::new("void_canticle.canticle_ready");
+const BOSS_HIT_SOUND: SoundId = SoundId::new("void_canticle.boss_hit");
 
 const JUICE_TRAIL_SCALE: f32 = 0.045;
 const JUICE_PARTICLE_GRAVITY: f32 = 22.0;
@@ -25,12 +32,17 @@ struct VoidCanticleV16B {
     boss_phase_banner_timer: f32,
     boss_phase_banner: Option<BellPhase>,
     last_boss_phase: Option<BellPhase>,
+    last_boss_hp: Option<u32>,
+    boss_hit_flash_timer: f32,
+    boss_hit_sound_cooldown: f32,
+    canticle_ready_flash_timer: f32,
+    canticle_was_ready: bool,
     particles: Vec<JuiceParticle>,
 }
 
 impl VoidCanticleV16B {
     fn new() -> Self {
-        Self {
+        let mut game = Self {
             combat: VoidCanticleV16::new(),
             pressure_reveal_timer: 0.0,
             pressure_reveal: VoidPressure::Dormant,
@@ -38,8 +50,28 @@ impl VoidCanticleV16B {
             boss_phase_banner_timer: 0.0,
             boss_phase_banner: None,
             last_boss_phase: None,
+            last_boss_hp: None,
+            boss_hit_flash_timer: 0.0,
+            boss_hit_sound_cooldown: 0.0,
+            canticle_ready_flash_timer: 0.0,
+            canticle_was_ready: false,
             particles: Vec::new(),
-        }
+        };
+        game.base_mut()
+            .sounds
+            .insert_wav(
+                CANTICLE_READY_SOUND,
+                synthesize_chirp(560.0, 1040.0, 0.14, 0.16),
+            )
+            .expect("VC Canticle ready sound id should be unique");
+        game.base_mut()
+            .sounds
+            .insert_wav(
+                BOSS_HIT_SOUND,
+                synthesize_noise_burst(0.055, 0.16, 0xB055_0170),
+            )
+            .expect("VC boss hit sound id should be unique");
+        game
     }
 
     fn reset_polish_layer(&mut self) {
@@ -49,6 +81,11 @@ impl VoidCanticleV16B {
         self.boss_phase_banner_timer = 0.0;
         self.boss_phase_banner = None;
         self.last_boss_phase = None;
+        self.last_boss_hp = None;
+        self.boss_hit_flash_timer = 0.0;
+        self.boss_hit_sound_cooldown = 0.0;
+        self.canticle_ready_flash_timer = 0.0;
+        self.canticle_was_ready = false;
         self.particles.clear();
     }
 
@@ -113,23 +150,34 @@ impl VoidCanticleV16B {
             }
         }
 
-        self.guard_bellkeeper_phase();
+        self.snap_close_pickups();
     }
 
-    fn guard_bellkeeper_phase(&mut self) {
-        let base = self.base_mut();
-        if base.encounter_phase != EncounterPhase::BossFight {
-            return;
+    fn snap_close_pickups(&mut self) {
+        let (player_x, player_y) = {
+            let base = self.base();
+            (base.player_x, base.player_y)
+        };
+
+        {
+            let progression = self.progression_mut();
+            for orb in &mut progression.xp_orbs {
+                if orb.alive && pickup_should_snap(orb.x, orb.y, player_x, player_y) {
+                    orb.x = player_x;
+                    orb.y = player_y;
+                    orb.vx = 0.0;
+                    orb.vy = 0.0;
+                }
+            }
         }
 
-        let Some(boss) = base.boss.as_mut() else {
-            return;
-        };
-        let Some((floor, ceiling)) = boss_guard_band(boss.age) else {
-            return;
-        };
-
-        boss.hp = boss.hp.min(ceiling).max(floor);
+        let base = self.base_mut();
+        for cinder in &mut base.cinders {
+            if cinder.alive && pickup_should_snap(cinder.x, cinder.y, player_x, player_y) {
+                cinder.x = player_x;
+                cinder.y = player_y;
+            }
+        }
     }
 
     fn observe_pressure_transition(&mut self, previous: VoidPressure) {
@@ -170,6 +218,50 @@ impl VoidCanticleV16B {
             }
             self.last_boss_phase = current;
         }
+    }
+
+    fn observe_boss_damage(&mut self, frame: &mut Frame<'_>) {
+        let current = self.base().boss.map(|boss| (boss.x, boss.y, boss.hp));
+
+        if let (Some(previous_hp), Some((x, y, hp))) = (self.last_boss_hp, current) {
+            if hp < previous_hp {
+                self.boss_hit_flash_timer = BOSS_HIT_FLASH_DURATION;
+                let hit_count = (previous_hp - hp).min(6) as usize;
+                let particle_count = 4 + hit_count * 2;
+                for index in 0..particle_count {
+                    let angle = index as f32 * std::f32::consts::TAU / particle_count as f32;
+                    let speed = 20.0 + (index % 3) as f32 * 8.0;
+                    self.particles.push(JuiceParticle {
+                        x,
+                        y: y + 4.0,
+                        vx: angle.cos() * speed,
+                        vy: angle.sin() * speed,
+                        life: 0.16 + (index % 2) as f32 * 0.05,
+                        color: BELL_LIGHT,
+                    });
+                }
+
+                if self.boss_hit_sound_cooldown <= 0.0 {
+                    let _ = self.base_mut().sounds.play(frame.audio, BOSS_HIT_SOUND);
+                    self.boss_hit_sound_cooldown = BOSS_HIT_SOUND_COOLDOWN;
+                }
+            }
+        }
+
+        self.last_boss_hp = current.map(|(_, _, hp)| hp);
+    }
+
+    fn observe_canticle_ready(&mut self, frame: &mut Frame<'_>) {
+        let core_charge = self.base().core_charge;
+        let ready = core_charge >= CORE_MAX;
+        if canticle_ready_crossed(self.canticle_was_ready, core_charge) {
+            self.canticle_ready_flash_timer = CANTICLE_READY_FLASH_DURATION;
+            let _ = self
+                .base_mut()
+                .sounds
+                .play(frame.audio, CANTICLE_READY_SOUND);
+        }
+        self.canticle_was_ready = ready;
     }
 
     fn update_particles(&mut self, dt: f32) {
@@ -277,93 +369,24 @@ impl VoidCanticleV16B {
         }
     }
 
-    fn render_void_indicator(&self, framebuffer: &mut Framebuffer) {
-        if self.combat.pressure == VoidPressure::Dormant {
+    fn render_boss_hit_feedback(&self, framebuffer: &mut Framebuffer) {
+        if self.boss_hit_flash_timer <= 0.0 {
             return;
         }
-        framebuffer.fill_rect(116, 288, 60, 11, Pixel::rgb(6, 8, 17));
-        framebuffer.draw_text(
-            120,
-            290,
-            &format!("VOID {}", void_pressure_short_name(self.combat.pressure)),
-            void_pressure_color(self.combat.pressure),
-        );
-    }
-
-    fn render_void_reveal(&self, framebuffer: &mut Framebuffer) {
-        if self.pressure_reveal_timer <= 0.0 || self.pressure_reveal == VoidPressure::Dormant {
-            return;
+        if let Some(boss) = self.base().boss {
+            if self.base().encounter_phase != EncounterPhase::Cleared {
+                let x = boss.x.round() as i32;
+                let y = boss.y.round() as i32;
+                framebuffer.draw_circle(x, y, 28, BELL_LIGHT);
+                framebuffer.draw_circle(x, y, 31, CANTICLE_COLOR);
+            }
         }
-
-        let (headline, consequence) = pressure_transition_copy(self.pressure_reveal);
-        gotoo_pixel_engine::ui::draw_panel(
-            framebuffer,
-            gotoo_pixel_engine::Rect {
-                x: 12,
-                y: 108,
-                width: 156,
-                height: 54,
-            },
-            Pixel::rgb(6, 5, 16),
-            void_pressure_color(self.pressure_reveal),
-        );
-        draw_centered_text(framebuffer, 119, headline, VOID_LIGHT);
-        draw_centered_text(
-            framebuffer,
-            141,
-            consequence,
-            void_pressure_color(self.pressure_reveal),
-        );
-    }
-
-    fn render_pending_attack_name(&self, framebuffer: &mut Framebuffer) {
-        let Some(attack) = self.combat.pending_attack else {
-            return;
-        };
-        gotoo_pixel_engine::ui::draw_panel(
-            framebuffer,
-            gotoo_pixel_engine::Rect {
-                x: 41,
-                y: 32,
-                width: 98,
-                height: 18,
-            },
-            Pixel::rgb(7, 6, 16),
-            void_pressure_color(self.combat.pressure),
-        );
-        draw_centered_text(framebuffer, 38, void_attack_name(attack.kind), VOID_LIGHT);
-    }
-
-    fn render_boss_phase_banner(&self, framebuffer: &mut Framebuffer) {
-        if self.boss_phase_banner_timer <= 0.0 || self.pressure_reveal_timer > 0.0 {
-            return;
-        }
-        let Some(phase) = self.boss_phase_banner else {
-            return;
-        };
-
-        gotoo_pixel_engine::ui::draw_panel(
-            framebuffer,
-            gotoo_pixel_engine::Rect {
-                x: 24,
-                y: 108,
-                width: 132,
-                height: 42,
-            },
-            Pixel::rgb(10, 7, 12),
-            BELL_LIGHT,
-        );
-        draw_centered_text(framebuffer, 117, "BELLKEEPER", BELL_LIGHT);
-        draw_centered_text(framebuffer, 137, bell_phase_name(phase), CANTICLE_COLOR);
     }
 
     fn render_polish(&self, framebuffer: &mut Framebuffer) {
         self.render_projectile_juice(framebuffer);
         self.render_particles(framebuffer);
-        self.render_void_indicator(framebuffer);
-        self.render_pending_attack_name(framebuffer);
-        self.render_void_reveal(framebuffer);
-        self.render_boss_phase_banner(framebuffer);
+        self.render_boss_hit_feedback(framebuffer);
     }
 }
 
@@ -384,12 +407,18 @@ impl Game for VoidCanticleV16B {
             self.reset_polish_layer();
         }
 
+        self.pressure_reveal_timer = (self.pressure_reveal_timer - dt).max(0.0);
+        self.boss_phase_banner_timer = (self.boss_phase_banner_timer - dt).max(0.0);
+        self.boss_hit_flash_timer = (self.boss_hit_flash_timer - dt).max(0.0);
+        self.boss_hit_sound_cooldown = (self.boss_hit_sound_cooldown - dt).max(0.0);
+        self.canticle_ready_flash_timer = (self.canticle_ready_flash_timer - dt).max(0.0);
+
         self.observe_pressure_transition(previous_pressure);
         self.extend_new_void_telegraph();
         self.observe_boss_phase();
+        self.observe_boss_damage(frame);
+        self.observe_canticle_ready(frame);
 
-        self.pressure_reveal_timer = (self.pressure_reveal_timer - dt).max(0.0);
-        self.boss_phase_banner_timer = (self.boss_phase_banner_timer - dt).max(0.0);
         self.update_particles(dt);
         self.spawn_particles_from_new_bursts();
         self.render_polish(frame.framebuffer);
@@ -420,16 +449,12 @@ fn wave_clock_rate(wave_index: usize) -> f32 {
     }
 }
 
-fn boss_guard_band(age: f32) -> Option<(u32, u32)> {
-    if age < 8.0 {
-        Some((81, BELLKEEPER_MAX_HP))
-    } else if age < 18.0 {
-        Some((41, BELLKEEPER_MAX_HP * 2 / 3))
-    } else if age < 30.0 {
-        Some((8, BELLKEEPER_MAX_HP / 3))
-    } else {
-        None
-    }
+fn pickup_should_snap(x: f32, y: f32, player_x: f32, player_y: f32) -> bool {
+    point_near(x, y, player_x, player_y, PICKUP_SNAP_RADIUS)
+}
+
+fn canticle_ready_crossed(was_ready: bool, core_charge: u32) -> bool {
+    !was_ready && core_charge >= CORE_MAX
 }
 
 fn pressure_transition_copy(pressure: VoidPressure) -> (&'static str, &'static str) {
@@ -718,11 +743,17 @@ mod v16b_tests {
     }
 
     #[test]
-    fn bellkeeper_has_three_minimum_phase_windows() {
-        assert_eq!(boss_guard_band(2.0), Some((81, 120)));
-        assert_eq!(boss_guard_band(10.0), Some((41, 80)));
-        assert_eq!(boss_guard_band(22.0), Some((8, 40)));
-        assert_eq!(boss_guard_band(30.0), None);
+    fn close_pickups_snap_before_magnet_motion_can_overshoot() {
+        assert!(PICKUP_SNAP_RADIUS < BASE_MAGNET_RADIUS);
+        assert!(pickup_should_snap(10.0, 10.0, 20.0, 10.0));
+        assert!(!pickup_should_snap(10.0, 10.0, 30.0, 10.0));
+    }
+
+    #[test]
+    fn canticle_ready_feedback_is_edge_triggered() {
+        assert!(canticle_ready_crossed(false, CORE_MAX));
+        assert!(!canticle_ready_crossed(true, CORE_MAX));
+        assert!(!canticle_ready_crossed(false, CORE_MAX - 1));
     }
 
     #[test]
