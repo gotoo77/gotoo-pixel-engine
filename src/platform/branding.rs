@@ -30,13 +30,7 @@ fn gpe_icon_rgba() -> Vec<u8> {
     paint_rect(&mut rgba, 15, 6, 2, 2, LIGHT);
     paint_rect(&mut rgba, 15, 24, 2, 2, LIGHT);
 
-    draw_glyph(
-        &mut rgba,
-        4,
-        11,
-        &["111", "100", "101", "101", "111"],
-        GOLD,
-    );
+    draw_glyph(&mut rgba, 4, 11, &["111", "100", "101", "101", "111"], GOLD);
     draw_glyph(
         &mut rgba,
         13,
@@ -44,13 +38,7 @@ fn gpe_icon_rgba() -> Vec<u8> {
         &["111", "101", "111", "100", "100"],
         VIOLET,
     );
-    draw_glyph(
-        &mut rgba,
-        22,
-        11,
-        &["111", "100", "110", "100", "111"],
-        CYAN,
-    );
+    draw_glyph(&mut rgba, 22, 11, &["111", "100", "110", "100", "111"], CYAN);
 
     rgba
 }
