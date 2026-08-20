@@ -1,5 +1,9 @@
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/hit_reactions.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/combat/bestiary.rs"
 ));
 include!(concat!(
