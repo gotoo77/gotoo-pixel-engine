@@ -185,8 +185,7 @@ const START_PROMPT: NeonPrompt = NeonPrompt::new("START GAME", START_PROMPT_BASE
 const CREDITS_PROMPT: NeonPrompt = NeonPrompt::new("CREDITS", CREDITS_PROMPT_BASE, 1);
 const BACK_PROMPT: NeonPrompt = NeonPrompt::new("BACK", BACK_PROMPT_BASE, 2);
 
-type GameplayPresentation = VoidCanticleV27ChoicePresentation;
-type LegacyPresentationFrontState = Vc27FrontState;
+type GameplayPresentation = VoidCanticleChoicePresentation;
 
 struct VoidCanticleApp {
     game: GameplayPresentation,
@@ -210,9 +209,7 @@ impl VoidCanticleApp {
 
         let title_framebuffer = front_background(&front_art, 1.0);
         let credits_framebuffer = front_background(&front_art, CREDITS_BACKGROUND_BRIGHTNESS);
-
-        let mut game = GameplayPresentation::new();
-        game.presentation.front_state = LegacyPresentationFrontState::Run;
+        let game = GameplayPresentation::new();
 
         Self {
             game,
@@ -598,16 +595,12 @@ mod presentation_frontend_tests {
     }
 
     #[test]
-    fn fresh_application_starts_on_hd_title_and_bypasses_legacy_title() {
+    fn fresh_application_starts_on_hd_title() {
         let app = VoidCanticleApp::new();
         assert_eq!(app.screen, FrontScreen::Title);
         assert_eq!(app.title_choice, TitleChoice::StartGame);
         assert_eq!(app.gameplay_framebuffer.width(), VC_VISUAL_PRESENTATION_WIDTH);
         assert_eq!(app.gameplay_framebuffer.height(), VC_VISUAL_PRESENTATION_HEIGHT);
-        assert!(matches!(
-            app.game.presentation.front_state,
-            LegacyPresentationFrontState::Run
-        ));
     }
 
     #[test]
