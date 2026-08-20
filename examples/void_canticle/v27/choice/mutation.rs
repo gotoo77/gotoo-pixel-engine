@@ -266,9 +266,19 @@ mod mutation_showcase_tests {
     fn mutations_expose_choice_profile_assets_and_audio() {
         for mutation in MUTATION_POOL {
             let profile = vc27_mutation_profile(mutation);
+            let (expected_hover, expected_confirm) = match mutation {
+                MutationKind::DeathNova => (
+                    Some(Vc27ChoiceArtId::DeathNova.hover_override_sound()),
+                    Some(Vc27ChoiceArtId::DeathNova.confirm_override_sound()),
+                ),
+                _ => (
+                    Some(VC27_CHOICE_HOVER_SOUND),
+                    Some(VC27_CHOICE_CONFIRM_SOUND),
+                ),
+            };
             assert_eq!(profile.label(), mutation_name(mutation));
-            assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-            assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+            assert_eq!(profile.hover_sound(), expected_hover);
+            assert_eq!(profile.confirm_sound(), expected_confirm);
         }
     }
 }
