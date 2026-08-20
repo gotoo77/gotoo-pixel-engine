@@ -72,6 +72,11 @@ impl<'a> Vc27ChoiceAssets<'a> {
             .or(self.confirm_sound)
     }
 
+    fn catalog_sprite(self) -> Option<&'static Sprite> {
+        self.catalog_id
+            .and_then(|catalog_id| vc27_choice_catalog().sprite(catalog_id))
+    }
+
     fn render(
         self,
         framebuffer: &mut Framebuffer,
@@ -80,9 +85,7 @@ impl<'a> Vc27ChoiceAssets<'a> {
         selected: bool,
         time: f32,
     ) {
-        if let Some(catalog_id) = self.catalog_id
-            && let Some(sprite) = vc27_choice_catalog().sprite(catalog_id)
-        {
+        if let Some(sprite) = self.catalog_sprite() {
             sprite.draw_centered(framebuffer, x, y);
             return;
         }
@@ -145,6 +148,12 @@ impl<'a> Vc27ChoiceProfile<'a> {
         selected: bool,
         time: f32,
     ) {
+        if selected && let Some(sprite) = self.assets.catalog_sprite() {
+            let half_extent = sprite.width().max(sprite.height()) / 2;
+            let radius = i32::try_from(half_extent).unwrap_or(i32::MAX).saturating_add(4);
+            let pulse = ((time * 5.0).sin().abs() * 2.0).round() as i32;
+            framebuffer.draw_circle(x, y, radius.saturating_add(pulse), self.accent);
+        }
         self.assets.render(framebuffer, x, y, selected, time);
     }
 }
@@ -155,16 +164,16 @@ fn vc27_register_choice_sounds(sounds: &mut SoundBank) {
             VC27_CHOICE_HOVER_SOUND,
             synthesize_chirp(620.0, 880.0, 0.035, 0.035),
         )
-        .expect("VC2.8 choice hover sound id should be unique");
+        .expect("VC3.0 choice hover sound id should be unique");
     sounds
         .insert_wav(
             VC27_CHOICE_CONFIRM_SOUND,
             synthesize_chirp(420.0, 1_180.0, 0.07, 0.055),
         )
-        .expect("VC2.8 choice confirm sound id should be unique");
+        .expect("VC3.0 choice confirm sound id should be unique");
     vc27_choice_catalog()
         .register_sounds(sounds)
-        .expect("VC2.8 choice override sound ids should be unique");
+        .expect("VC3.0 choice override sound ids should be unique");
 }
 
 #[cfg(test)]
@@ -223,5 +232,43 @@ mod choice_asset_tests {
             Vc27ChoiceAssets::procedural(test_art),
         );
         assert_eq!(profile.assets().catalog_id, Some(Vc27ChoiceArtId::DeathNova));
+    }
+
+    #[test]
+    fn vc30_checked_in_authored_icons_decode() {
+        for (name, bytes) in [
+            (
+                "bulwark",
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/assets/void_canticle/ui/choice/bulwark.png"
+                )) as &[u8],
+            ),
+            (
+                "pilgrim",
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/assets/void_canticle/ui/choice/pilgrim.png"
+                )),
+            ),
+            (
+                "wraith",
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/assets/void_canticle/ui/choice/wraith.png"
+                )),
+            ),
+            (
+                "death_nova",
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/assets/void_canticle/ui/choice/death_nova.png"
+                )),
+            ),
+        ] {
+            let sprite = vc27_decode_png_sprite(bytes)
+                .unwrap_or_else(|error| panic!("{name} authored icon should decode: {error}"));
+            assert!(sprite.width() > 0 && sprite.height() > 0, "{name}");
+        }
     }
 }
