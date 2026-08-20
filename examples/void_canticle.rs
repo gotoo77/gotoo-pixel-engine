@@ -114,13 +114,19 @@ pub(crate) mod game {
                                                                                 "void_canticle/v23_visual_foundation.rs"
                                                                             );
 
-                                                                            pub(crate) mod v27 {
+                                                                            // Historical vXX layers stop here. The current presentation
+                                                                            // shell uses a semantic module name and owns all new front-door
+                                                                            // features (title, credits, future intro screens).
+                                                                            pub(crate) mod presentation {
                                                                                 use super::*;
                                                                                 include!(
                                                                                     "void_canticle/v27.rs"
                                                                                 );
                                                                                 include!(
                                                                                     "void_canticle/v27/choice_runtime.rs"
+                                                                                );
+                                                                                include!(
+                                                                                    "void_canticle/presentation_frontend.rs"
                                                                                 );
                                                                             }
                                                                         }
@@ -142,12 +148,20 @@ pub(crate) mod game {
         }
     }
 
-    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::v27::run_v27_showcase_presentation_with_obs_mirror;
+    // One quarantine boundary for the historical implementation. New callers
+    // never need to know or propagate the old v07 -> ... -> v23 nesting.
+    mod current {
+        pub(crate) use super::legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::presentation::run_void_canticle_with_obs_mirror;
+        #[cfg(target_arch = "wasm32")]
+        pub(crate) use super::legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::presentation::vc27_preload_choice_catalog_web as preload_choice_catalog_web;
+    }
+
+    pub(crate) use current::run_void_canticle_with_obs_mirror;
     #[cfg(target_arch = "wasm32")]
-    pub(crate) use legacy_base::v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::v27::vc27_preload_choice_catalog_web;
+    pub(crate) use current::preload_choice_catalog_web;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    game::run_v27_showcase_presentation_with_obs_mirror()
+    game::run_void_canticle_with_obs_mirror()
 }
