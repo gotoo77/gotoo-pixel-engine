@@ -1,6 +1,6 @@
 # Void Canticle choice art overrides
 
-VC2.7 can override the procedural art used by chassis, level-up, mutation and support choice cards with external PNG sprites on native builds.
+VC2.7 can override the procedural art used by chassis, level-up, mutation and support choice cards with external PNG sprites.
 
 ## Default location
 
@@ -15,7 +15,7 @@ Example:
 }
 ```
 
-Dropping `death_nova.png` here and restarting the game replaces only the Death Nova card art. No Rust rebuild is required.
+Dropping `death_nova.png` here and restarting the native game replaces only the Death Nova card art. No Rust rebuild is required.
 
 ## PNG contract
 
@@ -25,7 +25,7 @@ Dropping `death_nova.png` here and restarting the game replaces only the Death N
 - Keep icon sprites roughly within the current procedural art footprint (about 48-64 px) unless the card layout is intentionally changed.
 - Chassis illustrations can be larger, but should still fit their existing showcase slot.
 
-## Alternate development directory
+## Alternate native development directory
 
 Set `GPE_VC_CHOICE_ASSET_DIR` to point at another directory containing a compatible `manifest.json` and PNG files.
 
@@ -35,4 +35,15 @@ The catalog is loaded once when the process first renders choice art, so restart
 
 ## Web
 
-WASM currently keeps the procedural fallback. External Web asset fetching/packaging is deliberately left for a separate integration step rather than coupling the VC-local catalog to a generic GPE asset manager prematurely.
+`void_canticle_web` fetches the same `manifest.json` and optional PNG files before starting VC2.7. `scripts/dev.py build-web` and `serve-web` mirror this source directory into `web/assets/void_canticle/ui/choice`, while the Pages build mirrors it into `dist/assets/void_canticle/ui/choice`.
+
+Missing PNGs remain valid on Web as well: each card falls back to its procedural art.
+
+Typical local workflow:
+
+```text
+python3 scripts/dev.py build-web
+python3 scripts/dev.py serve-web
+```
+
+Then open `http://127.0.0.1:8000/void_canticle.html`.
