@@ -10,6 +10,18 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/modals/controls.rs"
 ));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/modals/run_summary.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/modals/stage_clear.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/modals/death.rs"
+));
 
 impl VoidCanticleV27DirectPresentation {
     fn render_clean_modal(&mut self, framebuffer: &mut Framebuffer, mode: VcVisualMode) {
@@ -50,6 +62,11 @@ impl VoidCanticleV27DirectPresentation {
             return;
         }
 
+        if matches!(&mode, VcVisualMode::StageClear) {
+            vc27_render_stage_clear_presentation(framebuffer, &self.game, self.presentation_time);
+            return;
+        }
+
         self.clean_background.clear(BG);
         render_grave_orbit_background(&mut self.clean_background, self.game.game.base().scroll);
 
@@ -64,13 +81,7 @@ impl VoidCanticleV27DirectPresentation {
                     v14.render_mutation_choice(&mut self.clean_background, choice);
                 }
             }
-            VcVisualMode::Pause => {}
-            VcVisualMode::StageClear => {
-                self.game
-                    .survival_model()
-                    .game
-                    .render_stage_clear(&mut self.clean_background);
-            }
+            VcVisualMode::Pause | VcVisualMode::StageClear => {}
             VcVisualMode::Combat | VcVisualMode::Death => {}
         }
 
@@ -83,57 +94,7 @@ impl VoidCanticleV27DirectPresentation {
     }
 
     fn render_death_presentation(&mut self, framebuffer: &mut Framebuffer) {
-        let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
-        self.clean_background.clear(BG);
-        render_grave_orbit_background(&mut self.clean_background, self.game.game.base().scroll);
-        vc_visual_blit_nearest(
-            &self.clean_background,
-            framebuffer,
-            VC_VISUAL_PRESENTATION_SCALE,
-            false,
-        );
-
-        let panel_width = 150 * scale;
-        let panel_height = 62 * scale;
-        let panel_x = ((VC_VISUAL_PRESENTATION_WIDTH - panel_width) / 2) as i32;
-        let panel_y = (118 * scale) as i32;
-        framebuffer.fill_rect(
-            panel_x,
-            panel_y,
-            panel_width,
-            panel_height,
-            Pixel::rgb(9, 8, 15),
-        );
-        framebuffer.draw_rect(panel_x, panel_y, panel_width, panel_height, DANGER);
-        vc_visual_draw_centered_text(
-            framebuffer,
-            panel_y + 15 * scale as i32,
-            "PILGRIM FALLEN",
-            scale,
-            DANGER,
-        );
-        vc_visual_draw_centered_text(
-            framebuffer,
-            panel_y + 39 * scale as i32,
-            "SPACE TO RETURN",
-            scale,
-            TEXT,
-        );
-    }
-}
-
-#[cfg(test)]
-mod v27_modal_tests {
-    use super::*;
-
-    #[test]
-    fn death_panel_fits_inside_presentation_space() {
-        let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
-        let panel_width = 150 * scale;
-        let panel_height = 62 * scale;
-        let panel_x = (VC_VISUAL_PRESENTATION_WIDTH - panel_width) / 2;
-        let panel_y = 118 * scale;
-        assert!(panel_x + panel_width <= VC_VISUAL_PRESENTATION_WIDTH);
-        assert!(panel_y + panel_height <= VC_VISUAL_PRESENTATION_HEIGHT);
+        self.render_clean_background(framebuffer);
+        vc27_render_death_screen(framebuffer, &self.game, self.presentation_time);
     }
 }
