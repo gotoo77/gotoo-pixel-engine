@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn render_bell_wraith(
+pub(super) fn vc27_hd_render_bell_wraith(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -10,8 +10,6 @@ pub(super) fn render_bell_wraith(
     let breathe = ((age * 4.6 + phase).sin() * 3.0).round() as i32;
     let pulse = ((age * 8.0 + phase).sin() * 0.5 + 0.5) > 0.48;
 
-    // Cover the coarse simulation sprite, then rebuild the apparition with
-    // one-pixel presentation details.
     framebuffer.fill_rect(x - 21, y - 19, 43, 32, ART_SHADOW);
     framebuffer.fill_circle(x, y - 7, 17, ART_SHADOW);
 
@@ -33,8 +31,6 @@ pub(super) fn render_bell_wraith(
         if pulse { CANTICLE_COLOR } else { ART_VOID },
     );
 
-    // Three independently drifting spectral ribbons make the silhouette read
-    // even when the screen is busy with bullets.
     framebuffer.draw_line(x - 13, y + 8, x - 18 - breathe, y + 27, WRAITH_GLOW);
     framebuffer.draw_line(x, y + 8, x + breathe, y + 31, WRAITH_CORE);
     framebuffer.draw_line(x + 13, y + 8, x + 18 + breathe, y + 27, WRAITH_GLOW);
@@ -42,7 +38,7 @@ pub(super) fn render_bell_wraith(
     framebuffer.draw(x + 12, y - 15, ART_GOLD);
 }
 
-pub(super) fn render_relic_carrier(
+pub(super) fn vc27_hd_render_relic_carrier(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -57,8 +53,6 @@ pub(super) fn render_relic_carrier(
     framebuffer.fill_rect(x - 18, y - 15, 37, 31, CARRIER_VOID);
     framebuffer.draw_rect(x - 18, y - 15, 37, 31, CARRIER_GOLD);
 
-    // Articulated gilded vanes. Their outer points move by native pixels,
-    // something the 180x320 simulation cannot express.
     framebuffer.draw_line(x - 18, y - 10, x - 37, y - 18 - flutter, CARRIER_GOLD);
     framebuffer.draw_line(x - 18, y + 10, x - 37, y + 18 + flutter, CARRIER_GOLD);
     framebuffer.draw_line(x + 18, y - 10, x + 37, y - 18 - flutter, CARRIER_GOLD);
@@ -81,14 +75,12 @@ pub(super) fn render_relic_carrier(
     framebuffer.draw(x - 15, y, ART_METAL_LIGHT);
     framebuffer.draw(x + 15, y, ART_METAL_LIGHT);
 
-    // Directional wake reinforces that this enemy traverses the screen instead
-    // of diving vertically like most Grave Orbit inhabitants.
     framebuffer.draw_line(x + wake * 22, y - 5, x + wake * 42, y - 5, ART_GOLD);
     framebuffer.draw_line(x + wake * 24, y, x + wake * 48, y, WRECK_LIGHT);
     framebuffer.draw_line(x + wake * 22, y + 5, x + wake * 38, y + 5, ART_METAL);
 }
 
-pub(super) fn render_choir_node(
+pub(super) fn vc27_hd_render_choir_node(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -102,8 +94,6 @@ pub(super) fn render_choir_node(
     framebuffer.draw_circle(x, y, (27 + breathe).max(22) as u32, ART_CYAN);
     framebuffer.draw_circle(x, y, 20, ART_CYAN_LIGHT);
 
-    // Stained-glass/astrolabe geometry: eight thin spokes around a bright
-    // vocal core, with alternating gold/cyan tips.
     for (dx, dy, color) in [
         (0, -30, ART_CYAN_LIGHT),
         (21, -21, ART_GOLD),
@@ -126,7 +116,7 @@ pub(super) fn render_choir_node(
     framebuffer.draw(x + 13, y + 6, ART_GOLD);
 }
 
-pub(super) fn render_void_leech(
+pub(super) fn vc27_hd_render_void_leech(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -141,7 +131,6 @@ pub(super) fn render_void_leech(
     framebuffer.draw_circle(x, y, 27, ART_VOID);
     framebuffer.draw_circle(x, y, 20, LEECH_GLOW);
 
-    // Segmented parasite body wrapped around a dark aperture.
     for index in 0..8 {
         let t = index as f32 / 8.0 * std::f32::consts::TAU + age * 0.65;
         let radius = 20.0 + ((index as f32 + age * 3.0).sin() * 2.0);
@@ -166,14 +155,12 @@ pub(super) fn render_void_leech(
     framebuffer.draw_line(x + 16, y + 13, x + 31 - writhe, y + 27, ART_VOID);
 }
 
-pub(super) fn render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper) {
+pub(super) fn vc27_hd_render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper) {
     let x = vc27_present(boss.x);
     let y = vc27_present(boss.y);
     let pulse = ((boss.age * 5.0).sin().abs() * 4.0) as u32;
     let sway = ((boss.age * 2.2).sin() * 4.0).round() as i32;
 
-    // Large dark cathedral mass fully covers the low-resolution body while
-    // preserving transparent space between the architecture and its halo.
     framebuffer.fill_circle(x, y - 5, 36, ART_SHADOW);
     framebuffer.fill_rect(x - 28, y - 20, 57, 50, ART_SHADOW);
 
@@ -190,8 +177,6 @@ pub(super) fn render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper)
 
     framebuffer.draw_circle(x, y - 6, outer, phase_color);
     framebuffer.draw_circle(x, y - 6, 39, BELL_LIGHT);
-
-    // Flying cathedral / monumental bell shell.
     framebuffer.draw_line(x - 24, y - 30, x, y - 48, ART_GOLD);
     framebuffer.draw_line(x + 24, y - 30, x, y - 48, ART_GOLD);
     framebuffer.draw_line(x - 24, y - 30, x - 31, y + 17, BELL_LIGHT);
@@ -204,8 +189,6 @@ pub(super) fn render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper)
     framebuffer.draw_circle(x, y - 9, 6, ART_GOLD);
     framebuffer.fill_circle(x, y - 9, 2, DANGER);
 
-    // Suspended censers give the boss scale and readable motion independent of
-    // projectile animation.
     framebuffer.draw_line(x - 22, y - 23, x - 53, y - 33 + sway, BELL_METAL);
     framebuffer.draw_line(x + 22, y - 23, x + 53, y - 33 - sway, BELL_METAL);
     framebuffer.draw_circle(x - 56, y - 33 + sway, 7, BELL_LIGHT);
@@ -213,7 +196,6 @@ pub(super) fn render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper)
     framebuffer.fill_circle(x - 56, y - 33 + sway, 3, BG);
     framebuffer.fill_circle(x + 56, y - 33 - sway, 3, BG);
 
-    // Bell clapper / heart.
     framebuffer.draw_line(x, y + 16, x + sway / 2, y + 42, BELL_LIGHT);
     framebuffer.fill_circle(x + sway / 2, y + 46, 5, phase_color);
     framebuffer.draw(x + sway / 2, y + 46, CANTICLE_COLOR);
