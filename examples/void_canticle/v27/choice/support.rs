@@ -231,9 +231,19 @@ mod support_showcase_tests {
     fn support_modules_expose_choice_profile_assets_and_audio() {
         for augment in VC23_SUSTAIN_AUGMENTS {
             let profile = vc27_support_profile(augment);
+            let (expected_hover, expected_confirm) = match augment {
+                Vc23SustainAugment::NaniteRepair => (
+                    Some(Vc27ChoiceArtId::NaniteRepair.hover_override_sound()),
+                    Some(Vc27ChoiceArtId::NaniteRepair.confirm_override_sound()),
+                ),
+                Vc23SustainAugment::ShieldCapacitor => (
+                    Some(VC27_CHOICE_HOVER_SOUND),
+                    Some(VC27_CHOICE_CONFIRM_SOUND),
+                ),
+            };
             assert_eq!(profile.label(), augment.name());
-            assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-            assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+            assert_eq!(profile.hover_sound(), expected_hover);
+            assert_eq!(profile.confirm_sound(), expected_confirm);
         }
     }
 
