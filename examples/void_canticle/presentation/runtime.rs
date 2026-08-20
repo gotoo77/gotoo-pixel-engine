@@ -18,13 +18,27 @@ impl VoidCanticleV27DirectPresentation {
         }
     }
 
-    fn chassis_selection_active(&self) -> bool {
-        self.game.game.game.game.game.chassis.is_none()
+    fn chassis_runtime(&self) -> &VoidCanticleV22 {
+        &self.game.game.game.game.game
     }
 
-    // Restart ownership belongs to the lower gameplay runtime. Presentation must
-    // never replace `self.game`: doing so recreates input/control state and can
-    // leak the confirm used on RESTART into an immediate default chassis choice.
+    fn chassis_runtime_mut(&mut self) -> &mut VoidCanticleV22 {
+        &mut self.game.game.game.game.game
+    }
+
+    fn chassis_selection_active(&self) -> bool {
+        self.chassis_runtime().chassis.is_none()
+    }
+
+    // The lower gameplay runtime owns the actual run reset. This method only
+    // resets the state layered above it and explicitly returns the chassis owner
+    // to its pre-run selection state. It must not replace `self.game`.
+    fn reset_gameplay_selection_after_restart(&mut self) {
+        self.game.reset_for_new_run();
+        self.chassis_runtime_mut()
+            .reset_chassis_selection_for_new_run();
+    }
+
     fn reset_presentation_after_restart(&mut self) {
         self.presentation_time = 0.0;
         self.front_state = Vc27FrontState::Run;
@@ -33,7 +47,7 @@ impl VoidCanticleV27DirectPresentation {
     }
 
     fn render_chassis_selection_presentation(&mut self, framebuffer: &mut Framebuffer) {
-        let selector = &self.game.game.game.game.game;
+        let selector = self.chassis_runtime();
         vc27_render_chassis_showcase(
             &mut self.clean_background,
             framebuffer,
@@ -89,19 +103,17 @@ impl VoidCanticleV27DirectPresentation {
     }
 }
 
-fn vc27_full_restart_completed(
+fn restart_completed(
     was_game_over: bool,
     is_game_over: bool,
     was_stage_clear: bool,
     encounter_phase: EncounterPhase,
-    pause_restart_selected: bool,
-    pause_confirm_pressed: bool,
+    pause_restart_completed: bool,
 ) -> bool {
     let death_restart = was_game_over && !is_game_over;
     let stage_restart = was_stage_clear && encounter_phase != EncounterPhase::Cleared;
-    let pause_restart = pause_restart_selected && pause_confirm_pressed;
 
-    death_restart || stage_restart || pause_restart
+    death_restart || stage_restart || pause_restart_completed
 }
 
 impl Game for VoidCanticleV27DirectPresentation {
@@ -115,6 +127,8 @@ impl Game for VoidCanticleV27DirectPresentation {
             let pause = self.game.survival_model().game.pause_ui();
             matches!(&pause.state, VcPauseState::Menu) && pause.menu.selected() == Some(1)
         };
+        let pause_restart_requested = pause_restart_selected
+            && gotoo_pixel_engine::ui::menu_confirm_pressed(frame.input);
         let hit_snapshot = Vc27HitSnapshot::capture(&self.game);
         let projectile_snapshot = Vc27ProjectileSourceSnapshot::capture(&self.game);
 
@@ -141,21 +155,21 @@ impl Game for VoidCanticleV27DirectPresentation {
             return result;
         }
 
-        let pause_confirm_pressed = self
-            .game
-            .survival_model()
-            .game
-            .pause_ui()
-            .controls
-            .action(VC_PAUSE_CONFIRM)
-            .pressed();
-        if vc27_full_restart_completed(
+        let pause_restart_completed = pause_restart_requested
+            && matches!(
+                &self.game.survival_model().game.pause_ui().state,
+                VcPauseState::Running
+            );
+        if pause_restart_completed {
+            self.reset_gameplay_selection_after_restart();
+        }
+
+        if restart_completed(
             was_game_over,
             self.game.game.base().game_over,
             was_stage_clear,
             self.game.game.base().encounter_phase,
-            pause_restart_selected,
-            pause_confirm_pressed,
+            pause_restart_completed,
         ) {
             self.reset_presentation_after_restart();
             self.render_chassis_selection_presentation(frame.framebuffer);
@@ -200,44 +214,57 @@ mod presentation_runtime_tests {
 
     #[test]
     fn every_restart_path_is_detected() {
-        assert!(vc27_full_restart_completed(
+        assert!(restart_completed(
             true,
             false,
             false,
             EncounterPhase::Waves,
-            false,
             false,
         ));
-        assert!(vc27_full_restart_completed(
+        assert!(restart_completed(
             false,
             false,
             true,
             EncounterPhase::Waves,
-            false,
             false,
         ));
-        assert!(vc27_full_restart_completed(
+        assert!(restart_completed(
             false,
             false,
             false,
             EncounterPhase::Waves,
-            true,
             true,
         ));
-        assert!(!vc27_full_restart_completed(
+        assert!(!restart_completed(
             false,
             false,
             false,
             EncounterPhase::Waves,
-            true,
             false,
         ));
     }
 
     #[test]
-    fn presentation_restart_cleanup_does_not_replace_game_state() {
+    fn restart_reopens_chassis_selection_without_auto_confirm() {
         let mut presentation = VoidCanticleV27DirectPresentation::new();
-        presentation.game.game.game.game.game.chassis = Some(ExosuitChassis::Wraith);
+        presentation.chassis_runtime_mut().confirm_armed = true;
+        presentation
+            .chassis_runtime_mut()
+            .apply_chassis(ExosuitChassis::Wraith);
+
+        presentation.reset_gameplay_selection_after_restart();
+
+        assert!(presentation.chassis_selection_active());
+        assert_eq!(presentation.chassis_runtime().chassis, None);
+        assert!(!presentation.chassis_runtime().confirm_armed);
+    }
+
+    #[test]
+    fn presentation_restart_cleanup_only_resets_presentation_state() {
+        let mut presentation = VoidCanticleV27DirectPresentation::new();
+        presentation
+            .chassis_runtime_mut()
+            .apply_chassis(ExosuitChassis::Wraith);
         presentation.presentation_time = 42.0;
 
         presentation.reset_presentation_after_restart();
@@ -245,7 +272,7 @@ mod presentation_runtime_tests {
         assert_eq!(presentation.presentation_time, 0.0);
         assert_eq!(presentation.front_state, Vc27FrontState::Run);
         assert_eq!(
-            presentation.game.game.game.game.game.chassis,
+            presentation.chassis_runtime().chassis,
             Some(ExosuitChassis::Wraith)
         );
     }
