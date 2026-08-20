@@ -12,6 +12,11 @@ cargo test --lib --bins --examples --tests
 echo "==> cargo clippy --all-targets -- -D warnings"
 cargo clippy --all-targets -- -D warnings
 
+echo "==> CARGO_LOCK_BASE64_BEGIN"
+base64 -w0 Cargo.lock
+echo
+echo "==> CARGO_LOCK_BASE64_END"
+
 echo "==> git diff --check"
 git diff --check
 
