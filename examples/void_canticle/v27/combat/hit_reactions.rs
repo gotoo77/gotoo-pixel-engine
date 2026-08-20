@@ -84,12 +84,6 @@ impl Vc27HitSnapshot {
             let key = vc20_special_key(enemy);
             let armor_max = vc20_special_armor_max(enemy.kind);
             let barrier = v20.special_armor.get(&key).copied().unwrap_or(armor_max);
-            snapshot.carrion.get(&(
-                0,
-                0,
-                0,
-                0,
-            ));
             snapshot.special.insert(
                 key,
                 Vc27HitBudget {
