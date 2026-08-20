@@ -1,6 +1,6 @@
-const VC27_CARRION_TELEGRAPH_WINDOW: f32 = 0.24;
-const VC27_WRAITH_TELEGRAPH_WINDOW: f32 = 0.30;
-const VC27_BOSS_TELEGRAPH_WINDOW: f32 = 0.34;
+const CARRION_TELEGRAPH_WINDOW: f32 = 0.24;
+const WRAITH_TELEGRAPH_WINDOW: f32 = 0.30;
+const BOSS_TELEGRAPH_WINDOW: f32 = 0.34;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EnemyShotStyle {
