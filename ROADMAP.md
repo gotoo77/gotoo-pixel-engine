@@ -334,3 +334,112 @@ Pas d'ECS actuellement.
 Snake, Tetris, Space Invaders, Pong, Breakout et Arcade ne le justifient pas.
 Une décision ECS ne serait défendable qu'à partir d'une duplication ou friction
 observée sur plusieurs jeux plus complexes.
+
+## Phase distribution native — P1 ✅
+
+Void Canticle est le premier consommateur de distribution native GPE :
+
+- `scripts/dev.py package-native void-canticle` effectue un build `--release` ;
+- Windows x86_64 est construit sur `windows-latest` ;
+- Linux x86_64 est construit sur `ubuntu-latest` ;
+- les archives contiennent le binaire public, la licence et les assets runtime
+  explicitement requis par le jeu ;
+- les archives sont publiées comme artefacts GitHub Actions ;
+- un second job, sans checkout du dépôt ni installation de Rust, télécharge,
+  extrait et lance le livrable pour tester le package lui-même ;
+- le smoke Linux vérifie également les dépendances dynamiques avec `ldd` ;
+- un tag `void-canticle-v*` crée ou met à jour la GitHub Release correspondante
+  après succès des deux plateformes.
+
+Le premier slice reste volontairement descriptif par jeu dans `scripts/dev.py`.
+Pas de `xtask`, d'asset manager ou de framework de distribution tant qu'un second
+jeu ne démontre pas un besoin supplémentaire.
+
+## Cible officielle future — GPE Android natif
+
+Android devient une cible GPE distincte du Web/WASM. L'objectif n'est pas une
+WebView ou Chrome mais un moteur Rust natif produisant à terme un APK/AAB.
+
+La stack actuellement versionnée est déjà proche de cette cible mais la frontière
+« natif = tout ce qui n'est pas WASM » doit être affinée :
+
+- `winit 0.30.13` fournit le chemin Android basé sur `AndroidApp` /
+  `android_main` et impose de traiter correctement le lifecycle ;
+- `wgpu 30.0.0` fournit le rendu Android, avec Vulkan comme premier backend à
+  valider ;
+- `rodio 0.22.2` via `cpal 0.17.3` est un candidat crédible pour l'audio Android
+  et doit être testé avant d'introduire un backend audio différent ;
+- `gilrs 0.11.2` n'est pas un backend Android générique : le premier slice
+  Android utilisera le tactile et pourra fournir un backend gamepad no-op ;
+- le stockage desktop basé sur `directories` ne doit pas être supposé correct
+  sur Android ; un backend `LocalStorage` Android devra utiliser les chemins
+  applicatifs fournis par la plateforme ;
+- `Game`, `Frame`, `Framebuffer`, `ControlMap` et `VirtualPad` doivent rester le
+  contrat commun consommé par les jeux.
+
+La topologie cible devient :
+
+```text
+                    GPE Game
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+       Desktop        Web        Android
+      Win/Linux       WASM        Native
+```
+
+### A0 — Frontière plateforme Android
+
+- distinguer explicitement Desktop / Web / Android dans les `cfg` nécessaires ;
+- créer l'event loop Android avec `AndroidApp` sans changer le contrat `Game` ;
+- conserver un backend gamepad Android minimal/no-op pour le premier slice ;
+- obtenir une compilation `aarch64-linux-android` du moteur et de Snake.
+
+### A1 — Snake Android vertical slice
+
+Critère de réussite :
+
+```text
+Snake GPE
+   ↓
+backend Android minimal
+   ↓
+APK ARM64
+   ↓
+installation sur smartphone réel
+   ↓
+rendu + input touch + son
+```
+
+Le même `SnakeGame` doit fonctionner avec un minimum de code spécifique au jeu
+sur Windows, Linux, Web et Android.
+
+### A2 — Lifecycle
+
+- libérer/recréer les ressources de surface GPU lors des transitions
+  suspend/resume ;
+- réinitialiser timing et input lors des transitions de lifecycle ;
+- valider reprise après verrouillage écran, changement d'application et retour.
+
+### A3 — Services Android
+
+- `LocalStorage` dans le répertoire applicatif Android ;
+- orientation explicite ;
+- fullscreen / system UI ;
+- politique audio suspend/resume ;
+- validation tactile sur appareil réel.
+
+### A4 — Packaging Android
+
+- chaîne NDK/Gradle minimale ;
+- APK debug puis release ;
+- signature ;
+- AAB lorsque le vertical slice APK est stable ;
+- CI Android seulement après validation locale sur appareil réel.
+
+### A5 — Second consommateur
+
+Porter ensuite SBH ou Void Canticle sans fork majeur du gameplay. Le second
+consommateur doit démontrer que le backend Android appartient à GPE et non à
+Snake. Void Canticle est un candidat naturel pour valider ensuite le portrait
+vertical sur smartphone.
