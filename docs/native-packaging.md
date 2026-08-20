@@ -41,6 +41,27 @@ The VC2.8 choice assets remain optional at runtime because the game has
 procedural/synthesized fallbacks, but they are packaged so release behavior does
 not silently diverge when real PNG/WAV overrides are added.
 
+## Linux runtime contract
+
+The Linux archive is self-contained with respect to GPE, Rust, Cargo and the
+repository, but it deliberately does not bundle the host graphics/audio/input
+stack. It therefore expects the normal runtime libraries of a Linux desktop.
+
+The X11 path used by the portability smoke test requires `libxkbcommon-x11.so.0`,
+provided by the Debian/Ubuntu package:
+
+```bash
+sudo apt install libxkbcommon-x11-0
+```
+
+This dependency is loaded dynamically by the window/input stack, so `ldd` alone
+cannot discover it. The extracted-package launch smoke is intentionally kept in
+addition to the `ldd` check for this reason.
+
+`xvfb` is installed only by CI to provide a virtual X server; it is a test
+harness dependency, not a Void Canticle runtime dependency for an ordinary
+desktop session.
+
 ## GitHub Actions
 
 `.github/workflows/native-packages.yml` builds on the native GitHub-hosted
@@ -51,17 +72,13 @@ runners:
 
 Each build archive is uploaded as a workflow artifact. A separate smoke job runs
 on a fresh runner, does not checkout the repository and does not install Rust.
-It downloads the archive, extracts it, verifies the runtime assets and launches
-the packaged executable. The Linux smoke also checks `ldd` for unresolved
-runtime libraries.
+It downloads the archive, installs only the declared Linux runtime/test
+prerequisites when applicable, extracts the archive, verifies the runtime assets
+and launches the packaged executable. The Linux smoke also checks `ldd` for
+unresolved directly linked runtime libraries.
 
 The smoke window intentionally terminates a still-running game after a few
 seconds. Exiting before that window is treated as a packaging/runtime failure.
-
-Linux packages are self-contained with respect to GPE, Rust and Cargo; they do
-not attempt to statically bundle the host graphics/audio/input stack. The
-release contract therefore remains a normal Linux desktop executable with its
-system runtime libraries available.
 
 ## Releases
 
