@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Vc27ChoiceFocusKind {
+enum ChoiceFocusKind {
     Chassis,
     Upgrade,
     Mutation,
@@ -7,14 +7,14 @@ enum Vc27ChoiceFocusKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Vc27ChoiceFocus {
-    kind: Vc27ChoiceFocusKind,
+struct ChoiceFocus {
+    kind: ChoiceFocusKind,
     index: usize,
 }
 
 #[derive(Clone, Copy)]
-struct Vc27ChoiceSnapshot {
-    focus: Vc27ChoiceFocus,
+struct ChoiceSnapshot {
+    focus: ChoiceFocus,
     label: &'static str,
     accent: Pixel,
     hover_sound: Option<SoundId>,
@@ -22,9 +22,9 @@ struct Vc27ChoiceSnapshot {
     synergy_mask_before: u8,
 }
 
-impl Vc27ChoiceSnapshot {
+impl ChoiceSnapshot {
     fn from_profile(
-        focus: Vc27ChoiceFocus,
+        focus: ChoiceFocus,
         profile: Vc27ChoiceProfile<'static>,
         synergy_mask_before: u8,
     ) -> Self {
@@ -40,7 +40,7 @@ impl Vc27ChoiceSnapshot {
 }
 
 #[derive(Clone, Copy)]
-struct Vc27ChoiceConfirmation {
+struct ChoiceConfirmation {
     label: &'static str,
     accent: Pixel,
     synergy: Option<&'static str>,
@@ -50,8 +50,8 @@ struct Vc27ChoiceConfirmation {
 
 struct VoidCanticleV27ChoicePresentation {
     presentation: VoidCanticleV27DirectPresentation,
-    last_focus: Option<Vc27ChoiceFocus>,
-    confirmation: Option<Vc27ChoiceConfirmation>,
+    last_focus: Option<ChoiceFocus>,
+    confirmation: Option<ChoiceConfirmation>,
 }
 
 impl VoidCanticleV27ChoicePresentation {
@@ -72,16 +72,16 @@ impl VoidCanticleV27ChoicePresentation {
         synergy_mask(v14.progression.build, v14.mutations)
     }
 
-    fn current_choice_snapshot(&self) -> Option<Vc27ChoiceSnapshot> {
+    fn current_choice_snapshot(&self) -> Option<ChoiceSnapshot> {
         let synergy_mask_before = self.current_synergy_mask();
 
         if self.presentation.chassis_selection_active() {
             let selector = &self.presentation.game.game.game.game.game;
             let index = selector.menu.selected()?;
             let chassis = VC22_CHASSIS.get(index).copied()?;
-            return Some(Vc27ChoiceSnapshot::from_profile(
-                Vc27ChoiceFocus {
-                    kind: Vc27ChoiceFocusKind::Chassis,
+            return Some(ChoiceSnapshot::from_profile(
+                ChoiceFocus {
+                    kind: ChoiceFocusKind::Chassis,
                     index,
                 },
                 vc27_chassis_profile(chassis),
@@ -95,9 +95,9 @@ impl VoidCanticleV27ChoicePresentation {
                 let choice = v14.progression.level_choice.as_ref()?;
                 let index = choice.menu.selected()?;
                 let upgrade = choice.offers.get(index).copied()?;
-                Some(Vc27ChoiceSnapshot::from_profile(
-                    Vc27ChoiceFocus {
-                        kind: Vc27ChoiceFocusKind::Upgrade,
+                Some(ChoiceSnapshot::from_profile(
+                    ChoiceFocus {
+                        kind: ChoiceFocusKind::Upgrade,
                         index,
                     },
                     vc27_upgrade_profile(upgrade),
@@ -109,9 +109,9 @@ impl VoidCanticleV27ChoicePresentation {
                 let choice = v14.mutation_choice.as_ref()?;
                 let index = choice.menu.selected()?;
                 let mutation = choice.offers.get(index).copied()?;
-                Some(Vc27ChoiceSnapshot::from_profile(
-                    Vc27ChoiceFocus {
-                        kind: Vc27ChoiceFocusKind::Mutation,
+                Some(ChoiceSnapshot::from_profile(
+                    ChoiceFocus {
+                        kind: ChoiceFocusKind::Mutation,
                         index,
                     },
                     vc27_mutation_profile(mutation),
@@ -121,9 +121,9 @@ impl VoidCanticleV27ChoicePresentation {
             VcVisualMode::SupportChoice => {
                 let index = self.presentation.game.menu.selected()?;
                 let augment = VC23_SUSTAIN_AUGMENTS.get(index).copied()?;
-                Some(Vc27ChoiceSnapshot::from_profile(
-                    Vc27ChoiceFocus {
-                        kind: Vc27ChoiceFocusKind::Support,
+                Some(ChoiceSnapshot::from_profile(
+                    ChoiceFocus {
+                        kind: ChoiceFocusKind::Support,
                         index,
                     },
                     vc27_support_profile(augment),
@@ -134,7 +134,7 @@ impl VoidCanticleV27ChoicePresentation {
         }
     }
 
-    fn current_choice_focus(&self) -> Option<(Vc27ChoiceFocus, Option<SoundId>)> {
+    fn current_choice_focus(&self) -> Option<(ChoiceFocus, Option<SoundId>)> {
         self.current_choice_snapshot()
             .map(|snapshot| (snapshot.focus, snapshot.hover_sound))
     }
@@ -155,13 +155,13 @@ impl VoidCanticleV27ChoicePresentation {
 
     fn capture_confirmation(
         &mut self,
-        before: Option<Vc27ChoiceSnapshot>,
+        before: Option<ChoiceSnapshot>,
     ) -> (bool, Option<SoundId>) {
         let Some(before) = before else {
             return (false, None);
         };
         let after_focus = self.current_choice_snapshot().map(|snapshot| snapshot.focus);
-        if !vc27_choice_was_confirmed(before.focus, after_focus) {
+        if !choice_was_confirmed(before.focus, after_focus) {
             return (false, None);
         }
 
@@ -171,7 +171,7 @@ impl VoidCanticleV27ChoicePresentation {
         } else {
             VC27_CHOICE_CONFIRM_DURATION
         };
-        self.confirmation = Some(Vc27ChoiceConfirmation {
+        self.confirmation = Some(ChoiceConfirmation {
             label: before.label,
             accent: before.accent,
             synergy,
@@ -247,32 +247,11 @@ impl Game for VoidCanticleV27ChoicePresentation {
     }
 }
 
-fn vc27_choice_was_confirmed(
-    before: Vc27ChoiceFocus,
-    after: Option<Vc27ChoiceFocus>,
-) -> bool {
+fn choice_was_confirmed(before: ChoiceFocus, after: Option<ChoiceFocus>) -> bool {
     match after {
         Some(after) => after.kind != before.kind,
         None => true,
     }
-}
-
-pub fn run_v27_showcase_presentation_with_obs_mirror() -> Result<(), EngineError> {
-    let (window_width, window_height) = window_size();
-    run(
-        EngineConfig {
-            title: format!("Void Canticle {VC27_PRESENTATION_VERSION} - Gotoo Pixel Engine"),
-            framebuffer_width: VC_VISUAL_PRESENTATION_WIDTH,
-            framebuffer_height: VC_VISUAL_PRESENTATION_HEIGHT,
-            window_width,
-            window_height,
-        },
-        gotoo_pixel_engine::ObsMirrorGame::from_env(
-            VoidCanticleV27ChoicePresentation::new(),
-            VC_VISUAL_PRESENTATION_WIDTH,
-            VC_VISUAL_PRESENTATION_HEIGHT,
-        ),
-    )
 }
 
 #[cfg(test)]
@@ -280,7 +259,7 @@ mod choice_runtime_tests {
     use super::*;
 
     #[test]
-    fn choice_runtime_keeps_vc27_presentation_dimensions() {
+    fn choice_runtime_keeps_presentation_dimensions() {
         let game = VoidCanticleV27ChoicePresentation::new();
         assert_eq!(game.presentation.legacy_sink.width(), FRAMEBUFFER_WIDTH);
         assert_eq!(VC_VISUAL_PRESENTATION_WIDTH, FRAMEBUFFER_WIDTH * 2);
@@ -305,9 +284,9 @@ mod choice_runtime_tests {
     #[test]
     fn chassis_snapshot_uses_shared_choice_profile() {
         let profile = vc27_chassis_profile(ExosuitChassis::Bulwark);
-        let snapshot = Vc27ChoiceSnapshot::from_profile(
-            Vc27ChoiceFocus {
-                kind: Vc27ChoiceFocusKind::Chassis,
+        let snapshot = ChoiceSnapshot::from_profile(
+            ChoiceFocus {
+                kind: ChoiceFocusKind::Chassis,
                 index: 0,
             },
             profile,
@@ -322,9 +301,9 @@ mod choice_runtime_tests {
     #[test]
     fn profile_snapshot_carries_visual_and_audio_identity() {
         let profile = vc27_mutation_profile(MutationKind::DeathNova);
-        let snapshot = Vc27ChoiceSnapshot::from_profile(
-            Vc27ChoiceFocus {
-                kind: Vc27ChoiceFocusKind::Mutation,
+        let snapshot = ChoiceSnapshot::from_profile(
+            ChoiceFocus {
+                kind: ChoiceFocusKind::Mutation,
                 index: 0,
             },
             profile,
@@ -338,24 +317,24 @@ mod choice_runtime_tests {
 
     #[test]
     fn confirmation_requires_choice_kind_to_close_or_change() {
-        let before = Vc27ChoiceFocus {
-            kind: Vc27ChoiceFocusKind::Upgrade,
+        let before = ChoiceFocus {
+            kind: ChoiceFocusKind::Upgrade,
             index: 1,
         };
-        assert!(!vc27_choice_was_confirmed(
+        assert!(!choice_was_confirmed(
             before,
-            Some(Vc27ChoiceFocus {
-                kind: Vc27ChoiceFocusKind::Upgrade,
+            Some(ChoiceFocus {
+                kind: ChoiceFocusKind::Upgrade,
                 index: 2,
             })
         ));
-        assert!(vc27_choice_was_confirmed(
+        assert!(choice_was_confirmed(
             before,
-            Some(Vc27ChoiceFocus {
-                kind: Vc27ChoiceFocusKind::Mutation,
+            Some(ChoiceFocus {
+                kind: ChoiceFocusKind::Mutation,
                 index: 0,
             })
         ));
-        assert!(vc27_choice_was_confirmed(before, None));
+        assert!(choice_was_confirmed(before, None));
     }
 }
