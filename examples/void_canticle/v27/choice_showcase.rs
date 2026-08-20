@@ -4,6 +4,10 @@ include!(concat!(
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/validation.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/choice/assets.rs"
 ));
 include!(concat!(
