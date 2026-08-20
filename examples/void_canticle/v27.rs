@@ -16,11 +16,16 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/hd_bestiary.rs"
 ));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/chassis_showcase.rs"
+));
 
 struct VoidCanticleV27DirectPresentation {
     game: VoidCanticleV23Sustain,
     legacy_sink: Framebuffer,
     clean_background: Framebuffer,
+    presentation_time: f32,
 }
 
 impl VoidCanticleV27DirectPresentation {
@@ -29,6 +34,7 @@ impl VoidCanticleV27DirectPresentation {
             game: VoidCanticleV23Sustain::new(),
             legacy_sink: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
+            presentation_time: 0.0,
         }
     }
 
@@ -37,18 +43,12 @@ impl VoidCanticleV27DirectPresentation {
     }
 
     fn render_chassis_selection_presentation(&mut self, framebuffer: &mut Framebuffer) {
-        self.clean_background.clear(BG);
-        self.game
-            .game
-            .game
-            .game
-            .game
-            .render_chassis_selection(&mut self.clean_background);
-        vc_visual_blit_nearest(
-            &self.clean_background,
+        let selector = &self.game.game.game.game.game;
+        vc27_render_chassis_showcase(
+            &mut self.clean_background,
             framebuffer,
-            VC_VISUAL_PRESENTATION_SCALE,
-            false,
+            selector,
+            self.presentation_time,
         );
     }
 
@@ -926,6 +926,8 @@ impl VoidCanticleV27DirectPresentation {
 
 impl Game for VoidCanticleV27DirectPresentation {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        self.presentation_time += frame.delta_time.as_secs_f32().min(0.05);
+
         let result = {
             let mut legacy_frame = Frame {
                 framebuffer: &mut self.legacy_sink,
