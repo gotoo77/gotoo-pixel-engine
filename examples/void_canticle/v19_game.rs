@@ -12,25 +12,12 @@ const V19_EMBEDDED_SHEET: &[u8] = include_bytes!(concat!(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum V19SpriteSlot {
-    Carrion = 0,
-    GraveKnight = 1,
-    BellWraith = 2,
-    RelicCarrier = 3,
     ChoirNode = 4,
     VoidLeech = 5,
-    Bellkeeper = 6,
 }
 
 impl V19SpriteSlot {
-    const ALL: [Self; V19_SPRITE_COUNT as usize] = [
-        Self::Carrion,
-        Self::GraveKnight,
-        Self::BellWraith,
-        Self::RelicCarrier,
-        Self::ChoirNode,
-        Self::VoidLeech,
-        Self::Bellkeeper,
-    ];
+    const ACTIVE: [Self; 2] = [Self::ChoirNode, Self::VoidLeech];
 
     const fn index(self) -> u32 {
         self as u32
@@ -43,14 +30,13 @@ struct V19DecodedSheet {
     pixels: Vec<Pixel>,
 }
 
+// VC1.9 remains the asset-backed owner only for the two threat families that
+// have not yet moved to the current bestiary pass. Carrion, specialists and
+// Bellkeeper are rendered by their authored source renderers and must not be
+// repainted by this historical layer.
 struct V19AssetVisuals {
-    carrion: Sprite,
-    grave_knight: Sprite,
-    bell_wraith: Sprite,
-    relic_carrier: Sprite,
     choir_node: Sprite,
     void_leech: Sprite,
-    bellkeeper: Sprite,
 }
 
 impl V19AssetVisuals {
@@ -66,13 +52,8 @@ impl V19AssetVisuals {
         validate_v19_sheet(&sheet)?;
 
         Ok(Self {
-            carrion: sprite_from_v19_sheet(&sheet, V19SpriteSlot::Carrion)?,
-            grave_knight: sprite_from_v19_sheet(&sheet, V19SpriteSlot::GraveKnight)?,
-            bell_wraith: sprite_from_v19_sheet(&sheet, V19SpriteSlot::BellWraith)?,
-            relic_carrier: sprite_from_v19_sheet(&sheet, V19SpriteSlot::RelicCarrier)?,
             choir_node: sprite_from_v19_sheet(&sheet, V19SpriteSlot::ChoirNode)?,
             void_leech: sprite_from_v19_sheet(&sheet, V19SpriteSlot::VoidLeech)?,
-            bellkeeper: sprite_from_v19_sheet(&sheet, V19SpriteSlot::Bellkeeper)?,
         })
     }
 }
@@ -211,61 +192,6 @@ impl VoidCanticleV19 {
         self.v14().progression.level_choice.is_none() && self.v14().mutation_choice.is_none()
     }
 
-    fn render_carrion_art(&self, framebuffer: &mut Framebuffer) {
-        for enemy in &self.base().enemies {
-            self.art.carrion.draw_centered(
-                framebuffer,
-                enemy.x.round() as i32,
-                enemy.y.round() as i32,
-            );
-        }
-    }
-
-    fn render_special_art(&self, framebuffer: &mut Framebuffer) {
-        for enemy in &self.v12().combat.specials {
-            let x = enemy.x.round() as i32;
-            let y = enemy.y.round() as i32;
-            match enemy.kind {
-                SpecialKind::GraveKnight => {
-                    if enemy.age >= 1.45 {
-                        framebuffer.draw_line(
-                            x - 5,
-                            y + 10,
-                            x - 5,
-                            y + 17,
-                            PILGRIM_THRUSTER,
-                        );
-                        framebuffer.draw_line(
-                            x + 5,
-                            y + 10,
-                            x + 5,
-                            y + 17,
-                            PILGRIM_THRUSTER,
-                        );
-                    }
-                    self.art.grave_knight.draw_centered(framebuffer, x, y);
-                }
-                SpecialKind::BellWraith => {
-                    let halo = 11 + ((enemy.age * 4.8).sin().abs() * 3.0) as u32;
-                    framebuffer.draw_circle(x, y, halo, ART_VOID);
-                    self.art.bell_wraith.draw_centered(framebuffer, x, y);
-                }
-                SpecialKind::RelicCarrier => {
-                    let wake = if enemy.direction >= 0.0 { -1 } else { 1 };
-                    framebuffer.draw_line(x + wake * 10, y, x + wake * 19, y, ART_GOLD);
-                    framebuffer.draw_line(
-                        x + wake * 11,
-                        y - 3,
-                        x + wake * 17,
-                        y - 3,
-                        ART_METAL,
-                    );
-                    self.art.relic_carrier.draw_centered(framebuffer, x, y);
-                }
-            }
-        }
-    }
-
     fn render_threat_art(&self, framebuffer: &mut Framebuffer) {
         for threat in &self.v12().threats {
             let x = threat.x.round() as i32;
@@ -291,49 +217,11 @@ impl VoidCanticleV19 {
         }
     }
 
-    fn render_bellkeeper_art(&self, framebuffer: &mut Framebuffer) {
-        if self.base().encounter_phase == EncounterPhase::Cleared {
-            return;
-        }
-        let Some(boss) = self.base().boss else {
-            return;
-        };
-
-        let x = boss.x.round() as i32;
-        let y = boss.y.round() as i32;
-        let pulse = ((self.base().animation_time * 5.0).sin().abs() * 3.0) as u32;
-        match boss.phase() {
-            BellPhase::Procession => {
-                framebuffer.draw_circle(x, y, 20 + pulse, BELL_METAL);
-            }
-            BellPhase::Resonance => {
-                framebuffer.draw_circle(x, y, 22 + pulse, BELL_LIGHT);
-                framebuffer.draw_circle(x, y, 27 + pulse, ART_VOID);
-            }
-            BellPhase::FinalToll => {
-                framebuffer.draw_circle(x, y, 24 + pulse, DANGER);
-                framebuffer.draw_circle(x, y, 30 + pulse, ART_GOLD);
-                framebuffer.draw_line(x - 30, y, x + 30, y, DANGER);
-                framebuffer.draw_line(x, y - 28, x, y + 28, DANGER);
-            }
-        }
-
-        self.art.bellkeeper.draw_centered(framebuffer, x, y);
-        framebuffer.fill_circle(x, y + 2, 2 + pulse / 2, CANTICLE_COLOR);
-    }
-
-    fn render_art_overlay(&self, framebuffer: &mut Framebuffer) {
-        self.render_carrion_art(framebuffer);
-        self.render_special_art(framebuffer);
-        self.render_threat_art(framebuffer);
-        self.render_bellkeeper_art(framebuffer);
-    }
-
     fn render_build_info_overlay(&self, framebuffer: &mut Framebuffer) {
         framebuffer.fill_rect(17, 92, 146, 14, Pixel::rgb(9, 8, 15));
         framebuffer.draw_text(20, 97, &format!("VERSION {VC19_VERSION}"), TEXT);
         framebuffer.fill_rect(17, 172, 146, 14, Pixel::rgb(9, 8, 15));
-        framebuffer.draw_text(20, 177, "PNG ASSET SHEET", ART_GOLD);
+        framebuffer.draw_text(20, 177, "PNG THREAT ASSETS", ART_GOLD);
     }
 }
 
@@ -345,7 +233,10 @@ impl Game for VoidCanticleV19 {
         }
 
         if self.art_can_overlay_game() {
-            self.render_art_overlay(frame.framebuffer);
+            // V19 is intentionally restricted to Choir Node / Void Leech.
+            // Repainting the other families here hid the current bestiary art
+            // during combat while level-up screens showed the correct sprites.
+            self.render_threat_art(frame.framebuffer);
         } else if matches!(&self.ui.state, VcPauseState::BuildInfo) {
             self.render_build_info_overlay(frame.framebuffer);
         }
@@ -388,11 +279,11 @@ mod v19_tests {
     }
 
     #[test]
-    fn every_authored_slot_contains_visible_pixels() {
+    fn active_threat_slots_contain_visible_pixels() {
         let sheet = decode_v19_sheet(V19_EMBEDDED_SHEET).expect("embedded VC1.9 sheet should decode");
-        for slot in V19SpriteSlot::ALL {
+        for slot in V19SpriteSlot::ACTIVE {
             let sprite =
-                sprite_from_v19_sheet(&sheet, slot).expect("VC1.9 sheet slot should be valid");
+                sprite_from_v19_sheet(&sheet, slot).expect("VC1.9 threat slot should be valid");
             assert!(
                 sprite.pixels().iter().any(|pixel| pixel.a != 0),
                 "{slot:?} must contain visible pixels"
@@ -401,18 +292,10 @@ mod v19_tests {
     }
 
     #[test]
-    fn asset_visuals_extract_seven_cells() {
+    fn asset_visuals_extract_only_active_threat_cells() {
         let art = V19AssetVisuals::from_bytes(V19_EMBEDDED_SHEET)
             .expect("embedded VC1.9 sheet should construct visuals");
-        for sprite in [
-            &art.carrion,
-            &art.grave_knight,
-            &art.bell_wraith,
-            &art.relic_carrier,
-            &art.choir_node,
-            &art.void_leech,
-            &art.bellkeeper,
-        ] {
+        for sprite in [&art.choir_node, &art.void_leech] {
             assert_eq!(sprite.width(), V19_CELL_SIZE);
             assert_eq!(sprite.height(), V19_CELL_SIZE);
         }
