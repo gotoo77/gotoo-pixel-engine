@@ -8,6 +8,7 @@ impl VoidCanticleV27DirectPresentation {
                 vc27_render_upgrade_showcase(
                     framebuffer,
                     &v14.progression,
+                    &v14.mutations,
                     choice,
                     self.presentation_time,
                 );
