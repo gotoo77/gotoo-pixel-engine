@@ -97,6 +97,13 @@ jobs:
           name: ${{ matrix.artifact }}
           path: package
 
+      - name: Install Linux runtime/test dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-0 xvfb
+
       - name: Extract and launch Linux package
         if: runner.os == 'Linux'
         shell: bash
@@ -109,10 +116,6 @@ jobs:
           if grep -q "not found" linux-runtime-deps.txt; then
             echo "Unresolved Linux runtime dependency after extraction"
             exit 1
-          fi
-          if ! command -v xvfb-run >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y xvfb
           fi
           pushd extracted >/dev/null
           set +e
