@@ -1,23 +1,26 @@
-fn vc27_upgrade_accent(upgrade: UpgradeKind) -> Pixel {
-    match upgrade {
-        UpgradeKind::RapidFire => BOLT_EDGE,
-        UpgradeKind::MagnetField => ART_CYAN_LIGHT,
-        UpgradeKind::StellarPower => CANTICLE_COLOR,
-        UpgradeKind::XpHunger => XP_ORB_CORE,
-        UpgradeKind::VitalSpark => VC20_HULL,
-        UpgradeKind::CoreSurge => PILGRIM_VIOLET,
-    }
+fn vc27_upgrade_profile(upgrade: UpgradeKind) -> Vc27ChoiceProfile<'static> {
+    let (category, accent, renderer): (&'static str, Pixel, Vc27ChoiceArtRenderer) = match upgrade {
+        UpgradeKind::RapidFire => ("WEAPON", BOLT_EDGE, vc27_upgrade_rapid_fire_art),
+        UpgradeKind::MagnetField => ("UTILITY", ART_CYAN_LIGHT, vc27_upgrade_magnet_field_art),
+        UpgradeKind::StellarPower => ("POWER", CANTICLE_COLOR, vc27_upgrade_stellar_power_art),
+        UpgradeKind::XpHunger => ("GROWTH", XP_ORB_CORE, vc27_upgrade_xp_hunger_art),
+        UpgradeKind::VitalSpark => ("SURVIVAL", VC20_HULL, vc27_upgrade_vital_spark_art),
+        UpgradeKind::CoreSurge => ("CANTICLE", PILGRIM_VIOLET, vc27_upgrade_core_surge_art),
+    };
+    Vc27ChoiceProfile::new(
+        upgrade_name(upgrade),
+        category,
+        accent,
+        Vc27ChoiceAssets::procedural(renderer),
+    )
 }
 
-fn vc27_upgrade_category(upgrade: UpgradeKind) -> &'static str {
-    match upgrade {
-        UpgradeKind::RapidFire => "WEAPON",
-        UpgradeKind::MagnetField => "UTILITY",
-        UpgradeKind::StellarPower => "POWER",
-        UpgradeKind::XpHunger => "GROWTH",
-        UpgradeKind::VitalSpark => "SURVIVAL",
-        UpgradeKind::CoreSurge => "CANTICLE",
-    }
+fn vc27_upgrade_accent(upgrade: UpgradeKind) -> Pixel {
+    vc27_upgrade_profile(upgrade).accent()
+}
+
+fn vc27_upgrade_assets(upgrade: UpgradeKind) -> Vc27ChoiceAssets<'static> {
+    vc27_upgrade_profile(upgrade).assets()
 }
 
 fn vc27_upgrade_stack(build: &BuildState, upgrade: UpgradeKind) -> u32 {
@@ -51,18 +54,6 @@ fn vc27_upgrade_detail(upgrade: UpgradeKind) -> &'static str {
         UpgradeKind::VitalSpark => "RAISE CAP AND REPAIR HULL",
         UpgradeKind::CoreSurge => "IMMEDIATE CANTICLE CHARGE",
     }
-}
-
-fn vc27_upgrade_assets(upgrade: UpgradeKind) -> Vc27ChoiceAssets<'static> {
-    let renderer = match upgrade {
-        UpgradeKind::RapidFire => vc27_upgrade_rapid_fire_art as Vc27ChoiceArtRenderer,
-        UpgradeKind::MagnetField => vc27_upgrade_magnet_field_art,
-        UpgradeKind::StellarPower => vc27_upgrade_stellar_power_art,
-        UpgradeKind::XpHunger => vc27_upgrade_xp_hunger_art,
-        UpgradeKind::VitalSpark => vc27_upgrade_vital_spark_art,
-        UpgradeKind::CoreSurge => vc27_upgrade_core_surge_art,
-    };
-    Vc27ChoiceAssets::procedural(renderer)
 }
 
 fn vc27_render_upgrade_showcase(
@@ -124,7 +115,8 @@ fn vc27_render_upgrade_card(
     height: u32,
     time: f32,
 ) {
-    let accent = vc27_upgrade_accent(upgrade);
+    let profile = vc27_upgrade_profile(upgrade);
+    let accent = profile.accent();
     vc27_choice_card_frame(
         framebuffer,
         x,
@@ -143,11 +135,11 @@ fn vc27_render_upgrade_card(
     let icon_x = x + 58;
     let icon_y = y + 64;
     vc27_choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
-    vc27_upgrade_assets(upgrade).render(framebuffer, icon_x, icon_y, selected, time);
+    profile.render_art(framebuffer, icon_x, icon_y, selected, time);
 
     let info_x = x + 112;
-    framebuffer.draw_text(info_x, y + 12, vc27_upgrade_category(upgrade), WRECK_LIGHT);
-    framebuffer.draw_text_scaled(info_x, y + 28, upgrade_name(upgrade), 2, accent);
+    framebuffer.draw_text(info_x, y + 12, profile.category(), WRECK_LIGHT);
+    framebuffer.draw_text_scaled(info_x, y + 28, profile.label(), 2, accent);
     framebuffer.draw_text(info_x, y + 54, &vc27_upgrade_effect(upgrade), TEXT);
     framebuffer.draw_text(info_x, y + 70, vc27_upgrade_detail(upgrade), WRECK_LIGHT);
 
@@ -306,7 +298,7 @@ mod upgrade_showcase_tests {
 
     #[test]
     fn all_upgrade_kinds_have_distinct_semantic_categories() {
-        let categories = UPGRADE_POOL.map(vc27_upgrade_category);
+        let categories = UPGRADE_POOL.map(|upgrade| vc27_upgrade_profile(upgrade).category());
         for index in 0..categories.len() {
             for other in index + 1..categories.len() {
                 assert_ne!(categories[index], categories[other]);
@@ -315,11 +307,12 @@ mod upgrade_showcase_tests {
     }
 
     #[test]
-    fn upgrades_expose_choice_assets_and_audio() {
+    fn upgrades_expose_choice_profile_assets_and_audio() {
         for upgrade in UPGRADE_POOL {
-            let assets = vc27_upgrade_assets(upgrade);
-            assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-            assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+            let profile = vc27_upgrade_profile(upgrade);
+            assert_eq!(profile.label(), upgrade_name(upgrade));
+            assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+            assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
         }
     }
 
