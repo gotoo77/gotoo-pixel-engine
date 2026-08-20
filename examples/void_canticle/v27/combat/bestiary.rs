@@ -40,14 +40,12 @@ impl VoidCanticleV27DirectPresentation {
     fn render_presentation_bestiary(&self, framebuffer: &mut Framebuffer) {
         let v20 = self.game.game.v20();
         for enemy in &self.game.game.base().enemies {
-            let x = vc27_present(enemy.x);
-            let y = vc27_present(enemy.y);
+            let key = vc20_carrion_key(enemy);
+            let hit = self.hit_reactions.carrion_visual(key);
+            let x = vc27_present(enemy.x) + hit.offset_x;
+            let y = vc27_present(enemy.y) + hit.offset_y;
             let armor_max = vc20_carrion_armor_max(enemy.pattern);
-            let armor = v20
-                .carrion_armor
-                .get(&vc20_carrion_key(enemy))
-                .copied()
-                .unwrap_or(armor_max);
+            let armor = v20.carrion_armor.get(&key).copied().unwrap_or(armor_max);
             vc27_hd_render_carrion(framebuffer, x, y, enemy.age, enemy.phase);
             vc27_hd_render_damage_marks(
                 framebuffer,
@@ -57,77 +55,96 @@ impl VoidCanticleV27DirectPresentation {
                 enemy.age,
                 34,
             );
+            vc27_render_hit_flash(framebuffer, x, y, Vc27HitFlashKind::Carrion, hit);
         }
 
         let v12 = &v20.game.v12();
         for enemy in &v12.combat.specials {
-            let x = vc27_present(enemy.x);
-            let y = vc27_present(enemy.y);
+            let key = vc20_special_key(enemy);
+            let hit = self.hit_reactions.special_visual(key);
+            let x = vc27_present(enemy.x) + hit.offset_x;
+            let y = vc27_present(enemy.y) + hit.offset_y;
             let armor_max = vc20_special_armor_max(enemy.kind);
-            let armor = v20
-                .special_armor
-                .get(&vc20_special_key(enemy))
-                .copied()
-                .unwrap_or(armor_max);
+            let armor = v20.special_armor.get(&key).copied().unwrap_or(armor_max);
             let hp_max = vc20_special_hp_max(enemy.kind);
             let damage_state = vc27_damage_state(
                 armor.saturating_add(enemy.hp),
                 armor_max.saturating_add(hp_max),
             );
-            match enemy.kind {
+            let flash_kind = match enemy.kind {
                 SpecialKind::GraveKnight => {
-                    vc27_hd_render_grave_knight(framebuffer, x, y, enemy.age)
+                    vc27_hd_render_grave_knight(framebuffer, x, y, enemy.age);
+                    Vc27HitFlashKind::GraveKnight
                 }
                 SpecialKind::BellWraith => {
-                    vc27_hd_render_bell_wraith(framebuffer, x, y, enemy.age, enemy.phase)
+                    vc27_hd_render_bell_wraith(framebuffer, x, y, enemy.age, enemy.phase);
+                    Vc27HitFlashKind::BellWraith
                 }
-                SpecialKind::RelicCarrier => vc27_hd_render_relic_carrier(
-                    framebuffer,
-                    x,
-                    y,
-                    enemy.age,
-                    enemy.phase,
-                    enemy.direction,
-                ),
-            }
+                SpecialKind::RelicCarrier => {
+                    vc27_hd_render_relic_carrier(
+                        framebuffer,
+                        x,
+                        y,
+                        enemy.age,
+                        enemy.phase,
+                        enemy.direction,
+                    );
+                    Vc27HitFlashKind::RelicCarrier
+                }
+            };
             vc27_hd_render_damage_marks(framebuffer, x, y, damage_state, enemy.age, 40);
+            vc27_render_hit_flash(framebuffer, x, y, flash_kind, hit);
         }
 
         for threat in &v12.threats {
-            let x = vc27_present(threat.x);
-            let y = vc27_present(threat.y);
+            let key = vc20_threat_key(threat);
+            let hit = self.hit_reactions.threat_visual(key);
+            let x = vc27_present(threat.x) + hit.offset_x;
+            let y = vc27_present(threat.y) + hit.offset_y;
             let armor_max = vc20_threat_armor_max(threat.kind);
-            let armor = v20
-                .threat_armor
-                .get(&vc20_threat_key(threat))
-                .copied()
-                .unwrap_or(armor_max);
+            let armor = v20.threat_armor.get(&key).copied().unwrap_or(armor_max);
             let hp_max = vc20_threat_hp_max(threat.kind);
             let damage_state = vc27_damage_state(
                 armor.saturating_add(threat.hp),
                 armor_max.saturating_add(hp_max),
             );
-            match threat.kind {
+            let flash_kind = match threat.kind {
                 ThreatKind::ChoirNode => {
-                    vc27_hd_render_choir_node(framebuffer, x, y, threat.age, threat.phase)
+                    vc27_hd_render_choir_node(framebuffer, x, y, threat.age, threat.phase);
+                    Vc27HitFlashKind::ChoirNode
                 }
-                ThreatKind::VoidLeech => vc27_hd_render_void_leech(
-                    framebuffer,
-                    x,
-                    y,
-                    threat.age,
-                    threat.phase,
-                    threat.charge,
-                ),
-            }
+                ThreatKind::VoidLeech => {
+                    vc27_hd_render_void_leech(
+                        framebuffer,
+                        x,
+                        y,
+                        threat.age,
+                        threat.phase,
+                        threat.charge,
+                    );
+                    Vc27HitFlashKind::VoidLeech
+                }
+            };
             vc27_hd_render_damage_marks(framebuffer, x, y, damage_state, threat.age, 44);
+            vc27_render_hit_flash(framebuffer, x, y, flash_kind, hit);
         }
 
         let base = self.game.game.base();
         if base.encounter_phase != EncounterPhase::Cleared
             && let Some(boss) = base.boss
         {
-            vc27_hd_render_bellkeeper(framebuffer, boss);
+            let hit = self.hit_reactions.boss_visual();
+            let mut rendered_boss = boss;
+            rendered_boss.x += hit.offset_x as f32 / VC_VISUAL_PRESENTATION_SCALE as f32;
+            rendered_boss.y += hit.offset_y as f32 / VC_VISUAL_PRESENTATION_SCALE as f32;
+            vc27_hd_render_bellkeeper(framebuffer, rendered_boss);
+            vc27_render_hit_flash(
+                framebuffer,
+                vc27_present(boss.x) + hit.offset_x,
+                vc27_present(boss.y) + hit.offset_y,
+                Vc27HitFlashKind::Bellkeeper,
+                hit,
+            );
         }
     }
 
