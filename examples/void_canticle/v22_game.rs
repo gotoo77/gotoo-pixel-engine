@@ -18,6 +18,10 @@ const VC22_CHASSIS: [ExosuitChassis; 3] = [
     ExosuitChassis::Wraith,
 ];
 
+fn vc22_run_restarted(stage_time_before: f32, stage_time_after: f32) -> bool {
+    stage_time_after + 0.05 < stage_time_before
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ChassisProfile {
     hull_multiplier: f32,
@@ -119,6 +123,27 @@ impl VoidCanticleV22 {
         self.game.game.tuning.player_hull = hull;
         self.game.game.tuning.player_shield = shield;
         self.game.game.reset_runtime_models();
+    }
+
+    fn stage_time(&self) -> f32 {
+        self.game.game.game.game.base().stage_time
+    }
+
+    fn reset_chassis_selection_for_new_run(&mut self) {
+        self.chassis = None;
+        self.menu = gotoo_pixel_engine::ui::MenuState::new(VC22_CHASSIS.len());
+        self.game.base_hull_cap = self.baseline_hull;
+        self.game.game.tuning.player_hull = self.baseline_hull;
+        self.game.game.tuning.player_shield = self.baseline_shield;
+    }
+
+    fn reconcile_inner_restart(&mut self, stage_time_before: f32) -> bool {
+        if !vc22_run_restarted(stage_time_before, self.stage_time()) {
+            return false;
+        }
+
+        self.reset_chassis_selection_for_new_run();
+        true
     }
 
     fn update_chassis_selection(&mut self, frame: &mut Frame<'_>) -> bool {
@@ -251,10 +276,16 @@ impl Game for VoidCanticleV22 {
             }
         }
 
+        let stage_time_before = self.stage_time();
         let before = self.player_position();
         let result = self.game.update(frame);
         if result == GameResult::Exit {
             return result;
+        }
+
+        if self.reconcile_inner_restart(stage_time_before) {
+            self.render_chassis_selection(frame.framebuffer);
+            return GameResult::Continue;
         }
 
         self.rescale_player_movement(before, frame);
@@ -304,6 +335,29 @@ mod v22_tests {
         let (hull, shield) = game.chassis_limits(ExosuitChassis::Pilgrim);
         assert_eq!(hull, game.baseline_hull);
         assert_eq!(shield, game.baseline_shield);
+    }
+
+    #[test]
+    fn inner_run_restart_returns_to_chassis_selection() {
+        let mut game = VoidCanticleV22::new();
+        game.apply_chassis(ExosuitChassis::Wraith);
+        game.game.game.game.game.base_mut().stage_time = 12.0;
+        let stage_time_before = game.stage_time();
+
+        game.game.game.pause_ui_mut().game.reset_run();
+
+        assert!(game.reconcile_inner_restart(stage_time_before));
+        assert_eq!(game.chassis, None);
+        assert_eq!(game.game.base_hull_cap, game.baseline_hull);
+        assert_eq!(game.game.game.tuning.player_hull, game.baseline_hull);
+        assert_eq!(game.game.game.tuning.player_shield, game.baseline_shield);
+    }
+
+    #[test]
+    fn restart_detection_requires_a_real_timeline_drop() {
+        assert!(vc22_run_restarted(12.0, 0.0));
+        assert!(!vc22_run_restarted(12.0, 11.98));
+        assert!(!vc22_run_restarted(0.0, 0.0));
     }
 
     #[test]
