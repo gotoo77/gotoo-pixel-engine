@@ -189,20 +189,42 @@ impl VoidCanticleV27DirectPresentation {
     }
 
     fn render_presentation_bestiary(&self, framebuffer: &mut Framebuffer) {
+        let v20 = self.game.game.v20();
         for enemy in &self.game.game.base().enemies {
-            vc27_hd_render_carrion(
+            let x = vc27_present(enemy.x);
+            let y = vc27_present(enemy.y);
+            let armor_max = vc20_carrion_armor_max(enemy.pattern);
+            let armor = v20
+                .carrion_armor
+                .get(&vc20_carrion_key(enemy))
+                .copied()
+                .unwrap_or(armor_max);
+            vc27_hd_render_carrion(framebuffer, x, y, enemy.age, enemy.phase);
+            vc27_hd_render_damage_marks(
                 framebuffer,
-                vc27_present(enemy.x),
-                vc27_present(enemy.y),
+                x,
+                y,
+                vc27_damage_state(armor.saturating_add(1), armor_max.saturating_add(1)),
                 enemy.age,
-                enemy.phase,
+                34,
             );
         }
 
-        let v12 = &self.game.game.v20().game.v14().progression.combat;
+        let v12 = &v20.game.v12();
         for enemy in &v12.combat.specials {
             let x = vc27_present(enemy.x);
             let y = vc27_present(enemy.y);
+            let armor_max = vc20_special_armor_max(enemy.kind);
+            let armor = v20
+                .special_armor
+                .get(&vc20_special_key(enemy))
+                .copied()
+                .unwrap_or(armor_max);
+            let hp_max = vc20_special_hp_max(enemy.kind);
+            let damage_state = vc27_damage_state(
+                armor.saturating_add(enemy.hp),
+                armor_max.saturating_add(hp_max),
+            );
             match enemy.kind {
                 SpecialKind::GraveKnight => {
                     vc27_hd_render_grave_knight(framebuffer, x, y, enemy.age)
@@ -219,11 +241,23 @@ impl VoidCanticleV27DirectPresentation {
                     enemy.direction,
                 ),
             }
+            vc27_hd_render_damage_marks(framebuffer, x, y, damage_state, enemy.age, 40);
         }
 
         for threat in &v12.threats {
             let x = vc27_present(threat.x);
             let y = vc27_present(threat.y);
+            let armor_max = vc20_threat_armor_max(threat.kind);
+            let armor = v20
+                .threat_armor
+                .get(&vc20_threat_key(threat))
+                .copied()
+                .unwrap_or(armor_max);
+            let hp_max = vc20_threat_hp_max(threat.kind);
+            let damage_state = vc27_damage_state(
+                armor.saturating_add(threat.hp),
+                armor_max.saturating_add(hp_max),
+            );
             match threat.kind {
                 ThreatKind::ChoirNode => {
                     vc27_hd_render_choir_node(framebuffer, x, y, threat.age, threat.phase)
@@ -237,6 +271,7 @@ impl VoidCanticleV27DirectPresentation {
                     threat.charge,
                 ),
             }
+            vc27_hd_render_damage_marks(framebuffer, x, y, damage_state, threat.age, 44);
         }
 
         let base = self.game.game.base();
@@ -1000,6 +1035,13 @@ mod v27_tests {
         assert_eq!(vc27_pressure_level(VoidPressure::Awake), 3);
         assert_eq!(vc27_pressure_level(VoidPressure::Hostile), 4);
         assert_eq!(vc27_pressure_level(VoidPressure::Cataclysmic), 5);
+    }
+
+    #[test]
+    fn damage_states_follow_effective_health_thirds() {
+        assert_eq!(vc27_damage_state(10, 10), Vc27DamageState::Intact);
+        assert_eq!(vc27_damage_state(6, 10), Vc27DamageState::Damaged);
+        assert_eq!(vc27_damage_state(3, 10), Vc27DamageState::Critical);
     }
 
     #[test]
