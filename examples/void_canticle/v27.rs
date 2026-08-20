@@ -246,8 +246,18 @@ impl VoidCanticleV27DirectPresentation {
         let center_x = (18 * scale) as i32;
         let center_y = (VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(35 * scale)) as i32;
         let radius = 11 * scale;
+        let level = progression.level;
+        let tier_color = vc27_echo_level_color(level);
 
-        vc27_echo_shell(framebuffer, center_x, center_y, radius, ratio);
+        vc27_echo_shell(
+            framebuffer,
+            center_x,
+            center_y,
+            radius,
+            ratio,
+            level,
+            tier_color,
+        );
     }
 
     fn render_player_last(&mut self, framebuffer: &mut Framebuffer) {
@@ -391,19 +401,32 @@ fn vc27_pressure_level(pressure: VoidPressure) -> u32 {
     }
 }
 
+fn vc27_echo_level_color(level: u32) -> Pixel {
+    match (level / 10) % 6 {
+        0 => XP_ORB_CORE,
+        1 => ART_CYAN_LIGHT,
+        2 => SYNERGY_GOLD,
+        3 => VOID_GLOW,
+        4 => CANTICLE_COLOR,
+        _ => DANGER,
+    }
+}
+
 fn vc27_echo_shell(
     framebuffer: &mut Framebuffer,
     center_x: i32,
     center_y: i32,
     radius: u32,
     ratio: f32,
+    level: u32,
+    tier_color: Pixel,
 ) {
     let ratio = ratio.clamp(0.0, 1.0);
     let radius = radius.max(4);
     let steps = 48_u32;
     let active_steps = (steps as f32 * ratio).round() as u32;
 
-    framebuffer.draw_circle(center_x, center_y, radius, WRECK_MID);
+    framebuffer.draw_circle(center_x, center_y, radius, tier_color);
     framebuffer.draw_circle(center_x, center_y, radius.saturating_sub(3), XP_BAR_BG);
 
     let mut previous = None;
@@ -417,7 +440,7 @@ fn vc27_echo_shell(
 
         if let Some((px, py)) = previous {
             let color = if step <= active_steps {
-                XP_ORB_CORE
+                tier_color
             } else {
                 WRECK_MID
             };
@@ -429,9 +452,8 @@ fn vc27_echo_shell(
         previous = Some((x, y));
     }
 
-    framebuffer.fill_circle(center_x, center_y, 2, XP_ORB);
     if active_steps > 0 {
-        framebuffer.fill_circle(active_tip.0, active_tip.1, 1, XP_ORB_CORE);
+        framebuffer.fill_circle(active_tip.0, active_tip.1, 1, tier_color);
     }
 
     // Small aperture/lip turns the abstract spiral into a shell-like glyph.
@@ -441,7 +463,25 @@ fn vc27_echo_shell(
         center_y + radius as i32 / 3,
         lip_x,
         center_y + radius as i32 / 2,
-        XP_ORB,
+        tier_color,
+    );
+
+    // The shell's eye is the level medallion. It stays deliberately compact so
+    // the Echo spiral remains the primary shape instead of becoming a badge.
+    let badge_radius = (radius / 3).max(4);
+    framebuffer.fill_circle(center_x, center_y, badge_radius, BG);
+    framebuffer.draw_circle(center_x, center_y, badge_radius, tier_color);
+
+    let label = level.to_string();
+    let preferred_scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
+    let text_scale = if label.len() <= 2 { preferred_scale } else { 1 };
+    let (text_width, text_height) = Framebuffer::text_size(&label, text_scale);
+    framebuffer.draw_text_scaled(
+        center_x - text_width as i32 / 2,
+        center_y - text_height as i32 / 2,
+        &label,
+        text_scale,
+        tier_color,
     );
 }
 
@@ -509,10 +549,26 @@ mod v27_tests {
     }
 
     #[test]
+    fn echo_shell_changes_color_at_ten_level_boundaries() {
+        assert_eq!(vc27_echo_level_color(1), vc27_echo_level_color(9));
+        assert_ne!(vc27_echo_level_color(9), vc27_echo_level_color(10));
+        assert_ne!(vc27_echo_level_color(19), vc27_echo_level_color(20));
+        assert_ne!(vc27_echo_level_color(29), vc27_echo_level_color(30));
+    }
+
+    #[test]
     fn echo_shell_stays_local_to_its_glyph() {
         let mut framebuffer = Framebuffer::new(40, 40);
         framebuffer.clear(Pixel::BLUE);
-        vc27_echo_shell(&mut framebuffer, 20, 20, 8, 0.5);
+        vc27_echo_shell(
+            &mut framebuffer,
+            20,
+            20,
+            8,
+            0.5,
+            12,
+            vc27_echo_level_color(12),
+        );
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
         assert_eq!(framebuffer.pixel(39, 39), Some(Pixel::BLUE));
     }
