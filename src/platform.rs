@@ -6,6 +6,9 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
+mod branding;
+
 use crate::Framebuffer;
 use crate::audio::{Audio, PlatformAudio, platform_audio};
 use crate::gamepad::GamepadInputBackend;
@@ -13,6 +16,8 @@ use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
 use crate::storage::{LocalStorage, platform_storage};
 use crate::{GamepadId, GamepadProfile, Size, Viewport};
+#[cfg(not(target_arch = "wasm32"))]
+use branding::default_window_icon;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
@@ -314,6 +319,9 @@ impl<G: Game> PlatformApp<G> {
             ))
             .with_min_inner_size(LogicalSize::new(1.0, 1.0));
 
+        #[cfg(not(target_arch = "wasm32"))]
+        let attributes = attributes.with_window_icon(default_window_icon());
+
         #[cfg(target_arch = "wasm32")]
         let attributes = {
             use winit::platform::web::WindowAttributesExtWebSys;
@@ -535,6 +543,7 @@ fn key_from_winit(key: PhysicalKey) -> Option<Key> {
         PhysicalKey::Code(KeyCode::ArrowLeft) => Some(Key::Left),
         PhysicalKey::Code(KeyCode::ArrowRight) => Some(Key::Right),
         PhysicalKey::Code(KeyCode::KeyA) => Some(Key::A),
+        PhysicalKey::Code(KeyCode::KeyC) => Some(Key::C),
         PhysicalKey::Code(KeyCode::KeyD) => Some(Key::D),
         PhysicalKey::Code(KeyCode::KeyE) => Some(Key::E),
         PhysicalKey::Code(KeyCode::KeyF) => Some(Key::F),
@@ -700,6 +709,10 @@ mod tests {
         assert_eq!(
             key_from_winit(PhysicalKey::Code(KeyCode::KeyX)),
             Some(Key::X)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::KeyC)),
+            Some(Key::C)
         );
         assert_eq!(
             key_from_winit(PhysicalKey::Code(KeyCode::ShiftLeft)),
