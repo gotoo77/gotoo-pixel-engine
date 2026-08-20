@@ -39,7 +39,6 @@ impl VoidCanticleV27DirectPresentation {
                         self.presentation_time,
                     );
                 }
-                return;
             }
             VcVisualMode::MutationChoice => {
                 let v14 = self.game.game.v20().game.v14();
@@ -51,11 +50,9 @@ impl VoidCanticleV27DirectPresentation {
                         self.presentation_time,
                     );
                 }
-                return;
             }
             VcVisualMode::SupportChoice => {
                 vc27_render_support_showcase(framebuffer, &self.game, self.presentation_time);
-                return;
             }
             VcVisualMode::Pause => {
                 let pause = self.game.survival_model().game.pause_ui();
@@ -75,11 +72,9 @@ impl VoidCanticleV27DirectPresentation {
                         );
                     }
                 }
-                return;
             }
             VcVisualMode::StageClear => {
                 vc27_render_stage_clear_presentation(framebuffer, &self.game, self.presentation_time);
-                return;
             }
             VcVisualMode::Combat | VcVisualMode::Death => {}
         }
