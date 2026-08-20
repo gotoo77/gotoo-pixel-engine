@@ -310,9 +310,19 @@ mod upgrade_showcase_tests {
     fn upgrades_expose_choice_profile_assets_and_audio() {
         for upgrade in UPGRADE_POOL {
             let profile = vc27_upgrade_profile(upgrade);
+            let (expected_hover, expected_confirm) = match upgrade {
+                UpgradeKind::RapidFire => (
+                    Some(Vc27ChoiceArtId::RapidFire.hover_override_sound()),
+                    Some(Vc27ChoiceArtId::RapidFire.confirm_override_sound()),
+                ),
+                _ => (
+                    Some(VC27_CHOICE_HOVER_SOUND),
+                    Some(VC27_CHOICE_CONFIRM_SOUND),
+                ),
+            };
             assert_eq!(profile.label(), upgrade_name(upgrade));
-            assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-            assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+            assert_eq!(profile.hover_sound(), expected_hover);
+            assert_eq!(profile.confirm_sound(), expected_confirm);
         }
     }
 
