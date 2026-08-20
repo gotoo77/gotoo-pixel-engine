@@ -79,17 +79,14 @@ impl VoidCanticleV27ChoicePresentation {
             let selector = &self.presentation.game.game.game.game.game;
             let index = selector.menu.selected()?;
             let chassis = VC22_CHASSIS.get(index).copied()?;
-            return Some(Vc27ChoiceSnapshot {
-                focus: Vc27ChoiceFocus {
+            return Some(Vc27ChoiceSnapshot::from_profile(
+                Vc27ChoiceFocus {
                     kind: Vc27ChoiceFocusKind::Chassis,
                     index,
                 },
-                label: chassis.name(),
-                accent: vc27_chassis_accent(chassis),
-                hover_sound: Some(VC27_CHOICE_HOVER_SOUND),
-                confirm_sound: Some(VC27_CHOICE_CONFIRM_SOUND),
+                vc27_chassis_profile(chassis),
                 synergy_mask_before,
-            });
+            ));
         }
 
         match self.presentation.visual_mode() {
@@ -300,6 +297,23 @@ mod choice_runtime_tests {
         selector.menu.select_next();
         assert_eq!(game.choice_hover_event(), Some(VC27_CHOICE_HOVER_SOUND));
         assert_eq!(game.choice_hover_event(), None);
+    }
+
+    #[test]
+    fn chassis_snapshot_uses_shared_choice_profile() {
+        let profile = vc27_chassis_profile(ExosuitChassis::Bulwark);
+        let snapshot = Vc27ChoiceSnapshot::from_profile(
+            Vc27ChoiceFocus {
+                kind: Vc27ChoiceFocusKind::Chassis,
+                index: 0,
+            },
+            profile,
+            0,
+        );
+        assert_eq!(snapshot.label, profile.label());
+        assert_eq!(snapshot.accent, profile.accent());
+        assert_eq!(snapshot.hover_sound, profile.hover_sound());
+        assert_eq!(snapshot.confirm_sound, profile.confirm_sound());
     }
 
     #[test]
