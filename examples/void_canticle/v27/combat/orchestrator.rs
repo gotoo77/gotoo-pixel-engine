@@ -13,14 +13,18 @@ impl VoidCanticleV27DirectPresentation {
             .action(FOCUS)
             .held();
         let base = self.game.game.base();
+        let hit = self.hit_reactions.player_visual();
+        let x = vc27_present(base.player_x) + hit.offset_x;
+        let y = vc27_present(base.player_y) + hit.offset_y;
         vc27_hd_render_pilgrim(
             framebuffer,
-            vc27_present(base.player_x),
-            vc27_present(base.player_y),
+            x,
+            y,
             focused,
             base.invulnerability,
             base.animation_time,
         );
+        vc27_render_hit_flash(framebuffer, x, y, Vc27HitFlashKind::Pilgrim, hit);
     }
 
     fn render_combat_presentation(&mut self, framebuffer: &mut Framebuffer) {
@@ -48,8 +52,6 @@ impl VoidCanticleV27DirectPresentation {
 
 #[cfg(test)]
 mod v27_combat_orchestrator_tests {
-    use super::*;
-
     #[test]
     fn combat_pipeline_keeps_player_as_last_visual_layer() {
         let stages = [
