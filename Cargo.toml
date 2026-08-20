@@ -25,6 +25,7 @@ web-time = "1.1.0"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = "6.0.0"
 gilrs = "0.11.2"
+png = "0.17.16"
 rodio = { version = "0.22.2", default-features = false, features = ["playback"] }
 
 [[example]]
