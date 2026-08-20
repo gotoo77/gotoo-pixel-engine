@@ -2,7 +2,9 @@ name: Native game packages
 
 on:
   workflow_dispatch:
-  pull_request:
+  push:
+    branches:
+      - main
     paths:
       - Cargo.toml
       - Cargo.lock
@@ -13,7 +15,6 @@ on:
       - assets/void_canticle/**
       - scripts/dev.py
       - .github/workflows/native-packages.yml
-  push:
     tags:
       - "void-canticle-v*"
 
