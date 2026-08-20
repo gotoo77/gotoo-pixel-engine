@@ -60,12 +60,16 @@ impl<'a> Vc27ChoiceAssets<'a> {
         self
     }
 
-    const fn hover_sound(self) -> Option<SoundId> {
-        self.hover_sound
+    fn hover_sound(self) -> Option<SoundId> {
+        self.catalog_id
+            .and_then(|catalog_id| vc27_choice_catalog().hover_sound(catalog_id))
+            .or(self.hover_sound)
     }
 
-    const fn confirm_sound(self) -> Option<SoundId> {
-        self.confirm_sound
+    fn confirm_sound(self) -> Option<SoundId> {
+        self.catalog_id
+            .and_then(|catalog_id| vc27_choice_catalog().confirm_sound(catalog_id))
+            .or(self.confirm_sound)
     }
 
     fn render(
@@ -125,11 +129,11 @@ impl<'a> Vc27ChoiceProfile<'a> {
         self.assets
     }
 
-    const fn hover_sound(self) -> Option<SoundId> {
+    fn hover_sound(self) -> Option<SoundId> {
         self.assets.hover_sound()
     }
 
-    const fn confirm_sound(self) -> Option<SoundId> {
+    fn confirm_sound(self) -> Option<SoundId> {
         self.assets.confirm_sound()
     }
 
@@ -151,13 +155,16 @@ fn vc27_register_choice_sounds(sounds: &mut SoundBank) {
             VC27_CHOICE_HOVER_SOUND,
             synthesize_chirp(620.0, 880.0, 0.035, 0.035),
         )
-        .expect("VC2.7 choice hover sound id should be unique");
+        .expect("VC2.8 choice hover sound id should be unique");
     sounds
         .insert_wav(
             VC27_CHOICE_CONFIRM_SOUND,
             synthesize_chirp(420.0, 1_180.0, 0.07, 0.055),
         )
-        .expect("VC2.7 choice confirm sound id should be unique");
+        .expect("VC2.8 choice confirm sound id should be unique");
+    vc27_choice_catalog()
+        .register_sounds(sounds)
+        .expect("VC2.8 choice override sound ids should be unique");
 }
 
 #[cfg(test)]
