@@ -110,6 +110,30 @@ impl VoidCanticleV27DirectPresentation {
         }
     }
 
+    fn render_presentation_bestiary(&self, framebuffer: &mut Framebuffer) {
+        for enemy in &self.game.game.base().enemies {
+            vc27_render_carrion_hd(
+                framebuffer,
+                vc27_present(enemy.x),
+                vc27_present(enemy.y),
+                enemy.age,
+                enemy.phase,
+            );
+        }
+
+        let v12 = &self.game.game.v20().game.v14().progression.combat;
+        for enemy in &v12.combat.specials {
+            if enemy.kind == SpecialKind::GraveKnight {
+                vc27_render_grave_knight_hd(
+                    framebuffer,
+                    vc27_present(enemy.x),
+                    vc27_present(enemy.y),
+                    enemy.age,
+                );
+            }
+        }
+    }
+
     fn render_canticle_charge(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
         let base = self.game.game.base();
@@ -291,6 +315,14 @@ impl VoidCanticleV27DirectPresentation {
             VC_VISUAL_PRESENTATION_SCALE,
             true,
         );
+        vc27_render_pilgrim_hd(
+            framebuffer,
+            vc27_present(base.player_x),
+            vc27_present(base.player_y),
+            focused,
+            base.invulnerability,
+            base.animation_time,
+        );
     }
 
     fn render_combat_presentation(&mut self, framebuffer: &mut Framebuffer) {
@@ -298,6 +330,7 @@ impl VoidCanticleV27DirectPresentation {
             return;
         }
 
+        self.render_presentation_bestiary(framebuffer);
         self.render_event_announcement(framebuffer);
         self.render_threat_meter(framebuffer);
         self.render_echo_shell(framebuffer);
@@ -393,6 +426,137 @@ impl Game for VoidCanticleV27DirectPresentation {
     }
 }
 
+fn vc27_present(value: f32) -> i32 {
+    (value * VC_VISUAL_PRESENTATION_SCALE as f32).round() as i32
+}
+
+fn vc27_render_carrion_hd(
+    framebuffer: &mut Framebuffer,
+    x: i32,
+    y: i32,
+    age: f32,
+    phase: f32,
+) {
+    let flap = ((age * 7.0 + phase).sin() * 4.0).round() as i32;
+    let eye_hot = ((age * 11.0 + phase).sin() * 0.5 + 0.5) > 0.42;
+
+    // Filled manta silhouette intentionally covers the low-res base while the
+    // ribs/highlights are native presentation pixels (1 real screen pixel).
+    for dy in -9_i32..=9 {
+        let taper = dy.unsigned_abs() as i32 * 2;
+        let half_width = (33 - taper).max(13);
+        framebuffer.draw_line(x - half_width, y + dy, x + half_width, y + dy, ART_SHADOW);
+    }
+
+    framebuffer.draw_line(x - 33, y - 1 - flap, x - 9, y - 7, ART_RUST);
+    framebuffer.draw_line(x + 33, y - 1 - flap, x + 9, y - 7, ART_RUST);
+    framebuffer.draw_line(x - 31, y + 2 + flap, x - 8, y + 7, ART_BONE);
+    framebuffer.draw_line(x + 31, y + 2 + flap, x + 8, y + 7, ART_BONE);
+
+    for rib in [12, 18, 24, 30] {
+        framebuffer.draw_line(x - 5, y - 3, x - rib, y - 6 + rib / 8 - flap / 2, ART_BONE);
+        framebuffer.draw_line(x + 5, y - 3, x + rib, y - 6 + rib / 8 - flap / 2, ART_BONE);
+    }
+
+    framebuffer.draw_line(x - 9, y - 7, x, y - 15, ART_BONE);
+    framebuffer.draw_line(x + 9, y - 7, x, y - 15, ART_BONE);
+    framebuffer.draw_line(x - 9, y + 7, x, y + 15, ART_RUST);
+    framebuffer.draw_line(x + 9, y + 7, x, y + 15, ART_RUST);
+    framebuffer.fill_circle(x, y, 7, ART_VOID);
+    framebuffer.draw_circle(x, y, 8, ART_BONE);
+    framebuffer.fill_circle(x, y, 3, if eye_hot { ENEMY_EYE } else { ART_RUST });
+    framebuffer.draw(x, y, CANTICLE_COLOR);
+
+    // Fine asymmetry/detail that cannot exist at 180x320.
+    framebuffer.draw(x - 14, y + 3, ART_GOLD);
+    framebuffer.draw(x + 17, y - 2, ART_GOLD);
+    framebuffer.draw(x - 25, y - 2 - flap, ART_RUST);
+    framebuffer.draw(x + 27, y + flap / 2, ART_BONE);
+}
+
+fn vc27_render_grave_knight_hd(
+    framebuffer: &mut Framebuffer,
+    x: i32,
+    y: i32,
+    age: f32,
+) {
+    let charging = (0.90..1.55).contains(&age);
+    let pulse = ((age * 9.0).sin() * 0.5 + 0.5) > 0.5;
+
+    // Broad dark underbody covers the coarse sprite. Metallic framing is then
+    // drawn with single-pixel engravings and chapel-window details.
+    framebuffer.fill_rect(x - 17, y - 23, 35, 46, ART_SHADOW);
+    framebuffer.fill_rect(x - 31, y - 10, 14, 22, ART_SHADOW);
+    framebuffer.fill_rect(x + 18, y - 10, 14, 22, ART_SHADOW);
+    framebuffer.draw_rect(x - 17, y - 23, 35, 46, ART_METAL);
+    framebuffer.draw_rect(x - 31, y - 10, 14, 22, ART_METAL);
+    framebuffer.draw_rect(x + 18, y - 10, 14, 22, ART_METAL);
+
+    framebuffer.draw_line(x - 16, y - 22, x, y - 35, ART_GOLD);
+    framebuffer.draw_line(x + 16, y - 22, x, y - 35, ART_GOLD);
+    framebuffer.draw_line(x - 31, y - 10, x - 38, y + 2, ART_GOLD);
+    framebuffer.draw_line(x + 31, y - 10, x + 38, y + 2, ART_GOLD);
+    framebuffer.draw_line(x, y + 22, x, y + 34, ART_METAL_LIGHT);
+
+    framebuffer.fill_rect(x - 7, y - 11, 15, 15, DANGER);
+    framebuffer.draw_rect(x - 8, y - 12, 17, 17, ART_GOLD);
+    framebuffer.fill_rect(x - 3, y - 7, 7, 7, ART_SHADOW);
+    framebuffer.draw(x, y - 4, if pulse { CANTICLE_COLOR } else { ENEMY_EYE });
+
+    for offset in [-11, -6, 6, 11] {
+        framebuffer.draw_line(x + offset, y + 7, x + offset, y + 18, ART_METAL_LIGHT);
+    }
+    framebuffer.draw_line(x - 14, y + 14, x + 14, y + 14, ART_GOLD);
+
+    if charging {
+        framebuffer.draw_line(x - 3, y + 35, x - 5, y + 43, PILGRIM_THRUSTER);
+        framebuffer.draw_line(x + 3, y + 35, x + 5, y + 43, PILGRIM_THRUSTER);
+    }
+}
+
+fn vc27_render_pilgrim_hd(
+    framebuffer: &mut Framebuffer,
+    x: i32,
+    y: i32,
+    focused: bool,
+    invulnerability: f32,
+    animation_time: f32,
+) {
+    if invulnerability > 0.0 && ((invulnerability * 16.0) as i32 & 1) != 0 {
+        return;
+    }
+
+    let flame = if ((animation_time * 12.0) as i32 & 1) == 0 { 7 } else { 10 };
+    let wing = if focused { 15 } else { 22 };
+
+    framebuffer.draw_line(x, y - 29, x - 9, y - 16, PILGRIM_GOLD);
+    framebuffer.draw_line(x, y - 29, x + 9, y - 16, PILGRIM_GOLD);
+    framebuffer.draw_line(x - 9, y - 16, x - wing, y + 4, PILGRIM);
+    framebuffer.draw_line(x + 9, y - 16, x + wing, y + 4, PILGRIM);
+    framebuffer.draw_line(x - wing, y + 4, x - 7, y + 14, PILGRIM_DARK);
+    framebuffer.draw_line(x + wing, y + 4, x + 7, y + 14, PILGRIM_DARK);
+
+    framebuffer.draw_line(x - 6, y - 15, x - 3, y + 18, ART_METAL_LIGHT);
+    framebuffer.draw_line(x + 6, y - 15, x + 3, y + 18, ART_METAL_LIGHT);
+    framebuffer.draw_line(x - 3, y + 18, x, y + 24, PILGRIM_GOLD);
+    framebuffer.draw_line(x + 3, y + 18, x, y + 24, PILGRIM_GOLD);
+
+    framebuffer.fill_circle(x, y - 3, 6, PILGRIM_VIOLET);
+    framebuffer.draw_circle(x, y - 3, 8, PILGRIM_GOLD);
+    framebuffer.fill_circle(x, y - 3, 2, CANTICLE_COLOR);
+
+    framebuffer.draw_line(x - 5, y + 19, x - 7, y + 19 + flame, PILGRIM_THRUSTER);
+    framebuffer.draw_line(x + 5, y + 19, x + 7, y + 19 + flame, PILGRIM_THRUSTER);
+    framebuffer.draw(x - 8, y - 9, ART_GOLD);
+    framebuffer.draw(x + 8, y - 9, ART_GOLD);
+    framebuffer.draw(x, y - 24, ART_METAL_LIGHT);
+
+    if focused {
+        framebuffer.draw_circle(x, y - 3, 4, PILGRIM_GOLD);
+        framebuffer.fill_circle(x, y - 3, 1, FOCUS_COLOR);
+    }
+}
+
 fn vc27_pressure_level(pressure: VoidPressure) -> u32 {
     match pressure {
         VoidPressure::Dormant => 1,
@@ -458,7 +622,6 @@ fn vc27_echo_shell(
         framebuffer.fill_circle(active_tip.0, active_tip.1, 1, tier_color);
     }
 
-    // Small aperture/lip turns the abstract spiral into a shell-like glyph.
     let lip_x = center_x + radius as i32 - 2;
     framebuffer.draw_line(
         center_x + radius as i32 / 2,
@@ -468,8 +631,6 @@ fn vc27_echo_shell(
         tier_color,
     );
 
-    // The shell's eye is the level medallion. It stays deliberately compact so
-    // the Echo spiral remains the primary shape instead of becoming a badge.
     let badge_radius = (radius / 3).max(4);
     framebuffer.fill_circle(center_x, center_y, badge_radius, BG);
     framebuffer.draw_circle(center_x, center_y, badge_radius, tier_color);
@@ -539,6 +700,13 @@ mod v27_tests {
     #[test]
     fn version_is_explicit() {
         assert_eq!(VC27_PRESENTATION_VERSION, "VC2.7");
+    }
+
+    #[test]
+    fn simulation_coordinates_map_to_presentation_space() {
+        assert_eq!(vc27_present(0.0), 0);
+        assert_eq!(vc27_present(90.0), 180);
+        assert_eq!(vc27_present(319.5), 639);
     }
 
     #[test]
