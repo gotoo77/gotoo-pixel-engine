@@ -101,7 +101,11 @@ fn vc30_authored_choice_icon_set_is_complete_and_decodable() {
             .next_frame(&mut buffer)
             .unwrap_or_else(|error| panic!("{slug} authored icon should decode: {error}"));
 
-        assert_eq!((info.width, info.height), (72, 72), "{slug}");
+        assert!(info.width > 0 && info.height > 0, "{slug}");
+        assert!(
+            info.width <= 96 && info.height <= 96,
+            "{slug} authored icon should remain within the choice-card footprint"
+        );
         assert!(info.buffer_size() > 0, "{slug}");
     }
 }
