@@ -31,7 +31,7 @@ jobs:
           rustup default 1.97.1
 
       - name: Validate native targets
-        run: python3 scripts/dev.py check
+        run: python3 scripts/dev.py check --print-lock-base64
 
   web:
     runs-on: ubuntu-latest
