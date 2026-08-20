@@ -1,4 +1,5 @@
 const VC27_CHOICE_HOVER_SOUND: SoundId = SoundId::new("void_canticle.ui.choice_hover");
+const VC27_CHOICE_CONFIRM_SOUND: SoundId = SoundId::new("void_canticle.ui.choice_confirm");
 
 type Vc27ChoiceArtRenderer = fn(&mut Framebuffer, i32, i32, bool, f32);
 
@@ -28,22 +29,36 @@ impl Vc27ChoiceArt<'_> {
 struct Vc27ChoiceAssets<'a> {
     art: Vc27ChoiceArt<'a>,
     hover_sound: Option<SoundId>,
+    confirm_sound: Option<SoundId>,
 }
 
 impl<'a> Vc27ChoiceAssets<'a> {
-    const fn new(art: Vc27ChoiceArt<'a>, hover_sound: Option<SoundId>) -> Self {
-        Self { art, hover_sound }
+    const fn new(
+        art: Vc27ChoiceArt<'a>,
+        hover_sound: Option<SoundId>,
+        confirm_sound: Option<SoundId>,
+    ) -> Self {
+        Self {
+            art,
+            hover_sound,
+            confirm_sound,
+        }
     }
 
     const fn procedural(renderer: Vc27ChoiceArtRenderer) -> Self {
         Self::new(
             Vc27ChoiceArt::Procedural(renderer),
             Some(VC27_CHOICE_HOVER_SOUND),
+            Some(VC27_CHOICE_CONFIRM_SOUND),
         )
     }
 
     const fn hover_sound(self) -> Option<SoundId> {
         self.hover_sound
+    }
+
+    const fn confirm_sound(self) -> Option<SoundId> {
+        self.confirm_sound
     }
 
     fn render(
@@ -58,13 +73,19 @@ impl<'a> Vc27ChoiceAssets<'a> {
     }
 }
 
-fn vc27_register_choice_hover_sound(sounds: &mut SoundBank) {
+fn vc27_register_choice_sounds(sounds: &mut SoundBank) {
     sounds
         .insert_wav(
             VC27_CHOICE_HOVER_SOUND,
             synthesize_chirp(620.0, 880.0, 0.035, 0.035),
         )
         .expect("VC2.7 choice hover sound id should be unique");
+    sounds
+        .insert_wav(
+            VC27_CHOICE_CONFIRM_SOUND,
+            synthesize_chirp(420.0, 1_180.0, 0.07, 0.055),
+        )
+        .expect("VC2.7 choice confirm sound id should be unique");
 }
 
 #[cfg(test)]
@@ -82,15 +103,16 @@ mod choice_asset_tests {
     }
 
     #[test]
-    fn procedural_choice_assets_can_own_hover_audio_metadata() {
+    fn procedural_choice_assets_own_hover_and_confirm_audio_metadata() {
         let assets = Vc27ChoiceAssets::procedural(test_art);
         assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+        assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
     }
 
     #[test]
     fn choice_art_can_be_replaced_by_a_sprite_without_changing_card_layout() {
         let sprite = Sprite::new(1, 1, vec![Pixel::WHITE]).expect("valid test sprite");
-        let assets = Vc27ChoiceAssets::new(Vc27ChoiceArt::Sprite(&sprite), None);
+        let assets = Vc27ChoiceAssets::new(Vc27ChoiceArt::Sprite(&sprite), None, None);
         let mut framebuffer = Framebuffer::new(3, 3);
         framebuffer.clear(Pixel::BLACK);
         assets.render(&mut framebuffer, 1, 1, false, 0.0);
