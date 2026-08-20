@@ -22,6 +22,23 @@ struct Vc27ChoiceSnapshot {
     synergy_mask_before: u8,
 }
 
+impl Vc27ChoiceSnapshot {
+    fn from_profile(
+        focus: Vc27ChoiceFocus,
+        profile: Vc27ChoiceProfile<'static>,
+        synergy_mask_before: u8,
+    ) -> Self {
+        Self {
+            focus,
+            label: profile.label(),
+            accent: profile.accent(),
+            hover_sound: profile.hover_sound(),
+            confirm_sound: profile.confirm_sound(),
+            synergy_mask_before,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Vc27ChoiceConfirmation {
     label: &'static str,
@@ -81,52 +98,40 @@ impl VoidCanticleV27ChoicePresentation {
                 let choice = v14.progression.level_choice.as_ref()?;
                 let index = choice.menu.selected()?;
                 let upgrade = choice.offers.get(index).copied()?;
-                let assets = vc27_upgrade_assets(upgrade);
-                Some(Vc27ChoiceSnapshot {
-                    focus: Vc27ChoiceFocus {
+                Some(Vc27ChoiceSnapshot::from_profile(
+                    Vc27ChoiceFocus {
                         kind: Vc27ChoiceFocusKind::Upgrade,
                         index,
                     },
-                    label: upgrade_name(upgrade),
-                    accent: vc27_upgrade_accent(upgrade),
-                    hover_sound: assets.hover_sound(),
-                    confirm_sound: assets.confirm_sound(),
+                    vc27_upgrade_profile(upgrade),
                     synergy_mask_before,
-                })
+                ))
             }
             VcVisualMode::MutationChoice => {
                 let v14 = self.presentation.game.game.v20().game.v14();
                 let choice = v14.mutation_choice.as_ref()?;
                 let index = choice.menu.selected()?;
                 let mutation = choice.offers.get(index).copied()?;
-                let assets = vc27_mutation_assets(mutation);
-                Some(Vc27ChoiceSnapshot {
-                    focus: Vc27ChoiceFocus {
+                Some(Vc27ChoiceSnapshot::from_profile(
+                    Vc27ChoiceFocus {
                         kind: Vc27ChoiceFocusKind::Mutation,
                         index,
                     },
-                    label: mutation_name(mutation),
-                    accent: vc27_mutation_accent(mutation),
-                    hover_sound: assets.hover_sound(),
-                    confirm_sound: assets.confirm_sound(),
+                    vc27_mutation_profile(mutation),
                     synergy_mask_before,
-                })
+                ))
             }
             VcVisualMode::SupportChoice => {
                 let index = self.presentation.game.menu.selected()?;
                 let augment = VC23_SUSTAIN_AUGMENTS.get(index).copied()?;
-                let assets = vc27_support_assets(augment);
-                Some(Vc27ChoiceSnapshot {
-                    focus: Vc27ChoiceFocus {
+                Some(Vc27ChoiceSnapshot::from_profile(
+                    Vc27ChoiceFocus {
                         kind: Vc27ChoiceFocusKind::Support,
                         index,
                     },
-                    label: augment.name(),
-                    accent: vc27_support_accent(augment),
-                    hover_sound: assets.hover_sound(),
-                    confirm_sound: assets.confirm_sound(),
+                    vc27_support_profile(augment),
                     synergy_mask_before,
-                })
+                ))
             }
             _ => None,
         }
@@ -204,29 +209,6 @@ impl VoidCanticleV27ChoicePresentation {
             confirmation.duration,
         );
     }
-
-    fn render_hd_choice_override(&mut self, framebuffer: &mut Framebuffer) {
-        let mode = self.presentation.visual_mode();
-        if !matches!(mode, VcVisualMode::MutationChoice | VcVisualMode::SupportChoice) {
-            return;
-        }
-
-        self.presentation.render_clean_background(framebuffer);
-        let time = self.presentation.presentation_time;
-
-        match mode {
-            VcVisualMode::MutationChoice => {
-                let v14 = self.presentation.game.game.v20().game.v14();
-                if let Some(choice) = v14.mutation_choice.as_ref() {
-                    vc27_render_mutation_showcase(framebuffer, v14, choice, time);
-                }
-            }
-            VcVisualMode::SupportChoice => {
-                vc27_render_support_showcase(framebuffer, &self.presentation.game, time);
-            }
-            _ => {}
-        }
-    }
 }
 
 impl Game for VoidCanticleV27ChoicePresentation {
@@ -263,7 +245,6 @@ impl Game for VoidCanticleV27ChoicePresentation {
                 .play(frame.audio, sound);
         }
 
-        self.render_hd_choice_override(frame.framebuffer);
         self.render_confirmation(frame.framebuffer);
         GameResult::Continue
     }
@@ -319,6 +300,23 @@ mod choice_runtime_tests {
         selector.menu.select_next();
         assert_eq!(game.choice_hover_event(), Some(VC27_CHOICE_HOVER_SOUND));
         assert_eq!(game.choice_hover_event(), None);
+    }
+
+    #[test]
+    fn profile_snapshot_carries_visual_and_audio_identity() {
+        let profile = vc27_mutation_profile(MutationKind::DeathNova);
+        let snapshot = Vc27ChoiceSnapshot::from_profile(
+            Vc27ChoiceFocus {
+                kind: Vc27ChoiceFocusKind::Mutation,
+                index: 0,
+            },
+            profile,
+            0,
+        );
+        assert_eq!(snapshot.label, mutation_name(MutationKind::DeathNova));
+        assert_eq!(snapshot.accent, profile.accent());
+        assert_eq!(snapshot.hover_sound, profile.hover_sound());
+        assert_eq!(snapshot.confirm_sound, profile.confirm_sound());
     }
 
     #[test]
