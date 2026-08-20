@@ -3,7 +3,7 @@ const VC27_WRAITH_TELEGRAPH_WINDOW: f32 = 0.30;
 const VC27_BOSS_TELEGRAPH_WINDOW: f32 = 0.34;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Vc27EnemyShotStyle {
+enum EnemyShotStyle {
     Carrion,
     Wraith,
     VoidPulse,
@@ -30,7 +30,7 @@ struct VoidCanticlePresentation {
     clean_background: Framebuffer,
     presentation_time: f32,
     hit_reactions: Vc27HitReactionState,
-    projectile_provenance: Vc27ProjectileProvenance,
+    projectile_provenance: ProjectileProvenance,
 }
 
 include!(concat!(
