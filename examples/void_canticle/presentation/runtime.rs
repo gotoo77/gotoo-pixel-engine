@@ -1,18 +1,10 @@
-// Transitional compatibility seam for the HD frontend. The historical procedural
-// title flow has been retired; current launches are owned by frontend.rs.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Vc27FrontState {
-    Run,
-}
-
-impl VoidCanticleV27DirectPresentation {
+impl VoidCanticlePresentation {
     fn new() -> Self {
         Self {
             game: VoidCanticleV23Sustain::new(),
             legacy_sink: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             presentation_time: 0.0,
-            front_state: Vc27FrontState::Run,
             hit_reactions: Vc27HitReactionState::default(),
             projectile_provenance: Vc27ProjectileProvenance::default(),
         }
@@ -41,7 +33,6 @@ impl VoidCanticleV27DirectPresentation {
 
     fn reset_presentation_after_restart(&mut self) {
         self.presentation_time = 0.0;
-        self.front_state = Vc27FrontState::Run;
         self.hit_reactions = Vc27HitReactionState::default();
         self.projectile_provenance = Vc27ProjectileProvenance::default();
     }
@@ -134,7 +125,7 @@ fn restart_completed(
     death_restart || stage_restart || pause_restart_completed
 }
 
-impl Game for VoidCanticleV27DirectPresentation {
+impl Game for VoidCanticlePresentation {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         let dt = frame.delta_time.as_secs_f32().min(0.05);
         self.presentation_time += dt;
@@ -228,7 +219,7 @@ mod presentation_runtime_tests {
 
     #[test]
     fn chassis_selection_is_explicit_precombat_state() {
-        let game = VoidCanticleV27DirectPresentation::new();
+        let game = VoidCanticlePresentation::new();
         assert!(game.chassis_selection_active());
     }
 
@@ -288,7 +279,7 @@ mod presentation_runtime_tests {
 
     #[test]
     fn restart_reopens_chassis_selection_without_auto_confirm() {
-        let mut presentation = VoidCanticleV27DirectPresentation::new();
+        let mut presentation = VoidCanticlePresentation::new();
         presentation.chassis_runtime_mut().confirm_armed = true;
         presentation
             .chassis_runtime_mut()
@@ -303,7 +294,7 @@ mod presentation_runtime_tests {
 
     #[test]
     fn presentation_restart_cleanup_only_resets_presentation_state() {
-        let mut presentation = VoidCanticleV27DirectPresentation::new();
+        let mut presentation = VoidCanticlePresentation::new();
         presentation
             .chassis_runtime_mut()
             .apply_chassis(ExosuitChassis::Wraith);
@@ -312,7 +303,6 @@ mod presentation_runtime_tests {
         presentation.reset_presentation_after_restart();
 
         assert_eq!(presentation.presentation_time, 0.0);
-        assert_eq!(presentation.front_state, Vc27FrontState::Run);
         assert_eq!(
             presentation.chassis_runtime().chassis,
             Some(ExosuitChassis::Wraith)
