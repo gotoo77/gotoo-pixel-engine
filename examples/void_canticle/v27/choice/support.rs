@@ -1,15 +1,26 @@
-fn vc27_support_accent(augment: Vc23SustainAugment) -> Pixel {
-    match augment {
-        Vc23SustainAugment::NaniteRepair => VC20_HULL,
-        Vc23SustainAugment::ShieldCapacitor => ART_CYAN_LIGHT,
-    }
+fn vc27_support_profile(augment: Vc23SustainAugment) -> Vc27ChoiceProfile<'static> {
+    let (category, accent, renderer): (&'static str, Pixel, Vc27ChoiceArtRenderer) = match augment {
+        Vc23SustainAugment::NaniteRepair => (
+            "HULL SUSTAIN",
+            VC20_HULL,
+            vc27_support_nanite_art,
+        ),
+        Vc23SustainAugment::ShieldCapacitor => (
+            "SHIELD SUSTAIN",
+            ART_CYAN_LIGHT,
+            vc27_support_capacitor_art,
+        ),
+    };
+    Vc27ChoiceProfile::new(
+        augment.name(),
+        category,
+        accent,
+        Vc27ChoiceAssets::procedural(renderer),
+    )
 }
 
-fn vc27_support_category(augment: Vc23SustainAugment) -> &'static str {
-    match augment {
-        Vc23SustainAugment::NaniteRepair => "HULL SUSTAIN",
-        Vc23SustainAugment::ShieldCapacitor => "SHIELD SUSTAIN",
-    }
+fn vc27_support_accent(augment: Vc23SustainAugment) -> Pixel {
+    vc27_support_profile(augment).accent()
 }
 
 fn vc27_support_trigger(augment: Vc23SustainAugment) -> String {
@@ -39,14 +50,6 @@ fn vc27_support_detail(augment: Vc23SustainAugment) -> &'static str {
         Vc23SustainAugment::NaniteRepair => "AUTONOMOUS STRUCTURAL REPAIR",
         Vc23SustainAugment::ShieldCapacitor => "FAST DEFENSIVE RECHARGE",
     }
-}
-
-fn vc27_support_assets(augment: Vc23SustainAugment) -> Vc27ChoiceAssets<'static> {
-    let renderer = match augment {
-        Vc23SustainAugment::NaniteRepair => vc27_support_nanite_art as Vc27ChoiceArtRenderer,
-        Vc23SustainAugment::ShieldCapacitor => vc27_support_capacitor_art,
-    };
-    Vc27ChoiceAssets::procedural(renderer)
 }
 
 fn vc27_render_support_showcase(
@@ -106,7 +109,8 @@ fn vc27_render_support_card(
     height: u32,
     time: f32,
 ) {
-    let accent = vc27_support_accent(augment);
+    let profile = vc27_support_profile(augment);
+    let accent = profile.accent();
     vc27_choice_card_frame(
         framebuffer,
         x,
@@ -125,11 +129,11 @@ fn vc27_render_support_card(
     let icon_x = x + 62;
     let icon_y = y + 84;
     vc27_choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
-    vc27_support_assets(augment).render(framebuffer, icon_x, icon_y, selected, time);
+    profile.render_art(framebuffer, icon_x, icon_y, selected, time);
 
     let info_x = x + 122;
-    framebuffer.draw_text(info_x, y + 18, vc27_support_category(augment), WRECK_LIGHT);
-    framebuffer.draw_text_scaled(info_x, y + 37, augment.name(), 2, accent);
+    framebuffer.draw_text(info_x, y + 18, profile.category(), WRECK_LIGHT);
+    framebuffer.draw_text_scaled(info_x, y + 37, profile.label(), 2, accent);
     framebuffer.draw_text(info_x, y + 70, &vc27_support_trigger(augment), TEXT);
     framebuffer.draw_text(info_x, y + 91, &vc27_support_effect(augment), accent);
     framebuffer.draw_text(info_x, y + 114, vc27_support_detail(augment), WRECK_LIGHT);
@@ -224,11 +228,12 @@ mod support_showcase_tests {
     }
 
     #[test]
-    fn support_modules_expose_choice_assets_and_audio() {
+    fn support_modules_expose_choice_profile_assets_and_audio() {
         for augment in VC23_SUSTAIN_AUGMENTS {
-            let assets = vc27_support_assets(augment);
-            assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-            assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+            let profile = vc27_support_profile(augment);
+            assert_eq!(profile.label(), augment.name());
+            assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+            assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
         }
     }
 
