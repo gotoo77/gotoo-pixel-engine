@@ -24,7 +24,7 @@ impl VoidCanticlePresentation {
             base.invulnerability,
             base.animation_time,
         );
-        vc27_render_hit_flash(framebuffer, x, y, Vc27HitFlashKind::Pilgrim, hit);
+        render_hit_flash(framebuffer, x, y, HitFlashKind::Pilgrim, hit);
     }
 
     fn render_combat_presentation(&mut self, framebuffer: &mut Framebuffer) {
