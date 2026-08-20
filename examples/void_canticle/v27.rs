@@ -7,20 +7,16 @@ include!(concat!(
 
 struct VoidCanticleV27DirectPresentation {
     game: VoidCanticleV23Sustain,
-    simulation_framebuffer: Framebuffer,
-    player_overlay: Framebuffer,
+    legacy_sink: Framebuffer,
     clean_background: Framebuffer,
-    pilgrim_art: PilgrimV07Visuals,
 }
 
 impl VoidCanticleV27DirectPresentation {
     fn new() -> Self {
         Self {
             game: VoidCanticleV23Sustain::new(),
-            simulation_framebuffer: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
-            player_overlay: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
+            legacy_sink: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
-            pilgrim_art: PilgrimV07Visuals::new(),
         }
     }
 
@@ -49,6 +45,25 @@ impl VoidCanticleV27DirectPresentation {
         }
 
         VcVisualMode::Combat
+    }
+
+    fn render_clean_background(&mut self, framebuffer: &mut Framebuffer) {
+        let base = self.game.game.base();
+        let color = if base.canticle_timer > 0.46 {
+            BG_CANTICLE
+        } else {
+            BG
+        };
+        let scroll = base.scroll;
+
+        self.clean_background.clear(color);
+        render_grave_orbit_background(&mut self.clean_background, scroll);
+        vc_visual_blit_nearest(
+            &self.clean_background,
+            framebuffer,
+            VC_VISUAL_PRESENTATION_SCALE,
+            false,
+        );
     }
 
     fn render_event_announcement(&self, framebuffer: &mut Framebuffer) {
@@ -115,6 +130,44 @@ impl VoidCanticleV27DirectPresentation {
         }
     }
 
+    fn render_choir_links(&self, framebuffer: &mut Framebuffer) {
+        let v12 = &self.game.game.v20().game.v14().progression.combat;
+        let link_color = Pixel::rgb(34, 62, 82);
+
+        for node in v12
+            .threats
+            .iter()
+            .filter(|threat| threat.alive && threat.kind == ThreatKind::ChoirNode)
+        {
+            let x = vc27_present(node.x);
+            let y = vc27_present(node.y);
+            for enemy in &self.game.game.base().enemies {
+                if point_near(enemy.x, enemy.y, node.x, node.y, CHOIR_BUFF_RADIUS) {
+                    framebuffer.draw_line(
+                        x,
+                        y,
+                        vc27_present(enemy.x),
+                        vc27_present(enemy.y),
+                        link_color,
+                    );
+                }
+            }
+            for enemy in &v12.combat.specials {
+                if enemy.kind == SpecialKind::BellWraith
+                    && point_near(enemy.x, enemy.y, node.x, node.y, CHOIR_BUFF_RADIUS)
+                {
+                    framebuffer.draw_line(
+                        x,
+                        y,
+                        vc27_present(enemy.x),
+                        vc27_present(enemy.y),
+                        link_color,
+                    );
+                }
+            }
+        }
+    }
+
     fn render_presentation_bestiary(&self, framebuffer: &mut Framebuffer) {
         for enemy in &self.game.game.base().enemies {
             vc27_hd_render_carrion(
@@ -171,6 +224,238 @@ impl VoidCanticleV27DirectPresentation {
             && let Some(boss) = base.boss
         {
             vc27_hd_render_bellkeeper(framebuffer, boss);
+        }
+    }
+
+    fn render_pickups(&self, framebuffer: &mut Framebuffer) {
+        let base = self.game.game.base();
+        for cinder in &base.cinders {
+            let x = vc27_present(cinder.x);
+            let y = vc27_present(cinder.y);
+            framebuffer.fill_circle(x, y, 3, CINDER);
+            framebuffer.draw_line(x, y - 7, x, y - 4, CANTICLE_COLOR);
+            framebuffer.draw(x - 2, y, CANTICLE_COLOR);
+            framebuffer.draw(x + 2, y, CANTICLE_COLOR);
+        }
+
+        let v14 = self.game.game.v20().game.v14();
+        let game = &v14.progression.combat.combat.ui.inner.inner;
+        for relic in &game.relics {
+            let x = vc27_present(relic.x);
+            let y = vc27_present(relic.y);
+            let pulse = ((relic.age * 7.0 + relic.phase).sin() * 2.0).round() as i32;
+            framebuffer.draw_line(x, y - 9 - pulse, x + 8 + pulse, y, POWER_RELIC_LIGHT);
+            framebuffer.draw_line(x + 8 + pulse, y, x, y + 9 + pulse, POWER_RELIC_LIGHT);
+            framebuffer.draw_line(x, y + 9 + pulse, x - 8 - pulse, y, POWER_RELIC_LIGHT);
+            framebuffer.draw_line(x - 8 - pulse, y, x, y - 9 - pulse, POWER_RELIC_LIGHT);
+            framebuffer.fill_circle(x, y, 3, POWER_RELIC);
+            framebuffer.draw(x, y, CANTICLE_COLOR);
+        }
+
+        for orb in &v14.progression.xp_orbs {
+            let x = vc27_present(orb.x);
+            let y = vc27_present(orb.y);
+            framebuffer.draw_line(x, y - 5, x + 4, y, XP_SHARD_EDGE);
+            framebuffer.draw_line(x + 4, y, x, y + 5, XP_SHARD_EDGE);
+            framebuffer.draw_line(x, y + 5, x - 4, y, XP_SHARD_EDGE);
+            framebuffer.draw_line(x - 4, y, x, y - 5, XP_SHARD_EDGE);
+            framebuffer.fill_circle(x, y, 1, XP_SHARD_CORE);
+        }
+
+        for (x, y) in v14.orbital_positions() {
+            let x = vc27_present(x);
+            let y = vc27_present(y);
+            framebuffer.draw_circle(x, y, 5, POWER_RELIC_LIGHT);
+            framebuffer.fill_circle(x, y, 2, PILGRIM_VIOLET);
+            framebuffer.draw(x, y, BOLT_CORE);
+        }
+    }
+
+    fn render_projectiles(&self, framebuffer: &mut Framebuffer) {
+        let base = self.game.game.base();
+        for bullet in &base.player_bullets {
+            let x = vc27_present(bullet.x);
+            let y = vc27_present(bullet.y);
+            framebuffer.draw_line(x, y + 6, x, y - 7, BOLT_CORE);
+            framebuffer.draw_line(x - 1, y + 4, x - 1, y - 4, BOLT_EDGE);
+            framebuffer.draw_line(x + 1, y + 4, x + 1, y - 4, BOLT_EDGE);
+        }
+
+        let v14 = self.game.game.v20().game.v14();
+        let game = &v14.progression.combat.combat.ui.inner.inner;
+        for shot in &game.power_shots {
+            let x = vc27_present(shot.x);
+            let y = vc27_present(shot.y);
+            let radius = if shot.radius >= 2 || shot.damage > 1 { 4 } else { 2 };
+            framebuffer.fill_circle(x, y, radius, BOLT_EDGE);
+            framebuffer.fill_circle(x, y, 1, BOLT_CORE);
+            framebuffer.draw_line(x, y + 5, x, y + 11, BOLT_RELIC);
+            if shot.vx.abs() > 6.0 {
+                let wing = if shot.vx > 0.0 { -5 } else { 5 };
+                framebuffer.draw_line(x, y + 2, x + wing, y + 7, BOLT_RELIC);
+            }
+        }
+
+        for bullet in &base.enemy_bullets {
+            let x = vc27_present(bullet.x);
+            let y = vc27_present(bullet.y);
+            let edge = if bullet.alternate {
+                HOSTILE_ALT_EDGE
+            } else {
+                HOSTILE_EDGE
+            };
+            let core = if bullet.alternate {
+                HOSTILE_ALT_CORE
+            } else {
+                HOSTILE_CORE
+            };
+            framebuffer.fill_circle(x, y, 3, edge);
+            framebuffer.fill_circle(x, y, 1, core);
+            let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt().max(1.0);
+            let tail_x = x - (bullet.vx / speed * 5.0).round() as i32;
+            let tail_y = y - (bullet.vy / speed * 5.0).round() as i32;
+            framebuffer.draw_line(tail_x, tail_y, x, y, edge);
+        }
+    }
+
+    fn render_particles_and_bursts(&self, framebuffer: &mut Framebuffer) {
+        for burst in &self.game.game.base().bursts {
+            let ratio = if burst.duration > 0.0 {
+                (burst.remaining / burst.duration).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let radius = (3.0 + (1.0 - ratio) * 16.0).round() as u32;
+            framebuffer.draw_circle(
+                vc27_present(burst.x),
+                vc27_present(burst.y),
+                radius,
+                burst.color,
+            );
+        }
+
+        let v17 = &self.game.game.v20().game.ui.game;
+        for particle in &v17.particles {
+            let x = vc27_present(particle.x);
+            let y = vc27_present(particle.y);
+            match particle.kind {
+                V17ParticleKind::Spark => {
+                    let tail_x = vc27_present(particle.x - particle.vx * 0.035);
+                    let tail_y = vc27_present(particle.y - particle.vy * 0.035);
+                    framebuffer.draw_line(tail_x, tail_y, x, y, particle.color);
+                    framebuffer.draw(x, y, BOLT_CORE);
+                }
+                V17ParticleKind::Shard => {
+                    framebuffer.draw_line(x - 2, y, x + 2, y, particle.color);
+                    framebuffer.draw_line(x, y - 2, x, y + 2, particle.color);
+                }
+            }
+        }
+    }
+
+    fn render_enemy_defenses(&self, framebuffer: &mut Framebuffer) {
+        let v20 = self.game.game.v20();
+        for enemy in &self.game.game.base().enemies {
+            let armor_max = vc20_carrion_armor_max(enemy.pattern);
+            let armor = v20
+                .carrion_armor
+                .get(&vc20_carrion_key(enemy))
+                .copied()
+                .unwrap_or(armor_max);
+            vc27_dual_bar(
+                framebuffer,
+                vc27_present(enemy.x),
+                vc27_present(enemy.y) - 39,
+                armor,
+                armor_max,
+                1,
+                1,
+            );
+        }
+
+        let v12 = &v20.game.v12();
+        for enemy in &v12.combat.specials {
+            let armor_max = vc20_special_armor_max(enemy.kind);
+            let armor = v20
+                .special_armor
+                .get(&vc20_special_key(enemy))
+                .copied()
+                .unwrap_or(armor_max);
+            vc27_dual_bar(
+                framebuffer,
+                vc27_present(enemy.x),
+                vc27_present(enemy.y) - 43,
+                armor,
+                armor_max,
+                enemy.hp,
+                vc20_special_hp_max(enemy.kind),
+            );
+        }
+
+        for threat in &v12.threats {
+            let armor_max = vc20_threat_armor_max(threat.kind);
+            let armor = v20
+                .threat_armor
+                .get(&vc20_threat_key(threat))
+                .copied()
+                .unwrap_or(armor_max);
+            vc27_dual_bar(
+                framebuffer,
+                vc27_present(threat.x),
+                vc27_present(threat.y) - 47,
+                armor,
+                armor_max,
+                threat.hp,
+                vc20_threat_hp_max(threat.kind),
+            );
+        }
+
+        let base = self.game.game.base();
+        if base.encounter_phase == EncounterPhase::BossFight
+            && let Some(boss) = base.boss
+        {
+            let x = vc27_present(boss.x);
+            let y = vc27_present(boss.y);
+            let color = if v20.boss_shield_flash_timer > 0.0 {
+                VC20_ARMOR_LIGHT
+            } else {
+                VC20_ARMOR
+            };
+            if v20.boss_shield > 0 {
+                let pulse = ((base.animation_time * 7.0).sin().abs() * 4.0) as u32;
+                framebuffer.draw_circle(x, y - 6, 63 + pulse, color);
+            } else if v20.boss_shield_break_timer > 0.0 {
+                framebuffer.draw_circle(x, y - 6, 65, CANTICLE_COLOR);
+            }
+            vc27_dual_bar(
+                framebuffer,
+                x,
+                y - 76,
+                v20.boss_shield,
+                VC20_BOSS_SHIELD_MAX,
+                boss.hp,
+                BELLKEEPER_MAX_HP,
+            );
+        }
+    }
+
+    fn render_major_fx(&self, framebuffer: &mut Framebuffer) {
+        let base = self.game.game.base();
+        let player_x = vc27_present(base.player_x);
+        let player_y = vc27_present(base.player_y);
+
+        if base.canticle_timer > 0.0 {
+            let ratio = (base.canticle_timer / CANTICLE_DURATION).clamp(0.0, 1.0);
+            let radius = (40.0 + (1.0 - ratio) * 150.0).round() as u32;
+            framebuffer.draw_circle(player_x, player_y, radius, CANTICLE_COLOR);
+            framebuffer.draw_circle(player_x, player_y, radius.saturating_add(12), ART_GOLD);
+        }
+
+        let emp_timer = self.game.game.emp_flash_timer;
+        if emp_timer > 0.0 {
+            let ratio = (emp_timer / VC23_EMP_FLASH_DURATION).clamp(0.0, 1.0);
+            let radius = (28.0 + (1.0 - ratio) * 220.0).round() as u32;
+            framebuffer.draw_circle(player_x, player_y, radius, ART_CYAN_LIGHT);
         }
     }
 
@@ -326,12 +611,11 @@ impl VoidCanticleV27DirectPresentation {
         );
     }
 
-    fn render_player_last(&mut self, framebuffer: &mut Framebuffer) {
+    fn render_player_last(&self, framebuffer: &mut Framebuffer) {
         if self.game.combat_model().player_hull <= 0.0 {
             return;
         }
 
-        self.player_overlay.clear(Pixel::TRANSPARENT);
         let focused = self
             .game
             .game
@@ -341,20 +625,6 @@ impl VoidCanticleV27DirectPresentation {
             .action(FOCUS)
             .held();
         let base = self.game.game.base();
-        self.pilgrim_art.render(
-            &mut self.player_overlay,
-            base.player_x.round() as i32,
-            base.player_y.round() as i32,
-            focused,
-            base.invulnerability,
-            base.animation_time,
-        );
-        vc_visual_blit_nearest(
-            &self.player_overlay,
-            framebuffer,
-            VC_VISUAL_PRESENTATION_SCALE,
-            true,
-        );
         vc27_hd_render_pilgrim(
             framebuffer,
             vc27_present(base.player_x),
@@ -370,13 +640,69 @@ impl VoidCanticleV27DirectPresentation {
             return;
         }
 
+        self.render_clean_background(framebuffer);
+        self.render_choir_links(framebuffer);
+        self.render_pickups(framebuffer);
         self.render_presentation_bestiary(framebuffer);
+        self.render_enemy_defenses(framebuffer);
+        self.render_projectiles(framebuffer);
+        self.render_particles_and_bursts(framebuffer);
+        self.render_major_fx(framebuffer);
         self.render_event_announcement(framebuffer);
         self.render_threat_meter(framebuffer);
         self.render_echo_shell(framebuffer);
         self.render_canticle_charge(framebuffer);
         self.render_survival_bars(framebuffer);
         self.render_player_last(framebuffer);
+    }
+
+    fn render_clean_modal(&mut self, framebuffer: &mut Framebuffer, mode: VcVisualMode) {
+        self.render_clean_background(framebuffer);
+        self.clean_background.clear(BG);
+        render_grave_orbit_background(&mut self.clean_background, self.game.game.base().scroll);
+
+        match mode {
+            VcVisualMode::SupportChoice => {
+                self.game.render_support_choice(&mut self.clean_background);
+            }
+            VcVisualMode::LevelChoice => {
+                let v14 = self.game.game.v20().game.v14();
+                if let Some(choice) = v14.progression.level_choice.as_ref() {
+                    v14.progression
+                        .render_level_choice(&mut self.clean_background, choice);
+                }
+            }
+            VcVisualMode::MutationChoice => {
+                let v14 = self.game.game.v20().game.v14();
+                if let Some(choice) = v14.mutation_choice.as_ref() {
+                    v14.render_mutation_choice(&mut self.clean_background, choice);
+                }
+            }
+            VcVisualMode::Pause => {
+                let pause = self.game.survival_model().game.pause_ui();
+                match &pause.state {
+                    VcPauseState::Controls => pause.render_controls(&mut self.clean_background),
+                    VcPauseState::BuildInfo => pause.render_build_info(&mut self.clean_background),
+                    VcPauseState::Menu | VcPauseState::ResumeGate | VcPauseState::Running => {
+                        pause.render_menu(&mut self.clean_background)
+                    }
+                }
+            }
+            VcVisualMode::StageClear => {
+                self.game
+                    .survival_model()
+                    .game
+                    .render_stage_clear(&mut self.clean_background);
+            }
+            VcVisualMode::Combat | VcVisualMode::Death => {}
+        }
+
+        vc_visual_blit_nearest(
+            &self.clean_background,
+            framebuffer,
+            VC_VISUAL_PRESENTATION_SCALE,
+            false,
+        );
     }
 
     fn render_death_presentation(&mut self, framebuffer: &mut Framebuffer) {
@@ -422,8 +748,8 @@ impl VoidCanticleV27DirectPresentation {
 impl Game for VoidCanticleV27DirectPresentation {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         let result = {
-            let mut simulation_frame = Frame {
-                framebuffer: &mut self.simulation_framebuffer,
+            let mut legacy_frame = Frame {
+                framebuffer: &mut self.legacy_sink,
                 input: frame.input,
                 delta_time: frame.delta_time,
                 storage: &mut *frame.storage,
@@ -437,27 +763,21 @@ impl Game for VoidCanticleV27DirectPresentation {
                     },
                 ),
             };
-            self.game.update(&mut simulation_frame)
+            self.game.update(&mut legacy_frame)
         };
         if result == GameResult::Exit {
             return result;
         }
 
         let mode = self.visual_mode();
-        if mode == VcVisualMode::Death {
-            self.render_death_presentation(frame.framebuffer);
-            return GameResult::Continue;
-        }
-
-        vc_visual_blit_nearest(
-            &self.simulation_framebuffer,
-            frame.framebuffer,
-            VC_VISUAL_PRESENTATION_SCALE,
-            false,
-        );
-
-        if mode == VcVisualMode::Combat {
-            self.render_combat_presentation(frame.framebuffer);
+        match mode {
+            VcVisualMode::Combat => self.render_combat_presentation(frame.framebuffer),
+            VcVisualMode::Death => self.render_death_presentation(frame.framebuffer),
+            VcVisualMode::Pause
+            | VcVisualMode::LevelChoice
+            | VcVisualMode::MutationChoice
+            | VcVisualMode::SupportChoice
+            | VcVisualMode::StageClear => self.render_clean_modal(frame.framebuffer, mode),
         }
 
         GameResult::Continue
@@ -482,6 +802,29 @@ fn vc27_echo_level_color(level: u32) -> Pixel {
         3 => VOID_GLOW,
         4 => CANTICLE_COLOR,
         _ => DANGER,
+    }
+}
+
+fn vc27_dual_bar(
+    framebuffer: &mut Framebuffer,
+    center_x: i32,
+    y: i32,
+    armor: u32,
+    armor_max: u32,
+    hp: u32,
+    hp_max: u32,
+) {
+    let width = 54_u32;
+    let left = center_x - width as i32 / 2;
+    framebuffer.fill_rect(left, y, width, 3, VC20_ARMOR_BG);
+    if armor_max > 0 && armor > 0 {
+        let fill = width.saturating_mul(armor.min(armor_max)) / armor_max;
+        framebuffer.fill_rect(left, y, fill, 3, VC20_ARMOR);
+    }
+    framebuffer.fill_rect(left, y + 5, width, 3, CORE_BG);
+    if hp_max > 0 && hp > 0 {
+        let fill = width.saturating_mul(hp.min(hp_max)) / hp_max;
+        framebuffer.fill_rect(left, y + 5, fill, 3, VC20_HULL);
     }
 }
 
@@ -658,6 +1001,15 @@ mod v27_tests {
         assert_ne!(framebuffer.pixel(48, 48), Some(Pixel::BLUE));
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
         assert_eq!(framebuffer.pixel(95, 95), Some(Pixel::BLUE));
+    }
+
+    #[test]
+    fn dual_bar_stays_local() {
+        let mut framebuffer = Framebuffer::new(80, 24);
+        framebuffer.clear(Pixel::BLUE);
+        vc27_dual_bar(&mut framebuffer, 40, 8, 2, 3, 4, 6);
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
+        assert_eq!(framebuffer.pixel(79, 23), Some(Pixel::BLUE));
     }
 
     #[test]
