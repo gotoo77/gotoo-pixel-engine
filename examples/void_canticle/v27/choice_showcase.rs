@@ -1,5 +1,9 @@
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/catalog.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/choice/assets.rs"
 ));
 include!(concat!(
