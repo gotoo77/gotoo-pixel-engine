@@ -346,14 +346,6 @@ impl VoidCanticleV13 {
             framebuffer.draw(x, y, XP_ORB_CORE);
         }
 
-        framebuffer.draw_text(4, 290, &format!("LV {}", self.level), XP_ORB_CORE);
-        framebuffer.fill_rect(4, 315, 172, 3, XP_BAR_BG);
-        let width = 172_u32
-            .saturating_mul(self.xp.min(self.xp_next))
-            .checked_div(self.xp_next)
-            .unwrap_or(172);
-        framebuffer.fill_rect(4, 315, width, 3, XP_BAR_FILL);
-
         if let Some(choice) = &self.level_choice {
             self.render_level_choice(framebuffer, choice);
         }

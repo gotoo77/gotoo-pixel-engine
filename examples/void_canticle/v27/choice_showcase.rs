@@ -1,0 +1,24 @@
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/catalog.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/validation.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/assets.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/primitives.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/synergy.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/choice/chassis.rs"
+));

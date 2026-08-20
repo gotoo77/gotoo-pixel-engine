@@ -1,0 +1,28 @@
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/hit_reactions.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/projectile_provenance.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/bestiary.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/telegraphs.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/projectiles.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/fx.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/combat/orchestrator.rs"
+));
