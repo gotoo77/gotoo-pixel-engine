@@ -3,6 +3,15 @@ const VC27_CARRION_TELEGRAPH_WINDOW: f32 = 0.24;
 const VC27_WRAITH_TELEGRAPH_WINDOW: f32 = 0.30;
 const VC27_BOSS_TELEGRAPH_WINDOW: f32 = 0.34;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Vc27EnemyShotStyle {
+    Carrion,
+    Wraith,
+    VoidPulse,
+    Void,
+    Bellkeeper,
+}
+
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/hd_bestiary.rs"
@@ -469,25 +478,18 @@ impl VoidCanticleV27DirectPresentation {
             }
         }
 
+        let pressure = self.game.game.v20().game.ui.game.combat.combat.pressure;
+        let boss_phase = base.boss.map(Bellkeeper::phase);
         for bullet in &base.enemy_bullets {
-            let x = vc27_present(bullet.x);
-            let y = vc27_present(bullet.y);
-            let edge = if bullet.alternate {
-                HOSTILE_ALT_EDGE
-            } else {
-                HOSTILE_EDGE
-            };
-            let core = if bullet.alternate {
-                HOSTILE_ALT_CORE
-            } else {
-                HOSTILE_CORE
-            };
-            framebuffer.fill_circle(x, y, 3, edge);
-            framebuffer.fill_circle(x, y, 1, core);
             let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt().max(1.0);
-            let tail_x = x - (bullet.vx / speed * 5.0).round() as i32;
-            let tail_y = y - (bullet.vy / speed * 5.0).round() as i32;
-            framebuffer.draw_line(tail_x, tail_y, x, y, edge);
+            let style = vc27_enemy_shot_style(base.encounter_phase, speed);
+            vc27_render_enemy_bullet(
+                framebuffer,
+                *bullet,
+                style,
+                pressure,
+                boss_phase,
+            );
         }
     }
 
@@ -973,6 +975,93 @@ fn vc27_telegraph_progress(timer: f32, window: f32) -> Option<f32> {
     Some((1.0 - timer / window).clamp(0.0, 1.0))
 }
 
+fn vc27_enemy_shot_style(encounter_phase: EncounterPhase, speed: f32) -> Vc27EnemyShotStyle {
+    if encounter_phase == EncounterPhase::BossFight {
+        return Vc27EnemyShotStyle::Bellkeeper;
+    }
+    if (speed - 48.0).abs() <= 1.0 {
+        Vc27EnemyShotStyle::Wraith
+    } else if (speed - 62.0).abs() <= 1.0 {
+        Vc27EnemyShotStyle::VoidPulse
+    } else if (speed - ENEMY_SHOT_SPEED).abs() <= 1.0 {
+        Vc27EnemyShotStyle::Carrion
+    } else {
+        Vc27EnemyShotStyle::Void
+    }
+}
+
+fn vc27_render_enemy_bullet(
+    framebuffer: &mut Framebuffer,
+    bullet: Bullet,
+    style: Vc27EnemyShotStyle,
+    pressure: VoidPressure,
+    boss_phase: Option<BellPhase>,
+) {
+    let x = vc27_present(bullet.x);
+    let y = vc27_present(bullet.y);
+    let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt().max(1.0);
+    let nx = bullet.vx / speed;
+    let ny = bullet.vy / speed;
+    let tail = |length: f32| {
+        (
+            x - (nx * length).round() as i32,
+            y - (ny * length).round() as i32,
+        )
+    };
+
+    match style {
+        Vc27EnemyShotStyle::Carrion => {
+            let edge = if bullet.alternate { HOSTILE_ALT_EDGE } else { HOSTILE_EDGE };
+            let core = if bullet.alternate { HOSTILE_ALT_CORE } else { HOSTILE_CORE };
+            let (tail_x, tail_y) = tail(7.0);
+            framebuffer.draw_line(tail_x, tail_y, x, y, edge);
+            framebuffer.fill_circle(x, y, 3, edge);
+            framebuffer.fill_circle(x, y, 1, core);
+            framebuffer.draw(x - ny.round() as i32 * 3, y + nx.round() as i32 * 3, ENEMY_EYE);
+        }
+        Vc27EnemyShotStyle::Wraith => {
+            let (tail_x, tail_y) = tail(5.0);
+            framebuffer.draw_line(tail_x, tail_y, x, y, WRAITH_GLOW);
+            framebuffer.draw_circle(x, y, 4, WRAITH_GLOW);
+            framebuffer.draw_circle(x, y, 2, WRAITH_CORE);
+            framebuffer.draw(x, y, CANTICLE_COLOR);
+        }
+        Vc27EnemyShotStyle::VoidPulse => {
+            let (tail_x, tail_y) = tail(4.0);
+            framebuffer.draw_line(tail_x, tail_y, x, y, ART_VOID);
+            framebuffer.draw_circle(x, y, 5, LEECH_GLOW);
+            framebuffer.fill_circle(x, y, 2, DANGER);
+            framebuffer.draw(x, y, VOID_LIGHT);
+        }
+        Vc27EnemyShotStyle::Void => {
+            let color = void_pressure_color(pressure);
+            let core = if bullet.alternate { VOID_LIGHT } else { VOID_DANGER };
+            let (tail_x, tail_y) = tail(7.0);
+            framebuffer.draw_line(tail_x, tail_y, x, y, color);
+            framebuffer.draw_circle(x, y, 3, color);
+            framebuffer.fill_circle(x, y, 1, core);
+        }
+        Vc27EnemyShotStyle::Bellkeeper => {
+            let phase = boss_phase.unwrap_or(BellPhase::Procession);
+            let edge = match phase {
+                BellPhase::Procession => BELL_LIGHT,
+                BellPhase::Resonance => WRAITH_GLOW,
+                BellPhase::FinalToll => DANGER,
+            };
+            let core = match phase {
+                BellPhase::Procession => ART_GOLD,
+                BellPhase::Resonance => VOID_LIGHT,
+                BellPhase::FinalToll => CANTICLE_COLOR,
+            };
+            let (tail_x, tail_y) = tail(if bullet.alternate { 9.0 } else { 7.0 });
+            framebuffer.draw_line(tail_x, tail_y, x, y, edge);
+            framebuffer.draw_circle(x, y, 4, edge);
+            framebuffer.draw_circle(x, y, 2, core);
+            framebuffer.draw(x, y, core);
+        }
+    }
+}
+
 fn vc27_pressure_level(pressure: VoidPressure) -> u32 {
     match pressure {
         VoidPressure::Dormant => 1,
@@ -1165,6 +1254,30 @@ mod v27_tests {
         assert!(start <= 0.001);
         assert!((middle - 0.5).abs() <= 0.001);
         assert!(end > middle);
+    }
+
+    #[test]
+    fn enemy_shot_styles_follow_existing_pattern_speeds() {
+        assert_eq!(
+            vc27_enemy_shot_style(EncounterPhase::Waves, 48.0),
+            Vc27EnemyShotStyle::Wraith
+        );
+        assert_eq!(
+            vc27_enemy_shot_style(EncounterPhase::Waves, 62.0),
+            Vc27EnemyShotStyle::VoidPulse
+        );
+        assert_eq!(
+            vc27_enemy_shot_style(EncounterPhase::Waves, ENEMY_SHOT_SPEED),
+            Vc27EnemyShotStyle::Carrion
+        );
+        assert_eq!(
+            vc27_enemy_shot_style(EncounterPhase::Waves, 96.0),
+            Vc27EnemyShotStyle::Void
+        );
+        assert_eq!(
+            vc27_enemy_shot_style(EncounterPhase::BossFight, 48.0),
+            Vc27EnemyShotStyle::Bellkeeper
+        );
     }
 
     #[test]
