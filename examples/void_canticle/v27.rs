@@ -5,6 +5,7 @@ struct VoidCanticleV27DirectPresentation {
     simulation_framebuffer: Framebuffer,
     player_overlay: Framebuffer,
     clean_background: Framebuffer,
+    pilgrim_art: PilgrimV07Visuals,
 }
 
 impl VoidCanticleV27DirectPresentation {
@@ -14,6 +15,7 @@ impl VoidCanticleV27DirectPresentation {
             simulation_framebuffer: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             player_overlay: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
+            pilgrim_art: PilgrimV07Visuals::new(),
         }
     }
 
@@ -275,7 +277,7 @@ impl VoidCanticleV27DirectPresentation {
             .action(FOCUS)
             .held();
         let base = self.game.game.base();
-        base.visuals.render_pilgrim(
+        self.pilgrim_art.render(
             &mut self.player_overlay,
             base.player_x.round() as i32,
             base.player_y.round() as i32,
