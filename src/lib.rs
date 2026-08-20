@@ -2,6 +2,8 @@ mod audio;
 mod audio_wav;
 #[cfg(not(target_arch = "wasm32"))]
 mod capture_mirror;
+#[cfg(target_arch = "wasm32")]
+mod capture_mirror_stub;
 mod control;
 pub mod framebuffer;
 mod gamepad;
@@ -20,6 +22,8 @@ pub use audio::{Audio, AudioError, NoopAudio, SoundBank, SoundId};
 pub use audio_wav::pcm16_mono_wav;
 #[cfg(not(target_arch = "wasm32"))]
 pub use capture_mirror::ObsMirrorGame;
+#[cfg(target_arch = "wasm32")]
+pub use capture_mirror_stub::ObsMirrorGame;
 pub use control::{ActionId, ControlBinding, ControlMap};
 pub use framebuffer::Framebuffer;
 pub use gamepad_profile::{AxisCalibration, GamepadProfile};
