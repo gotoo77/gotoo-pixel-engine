@@ -130,7 +130,7 @@ fn vc27_choice_stack_nodes(
     max: u32,
     accent: Pixel,
 ) {
-    let max = max.max(1).min(8);
+    let max = max.clamp(1, 8);
     for node in 0..max as i32 {
         let color = if node < current.min(max) as i32 {
             accent
