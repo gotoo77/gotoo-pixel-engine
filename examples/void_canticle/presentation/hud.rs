@@ -1,4 +1,4 @@
-impl VoidCanticleV27DirectPresentation {
+impl VoidCanticlePresentation {
     fn render_event_announcement(&self, framebuffer: &mut Framebuffer) {
         let v16b = &self.game.game.v20().game.ui.game.combat;
 
@@ -117,7 +117,7 @@ impl VoidCanticleV27DirectPresentation {
         let hull_segments = ((hull_cap / 10.0).ceil() as u32).clamp(4, 12);
         let shield_segments = ((shield_cap / 5.0).ceil() as u32).clamp(3, 10);
 
-        vc27_segmented_bar(
+        segmented_bar(
             framebuffer,
             hull_x as i32,
             y as i32,
@@ -132,7 +132,7 @@ impl VoidCanticleV27DirectPresentation {
                 VC20_HULL
             },
         );
-        vc27_segmented_bar(
+        segmented_bar(
             framebuffer,
             shield_x as i32,
             y as i32,
@@ -152,7 +152,7 @@ impl VoidCanticleV27DirectPresentation {
     fn render_threat_meter(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
         let pressure = self.game.game.v20().game.ui.game.combat.combat.pressure;
-        let active = vc27_pressure_level(pressure);
+        let active = pressure_level(pressure);
         let brick_width = 4 * scale;
         let brick_height = 6 * scale;
         let gap = 2 * scale;
@@ -202,9 +202,9 @@ impl VoidCanticleV27DirectPresentation {
         let center_y = (VC_VISUAL_PRESENTATION_HEIGHT.saturating_sub(35 * scale)) as i32;
         let radius = 11 * scale;
         let level = progression.level;
-        let tier_color = vc27_echo_level_color(level);
+        let tier_color = echo_level_color(level);
 
-        vc27_echo_shell(
+        echo_shell(
             framebuffer,
             center_x,
             center_y,
@@ -216,7 +216,7 @@ impl VoidCanticleV27DirectPresentation {
     }
 }
 
-fn vc27_pressure_level(pressure: VoidPressure) -> u32 {
+fn pressure_level(pressure: VoidPressure) -> u32 {
     match pressure {
         VoidPressure::Dormant => 1,
         VoidPressure::Stirring => 2,
@@ -226,7 +226,7 @@ fn vc27_pressure_level(pressure: VoidPressure) -> u32 {
     }
 }
 
-fn vc27_echo_level_color(level: u32) -> Pixel {
+fn echo_level_color(level: u32) -> Pixel {
     match (level / 10) % 6 {
         0 => XP_ORB_CORE,
         1 => ART_CYAN_LIGHT,
@@ -237,7 +237,7 @@ fn vc27_echo_level_color(level: u32) -> Pixel {
     }
 }
 
-fn vc27_echo_shell(
+fn echo_shell(
     framebuffer: &mut Framebuffer,
     center_x: i32,
     center_y: i32,
@@ -308,7 +308,7 @@ fn vc27_echo_shell(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_segmented_bar(
+fn segmented_bar(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -334,38 +334,38 @@ fn vc27_segmented_bar(
 }
 
 #[cfg(test)]
-mod v27_hud_tests {
+mod hud_tests {
     use super::*;
 
     #[test]
     fn pressure_maps_to_five_visual_bricks() {
-        assert_eq!(vc27_pressure_level(VoidPressure::Dormant), 1);
-        assert_eq!(vc27_pressure_level(VoidPressure::Stirring), 2);
-        assert_eq!(vc27_pressure_level(VoidPressure::Awake), 3);
-        assert_eq!(vc27_pressure_level(VoidPressure::Hostile), 4);
-        assert_eq!(vc27_pressure_level(VoidPressure::Cataclysmic), 5);
+        assert_eq!(pressure_level(VoidPressure::Dormant), 1);
+        assert_eq!(pressure_level(VoidPressure::Stirring), 2);
+        assert_eq!(pressure_level(VoidPressure::Awake), 3);
+        assert_eq!(pressure_level(VoidPressure::Hostile), 4);
+        assert_eq!(pressure_level(VoidPressure::Cataclysmic), 5);
     }
 
     #[test]
     fn echo_shell_changes_color_at_ten_level_boundaries() {
-        assert_eq!(vc27_echo_level_color(1), vc27_echo_level_color(9));
-        assert_ne!(vc27_echo_level_color(9), vc27_echo_level_color(10));
-        assert_ne!(vc27_echo_level_color(19), vc27_echo_level_color(20));
-        assert_ne!(vc27_echo_level_color(29), vc27_echo_level_color(30));
+        assert_eq!(echo_level_color(1), echo_level_color(9));
+        assert_ne!(echo_level_color(9), echo_level_color(10));
+        assert_ne!(echo_level_color(19), echo_level_color(20));
+        assert_ne!(echo_level_color(29), echo_level_color(30));
     }
 
     #[test]
     fn echo_shell_stays_local_to_its_glyph() {
         let mut framebuffer = Framebuffer::new(40, 40);
         framebuffer.clear(Pixel::BLUE);
-        vc27_echo_shell(
+        echo_shell(
             &mut framebuffer,
             20,
             20,
             8,
             0.5,
             12,
-            vc27_echo_level_color(12),
+            echo_level_color(12),
         );
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
         assert_eq!(framebuffer.pixel(39, 39), Some(Pixel::BLUE));
@@ -375,7 +375,7 @@ mod v27_hud_tests {
     fn segmented_bar_only_touches_its_own_rows() {
         let mut framebuffer = Framebuffer::new(20, 8);
         framebuffer.clear(Pixel::BLUE);
-        vc27_segmented_bar(&mut framebuffer, 2, 3, 12, 2, 3.0, 12.0, 4, Pixel::RED);
+        segmented_bar(&mut framebuffer, 2, 3, 12, 2, 3.0, 12.0, 4, Pixel::RED);
         assert_eq!(framebuffer.pixel(2, 1), Some(Pixel::BLUE));
         assert_eq!(framebuffer.pixel(2, 6), Some(Pixel::BLUE));
     }
