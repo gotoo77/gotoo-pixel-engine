@@ -1,10 +1,10 @@
-impl VoidCanticleV27DirectPresentation {
+impl VoidCanticlePresentation {
     fn render_attack_telegraphs(&self, framebuffer: &mut Framebuffer) {
         let base = self.game.game.base();
         for enemy in &base.enemies {
-            let Some(progress) = vc27_telegraph_progress(
+            let Some(progress) = telegraph_progress(
                 enemy.fire_timer,
-                VC27_CARRION_TELEGRAPH_WINDOW,
+                CARRION_TELEGRAPH_WINDOW,
             ) else {
                 continue;
             };
@@ -33,9 +33,9 @@ impl VoidCanticleV27DirectPresentation {
             if enemy.kind != SpecialKind::BellWraith || enemy.age < 1.0 {
                 continue;
             }
-            let Some(progress) = vc27_telegraph_progress(
+            let Some(progress) = telegraph_progress(
                 enemy.fire_timer,
-                VC27_WRAITH_TELEGRAPH_WINDOW,
+                WRAITH_TELEGRAPH_WINDOW,
             ) else {
                 continue;
             };
@@ -95,8 +95,7 @@ impl VoidCanticleV27DirectPresentation {
 
         if base.encounter_phase == EncounterPhase::BossFight
             && let Some(boss) = base.boss
-            && let Some(progress) =
-                vc27_telegraph_progress(boss.shot_timer, VC27_BOSS_TELEGRAPH_WINDOW)
+            && let Some(progress) = telegraph_progress(boss.shot_timer, BOSS_TELEGRAPH_WINDOW)
         {
             let x = vc27_present(boss.x);
             let y = vc27_present(boss.y) - 6;
@@ -115,7 +114,7 @@ impl VoidCanticleV27DirectPresentation {
     }
 }
 
-fn vc27_telegraph_progress(timer: f32, window: f32) -> Option<f32> {
+fn telegraph_progress(timer: f32, window: f32) -> Option<f32> {
     if window <= 0.0 || timer <= 0.0 || timer > window {
         return None;
     }
@@ -123,17 +122,17 @@ fn vc27_telegraph_progress(timer: f32, window: f32) -> Option<f32> {
 }
 
 #[cfg(test)]
-mod v27_telegraph_tests {
+mod telegraph_tests {
     use super::*;
 
     #[test]
     fn attack_telegraph_progress_only_exists_inside_warning_window() {
-        assert_eq!(vc27_telegraph_progress(0.31, 0.30), None);
-        assert_eq!(vc27_telegraph_progress(0.0, 0.30), None);
-        assert_eq!(vc27_telegraph_progress(-0.1, 0.30), None);
-        let start = vc27_telegraph_progress(0.30, 0.30).expect("window start should telegraph");
-        let middle = vc27_telegraph_progress(0.15, 0.30).expect("window middle should telegraph");
-        let end = vc27_telegraph_progress(0.03, 0.30).expect("window end should telegraph");
+        assert_eq!(telegraph_progress(0.31, 0.30), None);
+        assert_eq!(telegraph_progress(0.0, 0.30), None);
+        assert_eq!(telegraph_progress(-0.1, 0.30), None);
+        let start = telegraph_progress(0.30, 0.30).expect("window start should telegraph");
+        let middle = telegraph_progress(0.15, 0.30).expect("window middle should telegraph");
+        let end = telegraph_progress(0.03, 0.30).expect("window end should telegraph");
         assert!(start <= 0.001);
         assert!((middle - 0.5).abs() <= 0.001);
         assert!(end > middle);
