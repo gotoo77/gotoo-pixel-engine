@@ -47,12 +47,18 @@ impl VoidCanticleV27DirectPresentation {
     }
 
     fn render_chassis_selection_presentation(&mut self, framebuffer: &mut Framebuffer) {
-        let selector = self.chassis_runtime();
+        let Self {
+            game,
+            clean_background,
+            presentation_time,
+            ..
+        } = self;
+        let selector = &game.game.game.game.game;
         vc27_render_chassis_showcase(
-            &mut self.clean_background,
+            clean_background,
             framebuffer,
             selector,
-            self.presentation_time,
+            *presentation_time,
         );
     }
 
