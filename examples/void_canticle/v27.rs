@@ -31,6 +31,7 @@ struct VoidCanticleV27DirectPresentation {
     clean_background: Framebuffer,
     presentation_time: f32,
     hit_reactions: Vc27HitReactionState,
+    projectile_provenance: Vc27ProjectileProvenance,
 }
 
 include!(concat!(
