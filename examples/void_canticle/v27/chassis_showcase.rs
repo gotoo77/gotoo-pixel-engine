@@ -1,9 +1,5 @@
 fn vc27_chassis_accent(chassis: ExosuitChassis) -> Pixel {
-    match chassis {
-        ExosuitChassis::Bulwark => ART_GOLD,
-        ExosuitChassis::Pilgrim => PILGRIM_VIOLET,
-        ExosuitChassis::Wraith => ART_CYAN_LIGHT,
-    }
+    vc27_chassis_profile(chassis).accent()
 }
 
 fn vc27_render_chassis_showcase(
@@ -91,7 +87,8 @@ fn vc27_render_chassis_card(
     shield: f32,
     time: f32,
 ) {
-    let accent = vc27_chassis_accent(chassis);
+    let choice_profile = vc27_chassis_profile(chassis);
+    let accent = choice_profile.accent();
     let panel = if selected {
         Pixel::rgb(11, 14, 27)
     } else {
@@ -135,11 +132,11 @@ fn vc27_render_chassis_card(
 
     let ship_x = x + 54;
     let ship_y = y + 67;
-    vc27_render_chassis_ship(framebuffer, chassis, ship_x, ship_y, selected, time);
+    choice_profile.render_art(framebuffer, ship_x, ship_y, selected, time);
 
     let info_x = x + 108;
-    framebuffer.draw_text_scaled(info_x, y + 12, chassis.name(), 2, accent);
-    framebuffer.draw_text(info_x, y + 33, chassis.role(), WRECK_LIGHT);
+    framebuffer.draw_text_scaled(info_x, y + 12, choice_profile.label(), 2, accent);
+    framebuffer.draw_text(info_x, y + 33, choice_profile.category(), WRECK_LIGHT);
     if selected {
         framebuffer.draw_text(x + width as i32 - 58, y + 13, "ACTIVE", accent);
     }
@@ -289,9 +286,9 @@ mod chassis_showcase_tests {
 
     #[test]
     fn chassis_showcase_has_three_distinct_identity_accents() {
-        let bulwark = vc27_chassis_accent(ExosuitChassis::Bulwark);
-        let pilgrim = vc27_chassis_accent(ExosuitChassis::Pilgrim);
-        let wraith = vc27_chassis_accent(ExosuitChassis::Wraith);
+        let bulwark = vc27_chassis_profile(ExosuitChassis::Bulwark).accent();
+        let pilgrim = vc27_chassis_profile(ExosuitChassis::Pilgrim).accent();
+        let wraith = vc27_chassis_profile(ExosuitChassis::Wraith).accent();
         assert_ne!(bulwark, pilgrim);
         assert_ne!(bulwark, wraith);
         assert_ne!(pilgrim, wraith);
