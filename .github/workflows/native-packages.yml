@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
   push:
+    branches:
+      - infra/native-packaging
     tags:
       - "void-canticle-v*"
 
