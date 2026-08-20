@@ -1,4 +1,4 @@
-impl VoidCanticleV27DirectPresentation {
+impl VoidCanticlePresentation {
     fn render_player_last(&self, framebuffer: &mut Framebuffer) {
         if self.game.combat_model().player_hull <= 0.0 {
             return;
@@ -51,7 +51,7 @@ impl VoidCanticleV27DirectPresentation {
 }
 
 #[cfg(test)]
-mod v27_combat_orchestrator_tests {
+mod presentation_combat_orchestrator_tests {
     #[test]
     fn combat_pipeline_keeps_player_as_last_visual_layer() {
         let stages = [
