@@ -68,6 +68,7 @@ fn vc27_upgrade_assets(upgrade: UpgradeKind) -> Vc27ChoiceAssets<'static> {
 fn vc27_render_upgrade_showcase(
     framebuffer: &mut Framebuffer,
     progression: &VoidCanticleV13,
+    mutations: &MutationBuild,
     choice: &LevelChoice,
     time: f32,
 ) {
@@ -93,6 +94,7 @@ fn vc27_render_upgrade_showcase(
             framebuffer,
             upgrade,
             &progression.build,
+            mutations,
             selected,
             card_x,
             y,
@@ -114,6 +116,7 @@ fn vc27_render_upgrade_card(
     framebuffer: &mut Framebuffer,
     upgrade: UpgradeKind,
     build: &BuildState,
+    mutations: &MutationBuild,
     selected: bool,
     x: i32,
     y: i32,
@@ -148,18 +151,22 @@ fn vc27_render_upgrade_card(
     framebuffer.draw_text(info_x, y + 54, &vc27_upgrade_effect(upgrade), TEXT);
     framebuffer.draw_text(info_x, y + 70, vc27_upgrade_detail(upgrade), WRECK_LIGHT);
 
+    if let Some(name) = vc27_synergy_after_upgrade(*build, *mutations, upgrade) {
+        vc27_render_synergy_hint(framebuffer, info_x, y + 87, name, selected, time);
+    }
+
     let stack = vc27_upgrade_stack(build, upgrade);
     let next = stack.saturating_add(1);
     framebuffer.draw_text(
         info_x,
-        y + 94,
+        y + 98,
         &format!("STACK {:02}  >  {:02}", stack, next),
         if selected { accent } else { WRECK_LIGHT },
     );
     if selected {
         framebuffer.draw_text(x + width as i32 - 53, y + 13, "SELECT", accent);
     }
-    vc27_choice_stack_nodes(framebuffer, info_x, y + 112, next, 8, accent);
+    vc27_choice_stack_nodes(framebuffer, info_x, y + 114, next, 8, accent);
 }
 
 fn vc27_render_upgrade_icon(
@@ -308,12 +315,11 @@ mod upgrade_showcase_tests {
     }
 
     #[test]
-    fn upgrades_expose_choice_assets_and_hover_audio() {
+    fn upgrades_expose_choice_assets_and_audio() {
         for upgrade in UPGRADE_POOL {
-            assert_eq!(
-                vc27_upgrade_assets(upgrade).hover_sound(),
-                Some(VC27_CHOICE_HOVER_SOUND)
-            );
+            let assets = vc27_upgrade_assets(upgrade);
+            assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+            assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
         }
     }
 
