@@ -1,4 +1,4 @@
-const VC27_PRESENTATION_VERSION: &str = "VC3.1";
+const VC27_PRESENTATION_VERSION: &str = "VC3.2";
 const VC27_CARRION_TELEGRAPH_WINDOW: f32 = 0.24;
 const VC27_WRAITH_TELEGRAPH_WINDOW: f32 = 0.30;
 const VC27_BOSS_TELEGRAPH_WINDOW: f32 = 0.34;
@@ -30,6 +30,7 @@ struct VoidCanticleV27DirectPresentation {
     legacy_sink: Framebuffer,
     clean_background: Framebuffer,
     presentation_time: f32,
+    front_state: Vc27FrontState,
     hit_reactions: Vc27HitReactionState,
     projectile_provenance: Vc27ProjectileProvenance,
 }
