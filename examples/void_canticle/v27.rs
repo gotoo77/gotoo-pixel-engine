@@ -691,6 +691,9 @@ impl VoidCanticleV27DirectPresentation {
                     v14.progression
                         .render_level_choice(&mut self.clean_background, choice);
                 }
+                self.game
+                    .survival_model()
+                    .render_level_choice_overrides(&mut self.clean_background);
             }
             VcVisualMode::MutationChoice => {
                 let v14 = self.game.game.v20().game.v14();
