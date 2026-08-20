@@ -73,6 +73,65 @@ impl<'a> Vc27ChoiceAssets<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Vc27ChoiceProfile<'a> {
+    label: &'static str,
+    category: &'static str,
+    accent: Pixel,
+    assets: Vc27ChoiceAssets<'a>,
+}
+
+impl<'a> Vc27ChoiceProfile<'a> {
+    const fn new(
+        label: &'static str,
+        category: &'static str,
+        accent: Pixel,
+        assets: Vc27ChoiceAssets<'a>,
+    ) -> Self {
+        Self {
+            label,
+            category,
+            accent,
+            assets,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        self.label
+    }
+
+    const fn category(self) -> &'static str {
+        self.category
+    }
+
+    const fn accent(self) -> Pixel {
+        self.accent
+    }
+
+    const fn assets(self) -> Vc27ChoiceAssets<'a> {
+        self.assets
+    }
+
+    const fn hover_sound(self) -> Option<SoundId> {
+        self.assets.hover_sound()
+    }
+
+    const fn confirm_sound(self) -> Option<SoundId> {
+        self.assets.confirm_sound()
+    }
+
+    fn render_art(
+        self,
+        framebuffer: &mut Framebuffer,
+        x: i32,
+        y: i32,
+        selected: bool,
+        time: f32,
+    ) {
+        self.assets.render(framebuffer, x, y, selected, time);
+    }
+}
+
 fn vc27_register_choice_sounds(sounds: &mut SoundBank) {
     sounds
         .insert_wav(
@@ -117,5 +176,20 @@ mod choice_asset_tests {
         framebuffer.clear(Pixel::BLACK);
         assets.render(&mut framebuffer, 1, 1, false, 0.0);
         assert_eq!(framebuffer.pixel(1, 1), Some(Pixel::WHITE));
+    }
+
+    #[test]
+    fn choice_profile_keeps_identity_and_assets_together() {
+        let profile = Vc27ChoiceProfile::new(
+            "TEST CHOICE",
+            "TEST FAMILY",
+            Pixel::WHITE,
+            Vc27ChoiceAssets::procedural(test_art),
+        );
+        assert_eq!(profile.label(), "TEST CHOICE");
+        assert_eq!(profile.category(), "TEST FAMILY");
+        assert_eq!(profile.accent(), Pixel::WHITE);
+        assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+        assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
     }
 }
