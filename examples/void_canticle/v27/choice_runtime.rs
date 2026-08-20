@@ -290,7 +290,10 @@ mod choice_runtime_tests {
     #[test]
     fn hover_event_is_edge_triggered_per_focused_choice() {
         let mut game = VoidCanticleV27ChoicePresentation::new();
-        assert_eq!(game.choice_hover_event(), Some(VC27_CHOICE_HOVER_SOUND));
+        assert_eq!(
+            game.choice_hover_event(),
+            Some(Vc27ChoiceArtId::Bulwark.hover_override_sound())
+        );
         assert_eq!(game.choice_hover_event(), None);
 
         let selector = &mut game.presentation.game.game.game.game.game;
