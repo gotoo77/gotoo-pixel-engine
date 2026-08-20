@@ -1,4 +1,4 @@
-impl VoidCanticleV27DirectPresentation {
+impl VoidCanticlePresentation {
     fn render_choir_links(&self, framebuffer: &mut Framebuffer) {
         let v12 = &self.game.game.v20().game.v14().progression.combat;
         let link_color = Pixel::rgb(34, 62, 82);
@@ -259,7 +259,7 @@ fn vc27_dual_bar(
 }
 
 #[cfg(test)]
-mod v27_bestiary_tests {
+mod presentation_bestiary_tests {
     use super::*;
 
     #[test]
