@@ -62,6 +62,11 @@ fn vc27_render_support_showcase(
         time,
     );
 
+    let v14 = sustain.game.v20().game.v14();
+    if let Some(name) = vc27_primary_active_synergy(v14.progression.build, v14.mutations) {
+        vc27_render_active_synergy_strip(framebuffer, name, time);
+    }
+
     let card_x = 12_i32;
     let card_width = VC_VISUAL_PRESENTATION_WIDTH.saturating_sub(24);
     let card_height = 170_u32;
@@ -219,12 +224,11 @@ mod support_showcase_tests {
     }
 
     #[test]
-    fn support_modules_expose_choice_assets_and_hover_audio() {
+    fn support_modules_expose_choice_assets_and_audio() {
         for augment in VC23_SUSTAIN_AUGMENTS {
-            assert_eq!(
-                vc27_support_assets(augment).hover_sound(),
-                Some(VC27_CHOICE_HOVER_SOUND)
-            );
+            let assets = vc27_support_assets(augment);
+            assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+            assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
         }
     }
 
