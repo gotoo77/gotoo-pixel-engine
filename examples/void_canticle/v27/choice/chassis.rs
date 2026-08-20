@@ -81,8 +81,18 @@ mod chassis_profile_tests {
     fn chassis_profiles_carry_the_same_audio_contract_as_other_choices() {
         for chassis in VC22_CHASSIS {
             let profile = vc27_chassis_profile(chassis);
-            assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-            assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+            let (expected_hover, expected_confirm) = match chassis {
+                ExosuitChassis::Bulwark => (
+                    Some(Vc27ChoiceArtId::Bulwark.hover_override_sound()),
+                    Some(Vc27ChoiceArtId::Bulwark.confirm_override_sound()),
+                ),
+                _ => (
+                    Some(VC27_CHOICE_HOVER_SOUND),
+                    Some(VC27_CHOICE_CONFIRM_SOUND),
+                ),
+            };
+            assert_eq!(profile.hover_sound(), expected_hover);
+            assert_eq!(profile.confirm_sound(), expected_confirm);
         }
     }
 
