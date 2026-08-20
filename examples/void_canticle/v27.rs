@@ -20,6 +20,10 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/void_canticle/v27/chassis_showcase.rs"
 ));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/examples/void_canticle/v27/upgrade_showcase.rs"
+));
 
 struct VoidCanticleV27DirectPresentation {
     game: VoidCanticleV23Sustain,
@@ -483,13 +487,7 @@ impl VoidCanticleV27DirectPresentation {
         for bullet in &base.enemy_bullets {
             let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt().max(1.0);
             let style = vc27_enemy_shot_style(base.encounter_phase, speed);
-            vc27_render_enemy_bullet(
-                framebuffer,
-                *bullet,
-                style,
-                pressure,
-                boss_phase,
-            );
+            vc27_render_enemy_bullet(framebuffer, *bullet, style, pressure, boss_phase);
         }
     }
 
@@ -834,6 +832,20 @@ impl VoidCanticleV27DirectPresentation {
 
     fn render_clean_modal(&mut self, framebuffer: &mut Framebuffer, mode: VcVisualMode) {
         self.render_clean_background(framebuffer);
+
+        if matches!(&mode, VcVisualMode::LevelChoice) {
+            let v14 = self.game.game.v20().game.v14();
+            if let Some(choice) = v14.progression.level_choice.as_ref() {
+                vc27_render_upgrade_showcase(
+                    framebuffer,
+                    &v14.progression,
+                    choice,
+                    self.presentation_time,
+                );
+            }
+            return;
+        }
+
         self.clean_background.clear(BG);
         render_grave_orbit_background(&mut self.clean_background, self.game.game.base().scroll);
 
@@ -841,16 +853,7 @@ impl VoidCanticleV27DirectPresentation {
             VcVisualMode::SupportChoice => {
                 self.game.render_support_choice(&mut self.clean_background);
             }
-            VcVisualMode::LevelChoice => {
-                let v14 = self.game.game.v20().game.v14();
-                if let Some(choice) = v14.progression.level_choice.as_ref() {
-                    v14.progression
-                        .render_level_choice(&mut self.clean_background, choice);
-                }
-                self.game
-                    .survival_model()
-                    .render_level_choice_overrides(&mut self.clean_background);
-            }
+            VcVisualMode::LevelChoice => {}
             VcVisualMode::MutationChoice => {
                 let v14 = self.game.game.v20().game.v14();
                 if let Some(choice) = v14.mutation_choice.as_ref() {
