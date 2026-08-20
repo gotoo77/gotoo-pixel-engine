@@ -122,10 +122,15 @@ jobs:
             echo "Unresolved Linux runtime dependency after extraction"
             exit 1
           fi
-          test -f /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          lvp_icd="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)"
+          if [ -z "$lvp_icd" ]; then
+            echo "Lavapipe Vulkan ICD was not installed"
+            exit 1
+          fi
+          echo "Using Lavapipe ICD: $lvp_icd"
           pushd extracted >/dev/null
           set +e
-          VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+          VK_DRIVER_FILES="$lvp_icd" \
             LIBGL_ALWAYS_SOFTWARE=1 \
             timeout 8s xvfb-run -a -s "-screen 0 1280x720x24" ./void_canticle \
             > ../launch.log 2>&1
