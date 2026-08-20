@@ -20,6 +20,26 @@ impl VoidCanticleV27DirectPresentation {
         }
     }
 
+    fn chassis_selection_active(&self) -> bool {
+        self.game.game.game.game.game.chassis.is_none()
+    }
+
+    fn render_chassis_selection_presentation(&mut self, framebuffer: &mut Framebuffer) {
+        self.clean_background.clear(BG);
+        self.game
+            .game
+            .game
+            .game
+            .game
+            .render_chassis_selection(&mut self.clean_background);
+        vc_visual_blit_nearest(
+            &self.clean_background,
+            framebuffer,
+            VC_VISUAL_PRESENTATION_SCALE,
+            false,
+        );
+    }
+
     fn visual_mode(&self) -> VcVisualMode {
         if self.game.choosing_support {
             return VcVisualMode::SupportChoice;
@@ -769,6 +789,11 @@ impl Game for VoidCanticleV27DirectPresentation {
             return result;
         }
 
+        if self.chassis_selection_active() {
+            self.render_chassis_selection_presentation(frame.framebuffer);
+            return GameResult::Continue;
+        }
+
         let mode = self.visual_mode();
         match mode {
             VcVisualMode::Combat => self.render_combat_presentation(frame.framebuffer),
@@ -950,6 +975,12 @@ mod v27_tests {
     #[test]
     fn version_is_explicit() {
         assert_eq!(VC27_PRESENTATION_VERSION, "VC2.7");
+    }
+
+    #[test]
+    fn chassis_selection_is_explicit_precombat_state() {
+        let game = VoidCanticleV27DirectPresentation::new();
+        assert!(game.chassis_selection_active());
     }
 
     #[test]
