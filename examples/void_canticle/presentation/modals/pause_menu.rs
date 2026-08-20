@@ -173,7 +173,7 @@ fn vc27_render_pause_run_status(
         x,
         width,
         y + 258,
-        VC27_PRESENTATION_VERSION,
+        PRESENTATION_VERSION,
         1,
         PILGRIM_VIOLET,
     );
