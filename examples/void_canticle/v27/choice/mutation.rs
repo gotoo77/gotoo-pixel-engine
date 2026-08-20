@@ -1,19 +1,32 @@
-fn vc27_mutation_accent(mutation: MutationKind) -> Pixel {
-    match mutation {
-        MutationKind::PiercingLance => MUTATION_LIGHT,
-        MutationKind::SplitVolley => MUTATION_COLOR,
-        MutationKind::DeathNova => DANGER,
-        MutationKind::Orbitals => VOID_LIGHT,
-    }
+fn vc27_mutation_profile(mutation: MutationKind) -> Vc27ChoiceProfile<'static> {
+    let (category, accent, renderer): (&'static str, Pixel, Vc27ChoiceArtRenderer) = match mutation {
+        MutationKind::PiercingLance => (
+            "WEAPON FORM",
+            MUTATION_LIGHT,
+            vc27_mutation_piercing_lance_art,
+        ),
+        MutationKind::SplitVolley => (
+            "WEAPON SPREAD",
+            MUTATION_COLOR,
+            vc27_mutation_split_volley_art,
+        ),
+        MutationKind::DeathNova => ("DEATH FIELD", DANGER, vc27_mutation_death_nova_art),
+        MutationKind::Orbitals => ("RELIC SWARM", VOID_LIGHT, vc27_mutation_orbitals_art),
+    };
+    Vc27ChoiceProfile::new(
+        mutation_name(mutation),
+        category,
+        accent,
+        Vc27ChoiceAssets::procedural(renderer),
+    )
 }
 
-fn vc27_mutation_category(mutation: MutationKind) -> &'static str {
-    match mutation {
-        MutationKind::PiercingLance => "WEAPON FORM",
-        MutationKind::SplitVolley => "WEAPON SPREAD",
-        MutationKind::DeathNova => "DEATH FIELD",
-        MutationKind::Orbitals => "RELIC SWARM",
-    }
+fn vc27_mutation_accent(mutation: MutationKind) -> Pixel {
+    vc27_mutation_profile(mutation).accent()
+}
+
+fn vc27_mutation_assets(mutation: MutationKind) -> Vc27ChoiceAssets<'static> {
+    vc27_mutation_profile(mutation).assets()
 }
 
 fn vc27_mutation_stack(build: &MutationBuild, mutation: MutationKind) -> u32 {
@@ -48,16 +61,6 @@ fn vc27_mutation_detail(mutation: MutationKind) -> &'static str {
         MutationKind::DeathNova => "STACKS EXPAND CLEAR RADIUS",
         MutationKind::Orbitals => "MAX 3 RELIC SATELLITES",
     }
-}
-
-fn vc27_mutation_assets(mutation: MutationKind) -> Vc27ChoiceAssets<'static> {
-    let renderer = match mutation {
-        MutationKind::PiercingLance => vc27_mutation_piercing_lance_art as Vc27ChoiceArtRenderer,
-        MutationKind::SplitVolley => vc27_mutation_split_volley_art,
-        MutationKind::DeathNova => vc27_mutation_death_nova_art,
-        MutationKind::Orbitals => vc27_mutation_orbitals_art,
-    };
-    Vc27ChoiceAssets::procedural(renderer)
 }
 
 fn vc27_render_mutation_showcase(
@@ -117,7 +120,8 @@ fn vc27_render_mutation_card(
     height: u32,
     time: f32,
 ) {
-    let accent = vc27_mutation_accent(mutation);
+    let profile = vc27_mutation_profile(mutation);
+    let accent = profile.accent();
     vc27_choice_card_frame(
         framebuffer,
         x,
@@ -136,11 +140,11 @@ fn vc27_render_mutation_card(
     let icon_x = x + 58;
     let icon_y = y + 64;
     vc27_choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
-    vc27_mutation_assets(mutation).render(framebuffer, icon_x, icon_y, selected, time);
+    profile.render_art(framebuffer, icon_x, icon_y, selected, time);
 
     let info_x = x + 112;
-    framebuffer.draw_text(info_x, y + 12, vc27_mutation_category(mutation), WRECK_LIGHT);
-    framebuffer.draw_text_scaled(info_x, y + 28, mutation_name(mutation), 2, accent);
+    framebuffer.draw_text(info_x, y + 12, profile.category(), WRECK_LIGHT);
+    framebuffer.draw_text_scaled(info_x, y + 28, profile.label(), 2, accent);
     framebuffer.draw_text(info_x, y + 54, vc27_mutation_effect(mutation), TEXT);
     framebuffer.draw_text(info_x, y + 70, vc27_mutation_detail(mutation), WRECK_LIGHT);
 
@@ -259,11 +263,12 @@ mod mutation_showcase_tests {
     }
 
     #[test]
-    fn mutations_expose_choice_assets_and_audio() {
+    fn mutations_expose_choice_profile_assets_and_audio() {
         for mutation in MUTATION_POOL {
-            let assets = vc27_mutation_assets(mutation);
-            assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-            assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+            let profile = vc27_mutation_profile(mutation);
+            assert_eq!(profile.label(), mutation_name(mutation));
+            assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+            assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
         }
     }
 }
