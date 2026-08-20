@@ -1,5 +1,3 @@
-use super::*;
-
 pub(super) fn vc27_present(value: f32) -> i32 {
     (value * VC_VISUAL_PRESENTATION_SCALE as f32).round() as i32
 }
