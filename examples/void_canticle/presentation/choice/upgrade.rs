@@ -63,7 +63,7 @@ fn vc27_render_upgrade_showcase(
     choice: &LevelChoice,
     time: f32,
 ) {
-    let accent = vc27_echo_level_color(progression.level);
+    let accent = echo_level_color(progression.level);
     vc27_choice_header(
         framebuffer,
         "LEVEL UP",
