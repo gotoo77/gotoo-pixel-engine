@@ -27,70 +27,62 @@ impl VoidCanticleV27DirectPresentation {
     fn render_clean_modal(&mut self, framebuffer: &mut Framebuffer, mode: VcVisualMode) {
         self.render_clean_background(framebuffer);
 
-        if matches!(&mode, VcVisualMode::LevelChoice) {
-            let v14 = self.game.game.v20().game.v14();
-            if let Some(choice) = v14.progression.level_choice.as_ref() {
-                vc27_render_upgrade_showcase(
-                    framebuffer,
-                    &v14.progression,
-                    &v14.mutations,
-                    choice,
-                    self.presentation_time,
-                );
-            }
-            return;
-        }
-
-        if matches!(&mode, VcVisualMode::Pause) {
-            let pause = self.game.survival_model().game.pause_ui();
-            match &pause.state {
-                VcPauseState::BuildInfo => {
-                    vc27_render_build_overview(framebuffer, &self.game, self.presentation_time);
-                }
-                VcPauseState::Controls => {
-                    vc27_render_controls_reference(framebuffer, self.presentation_time);
-                }
-                VcPauseState::Menu | VcPauseState::ResumeGate | VcPauseState::Running => {
-                    vc27_render_pause_menu(
+        match mode {
+            VcVisualMode::LevelChoice => {
+                let v14 = self.game.game.v20().game.v14();
+                if let Some(choice) = v14.progression.level_choice.as_ref() {
+                    vc27_render_upgrade_showcase(
                         framebuffer,
-                        &self.game,
-                        pause,
+                        &v14.progression,
+                        &v14.mutations,
+                        choice,
                         self.presentation_time,
                     );
                 }
+                return;
             }
-            return;
-        }
-
-        if matches!(&mode, VcVisualMode::StageClear) {
-            vc27_render_stage_clear_presentation(framebuffer, &self.game, self.presentation_time);
-            return;
-        }
-
-        self.clean_background.clear(BG);
-        render_grave_orbit_background(&mut self.clean_background, self.game.game.base().scroll);
-
-        match mode {
-            VcVisualMode::SupportChoice => {
-                self.game.render_support_choice(&mut self.clean_background);
-            }
-            VcVisualMode::LevelChoice => {}
             VcVisualMode::MutationChoice => {
                 let v14 = self.game.game.v20().game.v14();
                 if let Some(choice) = v14.mutation_choice.as_ref() {
-                    v14.render_mutation_choice(&mut self.clean_background, choice);
+                    vc27_render_mutation_showcase(
+                        framebuffer,
+                        v14,
+                        choice,
+                        self.presentation_time,
+                    );
                 }
+                return;
             }
-            VcVisualMode::Pause | VcVisualMode::StageClear => {}
+            VcVisualMode::SupportChoice => {
+                vc27_render_support_showcase(framebuffer, &self.game, self.presentation_time);
+                return;
+            }
+            VcVisualMode::Pause => {
+                let pause = self.game.survival_model().game.pause_ui();
+                match &pause.state {
+                    VcPauseState::BuildInfo => {
+                        vc27_render_build_overview(framebuffer, &self.game, self.presentation_time);
+                    }
+                    VcPauseState::Controls => {
+                        vc27_render_controls_reference(framebuffer, self.presentation_time);
+                    }
+                    VcPauseState::Menu | VcPauseState::ResumeGate | VcPauseState::Running => {
+                        vc27_render_pause_menu(
+                            framebuffer,
+                            &self.game,
+                            pause,
+                            self.presentation_time,
+                        );
+                    }
+                }
+                return;
+            }
+            VcVisualMode::StageClear => {
+                vc27_render_stage_clear_presentation(framebuffer, &self.game, self.presentation_time);
+                return;
+            }
             VcVisualMode::Combat | VcVisualMode::Death => {}
         }
-
-        vc_visual_blit_nearest(
-            &self.clean_background,
-            framebuffer,
-            VC_VISUAL_PRESENTATION_SCALE,
-            false,
-        );
     }
 
     fn render_death_presentation(&mut self, framebuffer: &mut Framebuffer) {
