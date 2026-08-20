@@ -86,6 +86,7 @@ fn vc27_render_mutation_showcase(
         vc27_render_mutation_card(
             framebuffer,
             mutation,
+            &game.progression.build,
             &game.mutations,
             selected,
             card_x,
@@ -107,6 +108,7 @@ fn vc27_render_mutation_showcase(
 fn vc27_render_mutation_card(
     framebuffer: &mut Framebuffer,
     mutation: MutationKind,
+    base_build: &BuildState,
     build: &MutationBuild,
     selected: bool,
     x: i32,
@@ -142,19 +144,23 @@ fn vc27_render_mutation_card(
     framebuffer.draw_text(info_x, y + 54, vc27_mutation_effect(mutation), TEXT);
     framebuffer.draw_text(info_x, y + 70, vc27_mutation_detail(mutation), WRECK_LIGHT);
 
+    if let Some(name) = vc27_synergy_after_mutation(*base_build, *build, mutation) {
+        vc27_render_synergy_hint(framebuffer, info_x, y + 87, name, selected, time);
+    }
+
     let stack = vc27_mutation_stack(build, mutation);
     let max = vc27_mutation_max(mutation);
     let next = stack.saturating_add(1).min(max);
     framebuffer.draw_text(
         info_x,
-        y + 94,
+        y + 98,
         &format!("STACK {:02}  >  {:02} / {:02}", stack, next, max),
         if selected { accent } else { WRECK_LIGHT },
     );
     if selected {
         framebuffer.draw_text(x + width as i32 - 53, y + 13, "EVOLVE", accent);
     }
-    vc27_choice_stack_nodes(framebuffer, info_x, y + 112, stack, max, accent);
+    vc27_choice_stack_nodes(framebuffer, info_x, y + 114, stack, max, accent);
 }
 
 fn vc27_render_mutation_icon(
@@ -253,12 +259,11 @@ mod mutation_showcase_tests {
     }
 
     #[test]
-    fn mutations_expose_choice_assets_and_hover_audio() {
+    fn mutations_expose_choice_assets_and_audio() {
         for mutation in MUTATION_POOL {
-            assert_eq!(
-                vc27_mutation_assets(mutation).hover_sound(),
-                Some(VC27_CHOICE_HOVER_SOUND)
-            );
+            let assets = vc27_mutation_assets(mutation);
+            assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
+            assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
         }
     }
 }
