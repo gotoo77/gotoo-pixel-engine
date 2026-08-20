@@ -6,7 +6,7 @@ impl VoidCanticlePresentation {
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             presentation_time: 0.0,
             hit_reactions: Vc27HitReactionState::default(),
-            projectile_provenance: Vc27ProjectileProvenance::default(),
+            projectile_provenance: ProjectileProvenance::default(),
         }
     }
 
@@ -34,7 +34,7 @@ impl VoidCanticlePresentation {
     fn reset_presentation_after_restart(&mut self) {
         self.presentation_time = 0.0;
         self.hit_reactions = Vc27HitReactionState::default();
-        self.projectile_provenance = Vc27ProjectileProvenance::default();
+        self.projectile_provenance = ProjectileProvenance::default();
     }
 
     fn render_chassis_selection_presentation(&mut self, framebuffer: &mut Framebuffer) {
@@ -137,10 +137,10 @@ impl Game for VoidCanticlePresentation {
             matches!(&pause.state, VcPauseState::Menu) && pause.menu.selected() == Some(1)
         };
         let hit_snapshot = Vc27HitSnapshot::capture(&self.game);
-        let projectile_snapshot = Vc27ProjectileSourceSnapshot::capture(&self.game);
+        let projectile_snapshot = ProjectileSourceSnapshot::capture(&self.game);
 
         let result = {
-            let mut legacy_audio = Vc27LegacyAttackAudioFilter::new(&mut *frame.audio);
+            let mut legacy_audio = LegacyAttackAudioFilter::new(&mut *frame.audio);
             let mut legacy_frame = Frame {
                 framebuffer: &mut self.legacy_sink,
                 input: frame.input,
