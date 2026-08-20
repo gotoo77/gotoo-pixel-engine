@@ -55,7 +55,7 @@ impl VoidCanticlePresentation {
                 enemy.age,
                 34,
             );
-            vc27_render_hit_flash(framebuffer, x, y, Vc27HitFlashKind::Carrion, hit);
+            render_hit_flash(framebuffer, x, y, HitFlashKind::Carrion, hit);
         }
 
         let v12 = &v20.game.v12();
@@ -74,11 +74,11 @@ impl VoidCanticlePresentation {
             let flash_kind = match enemy.kind {
                 SpecialKind::GraveKnight => {
                     vc27_hd_render_grave_knight(framebuffer, x, y, enemy.age);
-                    Vc27HitFlashKind::GraveKnight
+                    HitFlashKind::GraveKnight
                 }
                 SpecialKind::BellWraith => {
                     vc27_hd_render_bell_wraith(framebuffer, x, y, enemy.age, enemy.phase);
-                    Vc27HitFlashKind::BellWraith
+                    HitFlashKind::BellWraith
                 }
                 SpecialKind::RelicCarrier => {
                     vc27_hd_render_relic_carrier(
@@ -89,11 +89,11 @@ impl VoidCanticlePresentation {
                         enemy.phase,
                         enemy.direction,
                     );
-                    Vc27HitFlashKind::RelicCarrier
+                    HitFlashKind::RelicCarrier
                 }
             };
             vc27_hd_render_damage_marks(framebuffer, x, y, damage_state, enemy.age, 40);
-            vc27_render_hit_flash(framebuffer, x, y, flash_kind, hit);
+            render_hit_flash(framebuffer, x, y, flash_kind, hit);
         }
 
         for threat in &v12.threats {
@@ -111,7 +111,7 @@ impl VoidCanticlePresentation {
             let flash_kind = match threat.kind {
                 ThreatKind::ChoirNode => {
                     vc27_hd_render_choir_node(framebuffer, x, y, threat.age, threat.phase);
-                    Vc27HitFlashKind::ChoirNode
+                    HitFlashKind::ChoirNode
                 }
                 ThreatKind::VoidLeech => {
                     vc27_hd_render_void_leech(
@@ -122,11 +122,11 @@ impl VoidCanticlePresentation {
                         threat.phase,
                         threat.charge,
                     );
-                    Vc27HitFlashKind::VoidLeech
+                    HitFlashKind::VoidLeech
                 }
             };
             vc27_hd_render_damage_marks(framebuffer, x, y, damage_state, threat.age, 44);
-            vc27_render_hit_flash(framebuffer, x, y, flash_kind, hit);
+            render_hit_flash(framebuffer, x, y, flash_kind, hit);
         }
 
         let base = self.game.game.base();
@@ -138,11 +138,11 @@ impl VoidCanticlePresentation {
             rendered_boss.x += hit.offset_x as f32 / VC_VISUAL_PRESENTATION_SCALE as f32;
             rendered_boss.y += hit.offset_y as f32 / VC_VISUAL_PRESENTATION_SCALE as f32;
             vc27_hd_render_bellkeeper(framebuffer, rendered_boss);
-            vc27_render_hit_flash(
+            render_hit_flash(
                 framebuffer,
                 vc27_present(boss.x) + hit.offset_x,
                 vc27_present(boss.y) + hit.offset_y,
-                Vc27HitFlashKind::Bellkeeper,
+                HitFlashKind::Bellkeeper,
                 hit,
             );
         }
@@ -157,7 +157,7 @@ impl VoidCanticlePresentation {
                 .get(&vc20_carrion_key(enemy))
                 .copied()
                 .unwrap_or(armor_max);
-            vc27_dual_bar(
+            dual_bar(
                 framebuffer,
                 vc27_present(enemy.x),
                 vc27_present(enemy.y) - 39,
@@ -176,7 +176,7 @@ impl VoidCanticlePresentation {
                 .get(&vc20_special_key(enemy))
                 .copied()
                 .unwrap_or(armor_max);
-            vc27_dual_bar(
+            dual_bar(
                 framebuffer,
                 vc27_present(enemy.x),
                 vc27_present(enemy.y) - 43,
@@ -194,7 +194,7 @@ impl VoidCanticlePresentation {
                 .get(&vc20_threat_key(threat))
                 .copied()
                 .unwrap_or(armor_max);
-            vc27_dual_bar(
+            dual_bar(
                 framebuffer,
                 vc27_present(threat.x),
                 vc27_present(threat.y) - 47,
@@ -222,7 +222,7 @@ impl VoidCanticlePresentation {
             } else if v20.boss_shield_break_timer > 0.0 {
                 framebuffer.draw_circle(x, y - 6, 65, CANTICLE_COLOR);
             }
-            vc27_dual_bar(
+            dual_bar(
                 framebuffer,
                 x,
                 y - 76,
@@ -235,7 +235,7 @@ impl VoidCanticlePresentation {
     }
 }
 
-fn vc27_dual_bar(
+fn dual_bar(
     framebuffer: &mut Framebuffer,
     center_x: i32,
     y: i32,
@@ -283,7 +283,7 @@ mod presentation_bestiary_tests {
     fn dual_bar_stays_local() {
         let mut framebuffer = Framebuffer::new(80, 24);
         framebuffer.clear(Pixel::BLUE);
-        vc27_dual_bar(&mut framebuffer, 40, 8, 2, 3, 4, 6);
+        dual_bar(&mut framebuffer, 40, 8, 2, 3, 4, 6);
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLUE));
         assert_eq!(framebuffer.pixel(79, 23), Some(Pixel::BLUE));
     }
