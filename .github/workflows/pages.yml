@@ -34,38 +34,14 @@ jobs:
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
 
-      - name: Build Web games
-        run: |
-          source scripts/web-examples.sh
-          for example in "${GPE_WEB_GAME_EXAMPLES[@]}"; do
-            cargo build --release --target wasm32-unknown-unknown --example "${example}"
-          done
-
-      - name: Assemble Pages artifact
-        run: |
-          source scripts/web-examples.sh
-          rm -rf dist
-          mkdir -p dist/pkg
-          cp web/index.html dist/index.html
-          cp web/snake.html dist/snake.html
-          cp web/breakout.html dist/breakout.html
-          cp web/tetris.html dist/tetris.html
-          cp web/space_invaders.html dist/space_invaders.html
-          cp web/pong.html dist/pong.html
-          cp web/audio-unlock.js dist/audio-unlock.js
-          cp web/fullscreen.js dist/fullscreen.js
-          for example in "${GPE_WEB_GAME_EXAMPLES[@]}"; do
-            wasm-bindgen \
-              --target web \
-              --out-dir dist/pkg \
-              "target/wasm32-unknown-unknown/release/examples/${example}.wasm"
-          done
+      - name: Build Pages artifact
+        run: python3 scripts/dev.py build-web --pages
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -78,6 +54,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
