@@ -76,6 +76,7 @@ struct VoidCanticleV22 {
     chassis: Option<ExosuitChassis>,
     menu: gotoo_pixel_engine::ui::MenuState,
     controls: ControlMap,
+    confirm_armed: bool,
     baseline_hull: f32,
     baseline_shield: f32,
 }
@@ -96,6 +97,7 @@ impl VoidCanticleV22 {
             chassis: None,
             menu: gotoo_pixel_engine::ui::MenuState::new(VC22_CHASSIS.len()),
             controls,
+            confirm_armed: false,
             baseline_hull,
             baseline_shield,
         }
@@ -132,6 +134,7 @@ impl VoidCanticleV22 {
     fn reset_chassis_selection_for_new_run(&mut self) {
         self.chassis = None;
         self.menu = gotoo_pixel_engine::ui::MenuState::new(VC22_CHASSIS.len());
+        self.confirm_armed = false;
         self.game.base_hull_cap = self.baseline_hull;
         self.game.game.tuning.player_hull = self.baseline_hull;
         self.game.game.tuning.player_shield = self.baseline_shield;
@@ -148,13 +151,18 @@ impl VoidCanticleV22 {
 
     fn update_chassis_selection(&mut self, frame: &mut Frame<'_>) -> bool {
         self.controls.update(frame.input);
+        let confirm = self.controls.action(VC22_CHASSIS_CONFIRM);
+        if !confirm.held() {
+            self.confirm_armed = true;
+        }
+
         if self.controls.action(VC22_CHASSIS_UP).pressed() {
             self.menu.select_previous();
         }
         if self.controls.action(VC22_CHASSIS_DOWN).pressed() {
             self.menu.select_next();
         }
-        if self.controls.action(VC22_CHASSIS_CONFIRM).pressed() {
+        if self.confirm_armed && confirm.pressed() {
             let chassis = self.selected_chassis();
             self.apply_chassis(chassis);
             return true;
@@ -340,6 +348,7 @@ mod v22_tests {
     #[test]
     fn inner_run_restart_returns_to_chassis_selection() {
         let mut game = VoidCanticleV22::new();
+        game.confirm_armed = true;
         game.apply_chassis(ExosuitChassis::Wraith);
         game.game.game.game.game.base_mut().stage_time = 12.0;
         let stage_time_before = game.stage_time();
@@ -348,9 +357,18 @@ mod v22_tests {
 
         assert!(game.reconcile_inner_restart(stage_time_before));
         assert_eq!(game.chassis, None);
+        assert!(!game.confirm_armed);
         assert_eq!(game.game.base_hull_cap, game.baseline_hull);
         assert_eq!(game.game.game.tuning.player_hull, game.baseline_hull);
         assert_eq!(game.game.game.tuning.player_shield, game.baseline_shield);
+    }
+
+    #[test]
+    fn fresh_chassis_selector_requires_confirm_release_before_selection() {
+        let game = VoidCanticleV22::new();
+        assert_eq!(game.chassis, None);
+        assert!(!game.confirm_armed);
+        assert_eq!(game.selected_chassis(), ExosuitChassis::Bulwark);
     }
 
     #[test]
