@@ -38,7 +38,7 @@ impl ProjectileSourceSnapshot {
             .filter(|enemy| enemy.alive)
         {
             snapshot.carrion.insert(
-                vc20_carrion_key(enemy),
+                presentation_carrion_key(enemy),
                 TimedProjectileSource {
                     timer: enemy.fire_timer,
                     x: enemy.x,
@@ -54,7 +54,7 @@ impl ProjectileSourceSnapshot {
             .filter(|enemy| enemy.alive && enemy.kind == SpecialKind::BellWraith)
         {
             snapshot.wraith.insert(
-                vc20_special_key(enemy),
+                presentation_special_key(enemy),
                 TimedProjectileSource {
                     timer: enemy.fire_timer,
                     x: enemy.x,
@@ -69,7 +69,7 @@ impl ProjectileSourceSnapshot {
             .filter(|threat| threat.alive && threat.kind == ThreatKind::VoidLeech)
         {
             snapshot.leech.insert(
-                vc20_threat_key(threat),
+                presentation_threat_key(threat),
                 LeechProjectileSource {
                     charge: threat.charge,
                     x: threat.x,
