@@ -1,7 +1,7 @@
-const VC27_CHOICE_CONFIRM_DURATION: f32 = 0.58;
-const VC27_SYNERGY_REVEAL_DURATION: f32 = 1.05;
+const CHOICE_CONFIRM_DURATION: f32 = 0.58;
+const SYNERGY_REVEAL_DURATION: f32 = 1.05;
 
-fn vc27_synergy_after_upgrade(
+fn synergy_after_upgrade(
     build: BuildState,
     mutations: MutationBuild,
     upgrade: UpgradeKind,
@@ -16,10 +16,10 @@ fn vc27_synergy_after_upgrade(
         UpgradeKind::VitalSpark => next.vital_spark = next.vital_spark.saturating_add(1),
         UpgradeKind::CoreSurge => next.core_surge = next.core_surge.saturating_add(1),
     }
-    vc27_new_synergy_name(before, synergy_mask(next, mutations))
+    new_synergy_name(before, synergy_mask(next, mutations))
 }
 
-fn vc27_synergy_after_mutation(
+fn synergy_after_mutation(
     build: BuildState,
     mutations: MutationBuild,
     mutation: MutationKind,
@@ -34,15 +34,15 @@ fn vc27_synergy_after_mutation(
         MutationKind::DeathNova => next.death_nova = next.death_nova.saturating_add(1),
         MutationKind::Orbitals => next.orbitals = next.orbitals.saturating_add(1),
     }
-    vc27_new_synergy_name(before, synergy_mask(build, next))
+    new_synergy_name(before, synergy_mask(build, next))
 }
 
-fn vc27_new_synergy_name(before: u8, after: u8) -> Option<&'static str> {
+fn new_synergy_name(before: u8, after: u8) -> Option<&'static str> {
     let discovered = after & !before;
     (discovered != 0).then(|| first_synergy_name(discovered))
 }
 
-fn vc27_primary_active_synergy(
+fn primary_active_synergy(
     build: BuildState,
     mutations: MutationBuild,
 ) -> Option<&'static str> {
@@ -50,7 +50,7 @@ fn vc27_primary_active_synergy(
     (active != 0).then(|| first_synergy_name(active))
 }
 
-fn vc27_render_synergy_hint(
+fn render_synergy_hint(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -65,7 +65,7 @@ fn vc27_render_synergy_hint(
     framebuffer.draw_text(x + 80, y - 3, name, SYNERGY_GOLD);
 }
 
-fn vc27_render_active_synergy_strip(
+fn render_active_synergy_strip(
     framebuffer: &mut Framebuffer,
     name: &str,
     time: f32,
@@ -83,7 +83,7 @@ fn vc27_render_active_synergy_strip(
     );
 }
 
-fn vc27_render_choice_confirmation(
+fn render_choice_confirmation(
     framebuffer: &mut Framebuffer,
     label: &str,
     accent: Pixel,
@@ -126,11 +126,11 @@ mod synergy_showcase_tests {
         let mut mutations = MutationBuild::default();
         mutations.split_volley = 1;
         assert_eq!(
-            vc27_synergy_after_upgrade(build, mutations, UpgradeKind::RapidFire),
+            synergy_after_upgrade(build, mutations, UpgradeKind::RapidFire),
             Some("CANTOR STORM")
         );
         assert_eq!(
-            vc27_synergy_after_upgrade(build, mutations, UpgradeKind::VitalSpark),
+            synergy_after_upgrade(build, mutations, UpgradeKind::VitalSpark),
             None
         );
     }
@@ -141,11 +141,11 @@ mod synergy_showcase_tests {
         build.stellar_power = 1;
         let mutations = MutationBuild::default();
         assert_eq!(
-            vc27_synergy_after_mutation(build, mutations, MutationKind::PiercingLance),
+            synergy_after_mutation(build, mutations, MutationKind::PiercingLance),
             Some("TWIN REQUIEM")
         );
         assert_eq!(
-            vc27_synergy_after_mutation(build, mutations, MutationKind::Orbitals),
+            synergy_after_mutation(build, mutations, MutationKind::Orbitals),
             None
         );
     }
@@ -157,7 +157,7 @@ mod synergy_showcase_tests {
         let mut mutations = MutationBuild::default();
         mutations.death_nova = 1;
         assert_eq!(
-            vc27_synergy_after_upgrade(build, mutations, UpgradeKind::MagnetField),
+            synergy_after_upgrade(build, mutations, UpgradeKind::MagnetField),
             None
         );
     }
