@@ -1,4 +1,4 @@
-mod vc31_authored_audio_tests {
+mod authored_choice_audio_tests {
     use super::*;
 
     #[test]
@@ -74,7 +74,7 @@ mod vc31_authored_audio_tests {
             env!("CARGO_MANIFEST_DIR"),
             "/assets/void_canticle/ui/choice/manifest.json"
         )))
-        .expect("VC3.1 choice manifest should parse");
+        .expect("choice manifest should parse");
 
         for slug in ["bulwark", "rapid_fire", "death_nova", "nanite_repair"] {
             let entry = entries
