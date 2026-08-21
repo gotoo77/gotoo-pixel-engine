@@ -97,6 +97,9 @@ pub(crate) mod v07 {
                                                                     legacy_include!(
                                                                         "legacy/v23_visual_foundation.rs"
                                                                     );
+                                                                    legacy_include!(
+                                                                        "legacy/presentation_access.rs"
+                                                                    );
 
                                                                     // Current presentation remains a child of the final
                                                                     // historical implementation scope while it still consumes
