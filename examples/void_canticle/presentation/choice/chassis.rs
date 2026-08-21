@@ -1,35 +1,35 @@
-fn vc27_chassis_profile(chassis: ExosuitChassis) -> Vc27ChoiceProfile<'static> {
+fn chassis_profile(chassis: ExosuitChassis) -> ChoiceProfile<'static> {
     let (accent, renderer) = match chassis {
         ExosuitChassis::Bulwark => (
             ART_GOLD,
-            vc27_chassis_bulwark_art as Vc27ChoiceArtRenderer,
+            chassis_bulwark_art as ChoiceArtRenderer,
         ),
         ExosuitChassis::Pilgrim => (
             PILGRIM_VIOLET,
-            vc27_chassis_pilgrim_art as Vc27ChoiceArtRenderer,
+            chassis_pilgrim_art as ChoiceArtRenderer,
         ),
         ExosuitChassis::Wraith => (
             ART_CYAN_LIGHT,
-            vc27_chassis_wraith_art as Vc27ChoiceArtRenderer,
+            chassis_wraith_art as ChoiceArtRenderer,
         ),
     };
 
-    Vc27ChoiceProfile::new(
+    ChoiceProfile::new(
         chassis.name(),
         chassis.role(),
         accent,
-        Vc27ChoiceAssets::procedural(renderer),
+        ChoiceAssets::procedural(renderer),
     )
 }
 
-fn vc27_chassis_bulwark_art(
+fn chassis_bulwark_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     selected: bool,
     time: f32,
 ) {
-    vc27_render_chassis_ship(
+    render_chassis_ship(
         framebuffer,
         ExosuitChassis::Bulwark,
         x,
@@ -39,14 +39,14 @@ fn vc27_chassis_bulwark_art(
     );
 }
 
-fn vc27_chassis_pilgrim_art(
+fn chassis_pilgrim_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     selected: bool,
     time: f32,
 ) {
-    vc27_render_chassis_ship(
+    render_chassis_ship(
         framebuffer,
         ExosuitChassis::Pilgrim,
         x,
@@ -56,14 +56,14 @@ fn vc27_chassis_pilgrim_art(
     );
 }
 
-fn vc27_chassis_wraith_art(
+fn chassis_wraith_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     selected: bool,
     time: f32,
 ) {
-    vc27_render_chassis_ship(
+    render_chassis_ship(
         framebuffer,
         ExosuitChassis::Wraith,
         x,
@@ -80,15 +80,15 @@ mod chassis_profile_tests {
     #[test]
     fn chassis_profiles_carry_the_same_audio_contract_as_other_choices() {
         for chassis in VC22_CHASSIS {
-            let profile = vc27_chassis_profile(chassis);
+            let profile = chassis_profile(chassis);
             let (expected_hover, expected_confirm) = match chassis {
                 ExosuitChassis::Bulwark => (
-                    Some(Vc27ChoiceArtId::Bulwark.hover_override_sound()),
-                    Some(Vc27ChoiceArtId::Bulwark.confirm_override_sound()),
+                    Some(ChoiceArtId::Bulwark.hover_override_sound()),
+                    Some(ChoiceArtId::Bulwark.confirm_override_sound()),
                 ),
                 _ => (
-                    Some(VC27_CHOICE_HOVER_SOUND),
-                    Some(VC27_CHOICE_CONFIRM_SOUND),
+                    Some(CHOICE_HOVER_SOUND),
+                    Some(CHOICE_CONFIRM_SOUND),
                 ),
             };
             assert_eq!(profile.hover_sound(), expected_hover);
@@ -99,7 +99,7 @@ mod chassis_profile_tests {
     #[test]
     fn chassis_profiles_keep_gameplay_names_and_roles_authoritative() {
         for chassis in VC22_CHASSIS {
-            let profile = vc27_chassis_profile(chassis);
+            let profile = chassis_profile(chassis);
             assert_eq!(profile.label(), chassis.name());
             assert_eq!(profile.category(), chassis.role());
         }
