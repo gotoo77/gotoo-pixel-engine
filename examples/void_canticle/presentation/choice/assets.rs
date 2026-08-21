@@ -164,16 +164,16 @@ fn vc27_register_choice_sounds(sounds: &mut SoundBank) {
             VC27_CHOICE_HOVER_SOUND,
             synthesize_chirp(620.0, 880.0, 0.035, 0.035),
         )
-        .expect("VC3.0 choice hover sound id should be unique");
+        .expect("choice hover sound id should be unique");
     sounds
         .insert_wav(
             VC27_CHOICE_CONFIRM_SOUND,
             synthesize_chirp(420.0, 1_180.0, 0.07, 0.055),
         )
-        .expect("VC3.0 choice confirm sound id should be unique");
+        .expect("choice confirm sound id should be unique");
     vc27_choice_catalog()
         .register_sounds(sounds)
-        .expect("VC3.0 choice override sound ids should be unique");
+        .expect("choice override sound ids should be unique");
 }
 
 #[cfg(test)]
@@ -235,7 +235,7 @@ mod choice_asset_tests {
     }
 
     #[test]
-    fn vc30_checked_in_authored_icons_decode() {
+    fn checked_in_authored_icons_decode() {
         for (name, bytes) in [
             (
                 "bulwark",
