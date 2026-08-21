@@ -62,15 +62,12 @@ Le moteur est désormais exercé par :
 - Pong deux joueurs ;
 - Breakout ;
 - Smart Boy Hero ;
-- Void Canticle ;
-- GPE Arcade, qui compose ces jeux dans un même runtime.
+- GPE Arcade, qui compose plusieurs jeux dans un même runtime.
 
 Cette phase a validé plusieurs abstractions qui possèdent maintenant plusieurs
 consommateurs réels.
 
 ### `ControlMap` ✅
-
-Acquis :
 
 - actions logiques indépendantes des périphériques ;
 - bindings clavier ;
@@ -80,8 +77,6 @@ Acquis :
 - états `pressed`, `held`, `released` communs aux différentes sources.
 
 ### UI minimale partagée ✅
-
-Abstractions actuellement justifiées :
 
 - `draw_panel` ;
 - `draw_text_centered` ;
@@ -96,44 +91,26 @@ qu'un besoin concret supplémentaire ne les impose pas.
 
 ### Gamepad natif et Web ✅
 
-Acquis :
-
 - détection connexion/déconnexion ;
 - boutons, D-pad et stick gauche normalisés ;
 - backend natif `gilrs` ;
-- backend Web basé sur la Gamepad API pour les mappings standards ;
-- gestion du D-pad centré observé sur le NEXT SNES Controller ;
+- backend Web basé sur la Gamepad API ;
 - `GamepadProfile` et calibration d'axes ;
 - probe visuel de diagnostic ;
 - binding gamepad global et binding ciblé par périphérique.
 
-### M4.0 — Pong deux joueurs ✅
+### Pong deux joueurs ✅
 
-Pong a fourni le premier besoin réel d'affectation d'un périphérique à un
-joueur précis sans introduire de `PlayerManager` généraliste.
+Premier besoin réel d'affectation d'un périphérique à un joueur précis sans
+introduire de `PlayerManager` généraliste.
 
-### M4.1 — Breakout / collisions ✅
+### Breakout / collisions ✅
 
-Breakout a validé :
-
-- balle et rebonds ;
-- raquette ;
-- briques destructibles ;
-- score, vies et niveaux ;
-- game over / replay ;
-- clavier, gamepad et tactile ;
-- audio one-shot ;
-- composition dans GPE Arcade.
-
-Pong et Breakout utilisent tous deux des collisions AABB. La primitive
-`Rect::intersects()` existe déjà dans le moteur : la consolidation consiste donc
-à faire converger les consommateurs vers cette API existante plutôt qu'à créer
-une nouvelle couche de physique.
+Breakout et Pong utilisent `Rect::intersects()` pour leurs collisions AABB. La
+consolidation consiste à faire converger les consommateurs vers cette primitive
+existante plutôt qu'à créer une couche de physique.
 
 ## Phase actuelle — consolidation multi-jeux ✅
-
-Objectif : stabiliser ce que les consommateurs ont réellement démontré avant
-d'ajouter de nouvelles capacités moteur.
 
 ### C1 — Garde-fous dépôt ✅
 
@@ -144,127 +121,56 @@ d'ajouter de nouvelles capacités moteur.
 
 ### C2 — Frontière uniforme des jeux ✅
 
-Pong et Breakout séparent maintenant leur shell standalone de leur cœur
-réutilisable :
-
-```text
-pong.rs              -> shell standalone
-pong/game.rs         -> PongGame
-
-breakout.rs          -> shell standalone
-breakout/game.rs     -> BreakoutGame
-```
-
-Les entrypoints Web et GPE Arcade composent directement `PongGame` et
-`BreakoutGame`. Le menu standalone ne fuit donc plus dans les contextes de
-composition.
-
-Aucun framework de scènes ou système de plugins n'a été introduit pour obtenir
-cette frontière.
+Les shells standalone restent séparés de leurs cœurs réutilisables lorsque la
+composition l'exige. GPE Arcade consomme directement les implémentations de jeu,
+sans framework de scènes ou système de plugins.
 
 ### C3 — Réutilisation des primitives existantes ✅
 
-- Pong et Breakout utilisent `Rect::intersects()` au lieu de copies locales
-  d'AABB ;
-- Pause et Arcade réutilisent la même politique minimale de navigation menu ;
-- aucune nouvelle couche de physique ou UI n'a été introduite.
+Les consommateurs convergent vers les primitives moteur déjà présentes avant
+toute nouvelle abstraction de géométrie, UI ou input.
 
 ### C4 — Politique de timing ✅
 
-`Frame::delta_time` représente maintenant du temps de simulation borné, pas une
-dette de temps murale :
+`Frame::delta_time` représente du temps de simulation borné, pas une dette de
+temps murale :
 
 - le runtime plafonne un frame de simulation à 100 ms ;
 - les transitions focus/resume réinitialisent la référence temporelle ;
-- le temps brut reste utilisé pour le diagnostic du frame time et des FPS ;
-- Pong et Breakout consomment le contrat commun au lieu d'appliquer leur propre
-  clamp ;
-- leurs substeps restent une stratégie de collision, pas une politique de
-  timing.
-
-Une suspension navigateur ou un stall long ne peut donc plus réinjecter plusieurs
-secondes de simulation d'un coup. Aucun `TimeSystem` ni paramétrage générique n'a
-été ajouté.
+- le temps brut reste utilisé pour le diagnostic du frame time et des FPS.
 
 ### C5 — Ownership de la calibration gamepad ✅
 
-La calibration appartient maintenant au chemin runtime du périphérique, pas au
-gameplay :
-
-- `Game::gamepad_profile()` a été supprimé ;
-- l'état de profil est conservé par périphérique dans le sous-système `Input` ;
-- les backends natif et Web lisent ce même état avant de normaliser les entrées ;
-- `Frame` expose uniquement `set_gamepad_profile`, l'opération publique requise
-  par les écrans de configuration réellement présents ;
-- le probe et le menu standalone de Space Invaders utilisent ce setter ;
-- Pause et Arcade n'ont plus à relayer une responsabilité de périphérique ;
-- le profil d'un périphérique est supprimé à sa déconnexion.
-
-La structure publique de `Frame` n'a gagné aucun champ obligatoire et les jeux
-ordinaires continuent simplement à consommer un `Input` déjà normalisé. Aucun
-`DeviceManager`, registre de configuration ou système générique de périphériques
-n'a été introduit.
+La calibration appartient au chemin runtime du périphérique, pas au gameplay.
+`Frame::set_gamepad_profile` reste l'opération publique minimale nécessaire aux
+écrans de configuration et outils de diagnostic.
 
 ### C6 — Dette locale Snake ✅
 
-Le chemin tactile de Snake repose désormais sur une seule implémentation réelle :
-`VirtualPad`.
+Le chemin tactile de Snake repose sur `VirtualPad` et la logique pure de grille,
+serpent, nourriture et collisions reste isolée de l'adaptation runtime.
 
-- les anciens `TouchControls`, `DPadTracker`, contacts et zones compilés seulement
-  pour les tests ont été supprimés ;
-- les transitions tactiles, déplacements entre zones, multi-contact et reset
-  sont testés directement dans `VirtualPad` ;
-- les tests Snake vérifient uniquement le câblage de ses quatre actions vers le
-  D-pad, le replay et les règles propres au jeu ;
-- la logique pure de grille, serpent, nourriture, collisions et file de virages
-  est isolée dans `snake/world.rs`, sans dépendance au moteur ;
-- `snake/game.rs` conserve l'adaptation input, timing, layout, rendu, stockage et
-  audio.
-
-```text
-snake/game.rs   -> adaptation runtime / présentation
-snake/world.rs  -> modèle et règles de jeu purs
-```
-
-Aucun framework de scènes, système de monde ou abstraction moteur supplémentaire
-n'a été introduit pour ce découpage.
-
-### C7 — Durcissement final et documentation ✅
+### C7 — Durcissement framebuffer ✅
 
 `Framebuffer::draw_line` conserve la rasterisation visible de Bresenham sans
-parcourir les portions gigantesques situées hors du framebuffer :
-
-- seules les étapes de l'axe majeur susceptibles d'être visibles sont parcourues ;
-- le nombre d'itérations est donc borné par la largeur ou la hauteur du
-  framebuffer, pas par l'écart entre les coordonnées du segment ;
-- la phase de rasterisation d'origine est préservée aux frontières au lieu de
-  relancer Bresenham depuis des extrémités arrondies ;
-- les spans horizontaux, verticaux et diagonaux allant de `i32::MIN` à
-  `i32::MAX` sont couverts par les tests ;
-- les calculs intermédiaires utilisent `i128` lorsque nécessaire pour éviter les
-  débordements.
-
-Aucune bibliothèque Geometry2D ni abstraction générique de clipping n'a été
-introduite. La roadmap et l'architecture documentent l'état final de cette passe ;
-le README reste inchangé sur ce point purement interne, son contrat public ne
-changeant pas.
+parcourir les portions gigantesques hors framebuffer. Les calculs intermédiaires
+sont sûrs jusque sur des coordonnées extrêmes sans introduire une bibliothèque de
+clipping générale.
 
 ## État actuel du moteur
 
 Le moteur possède maintenant :
 
 - framebuffer CPU pixel-first ;
-- primitives de dessin, texte bitmap et `Rect`, avec coût de rasterisation des
-  lignes borné à leur portion potentiellement visible ;
+- primitives de dessin, texte bitmap et `Rect` ;
 - clavier, souris, tactile et gamepad natif/Web ;
-- calibration gamepad par périphérique possédée par le runtime d'input ;
+- calibration gamepad par périphérique ;
 - `ControlMap` et `VirtualPad` ;
-- timing de simulation borné par frame ;
+- timing de simulation borné ;
 - viewport et mapping surface -> framebuffer ;
 - stockage local natif/Web ;
 - audio one-shot et boucles identifiables natif/Web ;
-- cible native ;
-- cible WebAssembly/WebGPU ;
+- cibles native et WebAssembly/WebGPU ;
 - UI immediate-mode minimale ;
 - pause réutilisable ;
 - plusieurs jeux consommateurs indépendants ;
@@ -275,40 +181,21 @@ Le moteur possède maintenant :
 ### Geometry2D
 
 Pas de bibliothèque Geometry2D générale actuellement. `Rect::intersects()`
-couvre déjà le premier besoin AABB démontré. Ajouter seulement les opérations
+couvre le premier besoin AABB démontré. Ajouter uniquement les opérations
 suivantes lorsqu'un nouveau consommateur réel les impose.
 
 ### Sprites et images
 
-Le premier chemin d'image partagé existe maintenant (`Image`, `Sprite`, blit et
-alpha). Continuer à l'étendre seulement lorsqu'un consommateur réel démontre le
-besoin d'atlas, d'animation ou d'un pipeline plus riche.
+Le premier chemin d'image partagé existe (`Image`, `Sprite`, blit et alpha).
+Continuer à l'étendre seulement lorsqu'un consommateur réel démontre le besoin
+d'atlas, d'animation ou d'un pipeline plus riche.
 
 ### Texte, fontes custom et i18n
 
-Void Canticle fournit maintenant un besoin concret : interface et narration
-destinées à être traduites dans plusieurs langues, dont le japonais, avec une
-direction artistique typographique propre au jeu plutôt que la seule fonte ASCII
-intégrée au framebuffer.
-
-Capacités à valider par slices, sans créer d'abord un framework de localisation
-généraliste :
-
-- chaîne texte UTF-8 de bout en bout ;
-- fonte asset configurable, avec possibilité de fontes bitmap/pixel custom ;
-- mapping Unicode -> glyphes au lieu de supposer un alphabet ASCII fixe ;
-- stratégie de glyphes japonais/CJK à partir du corpus réel de traductions ;
-- métriques de glyphes, alignement, largeur variable et mesure de texte ;
-- retour à la ligne/wrapping et layouts tolérant des traductions plus longues ;
-- fallback de fonte/glyphe visible et diagnostic des caractères absents ;
-- séparation entre identifiants stables de texte et traductions ;
-- catalogues de locale, premiers objectifs anglais/français/japonais ;
-- plusieurs rôles typographiques par jeu sans imposer ces choix au moteur.
-
-Le premier vertical slice devra prouver un même écran Void Canticle rendu en
-anglais, français et japonais avec une fonte custom, en natif et sur Web. Le
-catalogue i18n peut rester local à Void Canticle tant qu'un second jeu ne justifie
-pas une petite abstraction partagée dans GPE.
+Le framebuffer fournit aujourd'hui une fonte bitmap ASCII simple. Les extensions
+UTF-8, Unicode, fontes custom, wrapping et catalogues de traduction restent des
+capacités futures à valider par vertical slices réels, sans créer d'abord un
+framework de localisation généraliste.
 
 ### Rendu GPU / decals
 
@@ -320,6 +207,12 @@ framebuffer CPU ne suffit plus.
 One-shots et boucles identifiables existent. Streaming ou pipeline d'assets plus
 riche restent non engagés tant qu'un jeu ne les exige pas.
 
+### Assets runtime
+
+Les assets embarqués restent le chemin simple par défaut. Une éventuelle
+abstraction `AssetSource` devra être justifiée par plusieurs types d'assets et
+plusieurs consommateurs avant d'entrer dans le moteur.
+
 ### Grimoire Javidx9
 
 Ports sélectifs seulement, avec provenance claire, lorsqu'un besoin pédagogique
@@ -327,62 +220,14 @@ ou ludique concret apparaît.
 
 ## ECS
 
-Pas d'ECS actuellement.
-
-Snake, Tetris, Space Invaders, Pong, Breakout, Smart Boy Hero, Void Canticle et
-Arcade ne le justifient pas. Une décision ECS ne serait défendable qu'à partir
-d'une duplication ou friction observée sur plusieurs jeux plus complexes.
-
-## Phase distribution native — P1 ✅
-
-Void Canticle est le premier consommateur de distribution native GPE :
-
-- `scripts/dev.py package-native void-canticle` effectue un build `--release` ;
-- Windows x86_64 est construit sur `windows-latest` ;
-- Linux x86_64 est construit sur `ubuntu-latest` ;
-- les archives contiennent le binaire public, la licence et les assets runtime
-  explicitement requis par le jeu ;
-- les archives sont publiées comme artefacts GitHub Actions ;
-- un second job sans checkout du dépôt ni installation de Rust télécharge,
-  extrait et lance le livrable pour tester le package lui-même ;
-- le smoke Linux vérifie également les dépendances dynamiques avec `ldd` ;
-- un tag `void-canticle-v*` crée ou met à jour la GitHub Release correspondante
-  après succès des deux plateformes.
-
-Le packaging complet reste hors de la boucle de chaque petit commit : il est
-manuel, exécuté sur les merges pertinents dans `main`, et sur les tags de
-release. Le premier slice reste volontairement descriptif par jeu dans
-`scripts/dev.py`, sans `xtask`, asset manager ou framework de distribution.
+Pas d'ECS actuellement. Les jeux consommateurs existants et Arcade ne le
+justifient pas. Une décision ECS ne serait défendable qu'à partir d'une duplication
+ou friction observée sur plusieurs jeux plus complexes.
 
 ## Cible officielle future — GPE Android natif
 
-Android devient une cible GPE distincte du Web/WASM. L'objectif n'est pas une
-WebView ou Chrome mais un moteur Rust natif produisant à terme un APK/AAB.
-
-La stack actuellement versionnée est déjà proche de cette cible mais la frontière
-« natif = tout ce qui n'est pas WASM » doit être affinée :
-
-- `winit 0.30.13` fournit le chemin Android basé sur `AndroidApp` /
-  `android_main` et impose de traiter correctement le lifecycle ;
-- `wgpu 30.0.0` fournit le rendu Android, avec Vulkan comme premier backend à
-  valider ;
-- `rodio 0.22.2` via `cpal 0.17.3` est un candidat pour l'audio Android et doit
-  être testé avant d'introduire un backend différent ;
-- `gilrs 0.11.2` n'est pas un backend Android générique : le premier slice
-  Android utilisera le tactile et pourra fournir un backend gamepad no-op ;
-- le stockage desktop basé sur `directories` ne doit pas être supposé correct
-  sur Android ;
-- `Game`, `Frame`, `Framebuffer`, `ControlMap` et `VirtualPad` doivent rester le
-  contrat commun consommé par les jeux.
-
-```text
-                    GPE Game
-                       │
-          ┌────────────┼────────────┐
-          ▼            ▼            ▼
-       Desktop        Web        Android
-      Win/Linux       WASM        Native
-```
+Android est envisagé comme une cible GPE distincte du Web/WASM. L'objectif n'est
+pas une WebView mais un moteur Rust natif produisant à terme un APK/AAB.
 
 ### A0 — Frontière plateforme Android
 
@@ -433,7 +278,6 @@ sur Windows, Linux, Web et Android.
 
 ### A5 — Second consommateur
 
-Porter ensuite SBH ou Void Canticle sans fork majeur du gameplay. Le second
-consommateur doit démontrer que le backend Android appartient à GPE et non à
-Snake. Void Canticle est un candidat naturel pour valider ensuite le portrait
-vertical sur smartphone.
+Porter ensuite Smart Boy Hero ou un autre jeu GPE plus complexe. Le second
+consommateur doit démontrer que le backend Android appartient au moteur et non à
+Snake.

@@ -6,13 +6,10 @@ import base64
 from functools import partial
 import http.server
 from pathlib import Path
-import platform
 import shutil
 import subprocess
 import sys
-import tarfile
 from typing import Iterable
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_GAME_EXAMPLES = [
@@ -24,7 +21,6 @@ WEB_GAME_EXAMPLES = [
     "smart_boy_hero_web",
     "smart_boy_hero_iso_web",
     "arcade_web",
-    "void_canticle_web",
 ]
 PAGES_STATIC_FILES = [
     "index.html",
@@ -35,7 +31,6 @@ PAGES_STATIC_FILES = [
     "pong.html",
     "smart_boy_hero.html",
     "smart_boy_hero_iso.html",
-    "void_canticle.html",
     "favicon.svg",
     "audio-unlock.js",
     "fullscreen.js",
@@ -47,18 +42,9 @@ GAME_CHOICES = [
     ("Tetris", "tetris"),
     ("Pong", "pong"),
     ("Breakout", "breakout"),
-    ("Void Canticle", "void_canticle"),
     ("Smart Boy Hero", "smart_boy_hero"),
     ("Smart Boy Hero ISO", "smart_boy_hero_iso"),
 ]
-NATIVE_PACKAGES = {
-    "void_canticle": {
-        "slug": "void-canticle",
-        "windows_binary": "VoidCanticle.exe",
-        "linux_binary": "void_canticle",
-        "runtime_paths": ["assets/void_canticle/ui/choice"],
-    },
-}
 
 
 class CommandFailed(RuntimeError):
@@ -102,15 +88,6 @@ def wasm_bindgen(wasm: Path, out_dir: Path) -> None:
     )
 
 
-def sync_void_canticle_web_assets(destination_root: Path) -> None:
-    source = ROOT / "assets" / "void_canticle" / "ui" / "choice"
-    destination = destination_root / "assets" / "void_canticle" / "ui" / "choice"
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination)
-
-
 def command_check(args: argparse.Namespace) -> None:
     run(["cargo", "fmt", "--check"])
     run(["cargo", "test", "--lib", "--bins", "--examples", "--tests"])
@@ -138,7 +115,6 @@ def prepare_pages() -> Path:
     pkg.mkdir(parents=True)
     for name in PAGES_STATIC_FILES:
         shutil.copy2(ROOT / "web" / name, dist / name)
-    sync_void_canticle_web_assets(dist)
     return pkg
 
 
@@ -150,7 +126,6 @@ def command_build_web(args: argparse.Namespace) -> None:
         print(f"==> Pages artifact ready: {ROOT / 'dist'}")
         return
 
-    sync_void_canticle_web_assets(ROOT / "web")
     out_dir = ROOT / "web" / "pkg"
     for example in WEB_GAME_EXAMPLES:
         wasm_bindgen(cargo_build_web(example, release=args.release), out_dir)
@@ -159,7 +134,6 @@ def command_build_web(args: argparse.Namespace) -> None:
 
 
 def command_serve_web(args: argparse.Namespace) -> None:
-    sync_void_canticle_web_assets(ROOT / "web")
     directory = str(ROOT / "web")
     handler = partial(http.server.SimpleHTTPRequestHandler, directory=directory)
     server = http.server.ThreadingHTTPServer((args.bind, args.port), handler)
@@ -251,84 +225,6 @@ def command_run_game(args: argparse.Namespace) -> None:
     run(command)
 
 
-def native_package_target() -> tuple[str, str, str]:
-    machine = platform.machine().casefold()
-    if machine not in {"x86_64", "amd64"}:
-        raise ValueError(
-            f"native packaging currently supports x86_64 only, got {platform.machine()!r}"
-        )
-
-    if sys.platform == "win32":
-        return "windows", "x86_64", ".exe"
-    if sys.platform.startswith("linux"):
-        return "linux", "x86_64", ""
-    raise ValueError(
-        f"native packaging currently supports Windows and Linux only, got {sys.platform!r}"
-    )
-
-
-def copy_native_runtime_path(relative_path: str, package_dir: Path) -> None:
-    source = ROOT / relative_path
-    if not source.exists():
-        raise ValueError(f"runtime package path does not exist: {relative_path}")
-
-    destination = package_dir / relative_path
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if source.is_dir():
-        shutil.copytree(source, destination)
-    else:
-        shutil.copy2(source, destination)
-
-
-def write_native_archive(package_dir: Path, archive_base: Path, os_name: str) -> Path:
-    if os_name == "windows":
-        archive_path = archive_base.with_suffix(".zip")
-        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for path in sorted(package_dir.rglob("*")):
-                if path.is_file():
-                    archive.write(path, path.relative_to(package_dir))
-        return archive_path
-
-    archive_path = archive_base.with_suffix(".tar.gz")
-    with tarfile.open(archive_path, "w:gz") as archive:
-        for path in sorted(package_dir.iterdir()):
-            archive.add(path, arcname=path.name)
-    return archive_path
-
-
-def command_package_native(args: argparse.Namespace) -> None:
-    example = resolve_game(args.game)
-    if example is None:
-        return
-    package = NATIVE_PACKAGES.get(example)
-    if package is None:
-        raise ValueError(f"native packaging is not configured for game: {example}")
-
-    os_name, arch, source_suffix = native_package_target()
-    slug = str(package["slug"])
-    binary_name = str(package[f"{os_name}_binary"])
-
-    run(["cargo", "build", "--release", "--example", example])
-    source_binary = ROOT / "target" / "release" / "examples" / f"{example}{source_suffix}"
-    if not source_binary.is_file():
-        raise ValueError(f"release binary was not produced: {source_binary}")
-
-    output_dir = ROOT / "dist" / "native"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    package_dir = output_dir / f"{slug}-{os_name}-{arch}"
-    if package_dir.exists():
-        shutil.rmtree(package_dir)
-    package_dir.mkdir()
-
-    shutil.copy2(source_binary, package_dir / binary_name)
-    shutil.copy2(ROOT / "LICENSE", package_dir / "LICENSE")
-    for relative_path in package["runtime_paths"]:
-        copy_native_runtime_path(str(relative_path), package_dir)
-
-    archive_path = write_native_archive(package_dir, package_dir, os_name)
-    print(f"==> Native package ready: {archive_path}")
-
-
 def command_list_web_examples(_: argparse.Namespace) -> None:
     for example in WEB_GAME_EXAMPLES:
         print(example)
@@ -363,12 +259,6 @@ def parser() -> argparse.ArgumentParser:
     run_game.add_argument("game", nargs="?")
     run_game.add_argument("--release", action="store_true")
     run_game.set_defaults(handler=command_run_game)
-
-    package_native = sub.add_parser(
-        "package-native", help="build and package one native game for distribution"
-    )
-    package_native.add_argument("game")
-    package_native.set_defaults(handler=command_package_native)
 
     list_web = sub.add_parser("list-web-examples", help=argparse.SUPPRESS)
     list_web.set_defaults(handler=command_list_web_examples)
