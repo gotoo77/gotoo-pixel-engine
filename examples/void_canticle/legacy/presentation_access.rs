@@ -5,6 +5,17 @@
 // ask semantic questions through these methods instead of knowing the nested
 // vXX storage shape.
 
+type GameplayRuntime = VoidCanticleV23Sustain;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PresentationAnnouncement {
+    Pressure(VoidPressure),
+    BossPhase(BellPhase),
+    Synergy(&'static str),
+    Canticle,
+    VoidAttack(VoidAttackKind),
+}
+
 impl VoidCanticleV23Sustain {
     fn presentation_base(&self) -> &VoidCanticleGame {
         self.game.base()
@@ -16,6 +27,69 @@ impl VoidCanticleV23Sustain {
 
     fn presentation_progression(&self) -> &VoidCanticleV14 {
         self.game.v20().game.v14()
+    }
+
+    fn presentation_defense_model(&self) -> &VoidCanticleV20 {
+        self.game.v20()
+    }
+
+    fn presentation_encounter_model(&self) -> &VoidCanticleV12 {
+        self.presentation_defense_model().game.v12()
+    }
+
+    fn presentation_particle_layer(&self) -> &VoidCanticleV17 {
+        &self.presentation_defense_model().game.ui.game
+    }
+
+    fn presentation_particles(&self) -> &[V17Particle] {
+        &self.presentation_particle_layer().particles
+    }
+
+    fn presentation_event_layer(&self) -> &VoidCanticleV16B {
+        &self.presentation_particle_layer().combat
+    }
+
+    fn presentation_void_pressure(&self) -> VoidPressure {
+        self.presentation_event_layer().combat.pressure
+    }
+
+    fn presentation_pending_void_attack_kind(&self) -> Option<VoidAttackKind> {
+        self.presentation_event_layer()
+            .combat
+            .pending_attack
+            .as_ref()
+            .map(|attack| attack.kind)
+    }
+
+    fn presentation_announcement(&self) -> Option<PresentationAnnouncement> {
+        let events = self.presentation_event_layer();
+        if events.pressure_reveal_timer > 0.0 && events.pressure_reveal != VoidPressure::Dormant {
+            return Some(PresentationAnnouncement::Pressure(events.pressure_reveal));
+        }
+        if events.boss_phase_banner_timer > 0.0
+            && let Some(phase) = events.boss_phase_banner
+        {
+            return Some(PresentationAnnouncement::BossPhase(phase));
+        }
+
+        let combat = &events.combat.combat;
+        if combat.synergy_banner_timer > 0.0
+            && let Some(name) = combat.synergy_banner_name
+        {
+            return Some(PresentationAnnouncement::Synergy(name));
+        }
+        if self.presentation_base().canticle_timer > 0.0 {
+            return Some(PresentationAnnouncement::Canticle);
+        }
+        events
+            .combat
+            .pending_attack
+            .as_ref()
+            .map(|attack| PresentationAnnouncement::VoidAttack(attack.kind))
+    }
+
+    fn presentation_emp_flash_timer(&self) -> f32 {
+        self.game.emp_flash_timer
     }
 
     fn presentation_chassis_selector(&self) -> &VoidCanticleV22 {
