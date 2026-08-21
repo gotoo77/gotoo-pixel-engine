@@ -97,6 +97,27 @@ pub(crate) mod v07 {
                                                                     legacy_include!(
                                                                         "legacy/v23_visual_foundation.rs"
                                                                     );
+
+                                                                    // Current presentation remains a child of the final
+                                                                    // historical implementation scope while it still consumes
+                                                                    // private legacy symbols. This preserves Rust visibility
+                                                                    // without widening the legacy API. Callers only see the
+                                                                    // semantic facade re-exported by the outer game module.
+                                                                    pub(crate) mod presentation {
+                                                                        use super::*;
+                                                                        include!(concat!(
+                                                                            env!("CARGO_MANIFEST_DIR"),
+                                                                            "/examples/void_canticle/presentation/mod.rs"
+                                                                        ));
+                                                                        include!(concat!(
+                                                                            env!("CARGO_MANIFEST_DIR"),
+                                                                            "/examples/void_canticle/presentation/choice_runtime.rs"
+                                                                        ));
+                                                                        include!(concat!(
+                                                                            env!("CARGO_MANIFEST_DIR"),
+                                                                            "/examples/void_canticle/presentation/frontend.rs"
+                                                                        ));
+                                                                    }
                                                                 }
                                                             }
                                                         }
