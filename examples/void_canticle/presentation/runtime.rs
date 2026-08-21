@@ -36,7 +36,7 @@ impl VoidCanticlePresentation {
             ..
         } = self;
         let selector = game.presentation_chassis_selector();
-        vc27_render_chassis_showcase(
+        render_chassis_showcase(
             clean_background,
             framebuffer,
             selector,
@@ -312,8 +312,8 @@ mod presentation_runtime_tests {
 
     #[test]
     fn simulation_coordinates_map_to_presentation_space() {
-        assert_eq!(vc27_present(0.0), 0);
-        assert_eq!(vc27_present(90.0), 180);
-        assert_eq!(vc27_present(319.5), 639);
+        assert_eq!(presentation_coord(0.0), 0);
+        assert_eq!(presentation_coord(90.0), 180);
+        assert_eq!(presentation_coord(319.5), 639);
     }
 }
