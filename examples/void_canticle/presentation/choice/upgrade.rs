@@ -1,29 +1,29 @@
-fn vc27_upgrade_profile(upgrade: UpgradeKind) -> Vc27ChoiceProfile<'static> {
-    let (category, accent, renderer): (&'static str, Pixel, Vc27ChoiceArtRenderer) = match upgrade {
-        UpgradeKind::RapidFire => ("WEAPON", BOLT_EDGE, vc27_upgrade_rapid_fire_art),
-        UpgradeKind::MagnetField => ("UTILITY", ART_CYAN_LIGHT, vc27_upgrade_magnet_field_art),
-        UpgradeKind::StellarPower => ("POWER", CANTICLE_COLOR, vc27_upgrade_stellar_power_art),
-        UpgradeKind::XpHunger => ("GROWTH", XP_ORB_CORE, vc27_upgrade_xp_hunger_art),
-        UpgradeKind::VitalSpark => ("SURVIVAL", VC20_HULL, vc27_upgrade_vital_spark_art),
-        UpgradeKind::CoreSurge => ("CANTICLE", PILGRIM_VIOLET, vc27_upgrade_core_surge_art),
+fn upgrade_profile(upgrade: UpgradeKind) -> ChoiceProfile<'static> {
+    let (category, accent, renderer): (&'static str, Pixel, ChoiceArtRenderer) = match upgrade {
+        UpgradeKind::RapidFire => ("WEAPON", BOLT_EDGE, upgrade_rapid_fire_art),
+        UpgradeKind::MagnetField => ("UTILITY", ART_CYAN_LIGHT, upgrade_magnet_field_art),
+        UpgradeKind::StellarPower => ("POWER", CANTICLE_COLOR, upgrade_stellar_power_art),
+        UpgradeKind::XpHunger => ("GROWTH", XP_ORB_CORE, upgrade_xp_hunger_art),
+        UpgradeKind::VitalSpark => ("SURVIVAL", PRESENTATION_HULL_COLOR, upgrade_vital_spark_art),
+        UpgradeKind::CoreSurge => ("CANTICLE", PILGRIM_VIOLET, upgrade_core_surge_art),
     };
-    Vc27ChoiceProfile::new(
+    ChoiceProfile::new(
         upgrade_name(upgrade),
         category,
         accent,
-        Vc27ChoiceAssets::procedural(renderer),
+        ChoiceAssets::procedural(renderer),
     )
 }
 
-fn vc27_upgrade_accent(upgrade: UpgradeKind) -> Pixel {
-    vc27_upgrade_profile(upgrade).accent()
+fn upgrade_accent(upgrade: UpgradeKind) -> Pixel {
+    upgrade_profile(upgrade).accent()
 }
 
-fn vc27_upgrade_assets(upgrade: UpgradeKind) -> Vc27ChoiceAssets<'static> {
-    vc27_upgrade_profile(upgrade).assets()
+fn upgrade_assets(upgrade: UpgradeKind) -> ChoiceAssets<'static> {
+    upgrade_profile(upgrade).assets()
 }
 
-fn vc27_upgrade_stack(build: &BuildState, upgrade: UpgradeKind) -> u32 {
+fn upgrade_stack(build: &BuildState, upgrade: UpgradeKind) -> u32 {
     match upgrade {
         UpgradeKind::RapidFire => build.rapid_fire,
         UpgradeKind::MagnetField => build.magnet_field,
@@ -34,18 +34,18 @@ fn vc27_upgrade_stack(build: &BuildState, upgrade: UpgradeKind) -> u32 {
     }
 }
 
-fn vc27_upgrade_effect(upgrade: UpgradeKind) -> String {
+fn upgrade_effect(upgrade: UpgradeKind) -> String {
     match upgrade {
         UpgradeKind::RapidFire => "FIRE RATE +18 PCT".to_owned(),
         UpgradeKind::MagnetField => "PICKUP RANGE +22".to_owned(),
         UpgradeKind::StellarPower => "POWER LEVEL +1".to_owned(),
         UpgradeKind::XpHunger => "XP VALUE +25 PCT".to_owned(),
-        UpgradeKind::VitalSpark => format!("MAX HULL +{}", VC21_VITAL_SPARK_HULL_BONUS as u32),
+        UpgradeKind::VitalSpark => format!("MAX HULL +{}", VITAL_SPARK_HULL_BONUS as u32),
         UpgradeKind::CoreSurge => "CORE CHARGE +30".to_owned(),
     }
 }
 
-fn vc27_upgrade_detail(upgrade: UpgradeKind) -> &'static str {
+fn upgrade_detail(upgrade: UpgradeKind) -> &'static str {
     match upgrade {
         UpgradeKind::RapidFire => "FASTER CONTINUOUS FIRE",
         UpgradeKind::MagnetField => "ECHOES PULL FROM FARTHER",
@@ -56,7 +56,7 @@ fn vc27_upgrade_detail(upgrade: UpgradeKind) -> &'static str {
     }
 }
 
-fn vc27_render_upgrade_showcase(
+fn render_upgrade_showcase(
     framebuffer: &mut Framebuffer,
     progression: &VoidCanticleV13,
     mutations: &MutationBuild,
@@ -64,7 +64,7 @@ fn vc27_render_upgrade_showcase(
     time: f32,
 ) {
     let accent = echo_level_color(progression.level);
-    vc27_choice_header(
+    choice_header(
         framebuffer,
         "LEVEL UP",
         &format!("ECHO LEVEL {} / CHOOSE AN AUGMENT", progression.level),
@@ -81,7 +81,7 @@ fn vc27_render_upgrade_showcase(
     for (index, upgrade) in choice.offers.iter().copied().enumerate() {
         let y = card_start_y + index as i32 * (card_height as i32 + card_gap);
         let selected = choice.menu.selected() == Some(index);
-        vc27_render_upgrade_card(
+        render_upgrade_card(
             framebuffer,
             upgrade,
             &progression.build,
@@ -95,7 +95,7 @@ fn vc27_render_upgrade_showcase(
         );
     }
 
-    vc27_choice_footer(
+    choice_footer(
         framebuffer,
         accent,
         "BUILD THE PILGRIM / SURVIVE THE CANTICLE",
@@ -103,7 +103,7 @@ fn vc27_render_upgrade_showcase(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_render_upgrade_card(
+fn render_upgrade_card(
     framebuffer: &mut Framebuffer,
     upgrade: UpgradeKind,
     build: &BuildState,
@@ -115,16 +115,16 @@ fn vc27_render_upgrade_card(
     height: u32,
     time: f32,
 ) {
-    let profile = vc27_upgrade_profile(upgrade);
+    let profile = upgrade_profile(upgrade);
     let accent = profile.accent();
-    vc27_choice_card_frame(
+    choice_card_frame(
         framebuffer,
         x,
         y,
         width,
         height,
         selected,
-        Vc27ChoiceCardStyle::new(
+        ChoiceCardStyle::new(
             accent,
             Pixel::rgb(7, 10, 19),
             Pixel::rgb(10, 17, 29),
@@ -134,20 +134,20 @@ fn vc27_render_upgrade_card(
 
     let icon_x = x + 58;
     let icon_y = y + 64;
-    vc27_choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
+    choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
     profile.render_art(framebuffer, icon_x, icon_y, selected, time);
 
     let info_x = x + 112;
     framebuffer.draw_text(info_x, y + 12, profile.category(), WRECK_LIGHT);
     framebuffer.draw_text_scaled(info_x, y + 28, profile.label(), 2, accent);
-    framebuffer.draw_text(info_x, y + 54, &vc27_upgrade_effect(upgrade), TEXT);
-    framebuffer.draw_text(info_x, y + 70, vc27_upgrade_detail(upgrade), WRECK_LIGHT);
+    framebuffer.draw_text(info_x, y + 54, &upgrade_effect(upgrade), TEXT);
+    framebuffer.draw_text(info_x, y + 70, upgrade_detail(upgrade), WRECK_LIGHT);
 
-    if let Some(name) = vc27_synergy_after_upgrade(*build, *mutations, upgrade) {
-        vc27_render_synergy_hint(framebuffer, info_x, y + 87, name, selected, time);
+    if let Some(name) = synergy_after_upgrade(*build, *mutations, upgrade) {
+        render_synergy_hint(framebuffer, info_x, y + 87, name, selected, time);
     }
 
-    let stack = vc27_upgrade_stack(build, upgrade);
+    let stack = upgrade_stack(build, upgrade);
     let next = stack.saturating_add(1);
     framebuffer.draw_text(
         info_x,
@@ -158,10 +158,10 @@ fn vc27_render_upgrade_card(
     if selected {
         framebuffer.draw_text(x + width as i32 - 53, y + 13, "SELECT", accent);
     }
-    vc27_choice_stack_nodes(framebuffer, info_x, y + 114, next, 8, accent);
+    choice_stack_nodes(framebuffer, info_x, y + 114, next, 8, accent);
 }
 
-fn vc27_render_upgrade_icon(
+fn render_upgrade_icon(
     framebuffer: &mut Framebuffer,
     upgrade: UpgradeKind,
     x: i32,
@@ -203,14 +203,14 @@ fn vc27_render_upgrade_icon(
             }
         }
         UpgradeKind::VitalSpark => {
-            framebuffer.draw_line(x, y + 24, x - 22, y - 3, VC20_HULL);
-            framebuffer.draw_line(x - 22, y - 3, x - 13, y - 20, VC20_HULL);
+            framebuffer.draw_line(x, y + 24, x - 22, y - 3, PRESENTATION_HULL_COLOR);
+            framebuffer.draw_line(x - 22, y - 3, x - 13, y - 20, PRESENTATION_HULL_COLOR);
             framebuffer.draw_line(x - 13, y - 20, x, y - 10, CANTICLE_COLOR);
             framebuffer.draw_line(x, y - 10, x + 13, y - 20, CANTICLE_COLOR);
-            framebuffer.draw_line(x + 13, y - 20, x + 22, y - 3, VC20_HULL);
-            framebuffer.draw_line(x + 22, y - 3, x, y + 24, VC20_HULL);
+            framebuffer.draw_line(x + 13, y - 20, x + 22, y - 3, PRESENTATION_HULL_COLOR);
+            framebuffer.draw_line(x + 22, y - 3, x, y + 24, PRESENTATION_HULL_COLOR);
             framebuffer.fill_circle(x, y - 1, 5, CANTICLE_COLOR);
-            framebuffer.draw_circle(x, y - 1, 10, VC20_HULL);
+            framebuffer.draw_circle(x, y - 1, 10, PRESENTATION_HULL_COLOR);
         }
         UpgradeKind::CoreSurge => {
             framebuffer.draw_circle(x, y, 22, PILGRIM_VIOLET);
@@ -224,64 +224,64 @@ fn vc27_render_upgrade_icon(
     }
 }
 
-fn vc27_upgrade_rapid_fire_art(
+fn upgrade_rapid_fire_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     _time: f32,
 ) {
-    vc27_render_upgrade_icon(framebuffer, UpgradeKind::RapidFire, x, y);
+    render_upgrade_icon(framebuffer, UpgradeKind::RapidFire, x, y);
 }
 
-fn vc27_upgrade_magnet_field_art(
+fn upgrade_magnet_field_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     _time: f32,
 ) {
-    vc27_render_upgrade_icon(framebuffer, UpgradeKind::MagnetField, x, y);
+    render_upgrade_icon(framebuffer, UpgradeKind::MagnetField, x, y);
 }
 
-fn vc27_upgrade_stellar_power_art(
+fn upgrade_stellar_power_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     _time: f32,
 ) {
-    vc27_render_upgrade_icon(framebuffer, UpgradeKind::StellarPower, x, y);
+    render_upgrade_icon(framebuffer, UpgradeKind::StellarPower, x, y);
 }
 
-fn vc27_upgrade_xp_hunger_art(
+fn upgrade_xp_hunger_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     _time: f32,
 ) {
-    vc27_render_upgrade_icon(framebuffer, UpgradeKind::XpHunger, x, y);
+    render_upgrade_icon(framebuffer, UpgradeKind::XpHunger, x, y);
 }
 
-fn vc27_upgrade_vital_spark_art(
+fn upgrade_vital_spark_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     _time: f32,
 ) {
-    vc27_render_upgrade_icon(framebuffer, UpgradeKind::VitalSpark, x, y);
+    render_upgrade_icon(framebuffer, UpgradeKind::VitalSpark, x, y);
 }
 
-fn vc27_upgrade_core_surge_art(
+fn upgrade_core_surge_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     _time: f32,
 ) {
-    vc27_render_upgrade_icon(framebuffer, UpgradeKind::CoreSurge, x, y);
+    render_upgrade_icon(framebuffer, UpgradeKind::CoreSurge, x, y);
 }
 
 #[cfg(test)]
@@ -291,14 +291,14 @@ mod upgrade_showcase_tests {
     #[test]
     fn modern_vital_spark_copy_tracks_survival_bonus() {
         assert_eq!(
-            vc27_upgrade_effect(UpgradeKind::VitalSpark),
-            format!("MAX HULL +{}", VC21_VITAL_SPARK_HULL_BONUS as u32)
+            upgrade_effect(UpgradeKind::VitalSpark),
+            format!("MAX HULL +{}", VITAL_SPARK_HULL_BONUS as u32)
         );
     }
 
     #[test]
     fn all_upgrade_kinds_have_distinct_semantic_categories() {
-        let categories = UPGRADE_POOL.map(|upgrade| vc27_upgrade_profile(upgrade).category());
+        let categories = UPGRADE_POOL.map(|upgrade| upgrade_profile(upgrade).category());
         for index in 0..categories.len() {
             for other in index + 1..categories.len() {
                 assert_ne!(categories[index], categories[other]);
@@ -309,16 +309,13 @@ mod upgrade_showcase_tests {
     #[test]
     fn upgrades_expose_choice_profile_assets_and_audio() {
         for upgrade in UPGRADE_POOL {
-            let profile = vc27_upgrade_profile(upgrade);
+            let profile = upgrade_profile(upgrade);
             let (expected_hover, expected_confirm) = match upgrade {
                 UpgradeKind::RapidFire => (
-                    Some(Vc27ChoiceArtId::RapidFire.hover_override_sound()),
-                    Some(Vc27ChoiceArtId::RapidFire.confirm_override_sound()),
+                    Some(ChoiceArtId::RapidFire.hover_override_sound()),
+                    Some(ChoiceArtId::RapidFire.confirm_override_sound()),
                 ),
-                _ => (
-                    Some(VC27_CHOICE_HOVER_SOUND),
-                    Some(VC27_CHOICE_CONFIRM_SOUND),
-                ),
+                _ => (Some(CHOICE_HOVER_SOUND), Some(CHOICE_CONFIRM_SOUND)),
             };
             assert_eq!(profile.label(), upgrade_name(upgrade));
             assert_eq!(profile.hover_sound(), expected_hover);
