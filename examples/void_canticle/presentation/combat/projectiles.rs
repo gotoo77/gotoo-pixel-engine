@@ -1,6 +1,6 @@
 impl VoidCanticlePresentation {
     fn render_pickups(&self, framebuffer: &mut Framebuffer) {
-        let base = self.game.game.base();
+        let base = self.game.presentation_base();
         for cinder in &base.cinders {
             let x = vc27_present(cinder.x);
             let y = vc27_present(cinder.y);
@@ -10,8 +10,8 @@ impl VoidCanticlePresentation {
             framebuffer.draw(x + 2, y, CANTICLE_COLOR);
         }
 
-        let v14 = self.game.game.v20().game.v14();
-        let game = &v14.progression.combat.combat.ui.inner.inner;
+        let progression = self.game.presentation_progression();
+        let game = &progression.progression.combat.combat.ui.inner.inner;
         for relic in &game.relics {
             let x = vc27_present(relic.x);
             let y = vc27_present(relic.y);
@@ -24,7 +24,7 @@ impl VoidCanticlePresentation {
             framebuffer.draw(x, y, CANTICLE_COLOR);
         }
 
-        for orb in &v14.progression.xp_orbs {
+        for orb in &progression.progression.xp_orbs {
             let x = vc27_present(orb.x);
             let y = vc27_present(orb.y);
             framebuffer.draw_line(x, y - 5, x + 4, y, XP_SHARD_EDGE);
@@ -34,7 +34,7 @@ impl VoidCanticlePresentation {
             framebuffer.fill_circle(x, y, 1, XP_SHARD_CORE);
         }
 
-        for (x, y) in v14.orbital_positions() {
+        for (x, y) in progression.orbital_positions() {
             let x = vc27_present(x);
             let y = vc27_present(y);
             framebuffer.draw_circle(x, y, 5, POWER_RELIC_LIGHT);
@@ -44,7 +44,7 @@ impl VoidCanticlePresentation {
     }
 
     fn render_projectiles(&self, framebuffer: &mut Framebuffer) {
-        let base = self.game.game.base();
+        let base = self.game.presentation_base();
         for bullet in &base.player_bullets {
             let x = vc27_present(bullet.x);
             let y = vc27_present(bullet.y);
@@ -53,8 +53,8 @@ impl VoidCanticlePresentation {
             framebuffer.draw_line(x + 1, y + 4, x + 1, y - 4, BOLT_EDGE);
         }
 
-        let v14 = self.game.game.v20().game.v14();
-        let game = &v14.progression.combat.combat.ui.inner.inner;
+        let progression = self.game.presentation_progression();
+        let game = &progression.progression.combat.combat.ui.inner.inner;
         for shot in &game.power_shots {
             let x = vc27_present(shot.x);
             let y = vc27_present(shot.y);
@@ -68,7 +68,7 @@ impl VoidCanticlePresentation {
             }
         }
 
-        let pressure = self.game.game.v20().game.ui.game.combat.combat.pressure;
+        let pressure = self.game.presentation_void_pressure();
         let boss_phase = base.boss.map(Bellkeeper::phase);
         for (index, bullet) in base.enemy_bullets.iter().enumerate() {
             let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt().max(1.0);
