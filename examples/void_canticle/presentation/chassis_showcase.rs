@@ -1,8 +1,8 @@
-fn vc27_chassis_accent(chassis: ExosuitChassis) -> Pixel {
-    vc27_chassis_profile(chassis).accent()
+fn chassis_accent(chassis: ExosuitChassis) -> Pixel {
+    chassis_profile(chassis).accent()
 }
 
-fn vc27_render_chassis_showcase(
+fn render_chassis_showcase(
     clean_background: &mut Framebuffer,
     framebuffer: &mut Framebuffer,
     selector: &VoidCanticleV22,
@@ -42,7 +42,7 @@ fn vc27_render_chassis_showcase(
         let y = card_start_y + index as i32 * (card_height as i32 + card_gap);
         let selected = selector.menu.selected() == Some(index);
         let (hull, shield) = selector.chassis_limits(chassis);
-        vc27_render_chassis_card(
+        render_chassis_card(
             framebuffer,
             chassis,
             selected,
@@ -75,7 +75,7 @@ fn vc27_render_chassis_showcase(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_render_chassis_card(
+fn render_chassis_card(
     framebuffer: &mut Framebuffer,
     chassis: ExosuitChassis,
     selected: bool,
@@ -87,7 +87,7 @@ fn vc27_render_chassis_card(
     shield: f32,
     time: f32,
 ) {
-    let choice_profile = vc27_chassis_profile(chassis);
+    let choice_profile = chassis_profile(chassis);
     let accent = choice_profile.accent();
     let panel = if selected {
         Pixel::rgb(11, 14, 27)
@@ -104,8 +104,8 @@ fn vc27_render_chassis_card(
         framebuffer.draw_line(x + 15 + travel, y + 1, x + 29 + travel, y + 1, accent);
     }
 
-    vc27_render_card_corner(framebuffer, x + 5, y + 5, 1, 1, edge);
-    vc27_render_card_corner(
+    render_card_corner(framebuffer, x + 5, y + 5, 1, 1, edge);
+    render_card_corner(
         framebuffer,
         x + width as i32 - 6,
         y + 5,
@@ -113,7 +113,7 @@ fn vc27_render_chassis_card(
         1,
         edge,
     );
-    vc27_render_card_corner(
+    render_card_corner(
         framebuffer,
         x + 5,
         y + height as i32 - 6,
@@ -121,7 +121,7 @@ fn vc27_render_chassis_card(
         -1,
         edge,
     );
-    vc27_render_card_corner(
+    render_card_corner(
         framebuffer,
         x + width as i32 - 6,
         y + height as i32 - 6,
@@ -142,7 +142,7 @@ fn vc27_render_chassis_card(
     }
 
     let profile = chassis.profile();
-    vc27_render_chassis_stat(
+    render_chassis_stat(
         framebuffer,
         info_x,
         y + 52,
@@ -151,7 +151,7 @@ fn vc27_render_chassis_card(
         profile.hull_multiplier / 1.50,
         VC20_HULL,
     );
-    vc27_render_chassis_stat(
+    render_chassis_stat(
         framebuffer,
         info_x,
         y + 70,
@@ -160,7 +160,7 @@ fn vc27_render_chassis_card(
         profile.shield_multiplier / 1.60,
         VC20_ARMOR,
     );
-    vc27_render_chassis_stat(
+    render_chassis_stat(
         framebuffer,
         info_x,
         y + 88,
@@ -174,7 +174,7 @@ fn vc27_render_chassis_card(
     framebuffer.draw_text(info_x, y + 121, chassis.passive_description(), WRECK_LIGHT);
 }
 
-fn vc27_render_card_corner(
+fn render_card_corner(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -186,7 +186,7 @@ fn vc27_render_card_corner(
     framebuffer.draw_line(x, y, x, y + sy * 10, color);
 }
 
-fn vc27_render_chassis_stat(
+fn render_chassis_stat(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -197,10 +197,10 @@ fn vc27_render_chassis_stat(
 ) {
     framebuffer.draw_text(x, y, label, TEXT);
     framebuffer.draw_text(x + 35, y, &value.to_string(), color);
-    vc27_render_chassis_stat_bar(framebuffer, x + 77, y + 1, 132, ratio, color);
+    render_chassis_stat_bar(framebuffer, x + 77, y + 1, 132, ratio, color);
 }
 
-fn vc27_render_chassis_stat_bar(
+fn render_chassis_stat_bar(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -221,7 +221,7 @@ fn vc27_render_chassis_stat_bar(
     framebuffer.draw_rect(x - 1, y - 1, width + 2, 7, WRECK_LIGHT);
 }
 
-fn vc27_render_chassis_ship(
+fn render_chassis_ship(
     framebuffer: &mut Framebuffer,
     chassis: ExosuitChassis,
     x: i32,
@@ -229,7 +229,7 @@ fn vc27_render_chassis_ship(
     selected: bool,
     time: f32,
 ) {
-    let accent = vc27_chassis_accent(chassis);
+    let accent = chassis_accent(chassis);
     if selected {
         let pulse = ((time * 4.0).sin().abs() * 3.0).round() as u32;
         framebuffer.draw_circle(x, y, 38 + pulse, accent);
@@ -256,7 +256,7 @@ fn vc27_render_chassis_ship(
             framebuffer.draw_line(x + 28, y + 3, x + 39, y + 12, ART_GOLD);
         }
         ExosuitChassis::Pilgrim => {
-            vc27_hd_render_pilgrim(framebuffer, x, y, false, 0.0, time);
+            render_pilgrim(framebuffer, x, y, false, 0.0, time);
             framebuffer.draw_circle(x, y - 2, 30, PILGRIM_VIOLET);
             framebuffer.draw(x - 30, y - 2, CANTICLE_COLOR);
             framebuffer.draw(x + 30, y - 2, CANTICLE_COLOR);
@@ -286,9 +286,9 @@ mod chassis_showcase_tests {
 
     #[test]
     fn chassis_showcase_has_three_distinct_identity_accents() {
-        let bulwark = vc27_chassis_profile(ExosuitChassis::Bulwark).accent();
-        let pilgrim = vc27_chassis_profile(ExosuitChassis::Pilgrim).accent();
-        let wraith = vc27_chassis_profile(ExosuitChassis::Wraith).accent();
+        let bulwark = chassis_profile(ExosuitChassis::Bulwark).accent();
+        let pilgrim = chassis_profile(ExosuitChassis::Pilgrim).accent();
+        let wraith = chassis_profile(ExosuitChassis::Wraith).accent();
         assert_ne!(bulwark, pilgrim);
         assert_ne!(bulwark, wraith);
         assert_ne!(pilgrim, wraith);
