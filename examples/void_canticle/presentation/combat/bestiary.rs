@@ -41,11 +41,11 @@ impl VoidCanticlePresentation {
         let defenses = self.game.presentation_defense_model();
         let encounter = self.game.presentation_encounter_model();
         for enemy in &self.game.presentation_base().enemies {
-            let key = vc20_carrion_key(enemy);
+            let key = presentation_carrion_key(enemy);
             let hit = self.hit_reactions.carrion_visual(key);
             let x = presentation_coord(enemy.x) + hit.offset_x;
             let y = presentation_coord(enemy.y) + hit.offset_y;
-            let armor_max = vc20_carrion_armor_max(enemy.pattern);
+            let armor_max = presentation_carrion_armor_max(enemy.pattern);
             let armor = defenses
                 .carrion_armor
                 .get(&key)
@@ -64,17 +64,17 @@ impl VoidCanticlePresentation {
         }
 
         for enemy in &encounter.combat.specials {
-            let key = vc20_special_key(enemy);
+            let key = presentation_special_key(enemy);
             let hit = self.hit_reactions.special_visual(key);
             let x = presentation_coord(enemy.x) + hit.offset_x;
             let y = presentation_coord(enemy.y) + hit.offset_y;
-            let armor_max = vc20_special_armor_max(enemy.kind);
+            let armor_max = presentation_special_armor_max(enemy.kind);
             let armor = defenses
                 .special_armor
                 .get(&key)
                 .copied()
                 .unwrap_or(armor_max);
-            let hp_max = vc20_special_hp_max(enemy.kind);
+            let hp_max = presentation_special_hp_max(enemy.kind);
             let damage = damage_state(
                 armor.saturating_add(enemy.hp),
                 armor_max.saturating_add(hp_max),
@@ -105,17 +105,17 @@ impl VoidCanticlePresentation {
         }
 
         for threat in &encounter.threats {
-            let key = vc20_threat_key(threat);
+            let key = presentation_threat_key(threat);
             let hit = self.hit_reactions.threat_visual(key);
             let x = presentation_coord(threat.x) + hit.offset_x;
             let y = presentation_coord(threat.y) + hit.offset_y;
-            let armor_max = vc20_threat_armor_max(threat.kind);
+            let armor_max = presentation_threat_armor_max(threat.kind);
             let armor = defenses
                 .threat_armor
                 .get(&key)
                 .copied()
                 .unwrap_or(armor_max);
-            let hp_max = vc20_threat_hp_max(threat.kind);
+            let hp_max = presentation_threat_hp_max(threat.kind);
             let damage = damage_state(
                 armor.saturating_add(threat.hp),
                 armor_max.saturating_add(hp_max),
@@ -164,10 +164,10 @@ impl VoidCanticlePresentation {
         let defenses = self.game.presentation_defense_model();
         let encounter = self.game.presentation_encounter_model();
         for enemy in &self.game.presentation_base().enemies {
-            let armor_max = vc20_carrion_armor_max(enemy.pattern);
+            let armor_max = presentation_carrion_armor_max(enemy.pattern);
             let armor = defenses
                 .carrion_armor
-                .get(&vc20_carrion_key(enemy))
+                .get(&presentation_carrion_key(enemy))
                 .copied()
                 .unwrap_or(armor_max);
             dual_bar(
@@ -182,10 +182,10 @@ impl VoidCanticlePresentation {
         }
 
         for enemy in &encounter.combat.specials {
-            let armor_max = vc20_special_armor_max(enemy.kind);
+            let armor_max = presentation_special_armor_max(enemy.kind);
             let armor = defenses
                 .special_armor
-                .get(&vc20_special_key(enemy))
+                .get(&presentation_special_key(enemy))
                 .copied()
                 .unwrap_or(armor_max);
             dual_bar(
@@ -195,15 +195,15 @@ impl VoidCanticlePresentation {
                 armor,
                 armor_max,
                 enemy.hp,
-                vc20_special_hp_max(enemy.kind),
+                presentation_special_hp_max(enemy.kind),
             );
         }
 
         for threat in &encounter.threats {
-            let armor_max = vc20_threat_armor_max(threat.kind);
+            let armor_max = presentation_threat_armor_max(threat.kind);
             let armor = defenses
                 .threat_armor
-                .get(&vc20_threat_key(threat))
+                .get(&presentation_threat_key(threat))
                 .copied()
                 .unwrap_or(armor_max);
             dual_bar(
@@ -213,7 +213,7 @@ impl VoidCanticlePresentation {
                 armor,
                 armor_max,
                 threat.hp,
-                vc20_threat_hp_max(threat.kind),
+                presentation_threat_hp_max(threat.kind),
             );
         }
 
