@@ -97,19 +97,6 @@ pub(crate) mod v07 {
                                                                     legacy_include!(
                                                                         "legacy/v23_visual_foundation.rs"
                                                                     );
-
-                                                                    pub(crate) mod presentation {
-                                                                        use super::*;
-                                                                        legacy_include!(
-                                                                            "presentation/mod.rs"
-                                                                        );
-                                                                        legacy_include!(
-                                                                            "presentation/choice_runtime.rs"
-                                                                        );
-                                                                        legacy_include!(
-                                                                            "presentation/frontend.rs"
-                                                                        );
-                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -127,10 +114,3 @@ pub(crate) mod v07 {
         }
     }
 }
-
-// This is the only boundary through which current code may reach the historical
-// implementation. The version-numbered module graph stays quarantined here.
-pub(crate) use v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::presentation::run_void_canticle_with_obs_mirror;
-
-#[cfg(target_arch = "wasm32")]
-pub(crate) use v07::v09::v10::v11::v12::v13::v14::v15::v16::v16b::v17::v18::v19::v20::v21::v22::v23::presentation::vc27_preload_choice_catalog_web as preload_choice_catalog_web;
