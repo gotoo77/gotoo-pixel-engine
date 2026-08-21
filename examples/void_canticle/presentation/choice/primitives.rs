@@ -1,11 +1,11 @@
 #[derive(Debug, Clone, Copy)]
-struct Vc27ChoiceCardStyle {
+struct ChoiceCardStyle {
     accent: Pixel,
     panel_idle: Pixel,
     panel_selected: Pixel,
 }
 
-impl Vc27ChoiceCardStyle {
+impl ChoiceCardStyle {
     const fn new(accent: Pixel, panel_idle: Pixel, panel_selected: Pixel) -> Self {
         Self {
             accent,
@@ -15,7 +15,7 @@ impl Vc27ChoiceCardStyle {
     }
 }
 
-fn vc27_choice_header(
+fn choice_header(
     framebuffer: &mut Framebuffer,
     title: &str,
     subtitle: &str,
@@ -30,14 +30,14 @@ fn vc27_choice_header(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_choice_card_frame(
+fn choice_card_frame(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     width: u32,
     height: u32,
     selected: bool,
-    style: Vc27ChoiceCardStyle,
+    style: ChoiceCardStyle,
     time: f32,
 ) {
     let panel = if selected {
@@ -49,8 +49,8 @@ fn vc27_choice_card_frame(
 
     framebuffer.fill_rect(x, y, width, height, panel);
     framebuffer.draw_rect(x, y, width, height, edge);
-    vc27_choice_card_corner(framebuffer, x + 5, y + 5, 1, 1, edge);
-    vc27_choice_card_corner(
+    choice_card_corner(framebuffer, x + 5, y + 5, 1, 1, edge);
+    choice_card_corner(
         framebuffer,
         x + width as i32 - 6,
         y + 5,
@@ -58,7 +58,7 @@ fn vc27_choice_card_frame(
         1,
         edge,
     );
-    vc27_choice_card_corner(
+    choice_card_corner(
         framebuffer,
         x + 5,
         y + height as i32 - 6,
@@ -66,7 +66,7 @@ fn vc27_choice_card_frame(
         -1,
         edge,
     );
-    vc27_choice_card_corner(
+    choice_card_corner(
         framebuffer,
         x + width as i32 - 6,
         y + height as i32 - 6,
@@ -88,7 +88,7 @@ fn vc27_choice_card_frame(
     }
 }
 
-fn vc27_choice_card_corner(
+fn choice_card_corner(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -100,7 +100,7 @@ fn vc27_choice_card_corner(
     framebuffer.draw_line(x, y, x, y + sy * 10, color);
 }
 
-fn vc27_choice_icon_shell(
+fn choice_icon_shell(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -122,7 +122,7 @@ fn vc27_choice_icon_shell(
     framebuffer.draw_circle(x, y, 28, WRECK_LIGHT);
 }
 
-fn vc27_choice_stack_nodes(
+fn choice_stack_nodes(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -141,7 +141,7 @@ fn vc27_choice_stack_nodes(
     }
 }
 
-fn vc27_choice_footer(framebuffer: &mut Framebuffer, accent: Pixel, motto: &str) {
+fn choice_footer(framebuffer: &mut Framebuffer, accent: Pixel, motto: &str) {
     framebuffer.draw_line(36, 505, 324, 505, WRECK_MID);
     vc_visual_draw_centered_text(framebuffer, 523, "UP DOWN / DPAD", 1, TEXT);
     vc_visual_draw_centered_text(
