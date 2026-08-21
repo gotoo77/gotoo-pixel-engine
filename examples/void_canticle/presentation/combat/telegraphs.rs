@@ -1,6 +1,6 @@
 impl VoidCanticlePresentation {
     fn render_attack_telegraphs(&self, framebuffer: &mut Framebuffer) {
-        let base = self.game.game.base();
+        let base = self.game.presentation_base();
         for enemy in &base.enemies {
             let Some(progress) = telegraph_progress(
                 enemy.fire_timer,
@@ -28,8 +28,8 @@ impl VoidCanticlePresentation {
             }
         }
 
-        let v12 = &self.game.game.v20().game.v12();
-        for enemy in &v12.combat.specials {
+        let encounter = self.game.presentation_encounter_model();
+        for enemy in &encounter.combat.specials {
             if enemy.kind != SpecialKind::BellWraith || enemy.age < 1.0 {
                 continue;
             }
@@ -47,7 +47,7 @@ impl VoidCanticlePresentation {
             framebuffer.draw_line(x, y + 8, x, y + 15, CANTICLE_COLOR);
         }
 
-        for threat in &v12.threats {
+        for threat in &encounter.threats {
             let x = vc27_present(threat.x);
             let y = vc27_present(threat.y);
             match threat.kind {
@@ -62,7 +62,7 @@ impl VoidCanticlePresentation {
                                 CHOIR_BUFF_RADIUS,
                             )
                     });
-                    let buffing_wraith = v12.combat.specials.iter().any(|enemy| {
+                    let buffing_wraith = encounter.combat.specials.iter().any(|enemy| {
                         enemy.alive
                             && enemy.kind == SpecialKind::BellWraith
                             && point_near(
