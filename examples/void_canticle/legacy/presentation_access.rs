@@ -12,6 +12,11 @@ type AttackSound = Vc23AttackSound;
 type CombatParticleKind = V17ParticleKind;
 
 const CHASSIS_OPTIONS: [ExosuitChassis; 3] = VC22_CHASSIS;
+const SUSTAIN_OPTIONS: [SustainAugment; 2] = VC23_SUSTAIN_AUGMENTS;
+const NANITE_DELAY: f32 = VC23_NANITE_DELAY;
+const NANITE_REPAIR_PER_SECOND: f32 = VC23_NANITE_REPAIR_PER_SECOND;
+const CAPACITOR_DELAY: f32 = VC23_CAPACITOR_DELAY;
+const CAPACITOR_REGEN_PER_SECOND: f32 = VC23_CAPACITOR_REGEN_PER_SECOND;
 const PRESENTATION_HULL_COLOR: Pixel = VC20_HULL;
 const PRESENTATION_ARMOR_COLOR: Pixel = VC20_ARMOR;
 const PRESENTATION_ARMOR_LIGHT: Pixel = VC20_ARMOR_LIGHT;
@@ -142,7 +147,7 @@ impl GameplayRuntime {
 
     fn presentation_selected_support_choice(&self) -> Option<(usize, SustainAugment)> {
         let index = self.menu.selected()?;
-        let augment = VC23_SUSTAIN_AUGMENTS.get(index).copied()?;
+        let augment = SUSTAIN_OPTIONS.get(index).copied()?;
         Some((index, augment))
     }
 
