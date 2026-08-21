@@ -1,51 +1,50 @@
 #[derive(Clone)]
-struct Vc27RunSummary {
+struct RunSummary {
     chassis: ExosuitChassis,
     score: u32,
     level: u32,
     echoes: u32,
     hull: u32,
     shield: u32,
-    support: Option<Vc23SustainAugment>,
+    support: Option<SustainAugment>,
     synergies: Vec<&'static str>,
 }
 
-fn vc27_run_summary(sustain: &VoidCanticleV23Sustain) -> Vc27RunSummary {
-    let v14 = sustain.game.v20().game.v14();
+fn run_summary(sustain: &GameplayRuntime) -> RunSummary {
+    let progression = sustain.presentation_progression();
     let chassis = sustain
-        .game
-        .game
-        .chassis()
+        .presentation_selected_chassis()
         .unwrap_or(ExosuitChassis::Pilgrim);
-    Vc27RunSummary {
+    let combat = sustain.combat_model();
+    RunSummary {
         chassis,
-        score: sustain.game.base().score,
-        level: v14.progression.level,
-        echoes: v14.progression.xp,
-        hull: sustain.game.game.player_hull().max(0.0).round() as u32,
-        shield: sustain.game.game.player_shield().max(0.0).round() as u32,
+        score: sustain.presentation_base().score,
+        level: progression.progression.level,
+        echoes: progression.progression.xp,
+        hull: combat.player_hull.max(0.0).round() as u32,
+        shield: combat.player_shield.max(0.0).round() as u32,
         support: sustain.augment,
-        synergies: vc27_build_synergy_names(v14.progression.build, v14.mutations),
+        synergies: build_synergy_names(progression.progression.build, progression.mutations),
     }
 }
 
-fn vc27_render_run_summary(
+fn render_run_summary(
     framebuffer: &mut Framebuffer,
-    summary: &Vc27RunSummary,
+    summary: &RunSummary,
     x: i32,
     y: i32,
     width: u32,
     accent: Pixel,
     time: f32,
 ) {
-    vc27_choice_card_frame(
+    choice_card_frame(
         framebuffer,
         x,
         y,
         width,
         250,
         true,
-        Vc27ChoiceCardStyle::new(
+        ChoiceCardStyle::new(
             accent,
             Pixel::rgb(6, 8, 16),
             Pixel::rgb(9, 12, 22),
@@ -53,7 +52,7 @@ fn vc27_render_run_summary(
         time,
     );
 
-    vc27_render_chassis_ship(
+    render_chassis_ship(
         framebuffer,
         summary.chassis,
         x + 50,
@@ -66,7 +65,7 @@ fn vc27_render_run_summary(
         y + 16,
         summary.chassis.name(),
         2,
-        vc27_chassis_accent(summary.chassis),
+        chassis_accent(summary.chassis),
     );
     framebuffer.draw_text(
         x + 98,
@@ -79,8 +78,8 @@ fn vc27_render_run_summary(
         ("SCORE", summary.score, PILGRIM_CORE),
         ("ECHO LEVEL", summary.level, XP_ORB_CORE),
         ("ECHOES", summary.echoes, XP_ORB_CORE),
-        ("HULL", summary.hull, VC20_HULL),
-        ("SHIELD", summary.shield, VC20_ARMOR_LIGHT),
+        ("HULL", summary.hull, PRESENTATION_HULL_COLOR),
+        ("SHIELD", summary.shield, PRESENTATION_ARMOR_LIGHT),
     ]
     .into_iter()
     .enumerate()
@@ -97,7 +96,7 @@ fn vc27_render_run_summary(
             x + 102,
             y + 207,
             augment.name(),
-            vc27_support_accent(augment),
+            support_accent(augment),
         ),
         None => framebuffer.draw_text(x + 102, y + 207, "NOT INSTALLED", WRECK_MID),
     }
@@ -117,8 +116,8 @@ mod run_summary_tests {
 
     #[test]
     fn fresh_run_summary_uses_real_default_build_state() {
-        let sustain = VoidCanticleV23Sustain::new();
-        let summary = vc27_run_summary(&sustain);
+        let sustain = GameplayRuntime::new();
+        let summary = run_summary(&sustain);
         assert_eq!(summary.score, 0);
         assert_eq!(summary.level, 1);
         assert!(summary.synergies.is_empty());
