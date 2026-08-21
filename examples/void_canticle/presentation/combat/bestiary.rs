@@ -1,16 +1,16 @@
 impl VoidCanticlePresentation {
     fn render_choir_links(&self, framebuffer: &mut Framebuffer) {
-        let v12 = &self.game.game.v20().game.v14().progression.combat;
+        let encounter = self.game.presentation_encounter_model();
         let link_color = Pixel::rgb(34, 62, 82);
 
-        for node in v12
+        for node in encounter
             .threats
             .iter()
             .filter(|threat| threat.alive && threat.kind == ThreatKind::ChoirNode)
         {
             let x = vc27_present(node.x);
             let y = vc27_present(node.y);
-            for enemy in &self.game.game.base().enemies {
+            for enemy in &self.game.presentation_base().enemies {
                 if point_near(enemy.x, enemy.y, node.x, node.y, CHOIR_BUFF_RADIUS) {
                     framebuffer.draw_line(
                         x,
@@ -21,7 +21,7 @@ impl VoidCanticlePresentation {
                     );
                 }
             }
-            for enemy in &v12.combat.specials {
+            for enemy in &encounter.combat.specials {
                 if enemy.kind == SpecialKind::BellWraith
                     && point_near(enemy.x, enemy.y, node.x, node.y, CHOIR_BUFF_RADIUS)
                 {
@@ -38,14 +38,19 @@ impl VoidCanticlePresentation {
     }
 
     fn render_presentation_bestiary(&self, framebuffer: &mut Framebuffer) {
-        let v20 = self.game.game.v20();
-        for enemy in &self.game.game.base().enemies {
+        let defenses = self.game.presentation_defense_model();
+        let encounter = self.game.presentation_encounter_model();
+        for enemy in &self.game.presentation_base().enemies {
             let key = vc20_carrion_key(enemy);
             let hit = self.hit_reactions.carrion_visual(key);
             let x = vc27_present(enemy.x) + hit.offset_x;
             let y = vc27_present(enemy.y) + hit.offset_y;
             let armor_max = vc20_carrion_armor_max(enemy.pattern);
-            let armor = v20.carrion_armor.get(&key).copied().unwrap_or(armor_max);
+            let armor = defenses
+                .carrion_armor
+                .get(&key)
+                .copied()
+                .unwrap_or(armor_max);
             vc27_hd_render_carrion(framebuffer, x, y, enemy.age, enemy.phase);
             vc27_hd_render_damage_marks(
                 framebuffer,
@@ -58,14 +63,17 @@ impl VoidCanticlePresentation {
             render_hit_flash(framebuffer, x, y, HitFlashKind::Carrion, hit);
         }
 
-        let v12 = &v20.game.v12();
-        for enemy in &v12.combat.specials {
+        for enemy in &encounter.combat.specials {
             let key = vc20_special_key(enemy);
             let hit = self.hit_reactions.special_visual(key);
             let x = vc27_present(enemy.x) + hit.offset_x;
             let y = vc27_present(enemy.y) + hit.offset_y;
             let armor_max = vc20_special_armor_max(enemy.kind);
-            let armor = v20.special_armor.get(&key).copied().unwrap_or(armor_max);
+            let armor = defenses
+                .special_armor
+                .get(&key)
+                .copied()
+                .unwrap_or(armor_max);
             let hp_max = vc20_special_hp_max(enemy.kind);
             let damage_state = vc27_damage_state(
                 armor.saturating_add(enemy.hp),
@@ -96,13 +104,17 @@ impl VoidCanticlePresentation {
             render_hit_flash(framebuffer, x, y, flash_kind, hit);
         }
 
-        for threat in &v12.threats {
+        for threat in &encounter.threats {
             let key = vc20_threat_key(threat);
             let hit = self.hit_reactions.threat_visual(key);
             let x = vc27_present(threat.x) + hit.offset_x;
             let y = vc27_present(threat.y) + hit.offset_y;
             let armor_max = vc20_threat_armor_max(threat.kind);
-            let armor = v20.threat_armor.get(&key).copied().unwrap_or(armor_max);
+            let armor = defenses
+                .threat_armor
+                .get(&key)
+                .copied()
+                .unwrap_or(armor_max);
             let hp_max = vc20_threat_hp_max(threat.kind);
             let damage_state = vc27_damage_state(
                 armor.saturating_add(threat.hp),
@@ -129,7 +141,7 @@ impl VoidCanticlePresentation {
             render_hit_flash(framebuffer, x, y, flash_kind, hit);
         }
 
-        let base = self.game.game.base();
+        let base = self.game.presentation_base();
         if base.encounter_phase != EncounterPhase::Cleared
             && let Some(boss) = base.boss
         {
@@ -149,10 +161,11 @@ impl VoidCanticlePresentation {
     }
 
     fn render_enemy_defenses(&self, framebuffer: &mut Framebuffer) {
-        let v20 = self.game.game.v20();
-        for enemy in &self.game.game.base().enemies {
+        let defenses = self.game.presentation_defense_model();
+        let encounter = self.game.presentation_encounter_model();
+        for enemy in &self.game.presentation_base().enemies {
             let armor_max = vc20_carrion_armor_max(enemy.pattern);
-            let armor = v20
+            let armor = defenses
                 .carrion_armor
                 .get(&vc20_carrion_key(enemy))
                 .copied()
@@ -168,10 +181,9 @@ impl VoidCanticlePresentation {
             );
         }
 
-        let v12 = &v20.game.v12();
-        for enemy in &v12.combat.specials {
+        for enemy in &encounter.combat.specials {
             let armor_max = vc20_special_armor_max(enemy.kind);
-            let armor = v20
+            let armor = defenses
                 .special_armor
                 .get(&vc20_special_key(enemy))
                 .copied()
@@ -187,9 +199,9 @@ impl VoidCanticlePresentation {
             );
         }
 
-        for threat in &v12.threats {
+        for threat in &encounter.threats {
             let armor_max = vc20_threat_armor_max(threat.kind);
-            let armor = v20
+            let armor = defenses
                 .threat_armor
                 .get(&vc20_threat_key(threat))
                 .copied()
@@ -205,28 +217,28 @@ impl VoidCanticlePresentation {
             );
         }
 
-        let base = self.game.game.base();
+        let base = self.game.presentation_base();
         if base.encounter_phase == EncounterPhase::BossFight
             && let Some(boss) = base.boss
         {
             let x = vc27_present(boss.x);
             let y = vc27_present(boss.y);
-            let color = if v20.boss_shield_flash_timer > 0.0 {
+            let color = if defenses.boss_shield_flash_timer > 0.0 {
                 VC20_ARMOR_LIGHT
             } else {
                 VC20_ARMOR
             };
-            if v20.boss_shield > 0 {
+            if defenses.boss_shield > 0 {
                 let pulse = ((base.animation_time * 7.0).sin().abs() * 4.0) as u32;
                 framebuffer.draw_circle(x, y - 6, 63 + pulse, color);
-            } else if v20.boss_shield_break_timer > 0.0 {
+            } else if defenses.boss_shield_break_timer > 0.0 {
                 framebuffer.draw_circle(x, y - 6, 65, CANTICLE_COLOR);
             }
             dual_bar(
                 framebuffer,
                 x,
                 y - 76,
-                v20.boss_shield,
+                defenses.boss_shield,
                 VC20_BOSS_SHIELD_MAX,
                 boss.hp,
                 BELLKEEPER_MAX_HP,
