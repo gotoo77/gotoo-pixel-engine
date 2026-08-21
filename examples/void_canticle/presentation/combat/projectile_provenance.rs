@@ -27,11 +27,16 @@ struct ProjectileSourceSnapshot {
 }
 
 impl ProjectileSourceSnapshot {
-    fn capture(game: &VoidCanticleV23Sustain) -> Self {
+    fn capture(game: &GameplayRuntime) -> Self {
         let mut snapshot = Self::default();
-        let v20 = game.game.v20();
+        let encounter = game.presentation_encounter_model();
 
-        for enemy in game.game.base().enemies.iter().filter(|enemy| enemy.alive) {
+        for enemy in game
+            .presentation_base()
+            .enemies
+            .iter()
+            .filter(|enemy| enemy.alive)
+        {
             snapshot.carrion.insert(
                 vc20_carrion_key(enemy),
                 TimedProjectileSource {
@@ -42,8 +47,7 @@ impl ProjectileSourceSnapshot {
             );
         }
 
-        let v12 = &v20.game.v12();
-        for enemy in v12
+        for enemy in encounter
             .combat
             .specials
             .iter()
@@ -59,7 +63,7 @@ impl ProjectileSourceSnapshot {
             );
         }
 
-        for threat in v12
+        for threat in encounter
             .threats
             .iter()
             .filter(|threat| threat.alive && threat.kind == ThreatKind::VoidLeech)
@@ -74,20 +78,12 @@ impl ProjectileSourceSnapshot {
             );
         }
 
-        snapshot.boss = game.game.base().boss.map(|boss| TimedProjectileSource {
+        snapshot.boss = game.presentation_base().boss.map(|boss| TimedProjectileSource {
             timer: boss.shot_timer,
             x: boss.x,
             y: boss.y,
         });
-        snapshot.pending_void = v20
-            .game
-            .ui
-            .game
-            .combat
-            .combat
-            .pending_attack
-            .as_ref()
-            .map(|attack| attack.kind);
+        snapshot.pending_void = game.presentation_pending_void_attack_kind();
         snapshot
     }
 }
@@ -102,7 +98,7 @@ struct AttackSourceEvents {
 }
 
 impl AttackSourceEvents {
-    fn detect(before: &ProjectileSourceSnapshot, game: &VoidCanticleV23Sustain) -> Self {
+    fn detect(before: &ProjectileSourceSnapshot, game: &GameplayRuntime) -> Self {
         let after = ProjectileSourceSnapshot::capture(game);
         let mut events = Self::default();
 
@@ -187,11 +183,12 @@ impl ProjectileProvenance {
         &mut self,
         dt: f32,
         before: &ProjectileSourceSnapshot,
-        game: &VoidCanticleV23Sustain,
+        game: &GameplayRuntime,
     ) -> Vec<Vc23AttackSound> {
         let events = AttackSourceEvents::detect(before, game);
-        let encounter_phase = game.game.base().encounter_phase;
-        let bullets = &game.game.base().enemy_bullets;
+        let base = game.presentation_base();
+        let encounter_phase = base.encounter_phase;
+        let bullets = &base.enemy_bullets;
         let previous = std::mem::take(&mut self.tracked);
         let mut previous_index = 0;
         let mut next = Vec::with_capacity(bullets.len());
