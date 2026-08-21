@@ -184,7 +184,7 @@ impl ProjectileProvenance {
         dt: f32,
         before: &ProjectileSourceSnapshot,
         game: &GameplayRuntime,
-    ) -> Vec<Vc23AttackSound> {
+    ) -> Vec<AttackSound> {
         let events = AttackSourceEvents::detect(before, game);
         let base = game.presentation_base();
         let encounter_phase = base.encounter_phase;
@@ -279,7 +279,7 @@ fn classify_new_projectile(
             return ProjectileSource::VoidAttack(kind);
         }
 
-        if vc23_void_attack_speed(speed) {
+        if presentation_void_attack_speed(speed) {
             return ProjectileSource::VoidAttack(kind);
         }
     }
@@ -351,13 +351,13 @@ fn projectile_source_distance_sq(bullet: Bullet, dt: f32, x: f32, y: f32) -> f32
         .min(backtracked_dx * backtracked_dx + backtracked_dy * backtracked_dy)
 }
 
-fn attack_sound_for_style(style: EnemyShotStyle) -> Vc23AttackSound {
+fn attack_sound_for_style(style: EnemyShotStyle) -> AttackSound {
     match style {
-        EnemyShotStyle::Carrion => Vc23AttackSound::Carrion,
-        EnemyShotStyle::Wraith => Vc23AttackSound::Wraith,
-        EnemyShotStyle::VoidPulse => Vc23AttackSound::VoidPulse,
-        EnemyShotStyle::Void => Vc23AttackSound::Void,
-        EnemyShotStyle::Bellkeeper => Vc23AttackSound::Bellkeeper,
+        EnemyShotStyle::Carrion => AttackSound::Carrion,
+        EnemyShotStyle::Wraith => AttackSound::Wraith,
+        EnemyShotStyle::VoidPulse => AttackSound::VoidPulse,
+        EnemyShotStyle::Void => AttackSound::Void,
+        EnemyShotStyle::Bellkeeper => AttackSound::Bellkeeper,
     }
 }
 
@@ -391,11 +391,11 @@ impl gotoo_pixel_engine::Audio for LegacyAttackAudioFilter<'_> {
 
 fn is_family_attack_sound(id: SoundId) -> bool {
     [
-        VC23_CARRION_FIRE_SOUND,
-        VC23_WRAITH_FIRE_SOUND,
-        VC23_VOID_PULSE_FIRE_SOUND,
-        VC23_VOID_FIRE_SOUND,
-        VC23_BELLKEEPER_FIRE_SOUND,
+        PRESENTATION_CARRION_FIRE_SOUND,
+        PRESENTATION_WRAITH_FIRE_SOUND,
+        PRESENTATION_VOID_PULSE_FIRE_SOUND,
+        PRESENTATION_VOID_FIRE_SOUND,
+        PRESENTATION_BELLKEEPER_FIRE_SOUND,
     ]
     .contains(&id)
 }
@@ -460,8 +460,8 @@ mod projectile_provenance_tests {
 
     #[test]
     fn legacy_family_audio_filter_names_only_family_accents() {
-        assert!(is_family_attack_sound(VC23_WRAITH_FIRE_SOUND));
-        assert!(is_family_attack_sound(VC23_BELLKEEPER_FIRE_SOUND));
+        assert!(is_family_attack_sound(PRESENTATION_WRAITH_FIRE_SOUND));
+        assert!(is_family_attack_sound(PRESENTATION_BELLKEEPER_FIRE_SOUND));
         assert!(!is_family_attack_sound(ENEMY_FIRE_SOUND));
     }
 }
