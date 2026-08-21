@@ -1,15 +1,15 @@
-const VC27_CHOICE_HOVER_SOUND: SoundId = SoundId::new("void_canticle.ui.choice_hover");
-const VC27_CHOICE_CONFIRM_SOUND: SoundId = SoundId::new("void_canticle.ui.choice_confirm");
+const CHOICE_HOVER_SOUND: SoundId = SoundId::new("void_canticle.ui.choice_hover");
+const CHOICE_CONFIRM_SOUND: SoundId = SoundId::new("void_canticle.ui.choice_confirm");
 
-type Vc27ChoiceArtRenderer = fn(&mut Framebuffer, i32, i32, bool, f32);
+type ChoiceArtRenderer = fn(&mut Framebuffer, i32, i32, bool, f32);
 
 #[derive(Clone, Copy)]
-pub(crate) enum Vc27ChoiceArt<'a> {
-    Procedural(Vc27ChoiceArtRenderer),
+pub(crate) enum ChoiceArt<'a> {
+    Procedural(ChoiceArtRenderer),
     Sprite(&'a Sprite),
 }
 
-impl Vc27ChoiceArt<'_> {
+impl ChoiceArt<'_> {
     fn render(
         self,
         framebuffer: &mut Framebuffer,
@@ -26,16 +26,16 @@ impl Vc27ChoiceArt<'_> {
 }
 
 #[derive(Clone, Copy)]
-struct Vc27ChoiceAssets<'a> {
-    art: Vc27ChoiceArt<'a>,
-    catalog_id: Option<Vc27ChoiceArtId>,
+struct ChoiceAssets<'a> {
+    art: ChoiceArt<'a>,
+    catalog_id: Option<ChoiceArtId>,
     hover_sound: Option<SoundId>,
     confirm_sound: Option<SoundId>,
 }
 
-impl<'a> Vc27ChoiceAssets<'a> {
+impl<'a> ChoiceAssets<'a> {
     const fn new(
-        art: Vc27ChoiceArt<'a>,
+        art: ChoiceArt<'a>,
         hover_sound: Option<SoundId>,
         confirm_sound: Option<SoundId>,
     ) -> Self {
@@ -47,34 +47,34 @@ impl<'a> Vc27ChoiceAssets<'a> {
         }
     }
 
-    const fn procedural(renderer: Vc27ChoiceArtRenderer) -> Self {
+    const fn procedural(renderer: ChoiceArtRenderer) -> Self {
         Self::new(
-            Vc27ChoiceArt::Procedural(renderer),
-            Some(VC27_CHOICE_HOVER_SOUND),
-            Some(VC27_CHOICE_CONFIRM_SOUND),
+            ChoiceArt::Procedural(renderer),
+            Some(CHOICE_HOVER_SOUND),
+            Some(CHOICE_CONFIRM_SOUND),
         )
     }
 
-    const fn with_catalog_id(mut self, catalog_id: Option<Vc27ChoiceArtId>) -> Self {
+    const fn with_catalog_id(mut self, catalog_id: Option<ChoiceArtId>) -> Self {
         self.catalog_id = catalog_id;
         self
     }
 
     fn hover_sound(self) -> Option<SoundId> {
         self.catalog_id
-            .and_then(|catalog_id| vc27_choice_catalog().hover_sound(catalog_id))
+            .and_then(|catalog_id| choice_catalog().hover_sound(catalog_id))
             .or(self.hover_sound)
     }
 
     fn confirm_sound(self) -> Option<SoundId> {
         self.catalog_id
-            .and_then(|catalog_id| vc27_choice_catalog().confirm_sound(catalog_id))
+            .and_then(|catalog_id| choice_catalog().confirm_sound(catalog_id))
             .or(self.confirm_sound)
     }
 
     fn catalog_sprite(self) -> Option<&'static Sprite> {
         self.catalog_id
-            .and_then(|catalog_id| vc27_choice_catalog().sprite(catalog_id))
+            .and_then(|catalog_id| choice_catalog().sprite(catalog_id))
     }
 
     fn render(
@@ -94,25 +94,25 @@ impl<'a> Vc27ChoiceAssets<'a> {
 }
 
 #[derive(Clone, Copy)]
-struct Vc27ChoiceProfile<'a> {
+struct ChoiceProfile<'a> {
     label: &'static str,
     category: &'static str,
     accent: Pixel,
-    assets: Vc27ChoiceAssets<'a>,
+    assets: ChoiceAssets<'a>,
 }
 
-impl<'a> Vc27ChoiceProfile<'a> {
+impl<'a> ChoiceProfile<'a> {
     fn new(
         label: &'static str,
         category: &'static str,
         accent: Pixel,
-        assets: Vc27ChoiceAssets<'a>,
+        assets: ChoiceAssets<'a>,
     ) -> Self {
         Self {
             label,
             category,
             accent,
-            assets: assets.with_catalog_id(Vc27ChoiceArtId::from_label(label)),
+            assets: assets.with_catalog_id(ChoiceArtId::from_label(label)),
         }
     }
 
@@ -128,7 +128,7 @@ impl<'a> Vc27ChoiceProfile<'a> {
         self.accent
     }
 
-    const fn assets(self) -> Vc27ChoiceAssets<'a> {
+    const fn assets(self) -> ChoiceAssets<'a> {
         self.assets
     }
 
@@ -158,20 +158,20 @@ impl<'a> Vc27ChoiceProfile<'a> {
     }
 }
 
-fn vc27_register_choice_sounds(sounds: &mut SoundBank) {
+fn register_choice_sounds(sounds: &mut SoundBank) {
     sounds
         .insert_wav(
-            VC27_CHOICE_HOVER_SOUND,
+            CHOICE_HOVER_SOUND,
             synthesize_chirp(620.0, 880.0, 0.035, 0.035),
         )
         .expect("choice hover sound id should be unique");
     sounds
         .insert_wav(
-            VC27_CHOICE_CONFIRM_SOUND,
+            CHOICE_CONFIRM_SOUND,
             synthesize_chirp(420.0, 1_180.0, 0.07, 0.055),
         )
         .expect("choice confirm sound id should be unique");
-    vc27_choice_catalog()
+    choice_catalog()
         .register_sounds(sounds)
         .expect("choice override sound ids should be unique");
 }
@@ -192,15 +192,15 @@ mod choice_asset_tests {
 
     #[test]
     fn procedural_choice_assets_own_hover_and_confirm_audio_metadata() {
-        let assets = Vc27ChoiceAssets::procedural(test_art);
-        assert_eq!(assets.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-        assert_eq!(assets.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+        let assets = ChoiceAssets::procedural(test_art);
+        assert_eq!(assets.hover_sound(), Some(CHOICE_HOVER_SOUND));
+        assert_eq!(assets.confirm_sound(), Some(CHOICE_CONFIRM_SOUND));
     }
 
     #[test]
     fn choice_art_can_be_replaced_by_a_sprite_without_changing_card_layout() {
         let sprite = Sprite::new(1, 1, vec![Pixel::WHITE]).expect("valid test sprite");
-        let assets = Vc27ChoiceAssets::new(Vc27ChoiceArt::Sprite(&sprite), None, None);
+        let assets = ChoiceAssets::new(ChoiceArt::Sprite(&sprite), None, None);
         let mut framebuffer = Framebuffer::new(3, 3);
         framebuffer.clear(Pixel::BLACK);
         assets.render(&mut framebuffer, 1, 1, false, 0.0);
@@ -209,29 +209,29 @@ mod choice_asset_tests {
 
     #[test]
     fn choice_profile_keeps_identity_and_assets_together() {
-        let profile = Vc27ChoiceProfile::new(
+        let profile = ChoiceProfile::new(
             "TEST CHOICE",
             "TEST FAMILY",
             Pixel::WHITE,
-            Vc27ChoiceAssets::procedural(test_art),
+            ChoiceAssets::procedural(test_art),
         );
         assert_eq!(profile.label(), "TEST CHOICE");
         assert_eq!(profile.category(), "TEST FAMILY");
         assert_eq!(profile.accent(), Pixel::WHITE);
-        assert_eq!(profile.hover_sound(), Some(VC27_CHOICE_HOVER_SOUND));
-        assert_eq!(profile.confirm_sound(), Some(VC27_CHOICE_CONFIRM_SOUND));
+        assert_eq!(profile.hover_sound(), Some(CHOICE_HOVER_SOUND));
+        assert_eq!(profile.confirm_sound(), Some(CHOICE_CONFIRM_SOUND));
         assert_eq!(profile.assets().catalog_id, None);
     }
 
     #[test]
     fn known_choice_profile_binds_to_stable_catalog_id() {
-        let profile = Vc27ChoiceProfile::new(
+        let profile = ChoiceProfile::new(
             "DEATH NOVA",
             "DEATH FIELD",
             DANGER,
-            Vc27ChoiceAssets::procedural(test_art),
+            ChoiceAssets::procedural(test_art),
         );
-        assert_eq!(profile.assets().catalog_id, Some(Vc27ChoiceArtId::DeathNova));
+        assert_eq!(profile.assets().catalog_id, Some(ChoiceArtId::DeathNova));
     }
 
     #[test]
@@ -266,7 +266,7 @@ mod choice_asset_tests {
                 )),
             ),
         ] {
-            let sprite = vc27_decode_png_sprite(bytes)
+            let sprite = decode_choice_png_sprite(bytes)
                 .unwrap_or_else(|error| panic!("{name} authored icon should decode: {error}"));
             assert!(sprite.width() > 0 && sprite.height() > 0, "{name}");
         }
