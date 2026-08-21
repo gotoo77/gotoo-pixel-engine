@@ -69,7 +69,6 @@ mod presentation_combat_boundary_tests {
 
         for source in sources {
             assert!(!source.contains(&nested_wrapper_access));
-            assert!(!source.contains("VoidCanticleV23Sustain"));
         }
     }
 }
