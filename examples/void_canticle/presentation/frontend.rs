@@ -1,4 +1,4 @@
-const PRESENTATION_VERSION: &str = "VC3.2";
+const PRESENTATION_VERSION: &str = "VC3.3";
 const TITLE_LAUNCH_DURATION: f32 = 0.42;
 
 const FRONT_WIDTH: u32 = 540;
