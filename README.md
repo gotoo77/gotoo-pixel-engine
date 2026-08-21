@@ -38,8 +38,7 @@ Capacités disponibles :
 - gamepad natif et Web avec boutons, D-pad et stick gauche normalisés ;
 - états `pressed`, `held`, `released` ;
 - `ControlMap` pour faire converger clavier, gamepad ciblé/global et contrôles virtuels ;
-- profils et calibration gamepad par périphérique, possédés par le runtime d'input ;
-- réglage explicite d'un `GamepadProfile` via `Frame::set_gamepad_profile` pour les outils qui en ont besoin ;
+- profils et calibration gamepad par périphérique ;
 - timing de simulation par frame via `delta_time`, borné face aux stalls et suspensions ;
 - viewport conservant le ratio du framebuffer ;
 - mapping cohérent surface -> viewport -> framebuffer pour souris/tactile ;
@@ -49,14 +48,9 @@ Capacités disponibles :
 - backend natif via `winit`/`wgpu` ;
 - cible WebAssembly/WebGPU.
 
-Un jeu ordinaire n'a pas à gérer la calibration du périphérique : il lit un
-`Input` déjà normalisé. `Frame::set_gamepad_profile` sert aux outils de
-diagnostic ou aux écrans de configuration, comme le probe gamepad et le menu
-standalone de Space Invaders.
-
 ## Jeux consommateurs
 
-Le moteur est désormais exercé par plusieurs jeux réels :
+Le moteur est exercé par plusieurs jeux réels :
 
 - Snake ;
 - Tetris ;
@@ -64,7 +58,6 @@ Le moteur est désormais exercé par plusieurs jeux réels :
 - Pong deux joueurs ;
 - Breakout ;
 - Smart Boy Hero ;
-- Void Canticle ;
 - `GPE Arcade`, qui compose plusieurs jeux dans un même runtime et sert aussi de
   test architectural multi-jeux.
 
@@ -72,10 +65,9 @@ Version publique de l'Arcade :
 
 <https://gotoo77.github.io/gotoo-pixel-engine/>
 
-Les jeux Web restent également accessibles individuellement, notamment via
-`snake.html`, `tetris.html`, `space_invaders.html`, `pong.html`,
-`breakout.html`, `smart_boy_hero.html`, `smart_boy_hero_iso.html` et
-`void_canticle.html`.
+Les jeux Web restent également accessibles individuellement via `snake.html`,
+`tetris.html`, `space_invaders.html`, `pong.html`, `breakout.html`,
+`smart_boy_hero.html` et `smart_boy_hero_iso.html`.
 
 ## Exemple minimal
 
@@ -130,11 +122,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`Frame` contient aussi `storage`, `audio`, `surface_size` et `viewport`. Un jeu
-les utilise seulement lorsqu'il en a besoin. Son `delta_time` est un temps de
-simulation borné par le runtime : un retour après un gros stall ou une
-suspension ne transmet pas toute la durée murale au jeu en une seule frame.
-
 ## Commandes utiles
 
 Les commandes de développement sont centralisées dans `scripts/dev.py`. Elles
@@ -147,12 +134,11 @@ Lancer le sélecteur de jeux natif :
 python scripts/dev.py run-game
 ```
 
-Lancer directement un jeu, éventuellement en release :
+Lancer directement un jeu :
 
 ```bash
 python scripts/dev.py run-game snake
-python scripts/dev.py run-game smart-boy-hero
-python scripts/dev.py run-game void-canticle --release
+python scripts/dev.py run-game smart-boy-hero --release
 ```
 
 Construire tous les entrypoints Web/WASM :
@@ -174,12 +160,6 @@ Puis servir le dossier `web` :
 python scripts/dev.py serve-web
 ```
 
-Construire un paquet natif Void Canticle pour la plateforme courante :
-
-```bash
-python scripts/dev.py package-native void-canticle
-```
-
 ## Validation
 
 Validation native complète :
@@ -198,10 +178,6 @@ La CI GitHub utilise la même CLI Python pour les validations natives/Web et le
 packaging JavaScript/WASM. Le workflow GitHub Pages appelle également
 `scripts/dev.py build-web --pages` pour construire le bundle release et
 assembler `dist/`.
-
-Le packaging natif Windows/Linux de Void Canticle est volontairement plus lourd :
-il s'exécute manuellement, sur les merges pertinents dans `main` et sur les tags
-de release `void-canticle-v*`, pas à chaque petit commit de PR.
 
 ## Licence
 
