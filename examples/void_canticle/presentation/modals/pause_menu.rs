@@ -1,4 +1,4 @@
-const VC27_PAUSE_ITEMS: [(&str, &str); 5] = [
+const PAUSE_ITEMS: [(&str, &str); 5] = [
     ("RESUME", "RETURN TO THE CANTICLE"),
     ("RESTART", "BEGIN A NEW PILGRIMAGE"),
     ("CONTROLS", "INPUT / COMBAT REFERENCE"),
@@ -6,13 +6,13 @@ const VC27_PAUSE_ITEMS: [(&str, &str); 5] = [
     ("QUIT", "LEAVE THE GRAVE ORBIT"),
 ];
 
-fn vc27_render_pause_menu(
+fn render_pause_menu(
     framebuffer: &mut Framebuffer,
-    sustain: &VoidCanticleV23Sustain,
-    pause: &VoidCanticlePauseV17,
+    sustain: &GameplayRuntime,
+    pause: &PauseMenuState,
     time: f32,
 ) {
-    vc27_choice_header(
+    choice_header(
         framebuffer,
         "PAUSED",
         "THE GRAVE ORBIT WAITS",
@@ -21,9 +21,9 @@ fn vc27_render_pause_menu(
     );
 
     let selected = pause.menu.selected();
-    for (index, (label, detail)) in VC27_PAUSE_ITEMS.into_iter().enumerate() {
+    for (index, (label, detail)) in PAUSE_ITEMS.into_iter().enumerate() {
         let y = 100 + index as i32 * 70;
-        vc27_render_pause_item(
+        render_pause_item(
             framebuffer,
             label,
             detail,
@@ -36,7 +36,7 @@ fn vc27_render_pause_menu(
         );
     }
 
-    vc27_render_pause_run_status(framebuffer, sustain, 244, 100, 104, 336, time);
+    render_pause_run_status(framebuffer, sustain, 244, 100, 104, 336, time);
 
     framebuffer.draw_line(36, 474, 324, 474, WRECK_MID);
     vc_visual_draw_centered_text(framebuffer, 494, "UP DOWN / DPAD", 1, TEXT);
@@ -64,7 +64,7 @@ fn vc27_render_pause_menu(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_render_pause_item(
+fn render_pause_item(
     framebuffer: &mut Framebuffer,
     label: &str,
     detail: &str,
@@ -76,14 +76,14 @@ fn vc27_render_pause_item(
     time: f32,
 ) {
     let accent = if label == "QUIT" { DANGER } else { PILGRIM_VIOLET };
-    vc27_choice_card_frame(
+    choice_card_frame(
         framebuffer,
         x,
         y,
         width,
         height,
         selected,
-        Vc27ChoiceCardStyle::new(
+        ChoiceCardStyle::new(
             accent,
             Pixel::rgb(7, 9, 17),
             Pixel::rgb(12, 10, 25),
@@ -103,28 +103,30 @@ fn vc27_render_pause_item(
     }
 }
 
-fn vc27_render_pause_run_status(
+fn render_pause_run_status(
     framebuffer: &mut Framebuffer,
-    sustain: &VoidCanticleV23Sustain,
+    sustain: &GameplayRuntime,
     x: i32,
     y: i32,
     width: u32,
     height: u32,
     time: f32,
 ) {
-    let v14 = sustain.game.v20().game.v14();
-    let chassis = sustain.game.game.chassis().unwrap_or(ExosuitChassis::Pilgrim);
-    let accent = vc27_chassis_accent(chassis);
-    let synergy_count = vc27_build_synergy_names(v14.progression.build, v14.mutations).len();
+    let progression = sustain.presentation_progression();
+    let chassis = sustain
+        .presentation_selected_chassis()
+        .unwrap_or(ExosuitChassis::Pilgrim);
+    let accent = chassis_accent(chassis);
+    let synergy_count = build_synergy_names(progression.progression.build, progression.mutations).len();
 
-    vc27_choice_card_frame(
+    choice_card_frame(
         framebuffer,
         x,
         y,
         width,
         height,
         false,
-        Vc27ChoiceCardStyle::new(
+        ChoiceCardStyle::new(
             accent,
             Pixel::rgb(6, 8, 15),
             Pixel::rgb(6, 8, 15),
@@ -141,7 +143,7 @@ fn vc27_render_pause_run_status(
         1,
         WRECK_LIGHT,
     );
-    vc27_render_chassis_ship(framebuffer, chassis, x + 52, y + 72, false, time);
+    render_chassis_ship(framebuffer, chassis, x + 52, y + 72, false, time);
     vc_visual_draw_centered_text_in_rect(
         framebuffer,
         x,
@@ -154,12 +156,22 @@ fn vc27_render_pause_run_status(
 
     framebuffer.draw_line(x + 12, y + 142, x + width as i32 - 12, y + 142, WRECK_MID);
     framebuffer.draw_text(x + 12, y + 158, "ECHO", WRECK_LIGHT);
-    framebuffer.draw_text(x + 58, y + 158, &format!("{:02}", v14.progression.level), TEXT);
+    framebuffer.draw_text(
+        x + 58,
+        y + 158,
+        &format!("{:02}", progression.progression.level),
+        TEXT,
+    );
     framebuffer.draw_text(x + 12, y + 184, "SYNR", WRECK_LIGHT);
-    framebuffer.draw_text(x + 58, y + 184, &format!("{:02}", synergy_count), SYNERGY_GOLD);
+    framebuffer.draw_text(
+        x + 58,
+        y + 184,
+        &format!("{:02}", synergy_count),
+        SYNERGY_GOLD,
+    );
     framebuffer.draw_text(x + 12, y + 210, "SUPP", WRECK_LIGHT);
 
-    let support = sustain.augment.map(Vc23SustainAugment::name).unwrap_or("NONE");
+    let support = sustain.augment.map(SustainAugment::name).unwrap_or("NONE");
     let support_label = match support {
         "NANITE REPAIR" => "NANITE",
         "SHIELD CAPACITOR" => "CAPAC",
@@ -199,11 +211,11 @@ mod pause_menu_tests {
     use super::*;
 
     #[test]
-    fn hd_pause_has_same_actions_as_legacy_pause_menu() {
-        assert_eq!(VC27_PAUSE_ITEMS.len(), 5);
-        assert_eq!(VC27_PAUSE_ITEMS[0].0, "RESUME");
-        assert_eq!(VC27_PAUSE_ITEMS[3].0, "BUILD INFO");
-        assert_eq!(VC27_PAUSE_ITEMS[4].0, "QUIT");
+    fn pause_has_same_actions_as_gameplay_pause_menu() {
+        assert_eq!(PAUSE_ITEMS.len(), 5);
+        assert_eq!(PAUSE_ITEMS[0].0, "RESUME");
+        assert_eq!(PAUSE_ITEMS[3].0, "BUILD INFO");
+        assert_eq!(PAUSE_ITEMS[4].0, "QUIT");
     }
 
     #[test]
