@@ -1,11 +1,32 @@
 // Narrow semantic seam consumed by the current presentation layer.
 //
-// Historical versioned types and wrapper traversal are allowed here because
-// this file lives inside the legacy quarantine. Current presentation code must
-// ask semantic questions through these methods instead of knowing the nested
-// vXX storage shape.
+// Historical versioned types, constants, and wrapper traversal are allowed
+// here because this file lives inside the legacy quarantine. Current
+// presentation code must use the semantic names below instead of knowing which
+// historical layer currently owns the data.
 
 type GameplayRuntime = VoidCanticleV23Sustain;
+type ChassisSelector = VoidCanticleV22;
+type SustainAugment = Vc23SustainAugment;
+type AttackSound = Vc23AttackSound;
+type CombatParticleKind = V17ParticleKind;
+
+const CHASSIS_OPTIONS: [ExosuitChassis; 3] = VC22_CHASSIS;
+const PRESENTATION_HULL_COLOR: Pixel = VC20_HULL;
+const PRESENTATION_ARMOR_COLOR: Pixel = VC20_ARMOR;
+const PRESENTATION_ARMOR_LIGHT: Pixel = VC20_ARMOR_LIGHT;
+const PRESENTATION_ARMOR_BG: Pixel = VC20_ARMOR_BG;
+const PRESENTATION_BOSS_SHIELD_MAX: u32 = VC20_BOSS_SHIELD_MAX;
+const PRESENTATION_EMP_FLASH_DURATION: f32 = VC23_EMP_FLASH_DURATION;
+const PRESENTATION_CARRION_FIRE_SOUND: SoundId = VC23_CARRION_FIRE_SOUND;
+const PRESENTATION_WRAITH_FIRE_SOUND: SoundId = VC23_WRAITH_FIRE_SOUND;
+const PRESENTATION_VOID_PULSE_FIRE_SOUND: SoundId = VC23_VOID_PULSE_FIRE_SOUND;
+const PRESENTATION_VOID_FIRE_SOUND: SoundId = VC23_VOID_FIRE_SOUND;
+const PRESENTATION_BELLKEEPER_FIRE_SOUND: SoundId = VC23_BELLKEEPER_FIRE_SOUND;
+
+fn presentation_void_attack_speed(speed: f32) -> bool {
+    vc23_void_attack_speed(speed)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PresentationAnnouncement {
@@ -16,7 +37,7 @@ enum PresentationAnnouncement {
     VoidAttack(VoidAttackKind),
 }
 
-impl VoidCanticleV23Sustain {
+impl GameplayRuntime {
     fn presentation_base(&self) -> &VoidCanticleGame {
         self.game.base()
     }
@@ -92,7 +113,7 @@ impl VoidCanticleV23Sustain {
         self.game.emp_flash_timer
     }
 
-    fn presentation_chassis_selector(&self) -> &VoidCanticleV22 {
+    fn presentation_chassis_selector(&self) -> &ChassisSelector {
         &self.game.game.game.game
     }
 
@@ -103,7 +124,7 @@ impl VoidCanticleV23Sustain {
     fn presentation_selected_chassis_choice(&self) -> Option<(usize, ExosuitChassis)> {
         let selector = self.presentation_chassis_selector();
         let index = selector.menu.selected()?;
-        let chassis = VC22_CHASSIS.get(index).copied()?;
+        let chassis = CHASSIS_OPTIONS.get(index).copied()?;
         Some((index, chassis))
     }
 
@@ -119,7 +140,7 @@ impl VoidCanticleV23Sustain {
         self.choosing_support
     }
 
-    fn presentation_selected_support_choice(&self) -> Option<(usize, Vc23SustainAugment)> {
+    fn presentation_selected_support_choice(&self) -> Option<(usize, SustainAugment)> {
         let index = self.menu.selected()?;
         let augment = VC23_SUSTAIN_AUGMENTS.get(index).copied()?;
         Some((index, augment))
