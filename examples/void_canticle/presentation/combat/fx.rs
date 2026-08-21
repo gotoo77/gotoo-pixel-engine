@@ -8,24 +8,24 @@ impl VoidCanticlePresentation {
             };
             let radius = (3.0 + (1.0 - ratio) * 16.0).round() as u32;
             framebuffer.draw_circle(
-                vc27_present(burst.x),
-                vc27_present(burst.y),
+                presentation_coord(burst.x),
+                presentation_coord(burst.y),
                 radius,
                 burst.color,
             );
         }
 
         for particle in self.game.presentation_particles() {
-            let x = vc27_present(particle.x);
-            let y = vc27_present(particle.y);
+            let x = presentation_coord(particle.x);
+            let y = presentation_coord(particle.y);
             match particle.kind {
-                V17ParticleKind::Spark => {
-                    let tail_x = vc27_present(particle.x - particle.vx * 0.035);
-                    let tail_y = vc27_present(particle.y - particle.vy * 0.035);
+                CombatParticleKind::Spark => {
+                    let tail_x = presentation_coord(particle.x - particle.vx * 0.035);
+                    let tail_y = presentation_coord(particle.y - particle.vy * 0.035);
                     framebuffer.draw_line(tail_x, tail_y, x, y, particle.color);
                     framebuffer.draw(x, y, BOLT_CORE);
                 }
-                V17ParticleKind::Shard => {
+                CombatParticleKind::Shard => {
                     framebuffer.draw_line(x - 2, y, x + 2, y, particle.color);
                     framebuffer.draw_line(x, y - 2, x, y + 2, particle.color);
                 }
@@ -35,8 +35,8 @@ impl VoidCanticlePresentation {
 
     fn render_major_fx(&self, framebuffer: &mut Framebuffer) {
         let base = self.game.presentation_base();
-        let player_x = vc27_present(base.player_x);
-        let player_y = vc27_present(base.player_y);
+        let player_x = presentation_coord(base.player_x);
+        let player_y = presentation_coord(base.player_y);
 
         if base.canticle_timer > 0.0 {
             let ratio = (base.canticle_timer / CANTICLE_DURATION).clamp(0.0, 1.0);
@@ -47,7 +47,7 @@ impl VoidCanticlePresentation {
 
         let emp_timer = self.game.presentation_emp_flash_timer();
         if emp_timer > 0.0 {
-            let ratio = (emp_timer / VC23_EMP_FLASH_DURATION).clamp(0.0, 1.0);
+            let ratio = (emp_timer / PRESENTATION_EMP_FLASH_DURATION).clamp(0.0, 1.0);
             let radius = (28.0 + (1.0 - ratio) * 220.0).round() as u32;
             framebuffer.draw_circle(player_x, player_y, radius, ART_CYAN_LIGHT);
         }
