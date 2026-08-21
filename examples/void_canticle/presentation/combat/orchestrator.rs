@@ -7,9 +7,9 @@ impl VoidCanticlePresentation {
         let focused = self.game.presentation_focus_held();
         let base = self.game.presentation_base();
         let hit = self.hit_reactions.player_visual();
-        let x = vc27_present(base.player_x) + hit.offset_x;
-        let y = vc27_present(base.player_y) + hit.offset_y;
-        vc27_hd_render_pilgrim(
+        let x = presentation_coord(base.player_x) + hit.offset_x;
+        let y = presentation_coord(base.player_y) + hit.offset_y;
+        render_pilgrim(
             framebuffer,
             x,
             y,
