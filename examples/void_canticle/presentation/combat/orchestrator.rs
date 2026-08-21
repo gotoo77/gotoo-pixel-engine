@@ -4,15 +4,8 @@ impl VoidCanticlePresentation {
             return;
         }
 
-        let focused = self
-            .game
-            .game
-            .game
-            .game
-            .movement_controls
-            .action(FOCUS)
-            .held();
-        let base = self.game.game.base();
+        let focused = self.game.presentation_focus_held();
+        let base = self.game.presentation_base();
         let hit = self.hit_reactions.player_visual();
         let x = vc27_present(base.player_x) + hit.offset_x;
         let y = vc27_present(base.player_y) + hit.offset_y;
@@ -28,7 +21,7 @@ impl VoidCanticlePresentation {
     }
 
     fn render_combat_presentation(&mut self, framebuffer: &mut Framebuffer) {
-        if !self.game.game.active_combat() {
+        if !self.game.presentation_active_combat() {
             return;
         }
 
