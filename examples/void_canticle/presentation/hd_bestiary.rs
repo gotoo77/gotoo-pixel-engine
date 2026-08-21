@@ -1,38 +1,38 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Vc27DamageState {
+pub(super) enum DamageState {
     Intact,
     Damaged,
     Critical,
 }
 
-pub(super) fn vc27_damage_state(value: u32, max_value: u32) -> Vc27DamageState {
+pub(super) fn damage_state(value: u32, max_value: u32) -> DamageState {
     if max_value == 0 {
-        return Vc27DamageState::Intact;
+        return DamageState::Intact;
     }
 
     let ratio = value.min(max_value) as f32 / max_value as f32;
     if ratio > 0.66 {
-        Vc27DamageState::Intact
+        DamageState::Intact
     } else if ratio > 0.33 {
-        Vc27DamageState::Damaged
+        DamageState::Damaged
     } else {
-        Vc27DamageState::Critical
+        DamageState::Critical
     }
 }
 
-pub(super) fn vc27_hd_render_damage_marks(
+pub(super) fn render_damage_marks(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
-    state: Vc27DamageState,
+    state: DamageState,
     age: f32,
     spread: i32,
 ) {
-    if state == Vc27DamageState::Intact {
+    if state == DamageState::Intact {
         return;
     }
 
-    let crack = if state == Vc27DamageState::Critical {
+    let crack = if state == DamageState::Critical {
         DANGER
     } else {
         ART_RUST
@@ -56,7 +56,7 @@ pub(super) fn vc27_hd_render_damage_marks(
     );
     framebuffer.draw(x - side * (reach + 2), y + reach / 3, ART_RUST);
 
-    if state == Vc27DamageState::Critical {
+    if state == DamageState::Critical {
         framebuffer.draw_line(
             x - side * (reach / 2),
             y - reach,
@@ -81,11 +81,11 @@ pub(super) fn vc27_hd_render_damage_marks(
     }
 }
 
-pub(super) fn vc27_present(value: f32) -> i32 {
+pub(super) fn presentation_coord(value: f32) -> i32 {
     (value * VC_VISUAL_PRESENTATION_SCALE as f32).round() as i32
 }
 
-pub(super) fn vc27_hd_render_carrion(
+pub(super) fn render_carrion(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -128,7 +128,7 @@ pub(super) fn vc27_hd_render_carrion(
     framebuffer.draw(x + 27, y + flap / 2, ART_BONE);
 }
 
-pub(super) fn vc27_hd_render_grave_knight(
+pub(super) fn render_grave_knight(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -177,7 +177,7 @@ pub(super) fn vc27_hd_render_grave_knight(
     framebuffer.draw_line(x + 3, y + 35, x + 5, y + thrust, PILGRIM_THRUSTER);
 }
 
-pub(super) fn vc27_hd_render_bell_wraith(
+pub(super) fn render_bell_wraith(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -211,7 +211,7 @@ pub(super) fn vc27_hd_render_bell_wraith(
     framebuffer.draw(x + 12, y - 15, ART_GOLD);
 }
 
-pub(super) fn vc27_hd_render_relic_carrier(
+pub(super) fn render_relic_carrier(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -251,7 +251,7 @@ pub(super) fn vc27_hd_render_relic_carrier(
     framebuffer.draw_line(x + wake * 22, y + 5, x + wake * 38, y + 5, ART_METAL);
 }
 
-pub(super) fn vc27_hd_render_choir_node(
+pub(super) fn render_choir_node(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -283,7 +283,7 @@ pub(super) fn vc27_hd_render_choir_node(
     framebuffer.draw(x + 13, y + 6, ART_GOLD);
 }
 
-pub(super) fn vc27_hd_render_void_leech(
+pub(super) fn render_void_leech(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
@@ -318,9 +318,9 @@ pub(super) fn vc27_hd_render_void_leech(
     framebuffer.draw_line(x + 16, y + 13, x + 31 - writhe, y + 27, ART_VOID);
 }
 
-pub(super) fn vc27_hd_render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper) {
-    let x = vc27_present(boss.x);
-    let y = vc27_present(boss.y);
+pub(super) fn render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bellkeeper) {
+    let x = presentation_coord(boss.x);
+    let y = presentation_coord(boss.y);
     let pulse = ((boss.age * 5.0).sin().abs() * 4.0) as u32;
     let sway = ((boss.age * 2.2).sin() * 4.0).round() as i32;
     let toll = ((boss.age * 1.6).sin() * 2.0).round() as i32;
@@ -369,17 +369,17 @@ pub(super) fn vc27_hd_render_bellkeeper(framebuffer: &mut Framebuffer, boss: Bel
         framebuffer.draw_line(x - 65, y - 6 + toll, x + 65, y - 6 + toll, DANGER);
     }
 
-    vc27_hd_render_damage_marks(
+    render_damage_marks(
         framebuffer,
         x,
         y + toll,
-        vc27_damage_state(boss.hp, BELLKEEPER_MAX_HP),
+        damage_state(boss.hp, BELLKEEPER_MAX_HP),
         boss.age,
         64,
     );
 }
 
-pub(super) fn vc27_hd_render_pilgrim(
+pub(super) fn render_pilgrim(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
