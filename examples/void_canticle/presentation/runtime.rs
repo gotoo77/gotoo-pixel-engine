@@ -10,16 +10,8 @@ impl VoidCanticlePresentation {
         }
     }
 
-    fn chassis_runtime(&self) -> &VoidCanticleV22 {
-        &self.game.game.game.game.game
-    }
-
-    fn chassis_runtime_mut(&mut self) -> &mut VoidCanticleV22 {
-        &mut self.game.game.game.game.game
-    }
-
     fn chassis_selection_active(&self) -> bool {
-        self.chassis_runtime().chassis.is_none()
+        self.game.presentation_chassis_selection_active()
     }
 
     // The lower gameplay runtime owns the actual run reset. This method only
@@ -27,8 +19,7 @@ impl VoidCanticlePresentation {
     // to its pre-run selection state. It must not replace `self.game`.
     fn reset_gameplay_selection_after_restart(&mut self) {
         self.game.reset_for_new_run();
-        self.chassis_runtime_mut()
-            .reset_chassis_selection_for_new_run();
+        self.game.presentation_reset_chassis_selection();
     }
 
     fn reset_presentation_after_restart(&mut self) {
@@ -44,7 +35,7 @@ impl VoidCanticlePresentation {
             presentation_time,
             ..
         } = self;
-        let selector = &game.game.game.game.game;
+        let selector = game.presentation_chassis_selector();
         vc27_render_chassis_showcase(
             clean_background,
             framebuffer,
@@ -54,18 +45,18 @@ impl VoidCanticlePresentation {
     }
 
     fn visual_mode(&self) -> VcVisualMode {
-        if self.game.choosing_support {
+        if self.game.presentation_support_choice_active() {
             return VcVisualMode::SupportChoice;
         }
 
-        let v14 = self.game.game.v20().game.v14();
-        if v14.progression.level_choice.is_some() {
+        let progression = self.game.presentation_progression();
+        if progression.progression.level_choice.is_some() {
             return VcVisualMode::LevelChoice;
         }
-        if v14.mutation_choice.is_some() {
+        if progression.mutation_choice.is_some() {
             return VcVisualMode::MutationChoice;
         }
-        if self.game.game.base().game_over {
+        if self.game.presentation_base().game_over {
             return VcVisualMode::Death;
         }
 
@@ -81,7 +72,7 @@ impl VoidCanticlePresentation {
     }
 
     fn render_clean_background(&mut self, framebuffer: &mut Framebuffer) {
-        let base = self.game.game.base();
+        let base = self.game.presentation_base();
         let color = if base.canticle_timer > 0.46 {
             BG_CANTICLE
         } else {
@@ -130,7 +121,7 @@ impl Game for VoidCanticlePresentation {
         let dt = frame.delta_time.as_secs_f32().min(0.05);
         self.presentation_time += dt;
 
-        let was_game_over = self.game.game.base().game_over;
+        let was_game_over = self.game.presentation_base().game_over;
         let was_stage_clear = self.game.survival_model().game.stage_clear_visible();
         let pause_restart_selected = {
             let pause = self.game.survival_model().game.pause_ui();
@@ -177,9 +168,9 @@ impl Game for VoidCanticlePresentation {
 
         if restart_completed(
             was_game_over,
-            self.game.game.base().game_over,
+            self.game.presentation_base().game_over,
             was_stage_clear,
-            self.game.game.base().encounter_phase,
+            self.game.presentation_base().encounter_phase,
             pause_restart_completed,
         ) {
             self.reset_presentation_after_restart();
@@ -280,33 +271,43 @@ mod presentation_runtime_tests {
     #[test]
     fn restart_reopens_chassis_selection_without_auto_confirm() {
         let mut presentation = VoidCanticlePresentation::new();
-        presentation.chassis_runtime_mut().confirm_armed = true;
+        presentation.game.presentation_arm_chassis_confirm_for_test();
         presentation
-            .chassis_runtime_mut()
-            .apply_chassis(ExosuitChassis::Wraith);
+            .game
+            .presentation_apply_chassis_for_test(ExosuitChassis::Wraith);
 
         presentation.reset_gameplay_selection_after_restart();
 
         assert!(presentation.chassis_selection_active());
-        assert_eq!(presentation.chassis_runtime().chassis, None);
-        assert!(!presentation.chassis_runtime().confirm_armed);
+        assert_eq!(presentation.game.presentation_selected_chassis(), None);
+        assert!(!presentation.game.presentation_chassis_confirm_armed());
     }
 
     #[test]
     fn presentation_restart_cleanup_only_resets_presentation_state() {
         let mut presentation = VoidCanticlePresentation::new();
         presentation
-            .chassis_runtime_mut()
-            .apply_chassis(ExosuitChassis::Wraith);
+            .game
+            .presentation_apply_chassis_for_test(ExosuitChassis::Wraith);
         presentation.presentation_time = 42.0;
 
         presentation.reset_presentation_after_restart();
 
         assert_eq!(presentation.presentation_time, 0.0);
         assert_eq!(
-            presentation.chassis_runtime().chassis,
+            presentation.game.presentation_selected_chassis(),
             Some(ExosuitChassis::Wraith)
         );
+    }
+
+    #[test]
+    fn current_runtime_does_not_traverse_legacy_wrapper_chain() {
+        let source = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/void_canticle/presentation/runtime.rs"
+        ));
+        let forbidden = [".game", ".game"].concat();
+        assert!(!source.contains(&forbidden));
     }
 
     #[test]
