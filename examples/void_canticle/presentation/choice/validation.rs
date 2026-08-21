@@ -7,9 +7,9 @@ fn validate_choice_manifest(manifest_text: &str) -> Result<(), String> {
         .as_object()
         .ok_or_else(|| "choice asset manifest must be a JSON object".to_owned())?;
 
-    let known_ids = Vc27ChoiceArtId::ALL
+    let known_ids = ChoiceArtId::ALL
         .into_iter()
-        .map(Vc27ChoiceArtId::slug)
+        .map(ChoiceArtId::slug)
         .collect::<std::collections::BTreeSet<_>>();
     let mut errors = Vec::new();
 
