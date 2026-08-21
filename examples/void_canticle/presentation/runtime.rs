@@ -72,22 +72,11 @@ impl VoidCanticlePresentation {
     }
 
     fn render_clean_background(&mut self, framebuffer: &mut Framebuffer) {
-        let base = self.game.presentation_base();
-        let color = if base.canticle_timer > 0.46 {
-            BG_CANTICLE
-        } else {
-            BG
-        };
-        let scroll = base.scroll;
-
-        self.clean_background.clear(color);
-        render_grave_orbit_background(&mut self.clean_background, scroll);
-        vc_visual_blit_nearest(
-            &self.clean_background,
-            framebuffer,
-            VC_VISUAL_PRESENTATION_SCALE,
-            false,
-        );
+        // Combat and modal presentation are foreground-only. The engine-facing
+        // HD compositor owns the spatial background. Keep the historical scratch
+        // buffer transparent too so stale pixels cannot leak between modes.
+        self.clean_background.clear(Pixel::TRANSPARENT);
+        framebuffer.clear(Pixel::TRANSPARENT);
     }
 }
 
@@ -212,6 +201,27 @@ mod presentation_runtime_tests {
     fn chassis_selection_is_explicit_precombat_state() {
         let game = VoidCanticlePresentation::new();
         assert!(game.chassis_selection_active());
+    }
+
+    #[test]
+    fn gameplay_background_layer_is_transparent_for_hd_composition() {
+        let mut presentation = VoidCanticlePresentation::new();
+        let mut framebuffer = Framebuffer::new(
+            VC_VISUAL_PRESENTATION_WIDTH,
+            VC_VISUAL_PRESENTATION_HEIGHT,
+        );
+        framebuffer.clear(Pixel::RED);
+
+        presentation.render_clean_background(&mut framebuffer);
+
+        assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::TRANSPARENT));
+        assert_eq!(
+            framebuffer.pixel(
+                VC_VISUAL_PRESENTATION_WIDTH as i32 - 1,
+                VC_VISUAL_PRESENTATION_HEIGHT as i32 - 1,
+            ),
+            Some(Pixel::TRANSPARENT)
+        );
     }
 
     #[test]
