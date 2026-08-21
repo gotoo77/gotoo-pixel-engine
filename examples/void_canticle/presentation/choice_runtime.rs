@@ -68,17 +68,18 @@ impl VoidCanticleChoicePresentation {
     }
 
     fn current_synergy_mask(&self) -> u8 {
-        let v14 = self.presentation.game.game.v20().game.v14();
-        synergy_mask(v14.progression.build, v14.mutations)
+        let progression = self.presentation.game.presentation_progression();
+        synergy_mask(progression.progression.build, progression.mutations)
     }
 
     fn current_choice_snapshot(&self) -> Option<ChoiceSnapshot> {
         let synergy_mask_before = self.current_synergy_mask();
 
         if self.presentation.chassis_selection_active() {
-            let selector = &self.presentation.game.game.game.game.game;
-            let index = selector.menu.selected()?;
-            let chassis = VC22_CHASSIS.get(index).copied()?;
+            let (index, chassis) = self
+                .presentation
+                .game
+                .presentation_selected_chassis_choice()?;
             return Some(ChoiceSnapshot::from_profile(
                 ChoiceFocus {
                     kind: ChoiceFocusKind::Chassis,
@@ -91,8 +92,8 @@ impl VoidCanticleChoicePresentation {
 
         match self.presentation.visual_mode() {
             VcVisualMode::LevelChoice => {
-                let v14 = self.presentation.game.game.v20().game.v14();
-                let choice = v14.progression.level_choice.as_ref()?;
+                let progression = self.presentation.game.presentation_progression();
+                let choice = progression.progression.level_choice.as_ref()?;
                 let index = choice.menu.selected()?;
                 let upgrade = choice.offers.get(index).copied()?;
                 Some(ChoiceSnapshot::from_profile(
@@ -105,8 +106,8 @@ impl VoidCanticleChoicePresentation {
                 ))
             }
             VcVisualMode::MutationChoice => {
-                let v14 = self.presentation.game.game.v20().game.v14();
-                let choice = v14.mutation_choice.as_ref()?;
+                let progression = self.presentation.game.presentation_progression();
+                let choice = progression.mutation_choice.as_ref()?;
                 let index = choice.menu.selected()?;
                 let mutation = choice.offers.get(index).copied()?;
                 Some(ChoiceSnapshot::from_profile(
@@ -119,8 +120,10 @@ impl VoidCanticleChoicePresentation {
                 ))
             }
             VcVisualMode::SupportChoice => {
-                let index = self.presentation.game.menu.selected()?;
-                let augment = VC23_SUSTAIN_AUGMENTS.get(index).copied()?;
+                let (index, augment) = self
+                    .presentation
+                    .game
+                    .presentation_selected_support_choice()?;
                 Some(ChoiceSnapshot::from_profile(
                     ChoiceFocus {
                         kind: ChoiceFocusKind::Support,
@@ -275,8 +278,9 @@ mod choice_runtime_tests {
         );
         assert_eq!(game.choice_hover_event(), None);
 
-        let selector = &mut game.presentation.game.game.game.game.game;
-        selector.menu.select_next();
+        game.presentation
+            .game
+            .presentation_select_next_chassis_for_test();
         assert_eq!(game.choice_hover_event(), Some(VC27_CHOICE_HOVER_SOUND));
         assert_eq!(game.choice_hover_event(), None);
     }
@@ -336,5 +340,15 @@ mod choice_runtime_tests {
             })
         ));
         assert!(choice_was_confirmed(before, None));
+    }
+
+    #[test]
+    fn current_choice_runtime_does_not_traverse_legacy_wrapper_chain() {
+        let source = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/void_canticle/presentation/choice_runtime.rs"
+        ));
+        let forbidden = [".game", ".game"].concat();
+        assert!(!source.contains(&forbidden));
     }
 }
