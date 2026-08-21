@@ -1,63 +1,59 @@
-fn vc27_support_profile(augment: Vc23SustainAugment) -> Vc27ChoiceProfile<'static> {
-    let (category, accent, renderer): (&'static str, Pixel, Vc27ChoiceArtRenderer) = match augment {
-        Vc23SustainAugment::NaniteRepair => (
+fn support_profile(augment: SustainAugment) -> ChoiceProfile<'static> {
+    let (category, accent, renderer): (&'static str, Pixel, ChoiceArtRenderer) = match augment {
+        SustainAugment::NaniteRepair => (
             "HULL SUSTAIN",
-            VC20_HULL,
-            vc27_support_nanite_art,
+            PRESENTATION_HULL_COLOR,
+            support_nanite_art,
         ),
-        Vc23SustainAugment::ShieldCapacitor => (
+        SustainAugment::ShieldCapacitor => (
             "SHIELD SUSTAIN",
             ART_CYAN_LIGHT,
-            vc27_support_capacitor_art,
+            support_capacitor_art,
         ),
     };
-    Vc27ChoiceProfile::new(
+    ChoiceProfile::new(
         augment.name(),
         category,
         accent,
-        Vc27ChoiceAssets::procedural(renderer),
+        ChoiceAssets::procedural(renderer),
     )
 }
 
-fn vc27_support_accent(augment: Vc23SustainAugment) -> Pixel {
-    vc27_support_profile(augment).accent()
+fn support_accent(augment: SustainAugment) -> Pixel {
+    support_profile(augment).accent()
 }
 
-fn vc27_support_trigger(augment: Vc23SustainAugment) -> String {
+fn support_trigger(augment: SustainAugment) -> String {
     match augment {
-        Vc23SustainAugment::NaniteRepair => {
-            format!("AFTER {:.1}S WITHOUT DAMAGE", VC23_NANITE_DELAY)
-        }
-        Vc23SustainAugment::ShieldCapacitor => {
-            format!("AFTER {:.1}S WITHOUT DAMAGE", VC23_CAPACITOR_DELAY)
+        SustainAugment::NaniteRepair => format!("AFTER {:.1}S WITHOUT DAMAGE", NANITE_DELAY),
+        SustainAugment::ShieldCapacitor => {
+            format!("AFTER {:.1}S WITHOUT DAMAGE", CAPACITOR_DELAY)
         }
     }
 }
 
-fn vc27_support_effect(augment: Vc23SustainAugment) -> String {
+fn support_effect(augment: SustainAugment) -> String {
     match augment {
-        Vc23SustainAugment::NaniteRepair => {
-            format!("HULL +{:.2} / SEC", VC23_NANITE_REPAIR_PER_SECOND)
-        }
-        Vc23SustainAugment::ShieldCapacitor => {
-            format!("SHIELD +{:.0} / SEC", VC23_CAPACITOR_REGEN_PER_SECOND)
+        SustainAugment::NaniteRepair => format!("HULL +{:.2} / SEC", NANITE_REPAIR_PER_SECOND),
+        SustainAugment::ShieldCapacitor => {
+            format!("SHIELD +{:.0} / SEC", CAPACITOR_REGEN_PER_SECOND)
         }
     }
 }
 
-fn vc27_support_detail(augment: Vc23SustainAugment) -> &'static str {
+fn support_detail(augment: SustainAugment) -> &'static str {
     match augment {
-        Vc23SustainAugment::NaniteRepair => "AUTONOMOUS STRUCTURAL REPAIR",
-        Vc23SustainAugment::ShieldCapacitor => "FAST DEFENSIVE RECHARGE",
+        SustainAugment::NaniteRepair => "AUTONOMOUS STRUCTURAL REPAIR",
+        SustainAugment::ShieldCapacitor => "FAST DEFENSIVE RECHARGE",
     }
 }
 
-fn vc27_render_support_showcase(
+fn render_support_showcase(
     framebuffer: &mut Framebuffer,
-    sustain: &VoidCanticleV23Sustain,
+    sustain: &GameplayRuntime,
     time: f32,
 ) {
-    vc27_choice_header(
+    choice_header(
         framebuffer,
         "SUPPORT",
         "CHOOSE A SUSTAIN MODULE",
@@ -65,9 +61,9 @@ fn vc27_render_support_showcase(
         time,
     );
 
-    let v14 = sustain.game.v20().game.v14();
-    if let Some(name) = vc27_primary_active_synergy(v14.progression.build, v14.mutations) {
-        vc27_render_active_synergy_strip(framebuffer, name, time);
+    let progression = sustain.presentation_progression();
+    if let Some(name) = primary_active_synergy(progression.progression.build, progression.mutations) {
+        render_active_synergy_strip(framebuffer, name, time);
     }
 
     let card_x = 12_i32;
@@ -76,10 +72,10 @@ fn vc27_render_support_showcase(
     let card_start_y = 112_i32;
     let card_gap = 16_i32;
 
-    for (index, augment) in VC23_SUSTAIN_AUGMENTS.iter().copied().enumerate() {
+    for (index, augment) in SUSTAIN_OPTIONS.iter().copied().enumerate() {
         let y = card_start_y + index as i32 * (card_height as i32 + card_gap);
         let selected = sustain.menu.selected() == Some(index);
-        vc27_render_support_card(
+        render_support_card(
             framebuffer,
             augment,
             selected,
@@ -91,7 +87,7 @@ fn vc27_render_support_showcase(
         );
     }
 
-    vc27_choice_footer(
+    choice_footer(
         framebuffer,
         ART_CYAN_LIGHT,
         "SUSTAIN THE PILGRIM / ENDURE THE ORBIT",
@@ -99,9 +95,9 @@ fn vc27_render_support_showcase(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_render_support_card(
+fn render_support_card(
     framebuffer: &mut Framebuffer,
-    augment: Vc23SustainAugment,
+    augment: SustainAugment,
     selected: bool,
     x: i32,
     y: i32,
@@ -109,16 +105,16 @@ fn vc27_render_support_card(
     height: u32,
     time: f32,
 ) {
-    let profile = vc27_support_profile(augment);
+    let profile = support_profile(augment);
     let accent = profile.accent();
-    vc27_choice_card_frame(
+    choice_card_frame(
         framebuffer,
         x,
         y,
         width,
         height,
         selected,
-        Vc27ChoiceCardStyle::new(
+        ChoiceCardStyle::new(
             accent,
             Pixel::rgb(6, 12, 18),
             Pixel::rgb(7, 20, 28),
@@ -128,32 +124,32 @@ fn vc27_render_support_card(
 
     let icon_x = x + 62;
     let icon_y = y + 84;
-    vc27_choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
+    choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
     profile.render_art(framebuffer, icon_x, icon_y, selected, time);
 
     let info_x = x + 122;
     framebuffer.draw_text(info_x, y + 18, profile.category(), WRECK_LIGHT);
     framebuffer.draw_text_scaled(info_x, y + 37, profile.label(), 2, accent);
-    framebuffer.draw_text(info_x, y + 70, &vc27_support_trigger(augment), TEXT);
-    framebuffer.draw_text(info_x, y + 91, &vc27_support_effect(augment), accent);
-    framebuffer.draw_text(info_x, y + 114, vc27_support_detail(augment), WRECK_LIGHT);
+    framebuffer.draw_text(info_x, y + 70, &support_trigger(augment), TEXT);
+    framebuffer.draw_text(info_x, y + 91, &support_effect(augment), accent);
+    framebuffer.draw_text(info_x, y + 114, support_detail(augment), WRECK_LIGHT);
     framebuffer.draw_text(info_x, y + 139, "ONE MODULE / RUN", WRECK_LIGHT);
     if selected {
         framebuffer.draw_text(x + width as i32 - 53, y + 19, "INSTALL", accent);
     }
 }
 
-fn vc27_render_support_icon(
+fn render_support_icon(
     framebuffer: &mut Framebuffer,
-    augment: Vc23SustainAugment,
+    augment: SustainAugment,
     x: i32,
     y: i32,
     selected: bool,
     time: f32,
 ) {
     match augment {
-        Vc23SustainAugment::NaniteRepair => {
-            framebuffer.draw_rect(x - 15, y - 18, 30, 36, VC20_HULL);
+        SustainAugment::NaniteRepair => {
+            framebuffer.draw_rect(x - 15, y - 18, 30, 36, PRESENTATION_HULL_COLOR);
             framebuffer.fill_rect(x - 3, y - 12, 6, 24, CANTICLE_COLOR);
             framebuffer.fill_rect(x - 12, y - 3, 24, 6, CANTICLE_COLOR);
             let orbit = if selected {
@@ -165,10 +161,10 @@ fn vc27_render_support_icon(
                 framebuffer.fill_circle(x + dx + orbit, y + dy, 2, MUTATION_LIGHT);
             }
         }
-        Vc23SustainAugment::ShieldCapacitor => {
+        SustainAugment::ShieldCapacitor => {
             framebuffer.draw_circle(x, y, 23, ART_CYAN_LIGHT);
-            framebuffer.draw_circle(x, y, 16, VC20_ARMOR);
-            framebuffer.fill_circle(x, y, 6, VC20_ARMOR_LIGHT);
+            framebuffer.draw_circle(x, y, 16, PRESENTATION_ARMOR_COLOR);
+            framebuffer.fill_circle(x, y, 6, PRESENTATION_ARMOR_LIGHT);
             framebuffer.draw_line(x - 26, y, x - 15, y, ART_CYAN_LIGHT);
             framebuffer.draw_line(x + 15, y, x + 26, y, ART_CYAN_LIGHT);
             framebuffer.draw_line(x, y - 26, x, y - 15, ART_CYAN_LIGHT);
@@ -177,16 +173,16 @@ fn vc27_render_support_icon(
     }
 }
 
-fn vc27_support_nanite_art(
+fn support_nanite_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     selected: bool,
     time: f32,
 ) {
-    vc27_render_support_icon(
+    render_support_icon(
         framebuffer,
-        Vc23SustainAugment::NaniteRepair,
+        SustainAugment::NaniteRepair,
         x,
         y,
         selected,
@@ -194,16 +190,16 @@ fn vc27_support_nanite_art(
     );
 }
 
-fn vc27_support_capacitor_art(
+fn support_capacitor_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     selected: bool,
     time: f32,
 ) {
-    vc27_render_support_icon(
+    render_support_icon(
         framebuffer,
-        Vc23SustainAugment::ShieldCapacitor,
+        SustainAugment::ShieldCapacitor,
         x,
         y,
         selected,
@@ -217,29 +213,28 @@ mod support_showcase_tests {
 
     #[test]
     fn support_copy_tracks_real_sustain_constants() {
-        assert!(vc27_support_trigger(Vc23SustainAugment::NaniteRepair)
-            .contains(&format!("{:.1}", VC23_NANITE_DELAY)));
-        assert!(vc27_support_trigger(Vc23SustainAugment::ShieldCapacitor)
-            .contains(&format!("{:.1}", VC23_CAPACITOR_DELAY)));
-        assert!(vc27_support_effect(Vc23SustainAugment::NaniteRepair)
-            .contains(&format!("{:.2}", VC23_NANITE_REPAIR_PER_SECOND)));
-        assert!(vc27_support_effect(Vc23SustainAugment::ShieldCapacitor)
-            .contains(&format!("{:.0}", VC23_CAPACITOR_REGEN_PER_SECOND)));
+        assert!(support_trigger(SustainAugment::NaniteRepair)
+            .contains(&format!("{:.1}", NANITE_DELAY)));
+        assert!(support_trigger(SustainAugment::ShieldCapacitor)
+            .contains(&format!("{:.1}", CAPACITOR_DELAY)));
+        assert!(support_effect(SustainAugment::NaniteRepair)
+            .contains(&format!("{:.2}", NANITE_REPAIR_PER_SECOND)));
+        assert!(support_effect(SustainAugment::ShieldCapacitor)
+            .contains(&format!("{:.0}", CAPACITOR_REGEN_PER_SECOND)));
     }
 
     #[test]
     fn support_modules_expose_choice_profile_assets_and_audio() {
-        for augment in VC23_SUSTAIN_AUGMENTS {
-            let profile = vc27_support_profile(augment);
+        for augment in SUSTAIN_OPTIONS {
+            let profile = support_profile(augment);
             let (expected_hover, expected_confirm) = match augment {
-                Vc23SustainAugment::NaniteRepair => (
-                    Some(Vc27ChoiceArtId::NaniteRepair.hover_override_sound()),
-                    Some(Vc27ChoiceArtId::NaniteRepair.confirm_override_sound()),
+                SustainAugment::NaniteRepair => (
+                    Some(ChoiceArtId::NaniteRepair.hover_override_sound()),
+                    Some(ChoiceArtId::NaniteRepair.confirm_override_sound()),
                 ),
-                Vc23SustainAugment::ShieldCapacitor => (
-                    Some(VC27_CHOICE_HOVER_SOUND),
-                    Some(VC27_CHOICE_CONFIRM_SOUND),
-                ),
+                SustainAugment::ShieldCapacitor => {
+                    (Some(CHOICE_HOVER_SOUND), Some(CHOICE_CONFIRM_SOUND))
+                }
             };
             assert_eq!(profile.label(), augment.name());
             assert_eq!(profile.hover_sound(), expected_hover);
