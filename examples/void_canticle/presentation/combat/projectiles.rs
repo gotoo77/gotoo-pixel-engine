@@ -2,8 +2,8 @@ impl VoidCanticlePresentation {
     fn render_pickups(&self, framebuffer: &mut Framebuffer) {
         let base = self.game.presentation_base();
         for cinder in &base.cinders {
-            let x = vc27_present(cinder.x);
-            let y = vc27_present(cinder.y);
+            let x = presentation_coord(cinder.x);
+            let y = presentation_coord(cinder.y);
             framebuffer.fill_circle(x, y, 3, CINDER);
             framebuffer.draw_line(x, y - 7, x, y - 4, CANTICLE_COLOR);
             framebuffer.draw(x - 2, y, CANTICLE_COLOR);
@@ -13,8 +13,8 @@ impl VoidCanticlePresentation {
         let progression = self.game.presentation_progression();
         let game = &progression.progression.combat.combat.ui.inner.inner;
         for relic in &game.relics {
-            let x = vc27_present(relic.x);
-            let y = vc27_present(relic.y);
+            let x = presentation_coord(relic.x);
+            let y = presentation_coord(relic.y);
             let pulse = ((relic.age * 7.0 + relic.phase).sin() * 2.0).round() as i32;
             framebuffer.draw_line(x, y - 9 - pulse, x + 8 + pulse, y, POWER_RELIC_LIGHT);
             framebuffer.draw_line(x + 8 + pulse, y, x, y + 9 + pulse, POWER_RELIC_LIGHT);
@@ -25,8 +25,8 @@ impl VoidCanticlePresentation {
         }
 
         for orb in &progression.progression.xp_orbs {
-            let x = vc27_present(orb.x);
-            let y = vc27_present(orb.y);
+            let x = presentation_coord(orb.x);
+            let y = presentation_coord(orb.y);
             framebuffer.draw_line(x, y - 5, x + 4, y, XP_SHARD_EDGE);
             framebuffer.draw_line(x + 4, y, x, y + 5, XP_SHARD_EDGE);
             framebuffer.draw_line(x, y + 5, x - 4, y, XP_SHARD_EDGE);
@@ -35,8 +35,8 @@ impl VoidCanticlePresentation {
         }
 
         for (x, y) in progression.orbital_positions() {
-            let x = vc27_present(x);
-            let y = vc27_present(y);
+            let x = presentation_coord(x);
+            let y = presentation_coord(y);
             framebuffer.draw_circle(x, y, 5, POWER_RELIC_LIGHT);
             framebuffer.fill_circle(x, y, 2, PILGRIM_VIOLET);
             framebuffer.draw(x, y, BOLT_CORE);
@@ -46,8 +46,8 @@ impl VoidCanticlePresentation {
     fn render_projectiles(&self, framebuffer: &mut Framebuffer) {
         let base = self.game.presentation_base();
         for bullet in &base.player_bullets {
-            let x = vc27_present(bullet.x);
-            let y = vc27_present(bullet.y);
+            let x = presentation_coord(bullet.x);
+            let y = presentation_coord(bullet.y);
             framebuffer.draw_line(x, y + 6, x, y - 7, BOLT_CORE);
             framebuffer.draw_line(x - 1, y + 4, x - 1, y - 4, BOLT_EDGE);
             framebuffer.draw_line(x + 1, y + 4, x + 1, y - 4, BOLT_EDGE);
@@ -56,8 +56,8 @@ impl VoidCanticlePresentation {
         let progression = self.game.presentation_progression();
         let game = &progression.progression.combat.combat.ui.inner.inner;
         for shot in &game.power_shots {
-            let x = vc27_present(shot.x);
-            let y = vc27_present(shot.y);
+            let x = presentation_coord(shot.x);
+            let y = presentation_coord(shot.y);
             let radius = if shot.radius >= 2 || shot.damage > 1 { 4 } else { 2 };
             framebuffer.fill_circle(x, y, radius, BOLT_EDGE);
             framebuffer.fill_circle(x, y, 1, BOLT_CORE);
@@ -103,8 +103,8 @@ fn render_enemy_bullet(
     pressure: VoidPressure,
     boss_phase: Option<BellPhase>,
 ) {
-    let x = vc27_present(bullet.x);
-    let y = vc27_present(bullet.y);
+    let x = presentation_coord(bullet.x);
+    let y = presentation_coord(bullet.y);
     let speed = (bullet.vx * bullet.vx + bullet.vy * bullet.vy).sqrt().max(1.0);
     let nx = bullet.vx / speed;
     let ny = bullet.vy / speed;
