@@ -1,9 +1,9 @@
-fn vc27_render_death_screen(
+fn render_death_screen(
     framebuffer: &mut Framebuffer,
-    sustain: &VoidCanticleV23Sustain,
+    sustain: &GameplayRuntime,
     time: f32,
 ) {
-    vc27_choice_header(
+    choice_header(
         framebuffer,
         "PILGRIM FALLEN",
         "THE GRAVE ORBIT KEEPS THE RECORD",
@@ -22,12 +22,18 @@ fn vc27_render_death_screen(
     framebuffer.draw_line(180, 148, 180, 166, WRECK_MID);
     framebuffer.fill_circle(180, 136, 4, VOID_DANGER);
 
-    let summary = vc27_run_summary(sustain);
-    vc27_render_run_summary(framebuffer, &summary, 20, 190, 320, DANGER, time);
+    let summary = run_summary(sustain);
+    render_run_summary(framebuffer, &summary, 20, 190, 320, DANGER, time);
 
     framebuffer.draw_line(42, 470, 318, 470, WRECK_MID);
     vc_visual_draw_centered_text(framebuffer, 497, "SPACE / SOUTH  REENTER", 1, DANGER);
-    vc_visual_draw_centered_text(framebuffer, 535, "THE BUILD ENDS / THE CANTICLE REMAINS", 1, WRECK_LIGHT);
+    vc_visual_draw_centered_text(
+        framebuffer,
+        535,
+        "THE BUILD ENDS / THE CANTICLE REMAINS",
+        1,
+        WRECK_LIGHT,
+    );
 }
 
 #[cfg(test)]
