@@ -1,14 +1,14 @@
-const VC27_CONTROL_ROWS: [(&str, &str, &str, Pixel); 6] = [
+const CONTROL_ROWS: [(&str, &str, &str, Pixel); 6] = [
     ("MOVE", "ARROWS / WASD", "STICK / DPAD", ART_CYAN_LIGHT),
     ("FIRE", "SPACE", "SOUTH", BOLT_EDGE),
     ("FOCUS", "SHIFT", "LB", PILGRIM_VIOLET),
     ("CANTICLE", "X", "EAST", CANTICLE_COLOR),
-    ("EMP", "C", "WEST", VC20_ARMOR_LIGHT),
+    ("EMP", "C", "WEST", PRESENTATION_ARMOR_LIGHT),
     ("PAUSE", "ESC", "START", POWER_RELIC_LIGHT),
 ];
 
-fn vc27_render_controls_reference(framebuffer: &mut Framebuffer, time: f32) {
-    vc27_choice_header(
+fn render_controls_reference(framebuffer: &mut Framebuffer, time: f32) {
+    choice_header(
         framebuffer,
         "CONTROLS",
         "PILGRIM INPUT / COMBAT REFERENCE",
@@ -21,9 +21,9 @@ fn vc27_render_controls_reference(framebuffer: &mut Framebuffer, time: f32) {
     framebuffer.draw_text(264, 96, "GAMEPAD", WRECK_LIGHT);
     framebuffer.draw_line(20, 112, 340, 112, WRECK_MID);
 
-    for (index, (action, keyboard, gamepad, accent)) in VC27_CONTROL_ROWS.into_iter().enumerate() {
+    for (index, (action, keyboard, gamepad, accent)) in CONTROL_ROWS.into_iter().enumerate() {
         let y = 128 + index as i32 * 58;
-        vc27_render_control_row(
+        render_control_row(
             framebuffer,
             action,
             keyboard,
@@ -58,7 +58,7 @@ fn vc27_render_controls_reference(framebuffer: &mut Framebuffer, time: f32) {
         574,
         "EMP = SHIELD DISRUPTION",
         1,
-        VC20_ARMOR_LIGHT,
+        PRESENTATION_ARMOR_LIGHT,
     );
     vc_visual_draw_centered_text(
         framebuffer,
@@ -70,7 +70,7 @@ fn vc27_render_controls_reference(framebuffer: &mut Framebuffer, time: f32) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_render_control_row(
+fn render_control_row(
     framebuffer: &mut Framebuffer,
     action: &str,
     keyboard: &str,
@@ -87,8 +87,8 @@ fn vc27_render_control_row(
     let edge = if pulse { accent } else { WRECK_MID };
     framebuffer.fill_rect(x, y, width, height, Pixel::rgb(7, 10, 18));
     framebuffer.draw_rect(x, y, width, height, edge);
-    vc27_choice_card_corner(framebuffer, x + 5, y + 5, 1, 1, edge);
-    vc27_choice_card_corner(
+    choice_card_corner(framebuffer, x + 5, y + 5, 1, 1, edge);
+    choice_card_corner(
         framebuffer,
         x + width as i32 - 6,
         y + height as i32 - 6,
@@ -108,10 +108,10 @@ mod controls_modal_tests {
     use super::*;
 
     #[test]
-    fn controls_reference_includes_modern_emp_binding() {
-        assert!(VC27_CONTROL_ROWS
-            .iter()
-            .any(|(action, keyboard, gamepad, _)| *action == "EMP" && *keyboard == "C" && *gamepad == "WEST"));
+    fn controls_reference_includes_emp_binding() {
+        assert!(CONTROL_ROWS.iter().any(|(action, keyboard, gamepad, _)| {
+            *action == "EMP" && *keyboard == "C" && *gamepad == "WEST"
+        }));
     }
 
     #[test]
