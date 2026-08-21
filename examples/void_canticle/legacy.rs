@@ -120,6 +120,14 @@ pub(crate) mod v07 {
                                                                             env!("CARGO_MANIFEST_DIR"),
                                                                             "/examples/void_canticle/presentation/frontend.rs"
                                                                         ));
+                                                                        include!(concat!(
+                                                                            env!("CARGO_MANIFEST_DIR"),
+                                                                            "/examples/void_canticle/presentation/gameplay_background.rs"
+                                                                        ));
+                                                                        include!(concat!(
+                                                                            env!("CARGO_MANIFEST_DIR"),
+                                                                            "/examples/void_canticle/presentation/gameplay_compositor.rs"
+                                                                        ));
                                                                     }
                                                                 }
                                                             }
