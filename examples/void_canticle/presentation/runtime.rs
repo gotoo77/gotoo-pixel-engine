@@ -1,7 +1,7 @@
 impl VoidCanticlePresentation {
     fn new() -> Self {
         Self {
-            game: VoidCanticleV23Sustain::new(),
+            game: GameplayRuntime::new(),
             legacy_sink: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             clean_background: Framebuffer::new(FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT),
             presentation_time: 0.0,
