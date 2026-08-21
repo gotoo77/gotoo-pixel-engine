@@ -58,7 +58,7 @@ fn upgrade_detail(upgrade: UpgradeKind) -> &'static str {
 
 fn render_upgrade_showcase(
     framebuffer: &mut Framebuffer,
-    progression: &VoidCanticleV13,
+    progression: &UpgradeProgression,
     mutations: &MutationBuild,
     choice: &LevelChoice,
     time: f32,
