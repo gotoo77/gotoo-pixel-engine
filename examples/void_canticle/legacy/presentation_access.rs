@@ -35,6 +35,38 @@ fn presentation_void_attack_speed(speed: f32) -> bool {
     vc23_void_attack_speed(speed)
 }
 
+fn presentation_carrion_key(enemy: &CarrionDrone) -> CarrionDefenseKey {
+    vc20_carrion_key(enemy)
+}
+
+fn presentation_carrion_armor_max(pattern: ShotPattern) -> u32 {
+    vc20_carrion_armor_max(pattern)
+}
+
+fn presentation_special_key(enemy: &SpecialEnemy) -> SpecialDefenseKey {
+    vc20_special_key(enemy)
+}
+
+fn presentation_special_armor_max(kind: SpecialKind) -> u32 {
+    vc20_special_armor_max(kind)
+}
+
+fn presentation_special_hp_max(kind: SpecialKind) -> u32 {
+    vc20_special_hp_max(kind)
+}
+
+fn presentation_threat_key(threat: &ThreatEnemy) -> ThreatDefenseKey {
+    vc20_threat_key(threat)
+}
+
+fn presentation_threat_armor_max(kind: ThreatKind) -> u32 {
+    vc20_threat_armor_max(kind)
+}
+
+fn presentation_threat_hp_max(kind: ThreatKind) -> u32 {
+    vc20_threat_hp_max(kind)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PresentationAnnouncement {
     Pressure(VoidPressure),
