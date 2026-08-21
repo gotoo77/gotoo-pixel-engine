@@ -120,7 +120,7 @@ impl VoidCanticlePresentation {
             if model.player_hull_flash_timer > 0.0 {
                 DANGER
             } else {
-                VC20_HULL
+                PRESENTATION_HULL_COLOR
             },
         );
         segmented_bar(
@@ -133,9 +133,9 @@ impl VoidCanticlePresentation {
             shield_cap,
             shield_segments,
             if model.player_shield_flash_timer > 0.0 {
-                VC20_ARMOR_LIGHT
+                PRESENTATION_ARMOR_LIGHT
             } else {
-                VC20_ARMOR
+                PRESENTATION_ARMOR_COLOR
             },
         );
     }
