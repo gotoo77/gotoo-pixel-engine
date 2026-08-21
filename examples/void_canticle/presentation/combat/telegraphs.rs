@@ -12,8 +12,8 @@ impl VoidCanticlePresentation {
                 continue;
             }
 
-            let x = vc27_present(enemy.x);
-            let y = vc27_present(enemy.y);
+            let x = presentation_coord(enemy.x);
+            let y = presentation_coord(enemy.y);
             let color = match enemy.pattern {
                 ShotPattern::Aimed => ENEMY_EYE,
                 ShotPattern::Fan3 => HOSTILE_EDGE,
@@ -39,8 +39,8 @@ impl VoidCanticlePresentation {
             ) else {
                 continue;
             };
-            let x = vc27_present(enemy.x);
-            let y = vc27_present(enemy.y) - 5;
+            let x = presentation_coord(enemy.x);
+            let y = presentation_coord(enemy.y) - 5;
             let radius = (29.0 - progress * 15.0).round().max(11.0) as u32;
             framebuffer.draw_circle(x, y, radius, WRAITH_GLOW);
             framebuffer.draw_circle(x, y, radius.saturating_sub(4), WRAITH_CORE);
@@ -48,8 +48,8 @@ impl VoidCanticlePresentation {
         }
 
         for threat in &encounter.threats {
-            let x = vc27_present(threat.x);
-            let y = vc27_present(threat.y);
+            let x = presentation_coord(threat.x);
+            let y = presentation_coord(threat.y);
             match threat.kind {
                 ThreatKind::ChoirNode => {
                     let buffing_carrion = base.enemies.iter().any(|enemy| {
@@ -97,8 +97,8 @@ impl VoidCanticlePresentation {
             && let Some(boss) = base.boss
             && let Some(progress) = telegraph_progress(boss.shot_timer, BOSS_TELEGRAPH_WINDOW)
         {
-            let x = vc27_present(boss.x);
-            let y = vc27_present(boss.y) - 6;
+            let x = presentation_coord(boss.x);
+            let y = presentation_coord(boss.y) - 6;
             let color = match boss.phase() {
                 BellPhase::Procession => BELL_LIGHT,
                 BellPhase::Resonance => WRAITH_GLOW,
