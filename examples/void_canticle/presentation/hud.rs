@@ -1,71 +1,62 @@
 impl VoidCanticlePresentation {
     fn render_event_announcement(&self, framebuffer: &mut Framebuffer) {
-        let v16b = &self.game.game.v20().game.ui.game.combat;
-
-        if v16b.pressure_reveal_timer > 0.0 && v16b.pressure_reveal != VoidPressure::Dormant {
-            let (headline, consequence) = pressure_transition_copy(v16b.pressure_reveal);
-            vc_visual_announcement(
-                framebuffer,
-                headline,
-                consequence,
-                void_pressure_color(v16b.pressure_reveal),
-                VOID_LIGHT,
-            );
+        let Some(announcement) = self.game.presentation_announcement() else {
             return;
-        }
+        };
 
-        if v16b.boss_phase_banner_timer > 0.0
-            && let Some(phase) = v16b.boss_phase_banner
-        {
-            vc_visual_announcement(
-                framebuffer,
-                "BELLKEEPER",
-                bell_phase_name(phase),
-                BELL_LIGHT,
-                CANTICLE_COLOR,
-            );
-            return;
-        }
-
-        let v15 = &v16b.combat.combat;
-        if v15.synergy_banner_timer > 0.0
-            && let Some(name) = v15.synergy_banner_name
-        {
-            vc_visual_announcement(
-                framebuffer,
-                "SYNERGY",
-                name,
-                SYNERGY_COLOR,
-                SYNERGY_GOLD,
-            );
-            return;
-        }
-
-        if self.game.game.base().canticle_timer > 0.0 {
-            vc_visual_announcement(
-                framebuffer,
-                "FULL WIPE",
-                "CANTICLE",
-                CANTICLE_COLOR,
-                CANTICLE_COLOR,
-            );
-            return;
-        }
-
-        if let Some(attack) = v16b.combat.pending_attack {
-            vc_visual_announcement(
-                framebuffer,
-                void_attack_name(attack.kind),
-                "VOID ATTACK",
-                void_pressure_color(v16b.combat.pressure),
-                VOID_LIGHT,
-            );
+        match announcement {
+            PresentationAnnouncement::Pressure(pressure) => {
+                let (headline, consequence) = pressure_transition_copy(pressure);
+                vc_visual_announcement(
+                    framebuffer,
+                    headline,
+                    consequence,
+                    void_pressure_color(pressure),
+                    VOID_LIGHT,
+                );
+            }
+            PresentationAnnouncement::BossPhase(phase) => {
+                vc_visual_announcement(
+                    framebuffer,
+                    "BELLKEEPER",
+                    bell_phase_name(phase),
+                    BELL_LIGHT,
+                    CANTICLE_COLOR,
+                );
+            }
+            PresentationAnnouncement::Synergy(name) => {
+                vc_visual_announcement(
+                    framebuffer,
+                    "SYNERGY",
+                    name,
+                    SYNERGY_COLOR,
+                    SYNERGY_GOLD,
+                );
+            }
+            PresentationAnnouncement::Canticle => {
+                vc_visual_announcement(
+                    framebuffer,
+                    "FULL WIPE",
+                    "CANTICLE",
+                    CANTICLE_COLOR,
+                    CANTICLE_COLOR,
+                );
+            }
+            PresentationAnnouncement::VoidAttack(kind) => {
+                vc_visual_announcement(
+                    framebuffer,
+                    void_attack_name(kind),
+                    "VOID ATTACK",
+                    void_pressure_color(self.game.presentation_void_pressure()),
+                    VOID_LIGHT,
+                );
+            }
         }
     }
 
     fn render_canticle_charge(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
-        let base = self.game.game.base();
+        let base = self.game.presentation_base();
         let width = 88 * scale;
         let height = 4 * scale;
         let x = (VC_VISUAL_PRESENTATION_WIDTH - width) / 2;
@@ -151,7 +142,7 @@ impl VoidCanticlePresentation {
 
     fn render_threat_meter(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
-        let pressure = self.game.game.v20().game.ui.game.combat.combat.pressure;
+        let pressure = self.game.presentation_void_pressure();
         let active = pressure_level(pressure);
         let brick_width = 4 * scale;
         let brick_height = 6 * scale;
@@ -192,7 +183,7 @@ impl VoidCanticlePresentation {
 
     fn render_echo_shell(&self, framebuffer: &mut Framebuffer) {
         let scale = VC_VISUAL_PRESENTATION_SCALE.max(1);
-        let progression = &self.game.game.v20().game.v14().progression;
+        let progression = &self.game.presentation_progression().progression;
         let ratio = if progression.xp_next == 0 {
             1.0
         } else {
