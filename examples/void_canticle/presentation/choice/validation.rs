@@ -1,6 +1,6 @@
-const VC29_CHOICE_ASSET_FIELDS: [&str; 3] = ["icon", "hover_sfx", "confirm_sfx"];
+const CHOICE_ASSET_FIELDS: [&str; 3] = ["icon", "hover_sfx", "confirm_sfx"];
 
-fn vc29_validate_choice_manifest(manifest_text: &str) -> Result<(), String> {
+fn validate_choice_manifest(manifest_text: &str) -> Result<(), String> {
     let manifest = serde_json::from_str::<serde_json::Value>(manifest_text)
         .map_err(|error| format!("invalid JSON: {error}"))?;
     let entries = manifest
@@ -20,7 +20,7 @@ fn vc29_validate_choice_manifest(manifest_text: &str) -> Result<(), String> {
         }
 
         if let Some(icon) = value.as_str() {
-            vc29_validate_choice_asset_path(choice_id, "icon", icon, ".png", &mut errors);
+            validate_choice_asset_path(choice_id, "icon", icon, ".png", &mut errors);
             continue;
         }
 
@@ -38,7 +38,7 @@ fn vc29_validate_choice_manifest(manifest_text: &str) -> Result<(), String> {
         }
 
         for field in descriptor.keys() {
-            if !VC29_CHOICE_ASSET_FIELDS.contains(&field.as_str()) {
+            if !CHOICE_ASSET_FIELDS.contains(&field.as_str()) {
                 errors.push(format!(
                     "choice `{choice_id}` contains unknown asset field `{field}`"
                 ));
@@ -59,7 +59,7 @@ fn vc29_validate_choice_manifest(manifest_text: &str) -> Result<(), String> {
                 ));
                 continue;
             };
-            vc29_validate_choice_asset_path(choice_id, field, path, extension, &mut errors);
+            validate_choice_asset_path(choice_id, field, path, extension, &mut errors);
         }
     }
 
@@ -70,7 +70,7 @@ fn vc29_validate_choice_manifest(manifest_text: &str) -> Result<(), String> {
     }
 }
 
-fn vc29_validate_choice_asset_path(
+fn validate_choice_asset_path(
     choice_id: &str,
     field: &str,
     path: &str,
@@ -123,23 +123,23 @@ mod choice_manifest_validation_tests {
     use super::*;
 
     #[test]
-    fn checked_in_vc29_choice_manifest_is_strictly_valid() {
-        vc29_validate_choice_manifest(include_str!(concat!(
+    fn checked_in_choice_manifest_is_strictly_valid() {
+        validate_choice_manifest(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/void_canticle/ui/choice/manifest.json"
         )))
-        .expect("checked-in VC2.9 choice asset manifest should be valid");
+        .expect("checked-in choice asset manifest should be valid");
     }
 
     #[test]
     fn validator_keeps_legacy_png_shorthand() {
-        vc29_validate_choice_manifest(r#"{"death_nova":"death_nova.png"}"#)
+        validate_choice_manifest(r#"{"death_nova":"death_nova.png"}"#)
             .expect("legacy PNG shorthand remains supported");
     }
 
     #[test]
     fn validator_accepts_partial_descriptors_without_requiring_asset_files() {
-        vc29_validate_choice_manifest(
+        validate_choice_manifest(
             r#"{
                 "death_nova": {"icon":"mutations/death_nova.png"},
                 "vital_spark": {"hover_sfx":"audio/vital_spark_hover.wav"},
@@ -151,7 +151,7 @@ mod choice_manifest_validation_tests {
 
     #[test]
     fn validator_rejects_unknown_choice_ids_and_fields() {
-        let error = vc29_validate_choice_manifest(
+        let error = validate_choice_manifest(
             r#"{
                 "clint_auris": {"icon":"clint.png"},
                 "death_nova": {"portrait":"death_nova.png"}
@@ -165,7 +165,7 @@ mod choice_manifest_validation_tests {
 
     #[test]
     fn validator_rejects_wrong_json_types_and_empty_descriptors() {
-        let error = vc29_validate_choice_manifest(
+        let error = validate_choice_manifest(
             r#"{
                 "death_nova": 12,
                 "orbitals": {},
@@ -181,7 +181,7 @@ mod choice_manifest_validation_tests {
 
     #[test]
     fn validator_rejects_path_traversal_absolute_paths_and_backslashes() {
-        let error = vc29_validate_choice_manifest(
+        let error = validate_choice_manifest(
             r#"{
                 "death_nova": {"icon":"../death_nova.png"},
                 "orbitals": {"hover_sfx":"/tmp/orbitals.wav"},
@@ -196,7 +196,7 @@ mod choice_manifest_validation_tests {
 
     #[test]
     fn validator_rejects_incoherent_extensions_and_whitespace() {
-        let error = vc29_validate_choice_manifest(
+        let error = validate_choice_manifest(
             r#"{
                 "death_nova": {"icon":"death_nova.wav"},
                 "orbitals": {"hover_sfx":"orbitals.png"},
