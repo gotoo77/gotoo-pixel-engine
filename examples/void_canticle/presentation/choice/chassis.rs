@@ -79,7 +79,7 @@ mod chassis_profile_tests {
 
     #[test]
     fn chassis_profiles_carry_the_same_audio_contract_as_other_choices() {
-        for chassis in VC22_CHASSIS {
+        for chassis in CHASSIS_OPTIONS {
             let profile = chassis_profile(chassis);
             let (expected_hover, expected_confirm) = match chassis {
                 ExosuitChassis::Bulwark => (
@@ -98,7 +98,7 @@ mod chassis_profile_tests {
 
     #[test]
     fn chassis_profiles_keep_gameplay_names_and_roles_authoritative() {
-        for chassis in VC22_CHASSIS {
+        for chassis in CHASSIS_OPTIONS {
             let profile = chassis_profile(chassis);
             assert_eq!(profile.label(), chassis.name());
             assert_eq!(profile.category(), chassis.role());
