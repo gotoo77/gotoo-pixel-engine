@@ -62,7 +62,7 @@ mod authored_choice_audio_tests {
             ),
         ] {
             assert!(
-                vc27_choice_wav_supported(bytes),
+                choice_wav_supported(bytes),
                 "{name} authored SFX should use supported GPE WAV encoding"
             );
         }
@@ -70,7 +70,7 @@ mod authored_choice_audio_tests {
 
     #[test]
     fn authored_audio_covers_each_choice_family() {
-        let entries = vc27_choice_manifest_entries(include_str!(concat!(
+        let entries = choice_manifest_entries(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/void_canticle/ui/choice/manifest.json"
         )))
