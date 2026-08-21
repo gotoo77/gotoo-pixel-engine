@@ -68,22 +68,40 @@ struct HitSnapshot {
 }
 
 impl HitSnapshot {
-    fn capture(game: &VoidCanticleV23Sustain) -> Self {
-        let v20 = game.game.v20();
+    fn capture(game: &GameplayRuntime) -> Self {
+        let defenses = game.presentation_defense_model();
+        let encounter = game.presentation_encounter_model();
         let mut snapshot = Self::default();
 
-        for enemy in game.game.base().enemies.iter().filter(|enemy| enemy.alive) {
+        for enemy in game
+            .presentation_base()
+            .enemies
+            .iter()
+            .filter(|enemy| enemy.alive)
+        {
             let key = vc20_carrion_key(enemy);
             let armor_max = vc20_carrion_armor_max(enemy.pattern);
-            let barrier = v20.carrion_armor.get(&key).copied().unwrap_or(armor_max);
+            let barrier = defenses
+                .carrion_armor
+                .get(&key)
+                .copied()
+                .unwrap_or(armor_max);
             snapshot.carrion.insert(key, HitBudget { barrier, hull: 1 });
         }
 
-        let v12 = &v20.game.v12();
-        for enemy in v12.combat.specials.iter().filter(|enemy| enemy.alive) {
+        for enemy in encounter
+            .combat
+            .specials
+            .iter()
+            .filter(|enemy| enemy.alive)
+        {
             let key = vc20_special_key(enemy);
             let armor_max = vc20_special_armor_max(enemy.kind);
-            let barrier = v20.special_armor.get(&key).copied().unwrap_or(armor_max);
+            let barrier = defenses
+                .special_armor
+                .get(&key)
+                .copied()
+                .unwrap_or(armor_max);
             snapshot.special.insert(
                 key,
                 HitBudget {
@@ -93,10 +111,14 @@ impl HitSnapshot {
             );
         }
 
-        for threat in v12.threats.iter().filter(|threat| threat.alive) {
+        for threat in encounter.threats.iter().filter(|threat| threat.alive) {
             let key = vc20_threat_key(threat);
             let armor_max = vc20_threat_armor_max(threat.kind);
-            let barrier = v20.threat_armor.get(&key).copied().unwrap_or(armor_max);
+            let barrier = defenses
+                .threat_armor
+                .get(&key)
+                .copied()
+                .unwrap_or(armor_max);
             snapshot.threat.insert(
                 key,
                 HitBudget {
@@ -106,9 +128,9 @@ impl HitSnapshot {
             );
         }
 
-        if let Some(boss) = game.game.base().boss {
+        if let Some(boss) = game.presentation_base().boss {
             snapshot.boss = Some(HitBudget {
-                barrier: v20.boss_shield,
+                barrier: defenses.boss_shield,
                 hull: boss.hp,
             });
         }
@@ -132,7 +154,7 @@ struct HitReactionState {
 }
 
 impl HitReactionState {
-    fn update(&mut self, dt: f32, before: &HitSnapshot, game: &VoidCanticleV23Sustain) {
+    fn update(&mut self, dt: f32, before: &HitSnapshot, game: &GameplayRuntime) {
         decay_hit_map(&mut self.carrion, dt);
         decay_hit_map(&mut self.special, dt);
         decay_hit_map(&mut self.threat, dt);
