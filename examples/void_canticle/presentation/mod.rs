@@ -25,7 +25,7 @@ include!(concat!(
 ));
 
 struct VoidCanticlePresentation {
-    game: VoidCanticleV23Sustain,
+    game: GameplayRuntime,
     legacy_sink: Framebuffer,
     clean_background: Framebuffer,
     presentation_time: f32,
