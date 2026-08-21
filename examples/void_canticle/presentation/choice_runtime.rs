@@ -25,7 +25,7 @@ struct ChoiceSnapshot {
 impl ChoiceSnapshot {
     fn from_profile(
         focus: ChoiceFocus,
-        profile: Vc27ChoiceProfile<'static>,
+        profile: ChoiceProfile<'static>,
         synergy_mask_before: u8,
     ) -> Self {
         Self {
@@ -57,7 +57,7 @@ struct VoidCanticleChoicePresentation {
 impl VoidCanticleChoicePresentation {
     fn new() -> Self {
         let mut presentation = VoidCanticlePresentation::new();
-        vc27_register_choice_sounds(
+        register_choice_sounds(
             &mut presentation.game.combat_model_mut().base_mut().sounds,
         );
         Self {
@@ -85,7 +85,7 @@ impl VoidCanticleChoicePresentation {
                     kind: ChoiceFocusKind::Chassis,
                     index,
                 },
-                vc27_chassis_profile(chassis),
+                chassis_profile(chassis),
                 synergy_mask_before,
             ));
         }
@@ -101,7 +101,7 @@ impl VoidCanticleChoicePresentation {
                         kind: ChoiceFocusKind::Upgrade,
                         index,
                     },
-                    vc27_upgrade_profile(upgrade),
+                    upgrade_profile(upgrade),
                     synergy_mask_before,
                 ))
             }
@@ -115,7 +115,7 @@ impl VoidCanticleChoicePresentation {
                         kind: ChoiceFocusKind::Mutation,
                         index,
                     },
-                    vc27_mutation_profile(mutation),
+                    mutation_profile(mutation),
                     synergy_mask_before,
                 ))
             }
@@ -129,7 +129,7 @@ impl VoidCanticleChoicePresentation {
                         kind: ChoiceFocusKind::Support,
                         index,
                     },
-                    vc27_support_profile(augment),
+                    support_profile(augment),
                     synergy_mask_before,
                 ))
             }
@@ -168,11 +168,11 @@ impl VoidCanticleChoicePresentation {
             return (false, None);
         }
 
-        let synergy = vc27_new_synergy_name(before.synergy_mask_before, self.current_synergy_mask());
+        let synergy = new_synergy_name(before.synergy_mask_before, self.current_synergy_mask());
         let duration = if synergy.is_some() {
-            VC27_SYNERGY_REVEAL_DURATION
+            SYNERGY_REVEAL_DURATION
         } else {
-            VC27_CHOICE_CONFIRM_DURATION
+            CHOICE_CONFIRM_DURATION
         };
         self.confirmation = Some(ChoiceConfirmation {
             label: before.label,
@@ -200,7 +200,7 @@ impl VoidCanticleChoicePresentation {
         let Some(confirmation) = self.confirmation else {
             return;
         };
-        vc27_render_choice_confirmation(
+        render_choice_confirmation(
             framebuffer,
             confirmation.label,
             confirmation.accent,
@@ -274,20 +274,20 @@ mod choice_runtime_tests {
         let mut game = VoidCanticleChoicePresentation::new();
         assert_eq!(
             game.choice_hover_event(),
-            Some(Vc27ChoiceArtId::Bulwark.hover_override_sound())
+            Some(ChoiceArtId::Bulwark.hover_override_sound())
         );
         assert_eq!(game.choice_hover_event(), None);
 
         game.presentation
             .game
             .presentation_select_next_chassis_for_test();
-        assert_eq!(game.choice_hover_event(), Some(VC27_CHOICE_HOVER_SOUND));
+        assert_eq!(game.choice_hover_event(), Some(CHOICE_HOVER_SOUND));
         assert_eq!(game.choice_hover_event(), None);
     }
 
     #[test]
     fn chassis_snapshot_uses_shared_choice_profile() {
-        let profile = vc27_chassis_profile(ExosuitChassis::Bulwark);
+        let profile = chassis_profile(ExosuitChassis::Bulwark);
         let snapshot = ChoiceSnapshot::from_profile(
             ChoiceFocus {
                 kind: ChoiceFocusKind::Chassis,
@@ -304,7 +304,7 @@ mod choice_runtime_tests {
 
     #[test]
     fn profile_snapshot_carries_visual_and_audio_identity() {
-        let profile = vc27_mutation_profile(MutationKind::DeathNova);
+        let profile = mutation_profile(MutationKind::DeathNova);
         let snapshot = ChoiceSnapshot::from_profile(
             ChoiceFocus {
                 kind: ChoiceFocusKind::Mutation,
