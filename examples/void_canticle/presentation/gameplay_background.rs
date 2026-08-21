@@ -1,6 +1,6 @@
 const GAMEPLAY_BACKGROUND_PNG: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/assets/void_canticle/backgrounds/void_abyss/background.png"
+    "/examples/void_canticle/assets/backgrounds/void_abyss.png"
 ));
 
 fn load_authored_gameplay_background() -> Framebuffer {
