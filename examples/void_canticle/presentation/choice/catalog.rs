@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Vc27ChoiceArtId {
+enum ChoiceArtId {
     Bulwark,
     Pilgrim,
     Wraith,
@@ -17,7 +17,7 @@ enum Vc27ChoiceArtId {
     ShieldCapacitor,
 }
 
-impl Vc27ChoiceArtId {
+impl ChoiceArtId {
     const ALL: [Self; 15] = [
         Self::Bulwark,
         Self::Pilgrim,
@@ -119,45 +119,45 @@ impl Vc27ChoiceArtId {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Vc27ChoiceAssetDescriptor {
+struct ChoiceAssetDescriptor {
     icon: Option<String>,
     hover_sfx: Option<String>,
     confirm_sfx: Option<String>,
 }
 
 #[derive(Debug, Default)]
-struct Vc27ChoiceCatalog {
-    sprites: std::collections::BTreeMap<Vc27ChoiceArtId, Sprite>,
-    hover_sfx: std::collections::BTreeMap<Vc27ChoiceArtId, Vec<u8>>,
-    confirm_sfx: std::collections::BTreeMap<Vc27ChoiceArtId, Vec<u8>>,
+struct ChoiceCatalog {
+    sprites: std::collections::BTreeMap<ChoiceArtId, Sprite>,
+    hover_sfx: std::collections::BTreeMap<ChoiceArtId, Vec<u8>>,
+    confirm_sfx: std::collections::BTreeMap<ChoiceArtId, Vec<u8>>,
 }
 
-impl Vc27ChoiceCatalog {
-    fn sprite(&self, id: Vc27ChoiceArtId) -> Option<&Sprite> {
+impl ChoiceCatalog {
+    fn sprite(&self, id: ChoiceArtId) -> Option<&Sprite> {
         self.sprites.get(&id)
     }
 
-    fn hover_sound(&self, id: Vc27ChoiceArtId) -> Option<SoundId> {
+    fn hover_sound(&self, id: ChoiceArtId) -> Option<SoundId> {
         self.hover_sfx
             .contains_key(&id)
             .then(|| id.hover_override_sound())
     }
 
-    fn confirm_sound(&self, id: Vc27ChoiceArtId) -> Option<SoundId> {
+    fn confirm_sound(&self, id: ChoiceArtId) -> Option<SoundId> {
         self.confirm_sfx
             .contains_key(&id)
             .then(|| id.confirm_override_sound())
     }
 
-    fn insert_sprite(&mut self, id: Vc27ChoiceArtId, sprite: Sprite) {
+    fn insert_sprite(&mut self, id: ChoiceArtId, sprite: Sprite) {
         self.sprites.insert(id, sprite);
     }
 
-    fn insert_hover_sfx(&mut self, id: Vc27ChoiceArtId, bytes: Vec<u8>) {
+    fn insert_hover_sfx(&mut self, id: ChoiceArtId, bytes: Vec<u8>) {
         self.hover_sfx.insert(id, bytes);
     }
 
-    fn insert_confirm_sfx(&mut self, id: Vc27ChoiceArtId, bytes: Vec<u8>) {
+    fn insert_confirm_sfx(&mut self, id: ChoiceArtId, bytes: Vec<u8>) {
         self.confirm_sfx.insert(id, bytes);
     }
 
@@ -165,7 +165,7 @@ impl Vc27ChoiceCatalog {
         &self,
         sounds: &mut SoundBank,
     ) -> Result<(), gotoo_pixel_engine::AudioError> {
-        for id in Vc27ChoiceArtId::ALL {
+        for id in ChoiceArtId::ALL {
             if let Some(bytes) = self.hover_sfx.get(&id) {
                 sounds.insert_wav(id.hover_override_sound(), bytes.clone())?;
             }
@@ -181,52 +181,52 @@ impl Vc27ChoiceCatalog {
     }
 }
 
-static VC27_CHOICE_CATALOG: std::sync::OnceLock<Vc27ChoiceCatalog> = std::sync::OnceLock::new();
+static CHOICE_CATALOG: std::sync::OnceLock<ChoiceCatalog> = std::sync::OnceLock::new();
 
-fn vc27_choice_catalog() -> &'static Vc27ChoiceCatalog {
-    VC27_CHOICE_CATALOG.get_or_init(vc27_load_choice_catalog)
+fn choice_catalog() -> &'static ChoiceCatalog {
+    CHOICE_CATALOG.get_or_init(load_choice_catalog)
 }
 
 #[cfg(target_arch = "wasm32")]
-fn vc27_load_choice_catalog() -> Vc27ChoiceCatalog {
-    Vc27ChoiceCatalog::default()
+fn load_choice_catalog() -> ChoiceCatalog {
+    ChoiceCatalog::default()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn vc27_load_choice_catalog() -> Vc27ChoiceCatalog {
+fn load_choice_catalog() -> ChoiceCatalog {
     let root = std::env::var_os("GPE_VC_CHOICE_ASSET_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("assets/void_canticle/ui/choice"));
     let Ok(manifest_text) = std::fs::read_to_string(root.join("manifest.json")) else {
-        return Vc27ChoiceCatalog::default();
+        return ChoiceCatalog::default();
     };
-    let Ok(entries) = vc27_choice_manifest_entries(&manifest_text) else {
-        return Vc27ChoiceCatalog::default();
+    let Ok(entries) = choice_manifest_entries(&manifest_text) else {
+        return ChoiceCatalog::default();
     };
 
-    let mut catalog = Vc27ChoiceCatalog::default();
-    for id in Vc27ChoiceArtId::ALL {
+    let mut catalog = ChoiceCatalog::default();
+    for id in ChoiceArtId::ALL {
         let Some(entry) = entries.get(id.slug()) else {
             continue;
         };
 
         if let Some(filename) = entry.icon.as_deref()
             && let Ok(bytes) = std::fs::read(root.join(filename))
-            && let Ok(sprite) = vc27_decode_png_sprite(&bytes)
+            && let Ok(sprite) = decode_choice_png_sprite(&bytes)
         {
             catalog.insert_sprite(id, sprite);
         }
 
         if let Some(filename) = entry.hover_sfx.as_deref()
             && let Ok(bytes) = std::fs::read(root.join(filename))
-            && vc27_choice_wav_supported(&bytes)
+            && choice_wav_supported(&bytes)
         {
             catalog.insert_hover_sfx(id, bytes);
         }
 
         if let Some(filename) = entry.confirm_sfx.as_deref()
             && let Ok(bytes) = std::fs::read(root.join(filename))
-            && vc27_choice_wav_supported(&bytes)
+            && choice_wav_supported(&bytes)
         {
             catalog.insert_confirm_sfx(id, bytes);
         }
@@ -234,9 +234,9 @@ fn vc27_load_choice_catalog() -> Vc27ChoiceCatalog {
     catalog
 }
 
-fn vc27_choice_manifest_entries(
+fn choice_manifest_entries(
     manifest_text: &str,
-) -> Result<std::collections::BTreeMap<String, Vc27ChoiceAssetDescriptor>, String> {
+) -> Result<std::collections::BTreeMap<String, ChoiceAssetDescriptor>, String> {
     let manifest = serde_json::from_str::<serde_json::Value>(manifest_text)
         .map_err(|error| error.to_string())?;
     let entries = manifest
@@ -246,12 +246,12 @@ fn vc27_choice_manifest_entries(
     let mut parsed = std::collections::BTreeMap::new();
     for (key, value) in entries {
         let descriptor = if let Some(icon) = value.as_str() {
-            Vc27ChoiceAssetDescriptor {
+            ChoiceAssetDescriptor {
                 icon: Some(icon.to_owned()),
-                ..Vc27ChoiceAssetDescriptor::default()
+                ..ChoiceAssetDescriptor::default()
             }
         } else if let Some(object) = value.as_object() {
-            Vc27ChoiceAssetDescriptor {
+            ChoiceAssetDescriptor {
                 icon: object
                     .get("icon")
                     .and_then(serde_json::Value::as_str)
@@ -274,7 +274,7 @@ fn vc27_choice_manifest_entries(
     Ok(parsed)
 }
 
-fn vc27_choice_wav_supported(bytes: &[u8]) -> bool {
+fn choice_wav_supported(bytes: &[u8]) -> bool {
     const PROBE_SOUND: SoundId = SoundId::new("void_canticle.ui.choice_asset_probe");
 
     let mut sounds = SoundBank::new();
@@ -286,7 +286,7 @@ fn vc27_choice_wav_supported(bytes: &[u8]) -> bool {
     sounds.preload(&mut audio).is_ok()
 }
 
-fn vc27_decode_png_sprite(bytes: &[u8]) -> Result<Sprite, String> {
+fn decode_choice_png_sprite(bytes: &[u8]) -> Result<Sprite, String> {
     let cursor = std::io::Cursor::new(bytes);
     let mut decoder = png::Decoder::new(std::io::BufReader::new(cursor));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
@@ -326,7 +326,7 @@ fn vc27_decode_png_sprite(bytes: &[u8]) -> Result<Sprite, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) async fn vc27_preload_choice_catalog_web(
+pub(crate) async fn preload_choice_catalog_web(
     base_url: &str,
 ) -> Result<usize, wasm_bindgen::JsValue> {
     use wasm_bindgen::JsCast as _;
@@ -363,11 +363,11 @@ pub(crate) async fn vc27_preload_choice_catalog_web(
     let base_url = base_url.trim_end_matches('/');
     let manifest_url = format!("{base_url}/manifest.json");
     let manifest_text = fetch_text(&manifest_url).await?;
-    let entries = vc27_choice_manifest_entries(&manifest_text)
+    let entries = choice_manifest_entries(&manifest_text)
         .map_err(|error| wasm_bindgen::JsValue::from_str(&error))?;
 
-    let mut catalog = Vc27ChoiceCatalog::default();
-    for id in Vc27ChoiceArtId::ALL {
+    let mut catalog = ChoiceCatalog::default();
+    for id in ChoiceArtId::ALL {
         let Some(entry) = entries.get(id.slug()) else {
             continue;
         };
@@ -375,7 +375,7 @@ pub(crate) async fn vc27_preload_choice_catalog_web(
         if let Some(filename) = entry.icon.as_deref() {
             let url = format!("{base_url}/{filename}");
             if let Ok(bytes) = fetch_bytes(&url).await
-                && let Ok(sprite) = vc27_decode_png_sprite(&bytes)
+                && let Ok(sprite) = decode_choice_png_sprite(&bytes)
             {
                 catalog.insert_sprite(id, sprite);
             }
@@ -384,7 +384,7 @@ pub(crate) async fn vc27_preload_choice_catalog_web(
         if let Some(filename) = entry.hover_sfx.as_deref() {
             let url = format!("{base_url}/{filename}");
             if let Ok(bytes) = fetch_bytes(&url).await
-                && vc27_choice_wav_supported(&bytes)
+                && choice_wav_supported(&bytes)
             {
                 catalog.insert_hover_sfx(id, bytes);
             }
@@ -393,7 +393,7 @@ pub(crate) async fn vc27_preload_choice_catalog_web(
         if let Some(filename) = entry.confirm_sfx.as_deref() {
             let url = format!("{base_url}/{filename}");
             if let Ok(bytes) = fetch_bytes(&url).await
-                && vc27_choice_wav_supported(&bytes)
+                && choice_wav_supported(&bytes)
             {
                 catalog.insert_confirm_sfx(id, bytes);
             }
@@ -401,7 +401,7 @@ pub(crate) async fn vc27_preload_choice_catalog_web(
     }
 
     let loaded = catalog.len();
-    let _ = VC27_CHOICE_CATALOG.set(catalog);
+    let _ = CHOICE_CATALOG.set(catalog);
     Ok(loaded)
 }
 
@@ -411,20 +411,20 @@ mod choice_catalog_tests {
 
     #[test]
     fn every_known_choice_art_id_has_a_manifest_entry() {
-        let entries = vc27_choice_manifest_entries(include_str!(concat!(
+        let entries = choice_manifest_entries(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/assets/void_canticle/ui/choice/manifest.json"
         )))
         .expect("choice asset manifest should be valid");
 
-        for id in Vc27ChoiceArtId::ALL {
+        for id in ChoiceArtId::ALL {
             assert!(entries.contains_key(id.slug()), "missing {}", id.slug());
         }
     }
 
     #[test]
     fn manifest_parser_preserves_legacy_string_entries() {
-        let entries = vc27_choice_manifest_entries(
+        let entries = choice_manifest_entries(
             r#"{"death_nova":"death_nova.png","ignored":12}"#,
         )
         .expect("valid manifest");
@@ -438,7 +438,7 @@ mod choice_catalog_tests {
 
     #[test]
     fn manifest_parser_accepts_complete_and_partial_descriptors() {
-        let entries = vc27_choice_manifest_entries(
+        let entries = choice_manifest_entries(
             r#"{
                 "death_nova": {
                     "icon": "death_nova.png",
@@ -455,7 +455,7 @@ mod choice_catalog_tests {
 
         assert_eq!(
             entries.get("death_nova"),
-            Some(&Vc27ChoiceAssetDescriptor {
+            Some(&ChoiceAssetDescriptor {
                 icon: Some("death_nova.png".to_owned()),
                 hover_sfx: Some("death_nova_hover.wav".to_owned()),
                 confirm_sfx: Some("death_nova_confirm.wav".to_owned()),
@@ -463,7 +463,7 @@ mod choice_catalog_tests {
         );
         assert_eq!(
             entries.get("vital_spark"),
-            Some(&Vc27ChoiceAssetDescriptor {
+            Some(&ChoiceAssetDescriptor {
                 icon: None,
                 hover_sfx: Some("vital_spark_hover.wav".to_owned()),
                 confirm_sfx: None,
@@ -473,41 +473,41 @@ mod choice_catalog_tests {
 
     #[test]
     fn catalog_can_override_one_art_id_without_touching_other_choices() {
-        let mut catalog = Vc27ChoiceCatalog::default();
+        let mut catalog = ChoiceCatalog::default();
         let sprite = Sprite::new(1, 1, vec![Pixel::WHITE]).expect("valid test sprite");
-        catalog.insert_sprite(Vc27ChoiceArtId::DeathNova, sprite);
-        assert!(catalog.sprite(Vc27ChoiceArtId::DeathNova).is_some());
-        assert!(catalog.sprite(Vc27ChoiceArtId::VitalSpark).is_none());
+        catalog.insert_sprite(ChoiceArtId::DeathNova, sprite);
+        assert!(catalog.sprite(ChoiceArtId::DeathNova).is_some());
+        assert!(catalog.sprite(ChoiceArtId::VitalSpark).is_none());
     }
 
     #[test]
     fn catalog_audio_overrides_have_stable_per_choice_sound_ids() {
         let wav = pcm16_mono_wav(44_100, &[0, 1, -1, 0]).expect("valid test WAV");
-        let mut catalog = Vc27ChoiceCatalog::default();
-        catalog.insert_hover_sfx(Vc27ChoiceArtId::DeathNova, wav.clone());
-        catalog.insert_confirm_sfx(Vc27ChoiceArtId::DeathNova, wav);
+        let mut catalog = ChoiceCatalog::default();
+        catalog.insert_hover_sfx(ChoiceArtId::DeathNova, wav.clone());
+        catalog.insert_confirm_sfx(ChoiceArtId::DeathNova, wav);
 
         assert_eq!(
-            catalog.hover_sound(Vc27ChoiceArtId::DeathNova),
-            Some(Vc27ChoiceArtId::DeathNova.hover_override_sound())
+            catalog.hover_sound(ChoiceArtId::DeathNova),
+            Some(ChoiceArtId::DeathNova.hover_override_sound())
         );
         assert_eq!(
-            catalog.confirm_sound(Vc27ChoiceArtId::DeathNova),
-            Some(Vc27ChoiceArtId::DeathNova.confirm_override_sound())
+            catalog.confirm_sound(ChoiceArtId::DeathNova),
+            Some(ChoiceArtId::DeathNova.confirm_override_sound())
         );
-        assert_eq!(catalog.hover_sound(Vc27ChoiceArtId::VitalSpark), None);
+        assert_eq!(catalog.hover_sound(ChoiceArtId::VitalSpark), None);
         assert_ne!(
-            Vc27ChoiceArtId::DeathNova.hover_override_sound(),
-            Vc27ChoiceArtId::VitalSpark.hover_override_sound()
+            ChoiceArtId::DeathNova.hover_override_sound(),
+            ChoiceArtId::VitalSpark.hover_override_sound()
         );
     }
 
     #[test]
     fn choice_wav_validation_rejects_invalid_audio_and_accepts_supported_pcm() {
-        assert!(!vc27_choice_wav_supported(b"not a wav"));
+        assert!(!choice_wav_supported(b"not a wav"));
 
         let wav = pcm16_mono_wav(48_000, &[0, 100, -100, 0]).expect("valid test WAV");
-        assert!(vc27_choice_wav_supported(&wav));
+        assert!(choice_wav_supported(&wav));
     }
 
     #[test]
@@ -522,7 +522,7 @@ mod choice_catalog_tests {
                 .write_image_data(&[12, 34, 56, 0])
                 .expect("test PNG pixels");
         }
-        let sprite = vc27_decode_png_sprite(&bytes).expect("decode test PNG");
+        let sprite = decode_choice_png_sprite(&bytes).expect("decode test PNG");
         assert_eq!(sprite.pixels(), &[Pixel::rgba(12, 34, 56, 0)]);
     }
 }
