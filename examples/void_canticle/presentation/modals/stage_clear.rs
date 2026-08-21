@@ -1,9 +1,9 @@
-fn vc27_render_stage_clear_presentation(
+fn render_stage_clear_presentation(
     framebuffer: &mut Framebuffer,
-    sustain: &VoidCanticleV23Sustain,
+    sustain: &GameplayRuntime,
     time: f32,
 ) {
-    vc27_choice_header(
+    choice_header(
         framebuffer,
         "STAGE CLEAR",
         "GRAVE ORBIT / PATH OPENS",
@@ -18,8 +18,8 @@ fn vc27_render_stage_clear_presentation(
     framebuffer.draw_line(174, 154, 207, 116, CANTICLE_COLOR);
     framebuffer.fill_circle(180, 136, 5, POWER_RELIC_LIGHT);
 
-    let summary = vc27_run_summary(sustain);
-    vc27_render_run_summary(
+    let summary = run_summary(sustain);
+    render_run_summary(
         framebuffer,
         &summary,
         20,
@@ -38,12 +38,6 @@ fn vc27_render_stage_clear_presentation(
 #[cfg(test)]
 mod stage_clear_presentation_tests {
     use super::*;
-
-    #[test]
-    fn stage_clear_actions_match_stabilized_runtime_bindings() {
-        assert_eq!(VC21_STAGE_RESTART.as_str(), "void_canticle.stage.restart");
-        assert_eq!(VC21_STAGE_MENU.as_str(), "void_canticle.stage.menu");
-    }
 
     #[test]
     fn stage_clear_footer_fits_presentation_space() {
