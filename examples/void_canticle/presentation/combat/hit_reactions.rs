@@ -79,8 +79,8 @@ impl HitSnapshot {
             .iter()
             .filter(|enemy| enemy.alive)
         {
-            let key = vc20_carrion_key(enemy);
-            let armor_max = vc20_carrion_armor_max(enemy.pattern);
+            let key = presentation_carrion_key(enemy);
+            let armor_max = presentation_carrion_armor_max(enemy.pattern);
             let barrier = defenses
                 .carrion_armor
                 .get(&key)
@@ -95,8 +95,8 @@ impl HitSnapshot {
             .iter()
             .filter(|enemy| enemy.alive)
         {
-            let key = vc20_special_key(enemy);
-            let armor_max = vc20_special_armor_max(enemy.kind);
+            let key = presentation_special_key(enemy);
+            let armor_max = presentation_special_armor_max(enemy.kind);
             let barrier = defenses
                 .special_armor
                 .get(&key)
@@ -112,8 +112,8 @@ impl HitSnapshot {
         }
 
         for threat in encounter.threats.iter().filter(|threat| threat.alive) {
-            let key = vc20_threat_key(threat);
-            let armor_max = vc20_threat_armor_max(threat.kind);
+            let key = presentation_threat_key(threat);
+            let armor_max = presentation_threat_armor_max(threat.kind);
             let barrier = defenses
                 .threat_armor
                 .get(&key)
@@ -317,7 +317,7 @@ fn render_hit_flash(
     }
 
     let primary = match visual.layer {
-        Some(HitLayer::Barrier) => VC20_ARMOR_LIGHT,
+        Some(HitLayer::Barrier) => PRESENTATION_ARMOR_LIGHT,
         Some(HitLayer::Hull) => CANTICLE_COLOR,
         None => return,
     };
