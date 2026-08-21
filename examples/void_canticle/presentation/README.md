@@ -1,3 +1,11 @@
-VC current presentation layer.
+# Void Canticle presentation
 
-New code in this directory uses semantic file/module names only. Historical Vc27/VoidCanticleV27 identifiers that remain inside migrated code are compatibility debt to remove incrementally; do not introduce new version-numbered identifiers.
+This directory contains the current presentation layer.
+
+Rules:
+
+- use semantic module, type, function, constant and test names only;
+- do not introduce or retain `vXX`, `VcXX`, `VCXX` or version-numbered identifiers here;
+- historical version names belong only under `legacy/` while that code still exists;
+- current presentation must compile outside the historical nested module graph;
+- prefer a narrow gameplay-facing boundary over direct `game.game.game...` traversal.
