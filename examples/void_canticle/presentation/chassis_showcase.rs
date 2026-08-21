@@ -5,7 +5,7 @@ fn chassis_accent(chassis: ExosuitChassis) -> Pixel {
 fn render_chassis_showcase(
     clean_background: &mut Framebuffer,
     framebuffer: &mut Framebuffer,
-    selector: &VoidCanticleV22,
+    selector: &ChassisSelector,
     time: f32,
 ) {
     clean_background.clear(BG);
@@ -38,7 +38,7 @@ fn render_chassis_showcase(
     let card_start_y = 88_i32;
     let card_gap = 9_i32;
 
-    for (index, chassis) in VC22_CHASSIS.iter().copied().enumerate() {
+    for (index, chassis) in CHASSIS_OPTIONS.iter().copied().enumerate() {
         let y = card_start_y + index as i32 * (card_height as i32 + card_gap);
         let selected = selector.menu.selected() == Some(index);
         let (hull, shield) = selector.chassis_limits(chassis);
@@ -149,7 +149,7 @@ fn render_chassis_card(
         "HULL",
         hull.round() as u32,
         profile.hull_multiplier / 1.50,
-        VC20_HULL,
+        PRESENTATION_HULL_COLOR,
     );
     render_chassis_stat(
         framebuffer,
@@ -158,7 +158,7 @@ fn render_chassis_card(
         "SHLD",
         shield.round() as u32,
         profile.shield_multiplier / 1.60,
-        VC20_ARMOR,
+        PRESENTATION_ARMOR_COLOR,
     );
     render_chassis_stat(
         framebuffer,
@@ -248,8 +248,8 @@ fn render_chassis_ship(
             framebuffer.draw_line(x, y - 36, x + 22, y - 25, BELL_LIGHT);
             framebuffer.fill_rect(x - 9, y - 18, 18, 25, KNIGHT_SHADOW);
             framebuffer.draw_rect(x - 9, y - 18, 18, 25, KNIGHT_GOLD);
-            framebuffer.fill_circle(x, y - 5, 5, VC20_ARMOR);
-            framebuffer.fill_circle(x, y - 5, 2, VC20_ARMOR_LIGHT);
+            framebuffer.fill_circle(x, y - 5, 5, PRESENTATION_ARMOR_COLOR);
+            framebuffer.fill_circle(x, y - 5, 2, PRESENTATION_ARMOR_LIGHT);
             framebuffer.draw_line(x - 16, y + 20, x - 20, y + 31, THRUSTER);
             framebuffer.draw_line(x + 16, y + 20, x + 20, y + 31, THRUSTER);
             framebuffer.draw_line(x - 28, y + 3, x - 39, y + 12, ART_GOLD);
