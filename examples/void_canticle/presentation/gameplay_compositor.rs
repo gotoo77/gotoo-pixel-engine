@@ -3,6 +3,7 @@ const GAMEPLAY_PRESENTATION_VERSION: &str = "VC3.3";
 struct HdGameplayCompositeApp {
     inner: VoidCanticleApp,
     composition_framebuffer: Framebuffer,
+    gameplay_background: Framebuffer,
 }
 
 impl HdGameplayCompositeApp {
@@ -10,6 +11,7 @@ impl HdGameplayCompositeApp {
         Self {
             inner: VoidCanticleApp::new(),
             composition_framebuffer: Framebuffer::new(FRONT_WIDTH, FRONT_HEIGHT),
+            gameplay_background: load_authored_gameplay_background(),
         }
     }
 }
@@ -37,7 +39,7 @@ impl Game for HdGameplayCompositeApp {
             self.inner.update(&mut inner_frame)
         };
 
-        render_abyssal_void_background(frame.framebuffer, self.inner.presentation_time);
+        frame.framebuffer.clone_from(&self.gameplay_background);
         composite_front_frame(&self.composition_framebuffer, frame.framebuffer);
         result
     }

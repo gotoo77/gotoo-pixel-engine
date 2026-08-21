@@ -1,148 +1,56 @@
-const ABYSSAL_BASE: Pixel = Pixel::rgb(2, 3, 9);
+const GAMEPLAY_BACKGROUND_PNG: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/void_canticle/backgrounds/void_abyss/background.png"
+));
 
-fn render_abyssal_void_background(framebuffer: &mut Framebuffer, time: f32) {
-    debug_assert_eq!(framebuffer.width(), FRONT_WIDTH);
-    debug_assert_eq!(framebuffer.height(), FRONT_HEIGHT);
+fn load_authored_gameplay_background() -> Framebuffer {
+    let image = gotoo_pixel_engine::Image::decode_png(GAMEPLAY_BACKGROUND_PNG)
+        .expect("checked-in Void Canticle gameplay background should decode");
+    let source_width = image.width();
+    let source_height = image.height();
+    assert!(
+        source_width >= 2 && source_height >= 2,
+        "Void Canticle gameplay background must have at least two pixels per axis"
+    );
 
-    framebuffer.clear(ABYSSAL_BASE);
-    render_abyssal_haze(framebuffer, time);
-    render_dead_celestial_mass(framebuffer, time);
-    render_star_layer(framebuffer, time, 0x41A7, 46, 4.5, 1, 31);
-    render_star_layer(framebuffer, time, 0x8F31, 30, 10.0, 1, 54);
-    render_star_layer(framebuffer, time, 0xD20B, 18, 18.0, 2, 82);
-    render_singularity_event(framebuffer, time);
-}
+    let rgba = image.as_rgba8();
+    let mut framebuffer = Framebuffer::new(FRONT_WIDTH, FRONT_HEIGHT);
 
-fn render_abyssal_haze(framebuffer: &mut Framebuffer, time: f32) {
-    let drift = (time * 0.09).sin() * 18.0;
-    let center_x = (-34.0 + drift).round() as i32;
-    let center_y = 672 + ((time * 0.07).cos() * 12.0).round() as i32;
+    let source_max_x = (source_width - 1) as f32;
+    let source_max_y = (source_height - 1) as f32;
+    let destination_max_x = (FRONT_WIDTH - 1) as f32;
+    let destination_max_y = (FRONT_HEIGHT - 1) as f32;
 
-    for (radius, color) in [
-        (300, Pixel::rgb(5, 4, 15)),
-        (252, Pixel::rgb(7, 5, 19)),
-        (204, Pixel::rgb(9, 6, 23)),
-        (158, Pixel::rgb(10, 7, 27)),
-    ] {
-        framebuffer.draw_circle(center_x, center_y, radius, color);
-        framebuffer.draw_circle(center_x + 1, center_y, radius.saturating_sub(1), color);
+    for y in 0..FRONT_HEIGHT {
+        let source_y = y as f32 * source_max_y / destination_max_y;
+        let y0 = source_y.floor() as u32;
+        let y1 = (y0 + 1).min(source_height - 1);
+        let ty = source_y - y0 as f32;
+
+        for x in 0..FRONT_WIDTH {
+            let source_x = x as f32 * source_max_x / destination_max_x;
+            let x0 = source_x.floor() as u32;
+            let x1 = (x0 + 1).min(source_width - 1);
+            let tx = source_x - x0 as f32;
+
+            let channel = |channel: usize| -> u8 {
+                let sample = |sx: u32, sy: u32| -> f32 {
+                    rgba[((sy * source_width + sx) * 4) as usize + channel] as f32
+                };
+                let top = sample(x0, y0) + (sample(x1, y0) - sample(x0, y0)) * tx;
+                let bottom = sample(x0, y1) + (sample(x1, y1) - sample(x0, y1)) * tx;
+                (top + (bottom - top) * ty).round().clamp(0.0, 255.0) as u8
+            };
+
+            framebuffer.set_pixel_in_bounds(
+                x,
+                y,
+                Pixel::rgba(channel(0), channel(1), channel(2), channel(3)),
+            );
+        }
     }
 
-    let upper_drift = (time * 0.06).cos() * 24.0;
-    let upper_x = (FRONT_WIDTH as f32 * 0.72 + upper_drift).round() as i32;
-    for (radius, color) in [
-        (236, Pixel::rgb(4, 7, 17)),
-        (188, Pixel::rgb(5, 9, 22)),
-        (142, Pixel::rgb(7, 10, 26)),
-    ] {
-        framebuffer.draw_circle(upper_x, 156, radius, color);
-    }
-}
-
-fn render_dead_celestial_mass(framebuffer: &mut Framebuffer, time: f32) {
-    let x = FRONT_WIDTH as i32 + 118 + ((time * 0.035).sin() * 8.0).round() as i32;
-    let y = 344 + ((time * 0.027).cos() * 6.0).round() as i32;
-    let radius = 286;
-
-    framebuffer.fill_circle(x, y, radius, Pixel::rgb(3, 4, 10));
-    framebuffer.draw_circle(x - 4, y, radius, Pixel::rgb(17, 10, 29));
-    framebuffer.draw_circle(x - 7, y, radius.saturating_sub(2), Pixel::rgb(8, 16, 31));
-}
-
-fn render_star_layer(
-    framebuffer: &mut Framebuffer,
-    time: f32,
-    salt: u32,
-    count: u32,
-    speed: f32,
-    size: u32,
-    base_luma: u8,
-) {
-    let height = FRONT_HEIGHT as f32;
-    for index in 0..count {
-        let seed = background_hash(index.wrapping_add(salt));
-        let x = seed % FRONT_WIDTH;
-        let base_y = background_hash(seed ^ 0x9E37_79B9) % FRONT_HEIGHT;
-        let y = (base_y as f32 + time.max(0.0) * speed).rem_euclid(height) as i32;
-        let twinkle_seed = background_hash(seed ^ ((time.max(0.0) * 3.0) as u32));
-        let twinkle = (twinkle_seed % 24) as u8;
-        let luma = base_luma.saturating_add(twinkle);
-        let color = if seed & 1 == 0 {
-            Pixel::rgb(luma.saturating_sub(8), luma, luma.saturating_add(14))
-        } else {
-            Pixel::rgb(luma.saturating_add(10), luma.saturating_sub(5), luma.saturating_add(8))
-        };
-        framebuffer.fill_rect(x as i32, y, size, size, color);
-    }
-}
-
-fn render_singularity_event(framebuffer: &mut Framebuffer, time: f32) {
-    let visibility = singularity_visibility(time);
-    if visibility <= 0.0 {
-        return;
-    }
-
-    let center_x = (FRONT_WIDTH as f32 * 0.34 + (time * 0.11).sin() * 9.0).round() as i32;
-    let center_y = 214 + ((time * 0.08).cos() * 8.0).round() as i32;
-    let violet = scaled_rgb(72, 29, 102, visibility);
-    let cyan = scaled_rgb(24, 73, 94, visibility * 0.82);
-    let pale = scaled_rgb(105, 86, 124, visibility * 0.72);
-
-    for offset in 0..4 {
-        framebuffer.draw_circle(center_x, center_y, 94 + offset * 5, violet);
-    }
-    framebuffer.draw_circle(center_x, center_y, 118, cyan);
-    framebuffer.draw_circle(center_x, center_y, 124, pale);
-
-    let disk_half = (108.0 * visibility).round() as i32;
-    for row in -2..=2 {
-        let taper = 10 - row_i32_abs(row) * 2;
-        framebuffer.draw_line(
-            center_x - disk_half - taper,
-            center_y + row,
-            center_x + disk_half + taper,
-            center_y + row,
-            if row == 0 { pale } else { violet },
-        );
-    }
-
-    framebuffer.fill_circle(center_x, center_y, 52, Pixel::rgb(0, 0, 2));
-    framebuffer.draw_circle(center_x, center_y, 54, Pixel::rgb(14, 8, 23));
-}
-
-fn singularity_visibility(time: f32) -> f32 {
-    let phase = time.max(0.0).rem_euclid(52.0);
-    if !(16.0..=30.0).contains(&phase) {
-        return 0.0;
-    }
-    if phase < 20.0 {
-        return ((phase - 16.0) / 4.0).clamp(0.0, 1.0);
-    }
-    if phase > 26.0 {
-        return ((30.0 - phase) / 4.0).clamp(0.0, 1.0);
-    }
-    1.0
-}
-
-fn scaled_rgb(red: u8, green: u8, blue: u8, intensity: f32) -> Pixel {
-    let intensity = intensity.clamp(0.0, 1.0);
-    Pixel::rgb(
-        (red as f32 * intensity).round() as u8,
-        (green as f32 * intensity).round() as u8,
-        (blue as f32 * intensity).round() as u8,
-    )
-}
-
-fn background_hash(mut value: u32) -> u32 {
-    value ^= value >> 16;
-    value = value.wrapping_mul(0x7FEB_352D);
-    value ^= value >> 15;
-    value = value.wrapping_mul(0x846C_A68B);
-    value ^ (value >> 16)
-}
-
-fn row_i32_abs(value: i32) -> i32 {
-    value.abs()
+    framebuffer
 }
 
 fn composite_over(background: Pixel, foreground: Pixel) -> Pixel {
@@ -182,22 +90,22 @@ mod gameplay_background_tests {
     use super::*;
 
     #[test]
-    fn abyssal_background_is_full_size_and_opaque() {
-        let mut framebuffer = Framebuffer::new(FRONT_WIDTH, FRONT_HEIGHT);
-        render_abyssal_void_background(&mut framebuffer, 0.0);
-
-        for (x, y) in [(0, 0), (FRONT_WIDTH as i32 / 2, FRONT_HEIGHT as i32 / 2), (FRONT_WIDTH as i32 - 1, FRONT_HEIGHT as i32 - 1)] {
-            assert_eq!(framebuffer.pixel(x, y).unwrap().a, 255);
-        }
+    fn checked_in_background_uses_compact_authored_source_size() {
+        let image = gotoo_pixel_engine::Image::decode_png(GAMEPLAY_BACKGROUND_PNG).unwrap();
+        assert_eq!((image.width(), image.height()), (180, 320));
     }
 
     #[test]
-    fn singularity_is_a_rare_timed_signature() {
-        assert_eq!(singularity_visibility(0.0), 0.0);
-        assert_eq!(singularity_visibility(15.9), 0.0);
-        assert!(singularity_visibility(18.0) > 0.0);
-        assert_eq!(singularity_visibility(22.0), 1.0);
-        assert_eq!(singularity_visibility(30.1), 0.0);
+    fn authored_background_is_scaled_to_hd_front_size() {
+        let framebuffer = load_authored_gameplay_background();
+        assert_eq!((framebuffer.width(), framebuffer.height()), (FRONT_WIDTH, FRONT_HEIGHT));
+        for (x, y) in [
+            (0, 0),
+            (FRONT_WIDTH as i32 / 2, FRONT_HEIGHT as i32 / 2),
+            (FRONT_WIDTH as i32 - 1, FRONT_HEIGHT as i32 - 1),
+        ] {
+            assert_eq!(framebuffer.pixel(x, y).unwrap().a, 255);
+        }
     }
 
     #[test]
@@ -209,6 +117,9 @@ mod gameplay_background_tests {
     #[test]
     fn opaque_foreground_replaces_background() {
         let foreground = Pixel::rgb(240, 48, 200);
-        assert_eq!(composite_over(Pixel::rgb(4, 8, 16), foreground), foreground);
+        assert_eq!(
+            composite_over(Pixel::rgb(4, 8, 16), foreground),
+            foreground
+        );
     }
 }
