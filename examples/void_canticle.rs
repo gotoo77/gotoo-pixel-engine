@@ -42,9 +42,9 @@ pub(crate) mod game {
         ));
     }
 
+    pub(crate) use presentation::run_void_canticle_with_obs_mirror;
     #[cfg(target_arch = "wasm32")]
     pub(crate) use presentation::vc27_preload_choice_catalog_web as preload_choice_catalog_web;
-    pub(crate) use presentation::run_void_canticle_with_obs_mirror;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
