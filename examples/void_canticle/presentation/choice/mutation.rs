@@ -65,7 +65,7 @@ fn mutation_detail(mutation: MutationKind) -> &'static str {
 
 fn render_mutation_showcase(
     framebuffer: &mut Framebuffer,
-    game: &VoidCanticleV14,
+    game: &MutationProgression,
     choice: &MutationChoice,
     time: f32,
 ) {
