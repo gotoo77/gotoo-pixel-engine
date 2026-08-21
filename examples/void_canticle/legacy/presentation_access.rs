@@ -7,6 +7,7 @@
 
 type GameplayRuntime = VoidCanticleV23Sustain;
 type ChassisSelector = VoidCanticleV22;
+type PauseMenuState = VoidCanticlePauseV17;
 type SustainAugment = Vc23SustainAugment;
 type AttackSound = Vc23AttackSound;
 type CombatParticleKind = V17ParticleKind;
