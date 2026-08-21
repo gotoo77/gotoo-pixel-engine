@@ -1,35 +1,35 @@
-fn vc27_mutation_profile(mutation: MutationKind) -> Vc27ChoiceProfile<'static> {
-    let (category, accent, renderer): (&'static str, Pixel, Vc27ChoiceArtRenderer) = match mutation {
+fn mutation_profile(mutation: MutationKind) -> ChoiceProfile<'static> {
+    let (category, accent, renderer): (&'static str, Pixel, ChoiceArtRenderer) = match mutation {
         MutationKind::PiercingLance => (
             "WEAPON FORM",
             MUTATION_LIGHT,
-            vc27_mutation_piercing_lance_art,
+            mutation_piercing_lance_art,
         ),
         MutationKind::SplitVolley => (
             "WEAPON SPREAD",
             MUTATION_COLOR,
-            vc27_mutation_split_volley_art,
+            mutation_split_volley_art,
         ),
-        MutationKind::DeathNova => ("DEATH FIELD", DANGER, vc27_mutation_death_nova_art),
-        MutationKind::Orbitals => ("RELIC SWARM", VOID_LIGHT, vc27_mutation_orbitals_art),
+        MutationKind::DeathNova => ("DEATH FIELD", DANGER, mutation_death_nova_art),
+        MutationKind::Orbitals => ("RELIC SWARM", VOID_LIGHT, mutation_orbitals_art),
     };
-    Vc27ChoiceProfile::new(
+    ChoiceProfile::new(
         mutation_name(mutation),
         category,
         accent,
-        Vc27ChoiceAssets::procedural(renderer),
+        ChoiceAssets::procedural(renderer),
     )
 }
 
-fn vc27_mutation_accent(mutation: MutationKind) -> Pixel {
-    vc27_mutation_profile(mutation).accent()
+fn mutation_accent(mutation: MutationKind) -> Pixel {
+    mutation_profile(mutation).accent()
 }
 
-fn vc27_mutation_assets(mutation: MutationKind) -> Vc27ChoiceAssets<'static> {
-    vc27_mutation_profile(mutation).assets()
+fn mutation_assets(mutation: MutationKind) -> ChoiceAssets<'static> {
+    mutation_profile(mutation).assets()
 }
 
-fn vc27_mutation_stack(build: &MutationBuild, mutation: MutationKind) -> u32 {
+fn mutation_stack(build: &MutationBuild, mutation: MutationKind) -> u32 {
     match mutation {
         MutationKind::PiercingLance => build.piercing_lance,
         MutationKind::SplitVolley => build.split_volley,
@@ -38,14 +38,14 @@ fn vc27_mutation_stack(build: &MutationBuild, mutation: MutationKind) -> u32 {
     }
 }
 
-fn vc27_mutation_max(mutation: MutationKind) -> u32 {
+fn mutation_max(mutation: MutationKind) -> u32 {
     match mutation {
         MutationKind::PiercingLance | MutationKind::DeathNova => 4,
         MutationKind::SplitVolley | MutationKind::Orbitals => 3,
     }
 }
 
-fn vc27_mutation_effect(mutation: MutationKind) -> &'static str {
+fn mutation_effect(mutation: MutationKind) -> &'static str {
     match mutation {
         MutationKind::PiercingLance => "PIERCING LINE BEAM",
         MutationKind::SplitVolley => "ADD SIDE SHOT PAIR",
@@ -54,7 +54,7 @@ fn vc27_mutation_effect(mutation: MutationKind) -> &'static str {
     }
 }
 
-fn vc27_mutation_detail(mutation: MutationKind) -> &'static str {
+fn mutation_detail(mutation: MutationKind) -> &'static str {
     match mutation {
         MutationKind::PiercingLance => "STACKS IMPROVE RATE / DAMAGE",
         MutationKind::SplitVolley => "STACKS ADD WIDER VOLLEYS",
@@ -63,13 +63,13 @@ fn vc27_mutation_detail(mutation: MutationKind) -> &'static str {
     }
 }
 
-fn vc27_render_mutation_showcase(
+fn render_mutation_showcase(
     framebuffer: &mut Framebuffer,
     game: &VoidCanticleV14,
     choice: &MutationChoice,
     time: f32,
 ) {
-    vc27_choice_header(
+    choice_header(
         framebuffer,
         "MUTATION",
         "BUILD EVOLVES / EMBRACE THE VOID",
@@ -86,7 +86,7 @@ fn vc27_render_mutation_showcase(
     for (index, mutation) in choice.offers.iter().copied().enumerate() {
         let y = card_start_y + index as i32 * (card_height as i32 + card_gap);
         let selected = choice.menu.selected() == Some(index);
-        vc27_render_mutation_card(
+        render_mutation_card(
             framebuffer,
             mutation,
             &game.progression.build,
@@ -100,7 +100,7 @@ fn vc27_render_mutation_showcase(
         );
     }
 
-    vc27_choice_footer(
+    choice_footer(
         framebuffer,
         MUTATION_LIGHT,
         "EVOLVE THE BUILD / ACCEPT THE CONSEQUENCE",
@@ -108,7 +108,7 @@ fn vc27_render_mutation_showcase(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vc27_render_mutation_card(
+fn render_mutation_card(
     framebuffer: &mut Framebuffer,
     mutation: MutationKind,
     base_build: &BuildState,
@@ -120,16 +120,16 @@ fn vc27_render_mutation_card(
     height: u32,
     time: f32,
 ) {
-    let profile = vc27_mutation_profile(mutation);
+    let profile = mutation_profile(mutation);
     let accent = profile.accent();
-    vc27_choice_card_frame(
+    choice_card_frame(
         framebuffer,
         x,
         y,
         width,
         height,
         selected,
-        Vc27ChoiceCardStyle::new(
+        ChoiceCardStyle::new(
             accent,
             Pixel::rgb(13, 6, 18),
             Pixel::rgb(24, 8, 26),
@@ -139,21 +139,21 @@ fn vc27_render_mutation_card(
 
     let icon_x = x + 58;
     let icon_y = y + 64;
-    vc27_choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
+    choice_icon_shell(framebuffer, icon_x, icon_y, accent, selected, time);
     profile.render_art(framebuffer, icon_x, icon_y, selected, time);
 
     let info_x = x + 112;
     framebuffer.draw_text(info_x, y + 12, profile.category(), WRECK_LIGHT);
     framebuffer.draw_text_scaled(info_x, y + 28, profile.label(), 2, accent);
-    framebuffer.draw_text(info_x, y + 54, vc27_mutation_effect(mutation), TEXT);
-    framebuffer.draw_text(info_x, y + 70, vc27_mutation_detail(mutation), WRECK_LIGHT);
+    framebuffer.draw_text(info_x, y + 54, mutation_effect(mutation), TEXT);
+    framebuffer.draw_text(info_x, y + 70, mutation_detail(mutation), WRECK_LIGHT);
 
-    if let Some(name) = vc27_synergy_after_mutation(*base_build, *build, mutation) {
-        vc27_render_synergy_hint(framebuffer, info_x, y + 87, name, selected, time);
+    if let Some(name) = synergy_after_mutation(*base_build, *build, mutation) {
+        render_synergy_hint(framebuffer, info_x, y + 87, name, selected, time);
     }
 
-    let stack = vc27_mutation_stack(build, mutation);
-    let max = vc27_mutation_max(mutation);
+    let stack = mutation_stack(build, mutation);
+    let max = mutation_max(mutation);
     let next = stack.saturating_add(1).min(max);
     framebuffer.draw_text(
         info_x,
@@ -164,10 +164,10 @@ fn vc27_render_mutation_card(
     if selected {
         framebuffer.draw_text(x + width as i32 - 53, y + 13, "EVOLVE", accent);
     }
-    vc27_choice_stack_nodes(framebuffer, info_x, y + 114, stack, max, accent);
+    choice_stack_nodes(framebuffer, info_x, y + 114, stack, max, accent);
 }
 
-fn vc27_render_mutation_icon(
+fn render_mutation_icon(
     framebuffer: &mut Framebuffer,
     mutation: MutationKind,
     x: i32,
@@ -210,44 +210,44 @@ fn vc27_render_mutation_icon(
     }
 }
 
-fn vc27_mutation_piercing_lance_art(
+fn mutation_piercing_lance_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     time: f32,
 ) {
-    vc27_render_mutation_icon(framebuffer, MutationKind::PiercingLance, x, y, time);
+    render_mutation_icon(framebuffer, MutationKind::PiercingLance, x, y, time);
 }
 
-fn vc27_mutation_split_volley_art(
+fn mutation_split_volley_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     time: f32,
 ) {
-    vc27_render_mutation_icon(framebuffer, MutationKind::SplitVolley, x, y, time);
+    render_mutation_icon(framebuffer, MutationKind::SplitVolley, x, y, time);
 }
 
-fn vc27_mutation_death_nova_art(
+fn mutation_death_nova_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     time: f32,
 ) {
-    vc27_render_mutation_icon(framebuffer, MutationKind::DeathNova, x, y, time);
+    render_mutation_icon(framebuffer, MutationKind::DeathNova, x, y, time);
 }
 
-fn vc27_mutation_orbitals_art(
+fn mutation_orbitals_art(
     framebuffer: &mut Framebuffer,
     x: i32,
     y: i32,
     _selected: bool,
     time: f32,
 ) {
-    vc27_render_mutation_icon(framebuffer, MutationKind::Orbitals, x, y, time);
+    render_mutation_icon(framebuffer, MutationKind::Orbitals, x, y, time);
 }
 
 #[cfg(test)]
@@ -256,25 +256,22 @@ mod mutation_showcase_tests {
 
     #[test]
     fn mutation_stack_caps_match_gameplay_caps() {
-        assert_eq!(vc27_mutation_max(MutationKind::PiercingLance), 4);
-        assert_eq!(vc27_mutation_max(MutationKind::SplitVolley), 3);
-        assert_eq!(vc27_mutation_max(MutationKind::DeathNova), 4);
-        assert_eq!(vc27_mutation_max(MutationKind::Orbitals), 3);
+        assert_eq!(mutation_max(MutationKind::PiercingLance), 4);
+        assert_eq!(mutation_max(MutationKind::SplitVolley), 3);
+        assert_eq!(mutation_max(MutationKind::DeathNova), 4);
+        assert_eq!(mutation_max(MutationKind::Orbitals), 3);
     }
 
     #[test]
     fn mutations_expose_choice_profile_assets_and_audio() {
         for mutation in MUTATION_POOL {
-            let profile = vc27_mutation_profile(mutation);
+            let profile = mutation_profile(mutation);
             let (expected_hover, expected_confirm) = match mutation {
                 MutationKind::DeathNova => (
-                    Some(Vc27ChoiceArtId::DeathNova.hover_override_sound()),
-                    Some(Vc27ChoiceArtId::DeathNova.confirm_override_sound()),
+                    Some(ChoiceArtId::DeathNova.hover_override_sound()),
+                    Some(ChoiceArtId::DeathNova.confirm_override_sound()),
                 ),
-                _ => (
-                    Some(VC27_CHOICE_HOVER_SOUND),
-                    Some(VC27_CHOICE_CONFIRM_SOUND),
-                ),
+                _ => (Some(CHOICE_HOVER_SOUND), Some(CHOICE_CONFIRM_SOUND)),
             };
             assert_eq!(profile.label(), mutation_name(mutation));
             assert_eq!(profile.hover_sound(), expected_hover);
