@@ -16,6 +16,7 @@ mod renderer;
 mod sfx_manifest;
 mod sprite;
 mod storage;
+mod text;
 pub mod ui;
 mod viewport;
 
@@ -38,4 +39,5 @@ pub use platform::{EngineConfig, EngineError, Frame, Game, GameResult, run};
 pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
+pub use text::TextRenderer;
 pub use viewport::{Rect, Size, Viewport};
