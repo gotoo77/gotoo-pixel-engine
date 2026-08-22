@@ -1,6 +1,6 @@
 use std::fmt;
 
-use ab_glyph::{point, Font as _, FontArc, GlyphId, PxScale, ScaleFont};
+use ab_glyph::{Font as _, FontArc, GlyphId, PxScale, ScaleFont, point};
 
 use crate::{Framebuffer, Pixel};
 
@@ -166,13 +166,7 @@ fn ceil_to_u32(value: f32) -> u32 {
     value.ceil().min(u32::MAX as f32) as u32
 }
 
-fn blend_coverage(
-    framebuffer: &mut Framebuffer,
-    x: i32,
-    y: i32,
-    source: Pixel,
-    coverage: f32,
-) {
+fn blend_coverage(framebuffer: &mut Framebuffer, x: i32, y: i32, source: Pixel, coverage: f32) {
     let Some(destination) = framebuffer.pixel(x, y) else {
         return;
     };
@@ -185,9 +179,7 @@ fn blend_coverage(
 
     let inverse_alpha = 255 - source_alpha;
     let blend_channel = |source_channel: u8, destination_channel: u8| -> u8 {
-        ((source_channel as u16 * source_alpha
-            + destination_channel as u16 * inverse_alpha
-            + 127)
+        ((source_channel as u16 * source_alpha + destination_channel as u16 * inverse_alpha + 127)
             / 255) as u8
     };
     let output_alpha = source_alpha + ((destination.a as u16 * inverse_alpha + 127) / 255);
