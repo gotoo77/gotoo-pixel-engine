@@ -130,7 +130,15 @@ impl BitmapTextRenderer {
 
         for character in text.chars() {
             if let Some(glyph) = self.font.glyph(character) {
-                draw_glyph(framebuffer, self.font, glyph, cursor_x, i64::from(y), scale, pixel);
+                draw_glyph(
+                    framebuffer,
+                    self.font,
+                    glyph,
+                    cursor_x,
+                    i64::from(y),
+                    scale,
+                    pixel,
+                );
             }
             cursor_x = cursor_x.saturating_add(i64::from(advance));
         }
