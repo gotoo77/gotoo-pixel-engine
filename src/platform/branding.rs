@@ -1,3 +1,4 @@
+use crate::window_icon::configured_window_icon;
 use winit::window::Icon;
 
 const ICON_SIZE: u32 = 32;
@@ -9,6 +10,10 @@ const VIOLET: [u8; 4] = [185, 104, 255, 255];
 const LIGHT: [u8; 4] = [232, 240, 255, 255];
 
 pub(super) fn default_window_icon() -> Option<Icon> {
+    if let Some(image) = configured_window_icon() {
+        return Icon::from_rgba(image.as_rgba8().to_vec(), image.width(), image.height()).ok();
+    }
+
     Icon::from_rgba(gpe_icon_rgba(), ICON_SIZE, ICON_SIZE).ok()
 }
 
@@ -79,6 +84,7 @@ fn paint_rect(rgba: &mut [u8], x: u32, y: u32, width: u32, height: u32, color: [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Image, set_window_icon};
 
     #[test]
     fn default_icon_has_expected_rgba_shape() {
@@ -89,6 +95,13 @@ mod tests {
 
     #[test]
     fn default_icon_is_accepted_by_winit() {
+        assert!(default_window_icon().is_some());
+    }
+
+    #[test]
+    fn configured_icon_is_accepted_by_winit() {
+        let image = Image::from_rgba8(1, 1, vec![255, 0, 255, 255]).expect("valid icon image");
+        set_window_icon(image);
         assert!(default_window_icon().is_some());
     }
 }

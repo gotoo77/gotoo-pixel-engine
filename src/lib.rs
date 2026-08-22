@@ -19,6 +19,7 @@ mod storage;
 mod text;
 pub mod ui;
 mod viewport;
+mod window_icon;
 
 pub use audio::{Audio, AudioError, NoopAudio, PlaybackId, SoundBank, SoundId};
 pub use audio_wav::pcm16_mono_wav;
@@ -41,3 +42,4 @@ pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
 pub use text::TextRenderer;
 pub use viewport::{Rect, Size, Viewport};
+pub use window_icon::{set_window_icon, set_window_icon_png};
