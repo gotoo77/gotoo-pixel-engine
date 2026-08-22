@@ -27,14 +27,7 @@ impl TextRenderer {
         self.font
     }
 
-    pub fn draw(
-        self,
-        framebuffer: &mut Framebuffer,
-        x: i32,
-        y: i32,
-        text: &str,
-        pixel: Pixel,
-    ) {
+    pub fn draw(self, framebuffer: &mut Framebuffer, x: i32, y: i32, text: &str, pixel: Pixel) {
         self.draw_scaled(framebuffer, x, y, text, 1, pixel);
     }
 
@@ -58,14 +51,7 @@ impl TextRenderer {
                 let normalized = normalize_latin_character(character);
                 let mut encoded = [0_u8; 4];
                 let text = normalized.encode_utf8(&mut encoded);
-                framebuffer.draw_text_scaled_with_font(
-                    self.font,
-                    cursor_x,
-                    y,
-                    text,
-                    scale,
-                    pixel,
-                );
+                framebuffer.draw_text_scaled_with_font(self.font, cursor_x, y, text, scale, pixel);
             }
             cursor_x = cursor_x.saturating_add(advance);
         }
@@ -150,18 +136,42 @@ fn managed_glyph(font: Font, character: char) -> Option<&'static [u8]> {
 
     match font {
         Font::Pixel5x7 => match character {
-            '%' => Some(&[0b11001, 0b11010, 0b00100, 0b01011, 0b10011, 0b00000, 0b00000]),
-            '*' => Some(&[0b00000, 0b10101, 0b01110, 0b11111, 0b01110, 0b10101, 0b00000]),
-            '\'' => Some(&[0b00100, 0b00100, 0b00010, 0b00000, 0b00000, 0b00000, 0b00000]),
-            'À' => Some(&[0b01000, 0b01110, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001]),
-            'Â' => Some(&[0b01010, 0b01110, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001]),
-            'Ç' => Some(&[0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111, 0b00100]),
-            'È' => Some(&[0b01000, 0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111]),
-            'É' => Some(&[0b00100, 0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111]),
-            'Ê' => Some(&[0b01010, 0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111]),
-            'Ù' => Some(&[0b01000, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110]),
-            'Û' => Some(&[0b01010, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110]),
-            'Ü' => Some(&[0b10001, 0b00000, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110]),
+            '%' => Some(&[
+                0b11001, 0b11010, 0b00100, 0b01011, 0b10011, 0b00000, 0b00000,
+            ]),
+            '*' => Some(&[
+                0b00000, 0b10101, 0b01110, 0b11111, 0b01110, 0b10101, 0b00000,
+            ]),
+            '\'' => Some(&[
+                0b00100, 0b00100, 0b00010, 0b00000, 0b00000, 0b00000, 0b00000,
+            ]),
+            'À' => Some(&[
+                0b01000, 0b01110, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+            ]),
+            'Â' => Some(&[
+                0b01010, 0b01110, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+            ]),
+            'Ç' => Some(&[
+                0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111, 0b00100,
+            ]),
+            'È' => Some(&[
+                0b01000, 0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+            ]),
+            'É' => Some(&[
+                0b00100, 0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+            ]),
+            'Ê' => Some(&[
+                0b01010, 0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+            ]),
+            'Ù' => Some(&[
+                0b01000, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+            ]),
+            'Û' => Some(&[
+                0b01010, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+            ]),
+            'Ü' => Some(&[
+                0b10001, 0b00000, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+            ]),
             _ => None,
         },
         Font::Mini3x5 => match character {
@@ -199,7 +209,11 @@ mod tests {
         for font in [Font::Pixel5x7, Font::Mini3x5] {
             let placeholder = rendered(font, "?");
             for character in ["%", "*", "'"] {
-                assert_ne!(rendered(font, character), placeholder, "{font:?} {character}");
+                assert_ne!(
+                    rendered(font, character),
+                    placeholder,
+                    "{font:?} {character}"
+                );
             }
         }
     }
