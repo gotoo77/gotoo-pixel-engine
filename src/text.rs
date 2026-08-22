@@ -142,6 +142,9 @@ fn managed_glyph(font: Font, character: char) -> Option<&'static [u8]> {
             '*' => Some(&[
                 0b00000, 0b10101, 0b01110, 0b11111, 0b01110, 0b10101, 0b00000,
             ]),
+            '=' => Some(&[
+                0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+            ]),
             '\'' => Some(&[
                 0b00100, 0b00100, 0b00010, 0b00000, 0b00000, 0b00000, 0b00000,
             ]),
@@ -177,6 +180,7 @@ fn managed_glyph(font: Font, character: char) -> Option<&'static [u8]> {
         Font::Mini3x5 => match character {
             '%' => Some(&[0b101, 0b001, 0b010, 0b100, 0b101]),
             '*' => Some(&[0b000, 0b101, 0b010, 0b101, 0b000]),
+            '=' => Some(&[0b000, 0b111, 0b000, 0b111, 0b000]),
             '\'' => Some(&[0b010, 0b010, 0b000, 0b000, 0b000]),
             'À' => Some(&[0b100, 0b111, 0b101, 0b111, 0b101]),
             'Â' => Some(&[0b101, 0b111, 0b101, 0b111, 0b101]),
@@ -208,7 +212,7 @@ mod tests {
     fn managed_renderer_covers_ui_punctuation_without_placeholder() {
         for font in [Font::Pixel5x7, Font::Mini3x5] {
             let placeholder = rendered(font, "?");
-            for character in ["%", "*", "'"] {
+            for character in ["%", "*", "=", "'"] {
                 assert_ne!(
                     rendered(font, character),
                     placeholder,
