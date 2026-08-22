@@ -6,6 +6,7 @@ mod capture_mirror;
 mod capture_mirror_stub;
 mod control;
 pub mod framebuffer;
+mod font_face;
 mod gamepad;
 mod gamepad_profile;
 mod image;
@@ -27,6 +28,7 @@ pub use capture_mirror::ObsMirrorGame;
 pub use capture_mirror_stub::ObsMirrorGame;
 pub use control::{ActionId, ControlBinding, ControlMap};
 pub use framebuffer::{Font, Framebuffer};
+pub use font_face::{FontFace, FontFaceError};
 pub use gamepad_profile::{AxisCalibration, GamepadProfile};
 pub use image::{Image, ImageError, ImageRegion};
 pub use input::{
