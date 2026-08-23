@@ -547,7 +547,7 @@ impl<'a> Ui<'a> {
         } else {
             self.theme.text
         };
-        self.draw_text_centered(value_rect, &format!("< {value} >"), color);
+        self.draw_text_centered(value_rect, &format!("- {value} +"), color);
     }
 
     fn draw_slider(
