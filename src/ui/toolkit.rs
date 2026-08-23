@@ -487,7 +487,8 @@ impl<'a> Ui<'a> {
         if self.logical_content_bottom == 0 {
             0
         } else {
-            self.logical_content_bottom.saturating_add(self.theme.padding)
+            self.logical_content_bottom
+                .saturating_add(self.theme.padding)
         }
     }
 
@@ -522,8 +523,7 @@ impl<'a> Ui<'a> {
         let thumb_offset = if max_scroll == 0 {
             0
         } else {
-            (u64::from(travel) * u64::from(scroll_y.min(max_scroll)) / u64::from(max_scroll))
-                as u32
+            (u64::from(travel) * u64::from(scroll_y.min(max_scroll)) / u64::from(max_scroll)) as u32
         };
         let track_y = u32_to_i32(vertical_padding);
         self.framebuffer.fill_rect(
