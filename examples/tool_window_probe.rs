@@ -165,6 +165,10 @@ impl Game for ToolWindowProbe {
                     ui.select("DIRECTION", &mut self.direction, &DIRECTIONS);
                     ui.slider_f32("BAR WIDTH", &mut self.bar_width, 8.0..=200.0, 4.0);
                     ui.slider_f32("BAR GAIN", &mut self.bar_gain, 0.0..=1.0, 0.05);
+                    ui.section("OVERFLOW");
+                    ui.toggle("OVERLAY", &mut self.visual_enabled);
+                    ui.select("STYLE", &mut self.visual_style, &VISUAL_STYLES);
+                    ui.slider_f32("GAIN MIRROR", &mut self.bar_gain, 0.0..=1.0, 0.05);
                 }
                 1 => {
                     ui.section("VISUAL");
