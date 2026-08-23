@@ -1243,6 +1243,9 @@ mod tests {
         config.window_height = 0;
 
         let error = validate_tool_window_config(&config).expect_err("config should be rejected");
-        assert_eq!(error.to_string(), "tool window_height must be greater than 0");
+        assert_eq!(
+            error.to_string(),
+            "tool window_height must be greater than 0"
+        );
     }
 }
