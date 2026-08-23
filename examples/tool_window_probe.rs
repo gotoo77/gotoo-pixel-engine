@@ -61,7 +61,10 @@ impl Game for ToolWindowProbe {
     }
 
     fn update_tool_window(&mut self, frame: &mut ToolFrame<'_>) {
-        if frame.input.key(Key::Escape).pressed() || frame.input.key(Key::F).pressed() {
+        // Do not reuse the opening F hotkey here. On desktop the newly created
+        // window can receive the still-held opener key when focus transfers.
+        // Escape and the OS close button exercise tool-only closing instead.
+        if frame.input.key(Key::Escape).pressed() {
             self.tool_open = false;
         }
         if frame.input.key(Key::Left).pressed() {
