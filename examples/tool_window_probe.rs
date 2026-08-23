@@ -11,6 +11,8 @@ const MAIN_HEIGHT: u32 = 180;
 const TOOL_WIDTH: u32 = 240;
 const TOOL_HEIGHT: u32 = 220;
 const TOOL_TABS: [&str; 2] = ["CONTROLS", "OTHER"];
+const DIRECTIONS: [&str; 2] = ["LEFT TO RIGHT", "RIGHT TO LEFT"];
+const VISUAL_STYLES: [&str; 3] = ["SOLID", "STRIPED", "GHOST"];
 
 struct ToolWindowProbe {
     tool_open: bool,
@@ -19,8 +21,11 @@ struct ToolWindowProbe {
     ui_state: UiState,
     selected_tab: usize,
     bar_enabled: bool,
+    direction: usize,
     bar_width: f32,
     bar_gain: f32,
+    visual_enabled: bool,
+    visual_style: usize,
     heartbeat: f32,
 }
 
@@ -30,6 +35,15 @@ impl ToolWindowProbe {
         self.tool_open = true;
         self.escape_close_armed = false;
         self.ui_state = UiState::default();
+    }
+
+    fn reset_values(&mut self) {
+        self.bar_enabled = true;
+        self.direction = 0;
+        self.bar_width = 80.0;
+        self.bar_gain = 0.65;
+        self.visual_enabled = true;
+        self.visual_style = 0;
     }
 }
 
@@ -155,15 +169,19 @@ impl Game for ToolWindowProbe {
 
             match self.selected_tab {
                 0 => {
+                    ui.section("INPUT");
                     ui.toggle("BAR ENABLED", &mut self.bar_enabled);
+                    ui.select("DIRECTION", &mut self.direction, &DIRECTIONS);
                     ui.slider_f32("BAR WIDTH", &mut self.bar_width, 8.0..=200.0, 4.0);
                     ui.slider_f32("BAR GAIN", &mut self.bar_gain, 0.0..=1.0, 0.05);
                 }
                 1 => {
+                    ui.section("VISUAL");
+                    ui.toggle("OVERLAY", &mut self.visual_enabled);
+                    ui.select("STYLE", &mut self.visual_style, &VISUAL_STYLES);
+                    ui.section("DEBUG");
                     if ui.button("RESET VALUES").clicked {
-                        self.bar_enabled = true;
-                        self.bar_width = 80.0;
-                        self.bar_gain = 0.65;
+                        self.reset_values();
                     }
                 }
                 _ => ui.label("NORMALIZING TAB"),
@@ -175,21 +193,6 @@ impl Game for ToolWindowProbe {
         if let Some(next_tab) = requested_tab {
             self.ui_state.reset_interaction();
             self.selected_tab = next_tab;
-        }
-
-        frame
-            .framebuffer
-            .draw_rect(12, 164, 216, 32, Pixel::rgb(90, 75, 120));
-        if self.bar_enabled {
-            let height = (6.0 + self.bar_gain * 18.0).round() as u32;
-            let y = 180_i32.saturating_sub((height / 2) as i32);
-            frame.framebuffer.fill_rect(
-                20,
-                y,
-                self.bar_width.round() as u32,
-                height,
-                Pixel::rgb(100, 220, 180),
-            );
         }
     }
 
@@ -216,8 +219,11 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
             ui_state: UiState::default(),
             selected_tab: 0,
             bar_enabled: true,
+            direction: 0,
             bar_width: 80.0,
             bar_gain: 0.65,
+            visual_enabled: true,
+            visual_style: 0,
             heartbeat: 0.0,
         },
     )
