@@ -39,8 +39,8 @@ pub use input::{
 };
 pub use pixel::Pixel;
 pub use platform::{
-    EngineConfig, EngineError, Frame, Game, GameResult, ToolFrame, ToolWindowConfig, ToolWindowMode,
-    run, tool_window_supported,
+    EngineConfig, EngineError, Frame, Game, GameResult, ToolFrame, ToolWindowConfig,
+    ToolWindowMode, run, tool_window_supported,
 };
 pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
