@@ -4,6 +4,8 @@ mod virtual_pad;
 
 #[cfg(test)]
 mod ordinal_identity_tests;
+#[cfg(test)]
+mod tabs_contract_tests;
 
 pub use pause::{PauseConfig, PauseGame};
 pub use toolkit::{RepeatConfig, RepeatState, Ui, UiResponse, UiState, UiTheme};
