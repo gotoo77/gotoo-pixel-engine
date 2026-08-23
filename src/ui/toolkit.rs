@@ -127,6 +127,15 @@ impl UiState {
     pub fn focused_index(&self) -> Option<usize> {
         (self.previous_interactive_count > 0).then_some(self.focused)
     }
+
+    /// Clears transient interaction state before an intentional structural UI change.
+    ///
+    /// Widget identity is ordinal in T1: declaration order must remain stable inside
+    /// a page. Consumers should call this before switching to a page or structure
+    /// whose interactive widget order differs.
+    pub fn reset_interaction(&mut self) {
+        *self = Self::default();
+    }
 }
 
 pub struct Ui<'a> {
