@@ -88,8 +88,17 @@ def wasm_bindgen(wasm: Path, out_dir: Path) -> None:
     )
 
 
-def command_check(args: argparse.Namespace) -> None:
+def check_rust_format() -> None:
     run(["cargo", "fmt", "--check"])
+
+
+def command_fmt_check(_: argparse.Namespace) -> None:
+    check_rust_format()
+    print("==> OK")
+
+
+def command_check(args: argparse.Namespace) -> None:
+    check_rust_format()
     run(["cargo", "test", "--lib", "--bins", "--examples", "--tests"])
     run(["cargo", "clippy", "--all-targets", "--", "-D", "warnings"])
     if args.print_lock_base64:
@@ -225,6 +234,11 @@ def command_run_game(args: argparse.Namespace) -> None:
     run(command)
 
 
+def command_install_hooks(_: argparse.Namespace) -> None:
+    run(["git", "config", "core.hooksPath", ".githooks"])
+    print("==> Git hooks installed from .githooks")
+
+
 def command_list_web_examples(_: argparse.Namespace) -> None:
     for example in WEB_GAME_EXAMPLES:
         print(example)
@@ -237,6 +251,9 @@ def parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", help="run native format/tests/clippy validation")
     check.add_argument("--print-lock-base64", action="store_true")
     check.set_defaults(handler=command_check)
+
+    fmt_check = sub.add_parser("fmt-check", help="check Rust formatting")
+    fmt_check.set_defaults(handler=command_fmt_check)
 
     check_web = sub.add_parser("check-web", help="compile all Web/WASM entrypoints")
     check_web.set_defaults(handler=command_check_web)
@@ -259,6 +276,9 @@ def parser() -> argparse.ArgumentParser:
     run_game.add_argument("game", nargs="?")
     run_game.add_argument("--release", action="store_true")
     run_game.set_defaults(handler=command_run_game)
+
+    install_hooks = sub.add_parser("install-hooks", help="configure versioned Git hooks")
+    install_hooks.set_defaults(handler=command_install_hooks)
 
     list_web = sub.add_parser("list-web-examples", help=argparse.SUPPRESS)
     list_web.set_defaults(handler=command_list_web_examples)

@@ -168,11 +168,28 @@ Validation native complète :
 python scripts/dev.py check
 ```
 
+Validation rapide du formatage Rust :
+
+```bash
+python scripts/dev.py fmt-check
+```
+
 Validation de tous les entrypoints Web :
 
 ```bash
 python scripts/dev.py check-web
 ```
+
+Installer les hooks Git versionnés pour ce clone :
+
+```bash
+python scripts/dev.py install-hooks
+```
+
+Le `pre-commit` exécute uniquement le contrôle de formatage rapide. Le
+`pre-push` exécute la validation native complète via `scripts/dev.py check`.
+Git permet de contourner ponctuellement ces hooks avec `--no-verify`. La CI
+reste l'autorité finale.
 
 La CI GitHub utilise la même CLI Python pour les validations natives/Web et le
 packaging JavaScript/WASM. Le workflow GitHub Pages appelle également
