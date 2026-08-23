@@ -40,8 +40,56 @@ pub struct EngineConfig {
     pub window_height: u32,
 }
 
+/// Describes one optional native sidecar window for development tooling.
+///
+/// The primary game window remains the simulation owner. The tool window has
+/// its own framebuffer and input state but calls back into the same `Game`
+/// value, so edits made by tooling are immediately visible to the game.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolWindowConfig {
+    pub title: String,
+    pub framebuffer_width: u32,
+    pub framebuffer_height: u32,
+    pub window_width: u32,
+    pub window_height: u32,
+}
+
+/// Frame presented to the optional native tool window.
+///
+/// Tool frames intentionally do not expose game storage or audio. Tooling can
+/// inspect and mutate the owning `Game` through `Game::update_tool_window`
+/// without becoming a second gameplay runtime.
+pub struct ToolFrame<'a> {
+    pub framebuffer: &'a mut Framebuffer,
+    pub input: &'a Input,
+    pub delta_time: Duration,
+    pub surface_size: Size,
+    pub viewport: Viewport,
+}
+
+/// Returns whether this target supports the native auxiliary tool window.
+pub const fn tool_window_supported() -> bool {
+    cfg!(not(target_arch = "wasm32"))
+}
+
 pub trait Game {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult;
+
+    /// Requests one native auxiliary tool window while returning `Some`.
+    ///
+    /// On Web/WASM this hook is ignored; games should keep a browser-safe
+    /// fallback such as an in-game overlay when tooling is needed there.
+    fn tool_window_config(&self) -> Option<ToolWindowConfig> {
+        None
+    }
+
+    /// Updates and renders the auxiliary tool window when it exists.
+    fn update_tool_window(&mut self, _frame: &mut ToolFrame<'_>) {}
+
+    /// Called when the user closes the auxiliary window using the OS chrome.
+    /// Implementations that request the window conditionally should clear that
+    /// request here so the window stays closed until explicitly reopened.
+    fn tool_window_closed(&mut self) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +183,17 @@ enum PlatformEvent {
     RendererReady(Result<Renderer, RendererInitError>),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+struct ToolWindowState {
+    config: ToolWindowConfig,
+    window: Arc<Window>,
+    renderer: Renderer,
+    framebuffer: Framebuffer,
+    input: Input,
+    last_frame_at: Instant,
+    last_non_zero_window_size: Option<PhysicalSize<u32>>,
+}
+
 struct PlatformApp<G> {
     config: EngineConfig,
     game: G,
@@ -151,6 +210,8 @@ struct PlatformApp<G> {
     fps_frames: u32,
     last_non_zero_window_size: Option<PhysicalSize<u32>>,
     pending_error: Option<EngineError>,
+    #[cfg(not(target_arch = "wasm32"))]
+    tool_window: Option<ToolWindowState>,
     #[cfg(target_arch = "wasm32")]
     event_loop_proxy: EventLoopProxy<PlatformEvent>,
 }
@@ -177,6 +238,7 @@ impl<G: Game> PlatformApp<G> {
             fps_frames: 0,
             last_non_zero_window_size: None,
             pending_error: None,
+            tool_window: None,
         }
     }
 
@@ -213,10 +275,10 @@ impl<G: Game> PlatformApp<G> {
     }
 
     fn render_frame(&mut self, event_loop: &ActiveEventLoop) {
-        let Some(window) = self.window.as_ref() else {
+        let Some(window) = self.window.as_ref().map(Arc::clone) else {
             return;
         };
-        let Some(renderer) = self.renderer.as_mut() else {
+        let Some(viewport) = self.renderer.as_ref().map(Renderer::viewport) else {
             return;
         };
 
@@ -227,7 +289,6 @@ impl<G: Game> PlatformApp<G> {
         let dt = simulation_delta_time(raw_dt);
         self.last_frame_at = now;
         let surface_size = size_from_physical(window.inner_size());
-        let viewport = renderer.viewport();
 
         let mut frame = Frame {
             framebuffer: &mut self.framebuffer,
@@ -244,6 +305,12 @@ impl<G: Game> PlatformApp<G> {
             return;
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
+        self.sync_tool_window(event_loop);
+
+        let Some(renderer) = self.renderer.as_mut() else {
+            return;
+        };
         match renderer.render(&self.framebuffer) {
             RenderOutcome::Presented => {
                 self.fps_frames += 1;
@@ -269,6 +336,108 @@ impl<G: Game> PlatformApp<G> {
         }
 
         self.input.advance_frame();
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sync_tool_window(&mut self, event_loop: &ActiveEventLoop) {
+        let requested = self.game.tool_window_config();
+
+        let Some(config) = requested else {
+            self.tool_window = None;
+            return;
+        };
+
+        if let Err(error) = validate_tool_window_config(&config) {
+            self.pending_error = Some(error);
+            event_loop.exit();
+            return;
+        }
+
+        if self
+            .tool_window
+            .as_ref()
+            .is_some_and(|state| state.config == config)
+        {
+            return;
+        }
+
+        self.tool_window = None;
+
+        let attributes = Window::default_attributes()
+            .with_title(config.title.clone())
+            .with_inner_size(LogicalSize::new(
+                f64::from(config.window_width),
+                f64::from(config.window_height),
+            ))
+            .with_min_inner_size(LogicalSize::new(1.0, 1.0))
+            .with_window_icon(default_window_icon());
+
+        let window = match event_loop.create_window(attributes) {
+            Ok(window) => Arc::new(window),
+            Err(error) => {
+                self.pending_error = Some(EngineError::window(error));
+                event_loop.exit();
+                return;
+            }
+        };
+
+        let renderer = match pollster::block_on(Renderer::new(
+            Arc::clone(&window),
+            config.framebuffer_width,
+            config.framebuffer_height,
+        )) {
+            Ok(renderer) => renderer,
+            Err(error) => {
+                self.pending_error = Some(EngineError::renderer(error));
+                event_loop.exit();
+                return;
+            }
+        };
+
+        self.tool_window = Some(ToolWindowState {
+            framebuffer: Framebuffer::new(config.framebuffer_width, config.framebuffer_height),
+            config,
+            window,
+            renderer,
+            input: Input::default(),
+            last_frame_at: Instant::now(),
+            last_non_zero_window_size: None,
+        });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn render_tool_frame(&mut self, event_loop: &ActiveEventLoop) {
+        {
+            let Some(state) = self.tool_window.as_mut() else {
+                return;
+            };
+
+            let now = Instant::now();
+            let raw_dt = now.duration_since(state.last_frame_at);
+            let dt = simulation_delta_time(raw_dt);
+            state.last_frame_at = now;
+            let surface_size = size_from_physical(state.window.inner_size());
+            let viewport = state.renderer.viewport();
+
+            let mut frame = ToolFrame {
+                framebuffer: &mut state.framebuffer,
+                input: &state.input,
+                delta_time: dt,
+                surface_size,
+                viewport,
+            };
+            self.game.update_tool_window(&mut frame);
+
+            match state.renderer.render(&state.framebuffer) {
+                RenderOutcome::Presented => {}
+                RenderOutcome::SurfaceChanged => state.renderer.resize(state.window.inner_size()),
+                RenderOutcome::Skipped => {}
+            }
+
+            state.input.advance_frame();
+        }
+
+        self.sync_tool_window(event_loop);
     }
 
     fn update_mouse_position(&mut self, position: PhysicalPosition<f64>) {
@@ -401,6 +570,86 @@ impl<G: Game> PlatformApp<G> {
             window.request_redraw();
         }
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn handle_tool_window_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
+        if matches!(&event, WindowEvent::CloseRequested) {
+            self.game.tool_window_closed();
+            self.tool_window = None;
+            return;
+        }
+
+        if matches!(&event, WindowEvent::RedrawRequested) {
+            self.render_tool_frame(event_loop);
+            return;
+        }
+
+        let Some(state) = self.tool_window.as_mut() else {
+            return;
+        };
+
+        match event {
+            WindowEvent::Resized(size) => {
+                remember_non_zero_size(&mut state.last_non_zero_window_size, size);
+                state.renderer.resize(size);
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let Some(key) = key_from_winit(event.physical_key) else {
+                    return;
+                };
+
+                match event.state {
+                    ElementState::Pressed => state.input.press_key(key),
+                    ElementState::Released => state.input.release_key(key),
+                }
+            }
+            WindowEvent::MouseInput {
+                state: button_state,
+                button,
+                ..
+            } => {
+                let Some(button) = mouse_button_from_winit(button) else {
+                    return;
+                };
+
+                match button_state {
+                    ElementState::Pressed => state.input.press_mouse_button(button),
+                    ElementState::Released => state.input.release_mouse_button(button),
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let viewport = current_viewport(
+                    state.window.inner_size(),
+                    state.config.framebuffer_width,
+                    state.config.framebuffer_height,
+                );
+                state
+                    .input
+                    .set_mouse_position(surface_to_framebuffer_position(position, viewport));
+            }
+            WindowEvent::CursorLeft { .. } => state.input.set_mouse_position(None),
+            WindowEvent::Touch(touch) => {
+                let viewport = current_viewport(
+                    state.window.inner_size(),
+                    state.config.framebuffer_width,
+                    state.config.framebuffer_height,
+                );
+                state.input.push_touch(touch_from_winit(
+                    touch.id,
+                    touch.phase,
+                    touch.location,
+                    viewport,
+                ));
+            }
+            WindowEvent::Focused(focused) => {
+                state.last_frame_at = Instant::now();
+                if !focused {
+                    state.input.reset_window_devices();
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
@@ -425,6 +674,16 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self
+            .tool_window
+            .as_ref()
+            .is_some_and(|state| state.window.id() == window_id)
+        {
+            self.handle_tool_window_event(event_loop, event);
+            return;
+        }
+
         let Some(window) = self.window.as_ref() else {
             return;
         };
@@ -498,6 +757,10 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(state) = self.tool_window.as_ref() {
+            state.window.request_redraw();
         }
     }
 }
@@ -636,15 +899,41 @@ fn validate_config(config: &EngineConfig) -> Result<(), EngineError> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn validate_tool_window_config(config: &ToolWindowConfig) -> Result<(), EngineError> {
+    if config.framebuffer_width == 0 {
+        return Err(EngineError::config(
+            "tool framebuffer_width must be greater than 0",
+        ));
+    }
+    if config.framebuffer_height == 0 {
+        return Err(EngineError::config(
+            "tool framebuffer_height must be greater than 0",
+        ));
+    }
+    if config.window_width == 0 {
+        return Err(EngineError::config(
+            "tool window_width must be greater than 0",
+        ));
+    }
+    if config.window_height == 0 {
+        return Err(EngineError::config(
+            "tool window_height must be greater than 0",
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use super::{
-        EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, TouchPhase, current_viewport,
-        is_fullscreen_shortcut, key_from_winit, mouse_button_from_winit, remember_non_zero_size,
-        simulation_delta_time, surface_to_framebuffer_position, touch_from_winit,
-        touch_phase_from_winit, validate_config,
+        EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, TouchPhase,
+        current_viewport, is_fullscreen_shortcut, key_from_winit, mouse_button_from_winit,
+        remember_non_zero_size, simulation_delta_time, surface_to_framebuffer_position,
+        touch_from_winit, touch_phase_from_winit, validate_config, validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -919,5 +1208,41 @@ mod tests {
 
         let err = validate_config(&config).expect_err("config should be rejected");
         assert_eq!(err.to_string(), "window_height must be greater than 0");
+    }
+
+    fn valid_tool_config() -> ToolWindowConfig {
+        ToolWindowConfig {
+            title: "tool".into(),
+            framebuffer_width: 240,
+            framebuffer_height: 180,
+            window_width: 480,
+            window_height: 360,
+        }
+    }
+
+    #[test]
+    fn tool_config_validation_accepts_positive_dimensions() {
+        assert!(validate_tool_window_config(&valid_tool_config()).is_ok());
+    }
+
+    #[test]
+    fn tool_config_validation_rejects_zero_framebuffer_width() {
+        let mut config = valid_tool_config();
+        config.framebuffer_width = 0;
+
+        let error = validate_tool_window_config(&config).expect_err("config should be rejected");
+        assert_eq!(
+            error.to_string(),
+            "tool framebuffer_width must be greater than 0"
+        );
+    }
+
+    #[test]
+    fn tool_config_validation_rejects_zero_window_height() {
+        let mut config = valid_tool_config();
+        config.window_height = 0;
+
+        let error = validate_tool_window_config(&config).expect_err("config should be rejected");
+        assert_eq!(error.to_string(), "tool window_height must be greater than 0");
     }
 }
