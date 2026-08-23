@@ -54,13 +54,9 @@ impl Game for ToolWindowProbe {
         frame
             .framebuffer
             .fill_rect(30, 70, self.bar_width, 20, Pixel::rgb(100, 220, 180));
-        frame.framebuffer.draw_rect(
-            30,
-            125,
-            208,
-            12,
-            Pixel::rgb(70, 90, 130),
-        );
+        frame
+            .framebuffer
+            .draw_rect(30, 125, 208, 12, Pixel::rgb(70, 90, 130));
         frame.framebuffer.fill_rect(
             34 + self.heartbeat as i32,
             127,
