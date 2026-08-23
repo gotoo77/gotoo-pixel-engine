@@ -38,7 +38,10 @@ pub use input::{
     MouseButton, Touch, TouchPhase,
 };
 pub use pixel::Pixel;
-pub use platform::{EngineConfig, EngineError, Frame, Game, GameResult, run};
+pub use platform::{
+    EngineConfig, EngineError, Frame, Game, GameResult, ToolFrame, ToolWindowConfig, run,
+    tool_window_supported,
+};
 pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
