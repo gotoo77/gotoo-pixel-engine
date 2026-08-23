@@ -13,6 +13,7 @@ struct ToolWindowProbe {
     tool_open: bool,
     escape_close_armed: bool,
     bar_width: u32,
+    heartbeat: f32,
 }
 
 impl ToolWindowProbe {
@@ -41,6 +42,11 @@ impl Game for ToolWindowProbe {
             self.escape_close_armed = false;
         }
 
+        // This moving marker is intentionally driven only by the primary game
+        // frame. It makes it obvious whether the main simulation keeps ticking
+        // while the auxiliary window owns keyboard focus.
+        self.heartbeat = (self.heartbeat + frame.delta_time.as_secs_f32() * 90.0) % 200.0;
+
         frame.framebuffer.clear(Pixel::rgb(5, 8, 14));
         frame
             .framebuffer
@@ -48,6 +54,20 @@ impl Game for ToolWindowProbe {
         frame
             .framebuffer
             .fill_rect(30, 70, self.bar_width, 20, Pixel::rgb(100, 220, 180));
+        frame.framebuffer.draw_rect(
+            30,
+            125,
+            208,
+            12,
+            Pixel::rgb(70, 90, 130),
+        );
+        frame.framebuffer.fill_rect(
+            34 + self.heartbeat as i32,
+            127,
+            6,
+            8,
+            Pixel::rgb(240, 210, 90),
+        );
 
         if self.tool_open {
             frame
@@ -116,6 +136,7 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
             tool_open: false,
             escape_close_armed: false,
             bar_width: 80,
+            heartbeat: 0.0,
         },
     )
 }
