@@ -10,12 +10,14 @@ const MAIN_WIDTH: u32 = 320;
 const MAIN_HEIGHT: u32 = 180;
 const TOOL_WIDTH: u32 = 240;
 const TOOL_HEIGHT: u32 = 220;
+const TOOL_TABS: [&str; 2] = ["CONTROLS", "OTHER"];
 
 struct ToolWindowProbe {
     tool_open: bool,
     tool_mode: ToolWindowMode,
     escape_close_armed: bool,
     ui_state: UiState,
+    selected_tab: usize,
     bar_enabled: bool,
     bar_width: f32,
     bar_gain: f32,
@@ -140,7 +142,7 @@ impl Game for ToolWindowProbe {
             ToolWindowMode::ModalWhenFocused => "HYBRID: PAUSE ON TOOL FOCUS",
         };
 
-        {
+        let requested_tab = {
             let mut ui = Ui::new(
                 frame.framebuffer,
                 frame.input,
@@ -149,14 +151,30 @@ impl Game for ToolWindowProbe {
                 UiTheme::default(),
             );
             ui.label(mode_label);
-            if ui.button("RESET VALUES").clicked {
-                self.bar_enabled = true;
-                self.bar_width = 80.0;
-                self.bar_gain = 0.65;
+            let requested_tab = ui.tabs(self.selected_tab, &TOOL_TABS);
+
+            match self.selected_tab {
+                0 => {
+                    ui.toggle("BAR ENABLED", &mut self.bar_enabled);
+                    ui.slider_f32("BAR WIDTH", &mut self.bar_width, 8.0..=200.0, 4.0);
+                    ui.slider_f32("BAR GAIN", &mut self.bar_gain, 0.0..=1.0, 0.05);
+                }
+                1 => {
+                    if ui.button("RESET VALUES").clicked {
+                        self.bar_enabled = true;
+                        self.bar_width = 80.0;
+                        self.bar_gain = 0.65;
+                    }
+                }
+                _ => ui.label("NORMALIZING TAB"),
             }
-            ui.toggle("BAR ENABLED", &mut self.bar_enabled);
-            ui.slider_f32("BAR WIDTH", &mut self.bar_width, 8.0..=200.0, 4.0);
-            ui.slider_f32("BAR GAIN", &mut self.bar_gain, 0.0..=1.0, 0.05);
+
+            requested_tab
+        };
+
+        if let Some(next_tab) = requested_tab {
+            self.ui_state.reset_interaction();
+            self.selected_tab = next_tab;
         }
 
         frame
@@ -196,6 +214,7 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
             tool_mode: ToolWindowMode::Modeless,
             escape_close_armed: false,
             ui_state: UiState::default(),
+            selected_tab: 0,
             bar_enabled: true,
             bar_width: 80.0,
             bar_gain: 0.65,
