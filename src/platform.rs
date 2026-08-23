@@ -42,7 +42,7 @@ pub struct EngineConfig {
 
 /// Scheduling policy for one native auxiliary tool window.
 ///
-/// Focus controls keyboard ownership in both modes. The mode controls whether
+/// Focus controls keyboard ownership in all modes. The mode controls whether
 /// the primary game simulation is allowed to advance while the tool is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolWindowMode {
@@ -50,6 +50,9 @@ pub enum ToolWindowMode {
     Modal,
     /// The primary game and tool keep advancing independently of window focus.
     Modeless,
+    /// The primary game advances while the main window has focus and pauses
+    /// while the tool window has focus, without closing either window.
+    ModalWhenFocused,
 }
 
 /// Describes one optional native sidecar window for development tooling.
@@ -353,8 +356,10 @@ impl<G: Game> PlatformApp<G> {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn render_native_cycle(&mut self, event_loop: &ActiveEventLoop) {
-        let mode = self.tool_window.as_ref().map(|state| state.config.mode);
-        if mode != Some(ToolWindowMode::Modal) {
+        let primary_blocked = self.tool_window.as_ref().is_some_and(|state| {
+            tool_mode_blocks_primary(state.config.mode, state.window.has_focus())
+        });
+        if !primary_blocked {
             self.render_frame(event_loop);
         }
         if self.tool_window.is_some() {
@@ -869,6 +874,15 @@ fn remember_non_zero_size(last_size: &mut Option<PhysicalSize<u32>>, size: Physi
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn tool_mode_blocks_primary(mode: ToolWindowMode, tool_focused: bool) -> bool {
+    match mode {
+        ToolWindowMode::Modal => true,
+        ToolWindowMode::Modeless => false,
+        ToolWindowMode::ModalWhenFocused => tool_focused,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn tool_window_surface_matches(a: &ToolWindowConfig, b: &ToolWindowConfig) -> bool {
     a.title == b.title
         && a.framebuffer_width == b.framebuffer_width
@@ -912,6 +926,9 @@ fn key_from_winit(key: PhysicalKey) -> Option<Key> {
         PhysicalKey::Code(KeyCode::KeyD) => Some(Key::D),
         PhysicalKey::Code(KeyCode::KeyE) => Some(Key::E),
         PhysicalKey::Code(KeyCode::KeyF) => Some(Key::F),
+        PhysicalKey::Code(KeyCode::KeyH) => Some(Key::H),
+        PhysicalKey::Code(KeyCode::KeyL) => Some(Key::L),
+        PhysicalKey::Code(KeyCode::KeyM) => Some(Key::M),
         PhysicalKey::Code(KeyCode::KeyR) => Some(Key::R),
         PhysicalKey::Code(KeyCode::KeyS) => Some(Key::S),
         PhysicalKey::Code(KeyCode::KeyW) => Some(Key::W),
@@ -1038,8 +1055,8 @@ mod tests {
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
         TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
         mouse_button_from_winit, remember_non_zero_size, simulation_delta_time,
-        surface_to_framebuffer_position, tool_window_surface_matches, touch_from_winit,
-        touch_phase_from_winit, validate_config, validate_tool_window_config,
+        surface_to_framebuffer_position, tool_mode_blocks_primary, tool_window_surface_matches,
+        touch_from_winit, touch_phase_from_winit, validate_config, validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -1100,6 +1117,18 @@ mod tests {
         assert_eq!(
             key_from_winit(PhysicalKey::Code(KeyCode::KeyF)),
             Some(Key::F)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::KeyH)),
+            Some(Key::H)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::KeyL)),
+            Some(Key::L)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::KeyM)),
+            Some(Key::M)
         );
         assert_eq!(
             key_from_winit(PhysicalKey::Code(KeyCode::KeyX)),
@@ -1369,11 +1398,30 @@ mod tests {
     }
 
     #[test]
+    fn tool_modes_define_primary_scheduling_policy() {
+        assert!(!tool_mode_blocks_primary(ToolWindowMode::Modeless, false));
+        assert!(!tool_mode_blocks_primary(ToolWindowMode::Modeless, true));
+        assert!(tool_mode_blocks_primary(ToolWindowMode::Modal, false));
+        assert!(tool_mode_blocks_primary(ToolWindowMode::Modal, true));
+        assert!(!tool_mode_blocks_primary(
+            ToolWindowMode::ModalWhenFocused,
+            false
+        ));
+        assert!(tool_mode_blocks_primary(
+            ToolWindowMode::ModalWhenFocused,
+            true
+        ));
+    }
+
+    #[test]
     fn tool_surface_identity_ignores_scheduling_mode() {
         let modeless = valid_tool_config();
         let mut modal = modeless.clone();
         modal.mode = ToolWindowMode::Modal;
 
+        assert!(tool_window_surface_matches(&modeless, &modal));
+
+        modal.mode = ToolWindowMode::ModalWhenFocused;
         assert!(tool_window_surface_matches(&modeless, &modal));
 
         modal.window_width += 1;
