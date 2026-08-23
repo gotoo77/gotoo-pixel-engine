@@ -36,15 +36,6 @@ impl ToolWindowProbe {
         self.escape_close_armed = false;
         self.ui_state = UiState::default();
     }
-
-    fn reset_values(&mut self) {
-        self.bar_enabled = true;
-        self.direction = 0;
-        self.bar_width = 80.0;
-        self.bar_gain = 0.65;
-        self.visual_enabled = true;
-        self.visual_style = 0;
-    }
 }
 
 fn control_shift_pressed(input: &Input, key: Key) -> bool {
@@ -181,7 +172,12 @@ impl Game for ToolWindowProbe {
                     ui.select("STYLE", &mut self.visual_style, &VISUAL_STYLES);
                     ui.section("DEBUG");
                     if ui.button("RESET VALUES").clicked {
-                        self.reset_values();
+                        self.bar_enabled = true;
+                        self.direction = 0;
+                        self.bar_width = 80.0;
+                        self.bar_gain = 0.65;
+                        self.visual_enabled = true;
+                        self.visual_style = 0;
                     }
                 }
                 _ => ui.label("NORMALIZING TAB"),
