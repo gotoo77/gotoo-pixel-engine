@@ -815,6 +815,9 @@ fn key_from_winit(key: PhysicalKey) -> Option<Key> {
         PhysicalKey::Code(KeyCode::KeyW) => Some(Key::W),
         PhysicalKey::Code(KeyCode::KeyX) => Some(Key::X),
         PhysicalKey::Code(KeyCode::ShiftLeft) => Some(Key::LeftShift),
+        PhysicalKey::Code(KeyCode::ShiftRight) => Some(Key::RightShift),
+        PhysicalKey::Code(KeyCode::ControlLeft) => Some(Key::LeftControl),
+        PhysicalKey::Code(KeyCode::ControlRight) => Some(Key::RightControl),
         _ => None,
     }
 }
@@ -1006,6 +1009,18 @@ mod tests {
         assert_eq!(
             key_from_winit(PhysicalKey::Code(KeyCode::ShiftLeft)),
             Some(Key::LeftShift)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::ShiftRight)),
+            Some(Key::RightShift)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::ControlLeft)),
+            Some(Key::LeftControl)
+        );
+        assert_eq!(
+            key_from_winit(PhysicalKey::Code(KeyCode::ControlRight)),
+            Some(Key::RightControl)
         );
         assert_eq!(key_from_winit(PhysicalKey::Code(KeyCode::F1)), None);
     }
