@@ -1,5 +1,7 @@
 #![deny(warnings)]
 
+use std::time::Duration;
+
 use gotoo_pixel_engine::{
     EngineConfig, Frame, Game, GameResult, Input, Key, Pixel, ToolFrame, ToolWindowConfig,
     ToolWindowMode, run,
@@ -9,11 +11,44 @@ const MAIN_WIDTH: u32 = 320;
 const MAIN_HEIGHT: u32 = 180;
 const TOOL_WIDTH: u32 = 240;
 const TOOL_HEIGHT: u32 = 180;
+const REPEAT_DELAY: Duration = Duration::from_millis(300);
+const REPEAT_INTERVAL: Duration = Duration::from_millis(60);
+
+#[derive(Default)]
+struct HeldRepeat {
+    elapsed: Duration,
+    next_repeat: Duration,
+}
+
+impl HeldRepeat {
+    fn update(&mut self, state: gotoo_pixel_engine::ButtonState, delta_time: Duration) -> bool {
+        if state.pressed() {
+            self.elapsed = Duration::ZERO;
+            self.next_repeat = REPEAT_DELAY;
+            return true;
+        }
+        if !state.held() {
+            self.elapsed = Duration::ZERO;
+            self.next_repeat = REPEAT_DELAY;
+            return false;
+        }
+
+        self.elapsed += delta_time;
+        if self.elapsed < self.next_repeat {
+            return false;
+        }
+
+        self.next_repeat += REPEAT_INTERVAL;
+        true
+    }
+}
 
 struct ToolWindowProbe {
     tool_open: bool,
     tool_mode: ToolWindowMode,
     escape_close_armed: bool,
+    left_repeat: HeldRepeat,
+    right_repeat: HeldRepeat,
     bar_width: u32,
     heartbeat: f32,
 }
@@ -25,6 +60,12 @@ impl ToolWindowProbe {
         } else {
             self.bar_width = (self.bar_width + 4).min(200);
         }
+    }
+
+    fn open_tool(&mut self, mode: ToolWindowMode) {
+        self.tool_mode = mode;
+        self.tool_open = true;
+        self.escape_close_armed = false;
     }
 }
 
@@ -40,41 +81,40 @@ impl Game for ToolWindowProbe {
             return GameResult::Exit;
         }
 
-        if !self.tool_open && control_shift_pressed(frame.input, Key::F) {
-            self.tool_mode = ToolWindowMode::Modeless;
-            self.tool_open = true;
-            self.escape_close_armed = false;
-        } else if !self.tool_open && control_shift_pressed(frame.input, Key::R) {
-            self.tool_mode = ToolWindowMode::Modal;
-            self.tool_open = true;
-            self.escape_close_armed = false;
-        } else if self.tool_open
-            && self.tool_mode == ToolWindowMode::Modeless
-            && control_shift_pressed(frame.input, Key::F)
-        {
-            self.tool_open = false;
-            self.escape_close_armed = false;
+        if !self.tool_open && control_shift_pressed(frame.input, Key::L) {
+            self.open_tool(ToolWindowMode::Modeless);
+        } else if !self.tool_open && control_shift_pressed(frame.input, Key::M) {
+            self.open_tool(ToolWindowMode::Modal);
+        } else if !self.tool_open && control_shift_pressed(frame.input, Key::H) {
+            self.open_tool(ToolWindowMode::ModalWhenFocused);
         }
 
         // This moving marker is intentionally driven only by the primary game
-        // frame. In Modeless mode it must continue while the tool owns focus;
-        // in Modal mode it must stop until the tool closes.
+        // frame. Live keeps it moving, Modal always stops it, and Hybrid stops
+        // it only while the tool owns focus.
         self.heartbeat = (self.heartbeat + frame.delta_time.as_secs_f32() * 90.0) % 200.0;
 
         frame.framebuffer.clear(Pixel::rgb(5, 8, 14));
         frame.framebuffer.draw_text_scaled(
             20,
-            18,
-            "CTRL SHIFT F: MODELESS",
+            10,
+            "CTRL SHIFT L: LIVE",
             1,
             Pixel::rgb(170, 205, 235),
         );
         frame.framebuffer.draw_text_scaled(
             20,
-            30,
-            "CTRL SHIFT R: MODAL",
+            22,
+            "CTRL SHIFT M: MODAL",
             1,
             Pixel::rgb(220, 170, 235),
+        );
+        frame.framebuffer.draw_text_scaled(
+            20,
+            34,
+            "CTRL SHIFT H: HYBRID",
+            1,
+            Pixel::rgb(200, 195, 235),
         );
         frame
             .framebuffer
@@ -125,31 +165,42 @@ impl Game for ToolWindowProbe {
             self.tool_open = false;
             return;
         }
-        if frame.input.key(Key::Left).pressed() {
+
+        if self
+            .left_repeat
+            .update(frame.input.key(Key::Left), frame.delta_time)
+        {
             self.adjust(-1);
         }
-        if frame.input.key(Key::Right).pressed() {
+        if self
+            .right_repeat
+            .update(frame.input.key(Key::Right), frame.delta_time)
+        {
             self.adjust(1);
         }
 
         frame.framebuffer.clear(Pixel::rgb(12, 7, 18));
         let mode_label = match self.tool_mode {
             ToolWindowMode::Modal => "MODAL: MAIN BLOCKED",
-            ToolWindowMode::Modeless => "MODELESS: MAIN LIVE",
+            ToolWindowMode::Modeless => "LIVE: MAIN ALWAYS RUNS",
+            ToolWindowMode::ModalWhenFocused => "HYBRID: PAUSE ON TOOL FOCUS",
         };
+        frame
+            .framebuffer
+            .draw_text_scaled(12, 18, mode_label, 1, Pixel::rgb(230, 205, 245));
         frame.framebuffer.draw_text_scaled(
             12,
-            18,
-            mode_label,
+            34,
+            "HOLD LEFT / RIGHT TO REPEAT",
             1,
-            Pixel::rgb(230, 205, 245),
+            Pixel::rgb(185, 180, 205),
         );
         frame
             .framebuffer
-            .draw_rect(12, 50, 216, 80, Pixel::rgb(170, 90, 230));
+            .draw_rect(12, 58, 216, 80, Pixel::rgb(170, 90, 230));
         frame
             .framebuffer
-            .fill_rect(20, 80, self.bar_width, 20, Pixel::rgb(100, 220, 180));
+            .fill_rect(20, 88, self.bar_width, 20, Pixel::rgb(100, 220, 180));
     }
 
     fn tool_window_closed(&mut self) {
@@ -161,7 +212,7 @@ impl Game for ToolWindowProbe {
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
     run(
         EngineConfig {
-            title: "GPE Tool Window Probe - F modeless / R modal".into(),
+            title: "GPE Tool Window Probe - L live / M modal / H hybrid".into(),
             framebuffer_width: MAIN_WIDTH,
             framebuffer_height: MAIN_HEIGHT,
             window_width: 960,
@@ -171,6 +222,8 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
             tool_open: false,
             tool_mode: ToolWindowMode::Modeless,
             escape_close_armed: false,
+            left_repeat: HeldRepeat::default(),
+            right_repeat: HeldRepeat::default(),
             bar_width: 80,
             heartbeat: 0.0,
         },
