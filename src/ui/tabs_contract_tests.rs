@@ -239,13 +239,7 @@ fn reset_after_normalization_request_prevents_repeat_owner_rebind() {
     input.press_key(Key::Down);
     input.press_key(Key::Right);
     {
-        let mut ui = Ui::new(
-            &mut framebuffer,
-            &input,
-            Duration::ZERO,
-            &mut state,
-            theme,
-        );
+        let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
         assert_eq!(ui.tabs(0, &TWO_TABS), None);
         let slider = ui.slider_f32("OLD SLIDER", &mut old_value, 0.0..=1.0, 0.1);
         assert!(slider.focused);
