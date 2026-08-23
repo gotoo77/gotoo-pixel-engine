@@ -707,6 +707,7 @@ dependencies = [
  "gilrs",
  "hound",
  "include_dir",
+ "js-sys",
  "png",
  "pollster",
  "rodio",

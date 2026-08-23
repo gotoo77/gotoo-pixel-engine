@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::Framebuffer;
-use crate::platform::{Frame, Game, GameResult};
+use crate::platform::{Frame, Game, GameResult, ToolFrame, ToolWindowConfig};
 
 const MIRROR_ENV: &str = "GPE_OBS_MIRROR";
 const DEFAULT_BIND_ADDRESS: &str = "0.0.0.0:7878";
@@ -32,6 +32,18 @@ impl<G: Game> Game for ObsMirrorGame<G> {
             mirror.publish(frame.framebuffer);
         }
         result
+    }
+
+    fn tool_window_config(&self) -> Option<ToolWindowConfig> {
+        self.game.tool_window_config()
+    }
+
+    fn update_tool_window(&mut self, frame: &mut ToolFrame<'_>) {
+        self.game.update_tool_window(frame);
+    }
+
+    fn tool_window_closed(&mut self) {
+        self.game.tool_window_closed();
     }
 }
 

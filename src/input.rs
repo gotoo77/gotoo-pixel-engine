@@ -20,7 +20,13 @@ pub enum Key {
     W,
     X,
     LeftShift,
+    RightShift,
+    LeftControl,
+    RightControl,
     C,
+    L,
+    M,
+    H,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -364,7 +370,7 @@ impl Default for Input {
     }
 }
 
-const KEY_COUNT: usize = 16;
+const KEY_COUNT: usize = 22;
 const MOUSE_BUTTON_COUNT: usize = 3;
 const GAMEPAD_BUTTON_COUNT: usize = 16;
 
@@ -386,6 +392,12 @@ fn key_index(key: Key) -> usize {
         Key::X => 13,
         Key::LeftShift => 14,
         Key::C => 15,
+        Key::RightShift => 16,
+        Key::LeftControl => 17,
+        Key::RightControl => 18,
+        Key::L => 19,
+        Key::M => 20,
+        Key::H => 21,
     }
 }
 
@@ -470,19 +482,44 @@ mod tests {
     }
 
     #[test]
-    fn c_x_and_left_shift_use_independent_key_slots() {
+    fn modifiers_and_gameplay_keys_use_independent_key_slots() {
         let mut input = Input::default();
 
         input.press_key(Key::LeftShift);
+        input.press_key(Key::RightShift);
+        input.press_key(Key::LeftControl);
+        input.press_key(Key::RightControl);
+
         assert!(input.key(Key::LeftShift).held());
+        assert!(input.key(Key::RightShift).held());
+        assert!(input.key(Key::LeftControl).held());
+        assert!(input.key(Key::RightControl).held());
         assert!(!input.key(Key::X).held());
         assert!(!input.key(Key::C).held());
 
         input.press_key(Key::X);
         input.press_key(Key::C);
         assert!(input.key(Key::LeftShift).held());
+        assert!(input.key(Key::RightShift).held());
+        assert!(input.key(Key::LeftControl).held());
+        assert!(input.key(Key::RightControl).held());
         assert!(input.key(Key::X).pressed());
         assert!(input.key(Key::C).pressed());
+    }
+
+    #[test]
+    fn tool_shortcut_keys_use_independent_key_slots() {
+        let mut input = Input::default();
+
+        input.press_key(Key::L);
+        input.press_key(Key::M);
+        input.press_key(Key::H);
+
+        assert!(input.key(Key::L).pressed());
+        assert!(input.key(Key::M).pressed());
+        assert!(input.key(Key::H).pressed());
+        assert!(!input.key(Key::F).held());
+        assert!(!input.key(Key::R).held());
     }
 
     #[test]
