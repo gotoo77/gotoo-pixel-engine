@@ -2,8 +2,8 @@
 //!
 //! Within one page, interactive widget order is expected to stay stable. These
 //! tests deliberately show the raw rebinding behavior after structural changes,
-//! then verify that replacing `UiState` before a deliberate page/shape change
-//! cleanly invalidates focus, pointer capture, and repeat ownership.
+//! then verify that `UiState::reset_interaction()` before a deliberate page/shape
+//! change cleanly invalidates focus, pointer capture, and repeat ownership.
 
 use std::time::Duration;
 
@@ -128,7 +128,7 @@ fn active_pointer_rebinds_to_the_new_slider_at_the_same_ordinal() {
 }
 
 #[test]
-fn replacing_ui_state_prevents_active_pointer_rebind() {
+fn reset_interaction_prevents_active_pointer_rebind() {
     let theme = compact_theme();
     let mut state = UiState::default();
     let mut framebuffer = Framebuffer::new(200, 60);
@@ -154,7 +154,7 @@ fn replacing_ui_state_prevents_active_pointer_rebind() {
     }
 
     input.advance_frame();
-    state = UiState::default();
+    state.reset_interaction();
     c = 0.1;
     let c_response = {
         let mut ui = Ui::new(
@@ -246,7 +246,7 @@ fn horizontal_repeat_owner_rebinds_to_the_new_slider_at_the_same_ordinal() {
 }
 
 #[test]
-fn replacing_ui_state_prevents_horizontal_repeat_rebind() {
+fn reset_interaction_prevents_horizontal_repeat_rebind() {
     let theme = compact_theme();
     let mut state = UiState::default();
     let mut framebuffer = Framebuffer::new(200, 60);
@@ -298,7 +298,7 @@ fn replacing_ui_state_prevents_horizontal_repeat_rebind() {
         ui.slider_f32("C", &mut c, 0.0..=1.0, 0.1);
     }
 
-    state = UiState::default();
+    state.reset_interaction();
     let before = c;
     let c_response = {
         let mut ui = Ui::new(
@@ -393,7 +393,7 @@ fn page_shape_change_with_out_of_range_focus_has_a_one_frame_focus_gap_then_clam
 }
 
 #[test]
-fn replacing_ui_state_before_page_change_restarts_focus_on_first_widget() {
+fn reset_interaction_before_page_change_restarts_focus_on_first_widget() {
     let theme = compact_theme();
     let mut state = UiState::default();
     let mut framebuffer = Framebuffer::new(200, 60);
@@ -426,7 +426,7 @@ fn replacing_ui_state_before_page_change_restarts_focus_on_first_widget() {
     }
     assert_eq!(state.focused_index(), Some(2));
 
-    state = UiState::default();
+    state.reset_interaction();
     let mut enabled = false;
     let page_b_frame = {
         let mut ui = Ui::new(
