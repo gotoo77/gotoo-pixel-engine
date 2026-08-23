@@ -570,10 +570,11 @@ mod tests {
         let mut state = UiState::default();
         let mut framebuffer = Framebuffer::new(160, 40);
         let mut value = 0.8;
+        let idle = Input::default();
         {
             let mut ui = Ui::new(
                 &mut framebuffer,
-                &Input::default(),
+                &idle,
                 Duration::from_millis(16),
                 &mut state,
                 UiTheme::default(),
