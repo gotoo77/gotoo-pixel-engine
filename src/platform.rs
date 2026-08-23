@@ -382,11 +382,11 @@ impl<G: Game> PlatformApp<G> {
             return;
         }
 
-        if let Some(state) = self.tool_window.as_mut() {
-            if tool_window_surface_matches(&state.config, &config) {
-                state.config.mode = config.mode;
-                return;
-            }
+        if let Some(state) = self.tool_window.as_mut()
+            && tool_window_surface_matches(&state.config, &config)
+        {
+            state.config.mode = config.mode;
+            return;
         }
 
         self.tool_window = None;
@@ -845,11 +845,11 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Some(state) = self.tool_window.as_ref() {
-                if state.config.mode == ToolWindowMode::Modal || state.window.has_focus() {
-                    state.window.request_redraw();
-                    return;
-                }
+            if let Some(state) = self.tool_window.as_ref()
+                && (state.config.mode == ToolWindowMode::Modal || state.window.has_focus())
+            {
+                state.window.request_redraw();
+                return;
             }
             if let Some(window) = self.window.as_ref() {
                 window.request_redraw();
