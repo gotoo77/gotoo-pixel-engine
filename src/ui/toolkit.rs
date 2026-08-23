@@ -121,6 +121,8 @@ pub struct UiState {
     horizontal_repeat_owner: Option<usize>,
     left_repeat: RepeatState,
     right_repeat: RepeatState,
+    scroll_y: u32,
+    previous_content_height: u32,
 }
 
 impl UiState {
@@ -145,7 +147,10 @@ pub struct Ui<'a> {
     state: &'a mut UiState,
     theme: UiTheme,
     text_renderer: TextRenderer,
-    cursor_y: i32,
+    logical_cursor_y: u32,
+    logical_content_bottom: u32,
+    applied_scroll_y: u32,
+    requested_scroll_y: Option<u32>,
     interactive_count: usize,
 }
 
@@ -173,6 +178,12 @@ impl<'a> Ui<'a> {
             state.pointer_active = None;
         }
 
+        let max_scroll = state
+            .previous_content_height
+            .saturating_sub(framebuffer.height());
+        state.scroll_y = state.scroll_y.min(max_scroll);
+        let applied_scroll_y = state.scroll_y;
+
         Self {
             framebuffer,
             input,
@@ -180,7 +191,10 @@ impl<'a> Ui<'a> {
             state,
             theme,
             text_renderer: TextRenderer::new(theme.font),
-            cursor_y: u32_to_i32(theme.padding),
+            logical_cursor_y: theme.padding,
+            logical_content_bottom: 0,
+            applied_scroll_y,
+            requested_scroll_y: None,
             interactive_count: 0,
         }
     }
@@ -222,7 +236,7 @@ impl<'a> Ui<'a> {
         }
 
         let rect = self.next_row();
-        let ordinal = self.next_interactive();
+        let ordinal = self.next_interactive(rect);
         let normalized = selected.min(labels.len() - 1);
         let mut requested = (normalized != selected).then_some(normalized);
 
@@ -259,7 +273,7 @@ impl<'a> Ui<'a> {
 
     pub fn button(&mut self, label: &str) -> UiResponse {
         let rect = self.next_row();
-        let ordinal = self.next_interactive();
+        let ordinal = self.next_interactive(rect);
         let response = self.click_response(rect, ordinal);
         self.draw_control(rect, label, response);
         response
@@ -267,7 +281,7 @@ impl<'a> Ui<'a> {
 
     pub fn toggle(&mut self, label: &str, value: &mut bool) -> UiResponse {
         let rect = self.next_row();
-        let ordinal = self.next_interactive();
+        let ordinal = self.next_interactive(rect);
         let mut response = self.click_response(rect, ordinal);
         if response.clicked {
             *value = !*value;
@@ -280,7 +294,7 @@ impl<'a> Ui<'a> {
 
     pub fn select(&mut self, label: &str, selected: &mut usize, options: &[&str]) -> UiResponse {
         let rect = self.next_row();
-        let ordinal = self.next_interactive();
+        let ordinal = self.next_interactive(rect);
         let hovered = self.pointer_over(rect);
         let left_button = self.input.mouse_button(MouseButton::Left);
         let mut changed = false;
@@ -344,7 +358,7 @@ impl<'a> Ui<'a> {
         step: f32,
     ) -> UiResponse {
         let rect = self.next_row();
-        let ordinal = self.next_interactive();
+        let ordinal = self.next_interactive(rect);
         let hovered = self.pointer_over(rect);
         let track = slider_track_rect(rect);
         let mouse = self.input.mouse_position();
@@ -423,21 +437,109 @@ impl<'a> Ui<'a> {
             .framebuffer
             .width()
             .saturating_sub(self.theme.padding.saturating_mul(2));
+        let logical_y = self.logical_cursor_y;
+        let physical_y = i64::from(logical_y) - i64::from(self.applied_scroll_y);
         let rect = Rect {
             x: u32_to_i32(self.theme.padding),
-            y: self.cursor_y,
+            y: clamp_i64_to_i32(physical_y),
             width,
             height: self.theme.row_height,
         };
+        self.logical_content_bottom = logical_y.saturating_add(self.theme.row_height);
         let advance = self.theme.row_height.saturating_add(self.theme.row_spacing);
-        self.cursor_y = self.cursor_y.saturating_add(u32_to_i32(advance));
+        self.logical_cursor_y = self.logical_cursor_y.saturating_add(advance);
         rect
     }
 
-    fn next_interactive(&mut self) -> usize {
+    fn next_interactive(&mut self, rect: Rect) -> usize {
         let ordinal = self.interactive_count;
         self.interactive_count = self.interactive_count.saturating_add(1);
+        if self.state.focused == ordinal {
+            self.request_focused_visibility(rect);
+        }
         ordinal
+    }
+
+    fn request_focused_visibility(&mut self, rect: Rect) {
+        let framebuffer_height = self.framebuffer.height();
+        let vertical_padding = self.theme.padding.min(framebuffer_height / 2);
+        let viewport_top = i64::from(vertical_padding);
+        let viewport_bottom = i64::from(framebuffer_height.saturating_sub(vertical_padding));
+        let viewport_height = viewport_bottom.saturating_sub(viewport_top);
+        if i64::from(rect.height) > viewport_height {
+            return;
+        }
+
+        let rect_top = i64::from(rect.y);
+        let rect_bottom = rect_top.saturating_add(i64::from(rect.height));
+        let current_scroll = i64::from(self.applied_scroll_y);
+        let requested = if rect_top < viewport_top {
+            current_scroll.saturating_sub(viewport_top - rect_top)
+        } else if rect_bottom > viewport_bottom {
+            current_scroll.saturating_add(rect_bottom - viewport_bottom)
+        } else {
+            return;
+        };
+        self.requested_scroll_y = Some(requested.clamp(0, i64::from(u32::MAX)) as u32);
+    }
+
+    fn content_height(&self) -> u32 {
+        if self.logical_content_bottom == 0 {
+            0
+        } else {
+            self.logical_content_bottom.saturating_add(self.theme.padding)
+        }
+    }
+
+    fn draw_root_scrollbar(&mut self, content_height: u32, scroll_y: u32) {
+        let viewport_height = self.framebuffer.height();
+        if content_height <= viewport_height || viewport_height == 0 || self.theme.padding < 2 {
+            return;
+        }
+
+        let horizontal_padding = self.theme.padding.min(self.framebuffer.width());
+        if horizontal_padding < 2 {
+            return;
+        }
+        let track_width = 2;
+        let track_x = self
+            .framebuffer
+            .width()
+            .saturating_sub(horizontal_padding)
+            .saturating_add((horizontal_padding - track_width) / 2);
+        let vertical_padding = self.theme.padding.min(viewport_height / 2);
+        let track_height = viewport_height.saturating_sub(vertical_padding.saturating_mul(2));
+        if track_height == 0 {
+            return;
+        }
+
+        let proportional_thumb = (u64::from(track_height) * u64::from(viewport_height)
+            / u64::from(content_height)) as u32;
+        let minimum_thumb = 6_u32.min(track_height);
+        let thumb_height = proportional_thumb.max(minimum_thumb).min(track_height);
+        let max_scroll = content_height.saturating_sub(viewport_height);
+        let travel = track_height.saturating_sub(thumb_height);
+        let thumb_offset = if max_scroll == 0 {
+            0
+        } else {
+            (u64::from(travel) * u64::from(scroll_y.min(max_scroll)) / u64::from(max_scroll))
+                as u32
+        };
+        let track_y = u32_to_i32(vertical_padding);
+        self.framebuffer.fill_rect(
+            u32_to_i32(track_x),
+            track_y,
+            track_width,
+            track_height,
+            self.theme.border,
+        );
+        self.framebuffer.fill_rect(
+            u32_to_i32(track_x),
+            track_y.saturating_add(u32_to_i32(thumb_offset)),
+            track_width,
+            thumb_height,
+            self.theme.accent,
+        );
     }
 
     fn pointer_over(&self, rect: Rect) -> bool {
@@ -642,6 +744,16 @@ impl<'a> Ui<'a> {
 
 impl Drop for Ui<'_> {
     fn drop(&mut self) {
+        let content_height = self.content_height();
+        let max_scroll = content_height.saturating_sub(self.framebuffer.height());
+        let current_scroll = self.applied_scroll_y.min(max_scroll);
+        self.draw_root_scrollbar(content_height, current_scroll);
+        self.state.previous_content_height = content_height;
+        self.state.scroll_y = self
+            .requested_scroll_y
+            .unwrap_or(current_scroll)
+            .min(max_scroll);
+
         self.state.previous_interactive_count = self.interactive_count;
         if self.interactive_count == 0 {
             self.state.focused = 0;
@@ -750,6 +862,10 @@ fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
     coordinate.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
+fn clamp_i64_to_i32(value: i64) -> i32 {
+    value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
 fn u32_to_i32(value: u32) -> i32 {
     i32::try_from(value).unwrap_or(i32::MAX)
 }
@@ -777,6 +893,20 @@ mod tests {
             UiTheme::default(),
         );
         [ui.button("ONE"), ui.button("TWO"), ui.button("THREE")]
+    }
+
+    fn button_list(input: &Input, state: &mut UiState, count: usize, height: u32) {
+        let mut framebuffer = Framebuffer::new(120, height);
+        let mut ui = Ui::new(
+            &mut framebuffer,
+            input,
+            Duration::from_millis(16),
+            state,
+            compact_theme(),
+        );
+        for _ in 0..count {
+            ui.button("ROW");
+        }
     }
 
     #[test]
@@ -1138,5 +1268,82 @@ mod tests {
             assert!(ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1).changed);
         }
         assert!((value - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn content_height_is_logical_and_scroll_does_not_drift() {
+        let mut state = UiState::default();
+        let idle = Input::default();
+        button_list(&idle, &mut state, 3, 40);
+        assert_eq!(state.previous_content_height, 60);
+        assert_eq!(state.scroll_y, 0);
+
+        let mut up = Input::default();
+        up.press_key(Key::Up);
+        button_list(&up, &mut state, 3, 40);
+        assert_eq!(state.focused_index(), Some(2));
+        assert_eq!(state.previous_content_height, 60);
+        assert_eq!(state.scroll_y, 20);
+
+        button_list(&idle, &mut state, 3, 40);
+        assert_eq!(state.previous_content_height, 60);
+        assert_eq!(state.scroll_y, 20);
+        button_list(&idle, &mut state, 3, 40);
+        assert_eq!(state.previous_content_height, 60);
+        assert_eq!(state.scroll_y, 20);
+    }
+
+    #[test]
+    fn focus_wrap_requests_root_scroll_in_both_directions() {
+        let mut state = UiState::default();
+        let idle = Input::default();
+        button_list(&idle, &mut state, 3, 40);
+
+        let mut up = Input::default();
+        up.press_key(Key::Up);
+        button_list(&up, &mut state, 3, 40);
+        assert_eq!(state.focused_index(), Some(2));
+        assert_eq!(state.scroll_y, 20);
+
+        let mut down = Input::default();
+        down.press_key(Key::Down);
+        button_list(&down, &mut state, 3, 40);
+        assert_eq!(state.focused_index(), Some(0));
+        assert_eq!(state.scroll_y, 0);
+    }
+
+    #[test]
+    fn shorter_content_clamps_scroll_at_end_of_frame() {
+        let mut state = UiState::default();
+        let idle = Input::default();
+        button_list(&idle, &mut state, 3, 40);
+
+        let mut up = Input::default();
+        up.press_key(Key::Up);
+        button_list(&up, &mut state, 3, 40);
+        assert_eq!(state.scroll_y, 20);
+
+        button_list(&idle, &mut state, 1, 40);
+        assert_eq!(state.previous_content_height, 20);
+        assert_eq!(state.scroll_y, 0);
+        assert_eq!(state.focused_index(), Some(0));
+    }
+
+    #[test]
+    fn structural_reset_clears_scroll_and_cached_content_height() {
+        let mut state = UiState::default();
+        let idle = Input::default();
+        button_list(&idle, &mut state, 3, 40);
+
+        let mut up = Input::default();
+        up.press_key(Key::Up);
+        button_list(&up, &mut state, 3, 40);
+        assert_eq!(state.scroll_y, 20);
+        assert_eq!(state.previous_content_height, 60);
+
+        state.reset_interaction();
+        assert_eq!(state.scroll_y, 0);
+        assert_eq!(state.previous_content_height, 0);
+        assert_eq!(state.focused_index(), None);
     }
 }
