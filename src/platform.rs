@@ -21,8 +21,6 @@ use branding::default_window_icon;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
-#[cfg(not(target_arch = "wasm32"))]
-use winit::event_loop::ControlFlow;
 #[cfg(target_arch = "wasm32")]
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -42,6 +40,18 @@ pub struct EngineConfig {
     pub window_height: u32,
 }
 
+/// Scheduling policy for one native auxiliary tool window.
+///
+/// Focus controls keyboard ownership in both modes. The mode controls whether
+/// the primary game simulation is allowed to advance while the tool is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolWindowMode {
+    /// The tool blocks primary `Game::update` calls until it closes.
+    Modal,
+    /// The primary game and tool keep advancing independently of window focus.
+    Modeless,
+}
+
 /// Describes one optional native sidecar window for development tooling.
 ///
 /// The primary game window remains the simulation owner. The tool window has
@@ -54,6 +64,7 @@ pub struct ToolWindowConfig {
     pub framebuffer_height: u32,
     pub window_width: u32,
     pub window_height: u32,
+    pub mode: ToolWindowMode,
 }
 
 /// Frame presented to the optional native tool window.
@@ -164,8 +175,6 @@ pub fn run<G: Game + 'static>(config: EngineConfig, game: G) -> Result<(), Engin
     let event_loop = EventLoop::<PlatformEvent>::with_user_event()
         .build()
         .map_err(EngineError::event_loop)?;
-    #[cfg(not(target_arch = "wasm32"))]
-    event_loop.set_control_flow(ControlFlow::Poll);
     #[cfg(target_arch = "wasm32")]
     let mut app = PlatformApp::new(config, game, event_loop.create_proxy());
     #[cfg(not(target_arch = "wasm32"))]
@@ -343,6 +352,17 @@ impl<G: Game> PlatformApp<G> {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    fn render_native_cycle(&mut self, event_loop: &ActiveEventLoop) {
+        let mode = self.tool_window.as_ref().map(|state| state.config.mode);
+        if mode != Some(ToolWindowMode::Modal) {
+            self.render_frame(event_loop);
+        }
+        if self.tool_window.is_some() {
+            self.render_tool_frame(event_loop);
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn sync_tool_window(&mut self, event_loop: &ActiveEventLoop) {
         let requested = self.game.tool_window_config();
 
@@ -357,12 +377,11 @@ impl<G: Game> PlatformApp<G> {
             return;
         }
 
-        if self
-            .tool_window
-            .as_ref()
-            .is_some_and(|state| state.config == config)
-        {
-            return;
+        if let Some(state) = self.tool_window.as_mut() {
+            if tool_window_surface_matches(&state.config, &config) {
+                state.config.mode = config.mode;
+                return;
+            }
         }
 
         self.tool_window = None;
@@ -584,7 +603,12 @@ impl<G: Game> PlatformApp<G> {
         }
 
         if matches!(&event, WindowEvent::RedrawRequested) {
-            self.render_tool_frame(event_loop);
+            let tool_drives = self.tool_window.as_ref().is_some_and(|state| {
+                state.config.mode == ToolWindowMode::Modal || state.window.has_focus()
+            });
+            if tool_drives {
+                self.render_native_cycle(event_loop);
+            }
             return;
         }
 
@@ -598,6 +622,9 @@ impl<G: Game> PlatformApp<G> {
                 state.renderer.resize(size);
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                if !state.window.has_focus() {
+                    return;
+                }
                 let Some(key) = key_from_winit(event.physical_key) else {
                     return;
                 };
@@ -705,9 +732,29 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if !window.has_focus()
+                    || self
+                        .tool_window
+                        .as_ref()
+                        .is_some_and(|state| state.config.mode == ToolWindowMode::Modal)
+                {
+                    self.modifiers = ModifiersState::empty();
+                    return;
+                }
                 self.modifiers = modifiers.state();
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if !window.has_focus()
+                    || self
+                        .tool_window
+                        .as_ref()
+                        .is_some_and(|state| state.config.mode == ToolWindowMode::Modal)
+                {
+                    return;
+                }
+
                 #[cfg(not(target_arch = "wasm32"))]
                 if event.state == ElementState::Pressed
                     && !event.repeat
@@ -731,6 +778,15 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if self
+                    .tool_window
+                    .as_ref()
+                    .is_some_and(|tool| tool.config.mode == ToolWindowMode::Modal)
+                {
+                    return;
+                }
+
                 let Some(button) = mouse_button_from_winit(button) else {
                     return;
                 };
@@ -746,25 +802,58 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             }
             WindowEvent::CursorMoved { position, .. } => self.update_mouse_position(position),
             WindowEvent::CursorLeft { .. } => self.input.set_mouse_position(None),
-            WindowEvent::Touch(touch) => self.update_touch(touch),
+            WindowEvent::Touch(touch) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if self
+                    .tool_window
+                    .as_ref()
+                    .is_some_and(|tool| tool.config.mode == ToolWindowMode::Modal)
+                {
+                    return;
+                }
+                self.update_touch(touch);
+            }
             WindowEvent::Focused(focused) => {
                 self.reset_frame_timing();
                 if !focused {
+                    self.modifiers = ModifiersState::empty();
                     self.input.reset_window_devices();
                 }
             }
-            WindowEvent::RedrawRequested => self.render_frame(event_loop),
+            WindowEvent::RedrawRequested => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let tool_drives = self.tool_window.as_ref().is_some_and(|state| {
+                        state.config.mode == ToolWindowMode::Modal || state.window.has_focus()
+                    });
+                    if !tool_drives {
+                        self.render_native_cycle(event_loop);
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                self.render_frame(event_loop);
+            }
             _ => {}
         }
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(state) = self.tool_window.as_ref() {
+                if state.config.mode == ToolWindowMode::Modal || state.window.has_focus() {
+                    state.window.request_redraw();
+                    return;
+                }
+            }
+            if let Some(window) = self.window.as_ref() {
+                window.request_redraw();
+            }
+        }
+
+        #[cfg(target_arch = "wasm32")]
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(state) = self.tool_window.as_ref() {
-            state.window.request_redraw();
         }
     }
 }
@@ -777,6 +866,15 @@ fn remember_non_zero_size(last_size: &mut Option<PhysicalSize<u32>>, size: Physi
     if size.width != 0 && size.height != 0 {
         *last_size = Some(size);
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tool_window_surface_matches(a: &ToolWindowConfig, b: &ToolWindowConfig) -> bool {
+    a.title == b.title
+        && a.framebuffer_width == b.framebuffer_width
+        && a.framebuffer_height == b.framebuffer_height
+        && a.window_width == b.window_width
+        && a.window_height == b.window_height
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -937,10 +1035,11 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, TouchPhase,
-        current_viewport, is_fullscreen_shortcut, key_from_winit, mouse_button_from_winit,
-        remember_non_zero_size, simulation_delta_time, surface_to_framebuffer_position,
-        touch_from_winit, touch_phase_from_winit, validate_config, validate_tool_window_config,
+        EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
+        TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
+        mouse_button_from_winit, remember_non_zero_size, simulation_delta_time,
+        surface_to_framebuffer_position, tool_window_surface_matches, touch_from_winit,
+        touch_phase_from_winit, validate_config, validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -1236,6 +1335,7 @@ mod tests {
             framebuffer_height: 180,
             window_width: 480,
             window_height: 360,
+            mode: ToolWindowMode::Modeless,
         }
     }
 
@@ -1266,5 +1366,17 @@ mod tests {
             error.to_string(),
             "tool window_height must be greater than 0"
         );
+    }
+
+    #[test]
+    fn tool_surface_identity_ignores_scheduling_mode() {
+        let modeless = valid_tool_config();
+        let mut modal = modeless.clone();
+        modal.mode = ToolWindowMode::Modal;
+
+        assert!(tool_window_surface_matches(&modeless, &modal));
+
+        modal.window_width += 1;
+        assert!(!tool_window_surface_matches(&modeless, &modal));
     }
 }
