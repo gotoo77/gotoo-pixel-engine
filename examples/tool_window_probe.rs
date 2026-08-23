@@ -1,7 +1,8 @@
 #![deny(warnings)]
 
 use gotoo_pixel_engine::{
-    EngineConfig, Frame, Game, GameResult, Input, Key, Pixel, ToolFrame, ToolWindowConfig, run,
+    EngineConfig, Frame, Game, GameResult, Input, Key, Pixel, ToolFrame, ToolWindowConfig,
+    ToolWindowMode, run,
 };
 
 const MAIN_WIDTH: u32 = 320;
@@ -11,6 +12,7 @@ const TOOL_HEIGHT: u32 = 180;
 
 struct ToolWindowProbe {
     tool_open: bool,
+    tool_mode: ToolWindowMode,
     escape_close_armed: bool,
     bar_width: u32,
     heartbeat: f32,
@@ -37,17 +39,43 @@ impl Game for ToolWindowProbe {
         if frame.input.key(Key::Escape).pressed() {
             return GameResult::Exit;
         }
-        if control_shift_pressed(frame.input, Key::F) {
-            self.tool_open = !self.tool_open;
+
+        if !self.tool_open && control_shift_pressed(frame.input, Key::F) {
+            self.tool_mode = ToolWindowMode::Modeless;
+            self.tool_open = true;
+            self.escape_close_armed = false;
+        } else if !self.tool_open && control_shift_pressed(frame.input, Key::R) {
+            self.tool_mode = ToolWindowMode::Modal;
+            self.tool_open = true;
+            self.escape_close_armed = false;
+        } else if self.tool_open
+            && self.tool_mode == ToolWindowMode::Modeless
+            && control_shift_pressed(frame.input, Key::F)
+        {
+            self.tool_open = false;
             self.escape_close_armed = false;
         }
 
         // This moving marker is intentionally driven only by the primary game
-        // frame. It makes it obvious whether the main simulation keeps ticking
-        // while the auxiliary window owns keyboard focus.
+        // frame. In Modeless mode it must continue while the tool owns focus;
+        // in Modal mode it must stop until the tool closes.
         self.heartbeat = (self.heartbeat + frame.delta_time.as_secs_f32() * 90.0) % 200.0;
 
         frame.framebuffer.clear(Pixel::rgb(5, 8, 14));
+        frame.framebuffer.draw_text_scaled(
+            20,
+            18,
+            "CTRL SHIFT F: MODELESS",
+            1,
+            Pixel::rgb(170, 205, 235),
+        );
+        frame.framebuffer.draw_text_scaled(
+            20,
+            30,
+            "CTRL SHIFT R: MODAL",
+            1,
+            Pixel::rgb(220, 170, 235),
+        );
         frame
             .framebuffer
             .draw_rect(20, 60, 220, 40, Pixel::rgb(90, 120, 180));
@@ -81,14 +109,14 @@ impl Game for ToolWindowProbe {
             framebuffer_height: TOOL_HEIGHT,
             window_width: 480,
             window_height: 360,
+            mode: self.tool_mode,
         })
     }
 
     fn update_tool_window(&mut self, frame: &mut ToolFrame<'_>) {
         // Close on Escape release rather than press. On desktop the main window
         // regains focus immediately after the tool closes; waiting for release
-        // prevents that same physical Escape from leaking into the parent and
-        // triggering its own exit binding.
+        // prevents that same physical Escape from leaking into the parent.
         if frame.input.key(Key::Escape).pressed() {
             self.escape_close_armed = true;
         }
@@ -105,6 +133,17 @@ impl Game for ToolWindowProbe {
         }
 
         frame.framebuffer.clear(Pixel::rgb(12, 7, 18));
+        let mode_label = match self.tool_mode {
+            ToolWindowMode::Modal => "MODAL: MAIN BLOCKED",
+            ToolWindowMode::Modeless => "MODELESS: MAIN LIVE",
+        };
+        frame.framebuffer.draw_text_scaled(
+            12,
+            18,
+            mode_label,
+            1,
+            Pixel::rgb(230, 205, 245),
+        );
         frame
             .framebuffer
             .draw_rect(12, 50, 216, 80, Pixel::rgb(170, 90, 230));
@@ -122,7 +161,7 @@ impl Game for ToolWindowProbe {
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
     run(
         EngineConfig {
-            title: "GPE Tool Window Probe - Ctrl+Shift+F opens tool".into(),
+            title: "GPE Tool Window Probe - F modeless / R modal".into(),
             framebuffer_width: MAIN_WIDTH,
             framebuffer_height: MAIN_HEIGHT,
             window_width: 960,
@@ -130,6 +169,7 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
         },
         ToolWindowProbe {
             tool_open: false,
+            tool_mode: ToolWindowMode::Modeless,
             escape_close_armed: false,
             bar_width: 80,
             heartbeat: 0.0,
