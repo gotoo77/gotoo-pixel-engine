@@ -190,6 +190,53 @@ impl<'a> Ui<'a> {
         self.draw_text_left(rect, text, self.theme.muted_text);
     }
 
+    /// Draws one ordinal tab-bar widget and returns a requested selection change.
+    ///
+    /// The consumer owns `selected`. A returned request must be committed only after
+    /// this `Ui` has been dropped, with `UiState::reset_interaction()` called before
+    /// changing the page structure. Mouse selection happens on left-button press and
+    /// deliberately uses no tab-specific pointer-capture state.
+    pub fn tabs(&mut self, selected: usize, labels: &[&str]) -> Option<usize> {
+        if labels.is_empty() {
+            return None;
+        }
+
+        let rect = self.next_row();
+        let ordinal = self.next_interactive();
+        let normalized = selected.min(labels.len() - 1);
+        let mut requested = (normalized != selected).then_some(normalized);
+
+        if requested.is_none() && self.state.focused == ordinal && labels.len() > 1 {
+            let left = self.input.key(Key::Left).pressed();
+            let right = self.input.key(Key::Right).pressed();
+            requested = match (left, right) {
+                (true, false) => Some(if normalized == 0 {
+                    labels.len() - 1
+                } else {
+                    normalized - 1
+                }),
+                (false, true) => Some((normalized + 1) % labels.len()),
+                _ => None,
+            };
+        }
+
+        let hovered_tab = self
+            .input
+            .mouse_position()
+            .and_then(|position| tab_index_at_position(rect, labels.len(), position));
+        if self.input.mouse_button(MouseButton::Left).pressed()
+            && let Some(index) = hovered_tab
+        {
+            self.state.focused = ordinal;
+            if requested.is_none() && index != normalized {
+                requested = Some(index);
+            }
+        }
+
+        self.draw_tabs(rect, labels, normalized, ordinal, hovered_tab);
+        requested
+    }
+
     pub fn button(&mut self, label: &str) -> UiResponse {
         let rect = self.next_row();
         let ordinal = self.next_interactive();
@@ -346,6 +393,49 @@ impl<'a> Ui<'a> {
     fn draw_control(&mut self, rect: Rect, label: &str, response: UiResponse) {
         self.draw_control_frame(rect, response);
         self.draw_text_centered(rect, label, self.theme.text);
+    }
+
+    fn draw_tabs(
+        &mut self,
+        rect: Rect,
+        labels: &[&str],
+        selected: usize,
+        ordinal: usize,
+        hovered_tab: Option<usize>,
+    ) {
+        let focused = self.state.focused == ordinal;
+        for (index, label) in labels.iter().enumerate() {
+            let tab = tab_rect(rect, index, labels.len());
+            let is_selected = index == selected;
+            let background = if is_selected {
+                self.theme.accent
+            } else {
+                self.theme.control_background
+            };
+            let foreground = if is_selected {
+                self.theme.control_background
+            } else {
+                self.theme.text
+            };
+            let border = if hovered_tab == Some(index) {
+                self.theme.accent
+            } else {
+                self.theme.border
+            };
+            self.framebuffer
+                .fill_rect(tab.x, tab.y, tab.width, tab.height, background);
+            self.framebuffer
+                .draw_rect(tab.x, tab.y, tab.width, tab.height, border);
+            self.draw_text_centered(tab, label, foreground);
+        }
+
+        let outer_border = if focused {
+            self.theme.accent
+        } else {
+            self.theme.border
+        };
+        self.framebuffer
+            .draw_rect(rect.x, rect.y, rect.width, rect.height, outer_border);
     }
 
     fn draw_slider(
@@ -514,6 +604,27 @@ fn slider_track_rect(rect: Rect) -> Rect {
         width,
         height,
     }
+}
+
+fn tab_rect(rect: Rect, index: usize, count: usize) -> Rect {
+    let count = count as u64;
+    let start = (u64::from(rect.width) * index as u64 / count) as u32;
+    let end = (u64::from(rect.width) * (index + 1) as u64 / count) as u32;
+    Rect {
+        x: rect.x.saturating_add(u32_to_i32(start)),
+        y: rect.y,
+        width: end.saturating_sub(start),
+        height: rect.height,
+    }
+}
+
+fn tab_index_at_position(rect: Rect, count: usize, position: (i32, i32)) -> Option<usize> {
+    if count == 0 || rect.width == 0 || !rect.contains(position) {
+        return None;
+    }
+    let relative_x = i64::from(position.0) - i64::from(rect.x);
+    let index = (relative_x as u64 * count as u64 / u64::from(rect.width)) as usize;
+    Some(index.min(count - 1))
 }
 
 fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
