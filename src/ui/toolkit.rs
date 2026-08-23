@@ -1,9 +1,7 @@
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
-use crate::{
-    ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextRenderer,
-};
+use crate::{ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextRenderer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepeatConfig {
@@ -247,14 +245,14 @@ impl<'a> Ui<'a> {
                 self.state.right_repeat.reset(config);
                 self.state.horizontal_repeat_owner = Some(ordinal);
             }
-            let left = self
-                .state
-                .left_repeat
-                .update(self.input.key(Key::Left), self.delta_time, config);
-            let right = self
-                .state
-                .right_repeat
-                .update(self.input.key(Key::Right), self.delta_time, config);
+            let left =
+                self.state
+                    .left_repeat
+                    .update(self.input.key(Key::Left), self.delta_time, config);
+            let right =
+                self.state
+                    .right_repeat
+                    .update(self.input.key(Key::Right), self.delta_time, config);
             let direction = i64::from(right) - i64::from(left);
             if direction != 0 {
                 let before = *value;
@@ -470,12 +468,7 @@ fn snap_to_step(value: f32, min: f32, max: f32, step: f32) -> f32 {
     (min + ((value - min) / step).round() * step).clamp(min, max)
 }
 
-fn stepped_slider_value(
-    value: f32,
-    range: &RangeInclusive<f32>,
-    step: f32,
-    direction: i64,
-) -> f32 {
+fn stepped_slider_value(value: f32, range: &RangeInclusive<f32>, step: f32, direction: i64) -> f32 {
     let (min, max) = ordered_range(range);
     let step = step.abs();
     if step == 0.0 {
