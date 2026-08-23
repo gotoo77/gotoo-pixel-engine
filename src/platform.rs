@@ -21,6 +21,8 @@ use branding::default_window_icon;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, WindowEvent};
+#[cfg(not(target_arch = "wasm32"))]
+use winit::event_loop::ControlFlow;
 #[cfg(target_arch = "wasm32")]
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -162,6 +164,8 @@ pub fn run<G: Game + 'static>(config: EngineConfig, game: G) -> Result<(), Engin
     let event_loop = EventLoop::<PlatformEvent>::with_user_event()
         .build()
         .map_err(EngineError::event_loop)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    event_loop.set_control_flow(ControlFlow::Poll);
     #[cfg(target_arch = "wasm32")]
     let mut app = PlatformApp::new(config, game, event_loop.create_proxy());
     #[cfg(not(target_arch = "wasm32"))]
