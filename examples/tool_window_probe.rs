@@ -11,6 +11,7 @@ const TOOL_HEIGHT: u32 = 180;
 
 struct ToolWindowProbe {
     tool_open: bool,
+    escape_close_armed: bool,
     bar_width: u32,
 }
 
@@ -37,6 +38,7 @@ impl Game for ToolWindowProbe {
         }
         if control_shift_pressed(frame.input, Key::F) {
             self.tool_open = !self.tool_open;
+            self.escape_close_armed = false;
         }
 
         frame.framebuffer.clear(Pixel::rgb(5, 8, 14));
@@ -67,11 +69,17 @@ impl Game for ToolWindowProbe {
     }
 
     fn update_tool_window(&mut self, frame: &mut ToolFrame<'_>) {
-        // Escape and the OS close button are intentionally tool-local. Opening
-        // uses a modifier chord in the main window so ordinary gameplay keys
-        // remain available to games embedding this primitive.
+        // Close on Escape release rather than press. On desktop the main window
+        // regains focus immediately after the tool closes; waiting for release
+        // prevents that same physical Escape from leaking into the parent and
+        // triggering its own exit binding.
         if frame.input.key(Key::Escape).pressed() {
+            self.escape_close_armed = true;
+        }
+        if self.escape_close_armed && frame.input.key(Key::Escape).released() {
+            self.escape_close_armed = false;
             self.tool_open = false;
+            return;
         }
         if frame.input.key(Key::Left).pressed() {
             self.adjust(-1);
@@ -91,6 +99,7 @@ impl Game for ToolWindowProbe {
 
     fn tool_window_closed(&mut self) {
         self.tool_open = false;
+        self.escape_close_armed = false;
     }
 }
 
@@ -105,6 +114,7 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
         },
         ToolWindowProbe {
             tool_open: false,
+            escape_close_armed: false,
             bar_width: 80,
         },
     )
