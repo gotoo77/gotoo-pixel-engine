@@ -24,6 +24,9 @@ pub enum Key {
     LeftControl,
     RightControl,
     C,
+    L,
+    M,
+    H,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -367,7 +370,7 @@ impl Default for Input {
     }
 }
 
-const KEY_COUNT: usize = 19;
+const KEY_COUNT: usize = 22;
 const MOUSE_BUTTON_COUNT: usize = 3;
 const GAMEPAD_BUTTON_COUNT: usize = 16;
 
@@ -392,6 +395,9 @@ fn key_index(key: Key) -> usize {
         Key::RightShift => 16,
         Key::LeftControl => 17,
         Key::RightControl => 18,
+        Key::L => 19,
+        Key::M => 20,
+        Key::H => 21,
     }
 }
 
@@ -499,6 +505,21 @@ mod tests {
         assert!(input.key(Key::RightControl).held());
         assert!(input.key(Key::X).pressed());
         assert!(input.key(Key::C).pressed());
+    }
+
+    #[test]
+    fn tool_shortcut_keys_use_independent_key_slots() {
+        let mut input = Input::default();
+
+        input.press_key(Key::L);
+        input.press_key(Key::M);
+        input.press_key(Key::H);
+
+        assert!(input.key(Key::L).pressed());
+        assert!(input.key(Key::M).pressed());
+        assert!(input.key(Key::H).pressed());
+        assert!(!input.key(Key::F).held());
+        assert!(!input.key(Key::R).held());
     }
 
     #[test]
