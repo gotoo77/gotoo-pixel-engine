@@ -312,14 +312,15 @@ impl<'a> Ui<'a> {
         if !normalized
             && options.len() > 1
             && left_button.pressed()
-            && self
-                .input
-                .mouse_position()
-                .is_some_and(|position| value_rect.contains(position))
+            && let Some(position) = self.input.mouse_position()
+            && value_rect.contains(position)
         {
-            let mouse_x = self.input.mouse_position().expect("mouse position checked").0;
             let midpoint = i64::from(value_rect.x) + i64::from(value_rect.width) / 2;
-            let mouse_delta = if i64::from(mouse_x) < midpoint { -1 } else { 1 };
+            let mouse_delta = if i64::from(position.0) < midpoint {
+                -1
+            } else {
+                1
+            };
             let before = *selected;
             *selected = wrapped_index(*selected, options.len(), mouse_delta);
             changed |= before != *selected;
@@ -406,14 +407,14 @@ impl<'a> Ui<'a> {
             self.state.horizontal_repeat_owner = Some(ordinal);
         }
 
-        let left = self
-            .state
-            .left_repeat
-            .update(self.input.key(Key::Left), self.delta_time, config);
-        let right = self
-            .state
-            .right_repeat
-            .update(self.input.key(Key::Right), self.delta_time, config);
+        let left =
+            self.state
+                .left_repeat
+                .update(self.input.key(Key::Left), self.delta_time, config);
+        let right =
+            self.state
+                .right_repeat
+                .update(self.input.key(Key::Right), self.delta_time, config);
         i64::from(right) - i64::from(left)
     }
 
@@ -906,13 +907,7 @@ mod tests {
         let mut left = Input::default();
         left.press_key(Key::Left);
         let response = {
-            let mut ui = Ui::new(
-                &mut framebuffer,
-                &left,
-                Duration::ZERO,
-                &mut state,
-                theme,
-            );
+            let mut ui = Ui::new(&mut framebuffer, &left, Duration::ZERO, &mut state, theme);
             ui.select("DIRECTION", &mut selected, &["A", "B", "C"])
         };
         assert_eq!(selected, 2);
@@ -922,13 +917,7 @@ mod tests {
         let mut right = Input::default();
         right.press_key(Key::Right);
         let response = {
-            let mut ui = Ui::new(
-                &mut framebuffer,
-                &right,
-                Duration::ZERO,
-                &mut state,
-                theme,
-            );
+            let mut ui = Ui::new(&mut framebuffer, &right, Duration::ZERO, &mut state, theme);
             ui.select("DIRECTION", &mut selected, &["A", "B", "C"])
         };
         assert_eq!(selected, 0);
