@@ -1,7 +1,12 @@
 mod pause;
+mod toolkit;
 mod virtual_pad;
 
+#[cfg(test)]
+mod ordinal_identity_tests;
+
 pub use pause::{PauseConfig, PauseGame};
+pub use toolkit::{RepeatConfig, RepeatState, Ui, UiResponse, UiState, UiTheme};
 pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
 
 use crate::{

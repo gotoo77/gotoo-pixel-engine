@@ -1,71 +1,33 @@
 #![deny(warnings)]
 
-use std::time::Duration;
-
 use gotoo_pixel_engine::{
-    EngineConfig, Frame, Game, GameResult, Input, Key, Pixel, ToolFrame, ToolWindowConfig,
-    ToolWindowMode, run,
+    EngineConfig, Frame, Game, GameResult, Input, Key, Pixel, TextRenderer, ToolFrame,
+    ToolWindowConfig, ToolWindowMode, run,
+    ui::{Ui, UiState, UiTheme},
 };
 
 const MAIN_WIDTH: u32 = 320;
 const MAIN_HEIGHT: u32 = 180;
 const TOOL_WIDTH: u32 = 240;
-const TOOL_HEIGHT: u32 = 180;
-const REPEAT_DELAY: Duration = Duration::from_millis(300);
-const REPEAT_INTERVAL: Duration = Duration::from_millis(60);
-
-#[derive(Default)]
-struct HeldRepeat {
-    elapsed: Duration,
-    next_repeat: Duration,
-}
-
-impl HeldRepeat {
-    fn update(&mut self, state: gotoo_pixel_engine::ButtonState, delta_time: Duration) -> bool {
-        if state.pressed() {
-            self.elapsed = Duration::ZERO;
-            self.next_repeat = REPEAT_DELAY;
-            return true;
-        }
-        if !state.held() {
-            self.elapsed = Duration::ZERO;
-            self.next_repeat = REPEAT_DELAY;
-            return false;
-        }
-
-        self.elapsed += delta_time;
-        if self.elapsed < self.next_repeat {
-            return false;
-        }
-
-        self.next_repeat += REPEAT_INTERVAL;
-        true
-    }
-}
+const TOOL_HEIGHT: u32 = 220;
 
 struct ToolWindowProbe {
     tool_open: bool,
     tool_mode: ToolWindowMode,
     escape_close_armed: bool,
-    left_repeat: HeldRepeat,
-    right_repeat: HeldRepeat,
-    bar_width: u32,
+    ui_state: UiState,
+    bar_enabled: bool,
+    bar_width: f32,
+    bar_gain: f32,
     heartbeat: f32,
 }
 
 impl ToolWindowProbe {
-    fn adjust(&mut self, direction: i32) {
-        if direction < 0 {
-            self.bar_width = self.bar_width.saturating_sub(4).max(8);
-        } else {
-            self.bar_width = (self.bar_width + 4).min(200);
-        }
-    }
-
     fn open_tool(&mut self, mode: ToolWindowMode) {
         self.tool_mode = mode;
         self.tool_open = true;
         self.escape_close_armed = false;
+        self.ui_state = UiState::default();
     }
 }
 
@@ -95,33 +57,38 @@ impl Game for ToolWindowProbe {
         self.heartbeat = (self.heartbeat + frame.delta_time.as_secs_f32() * 90.0) % 200.0;
 
         frame.framebuffer.clear(Pixel::rgb(5, 8, 14));
-        frame.framebuffer.draw_text_scaled(
+        let text = TextRenderer::default();
+        text.draw(
+            frame.framebuffer,
             20,
             10,
             "CTRL SHIFT L: LIVE",
-            1,
             Pixel::rgb(170, 205, 235),
         );
-        frame.framebuffer.draw_text_scaled(
+        text.draw(
+            frame.framebuffer,
             20,
             22,
             "CTRL SHIFT M: MODAL",
-            1,
             Pixel::rgb(220, 170, 235),
         );
-        frame.framebuffer.draw_text_scaled(
+        text.draw(
+            frame.framebuffer,
             20,
             34,
             "CTRL SHIFT H: HYBRID",
-            1,
             Pixel::rgb(200, 195, 235),
         );
         frame
             .framebuffer
             .draw_rect(20, 60, 220, 40, Pixel::rgb(90, 120, 180));
-        frame
-            .framebuffer
-            .fill_rect(30, 70, self.bar_width, 20, Pixel::rgb(100, 220, 180));
+        frame.framebuffer.fill_rect(
+            30,
+            70,
+            self.bar_width.round() as u32,
+            20,
+            Pixel::rgb(100, 220, 180),
+        );
         frame
             .framebuffer
             .draw_rect(30, 125, 208, 12, Pixel::rgb(70, 90, 130));
@@ -148,7 +115,7 @@ impl Game for ToolWindowProbe {
             framebuffer_width: TOOL_WIDTH,
             framebuffer_height: TOOL_HEIGHT,
             window_width: 480,
-            window_height: 360,
+            window_height: 440,
             mode: self.tool_mode,
         })
     }
@@ -166,46 +133,52 @@ impl Game for ToolWindowProbe {
             return;
         }
 
-        if self
-            .left_repeat
-            .update(frame.input.key(Key::Left), frame.delta_time)
-        {
-            self.adjust(-1);
-        }
-        if self
-            .right_repeat
-            .update(frame.input.key(Key::Right), frame.delta_time)
-        {
-            self.adjust(1);
-        }
-
         frame.framebuffer.clear(Pixel::rgb(12, 7, 18));
         let mode_label = match self.tool_mode {
             ToolWindowMode::Modal => "MODAL: MAIN BLOCKED",
             ToolWindowMode::Modeless => "LIVE: MAIN ALWAYS RUNS",
             ToolWindowMode::ModalWhenFocused => "HYBRID: PAUSE ON TOOL FOCUS",
         };
+
+        {
+            let mut ui = Ui::new(
+                frame.framebuffer,
+                frame.input,
+                frame.delta_time,
+                &mut self.ui_state,
+                UiTheme::default(),
+            );
+            ui.label(mode_label);
+            if ui.button("RESET VALUES").clicked {
+                self.bar_enabled = true;
+                self.bar_width = 80.0;
+                self.bar_gain = 0.65;
+            }
+            ui.toggle("BAR ENABLED", &mut self.bar_enabled);
+            ui.slider_f32("BAR WIDTH", &mut self.bar_width, 8.0..=200.0, 4.0);
+            ui.slider_f32("BAR GAIN", &mut self.bar_gain, 0.0..=1.0, 0.05);
+        }
+
         frame
             .framebuffer
-            .draw_text_scaled(12, 18, mode_label, 1, Pixel::rgb(230, 205, 245));
-        frame.framebuffer.draw_text_scaled(
-            12,
-            34,
-            "HOLD LEFT / RIGHT TO REPEAT",
-            1,
-            Pixel::rgb(185, 180, 205),
-        );
-        frame
-            .framebuffer
-            .draw_rect(12, 58, 216, 80, Pixel::rgb(170, 90, 230));
-        frame
-            .framebuffer
-            .fill_rect(20, 88, self.bar_width, 20, Pixel::rgb(100, 220, 180));
+            .draw_rect(12, 164, 216, 32, Pixel::rgb(90, 75, 120));
+        if self.bar_enabled {
+            let height = (6.0 + self.bar_gain * 18.0).round() as u32;
+            let y = 180_i32.saturating_sub((height / 2) as i32);
+            frame.framebuffer.fill_rect(
+                20,
+                y,
+                self.bar_width.round() as u32,
+                height,
+                Pixel::rgb(100, 220, 180),
+            );
+        }
     }
 
     fn tool_window_closed(&mut self) {
         self.tool_open = false;
         self.escape_close_armed = false;
+        self.ui_state = UiState::default();
     }
 }
 
@@ -222,9 +195,10 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
             tool_open: false,
             tool_mode: ToolWindowMode::Modeless,
             escape_close_armed: false,
-            left_repeat: HeldRepeat::default(),
-            right_repeat: HeldRepeat::default(),
-            bar_width: 80,
+            ui_state: UiState::default(),
+            bar_enabled: true,
+            bar_width: 80.0,
+            bar_gain: 0.65,
             heartbeat: 0.0,
         },
     )
