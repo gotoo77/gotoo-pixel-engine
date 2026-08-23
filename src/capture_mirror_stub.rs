@@ -1,4 +1,4 @@
-use crate::platform::{Frame, Game, GameResult};
+use crate::platform::{Frame, Game, GameResult, ToolFrame, ToolWindowConfig};
 
 /// Web-compatible OBS mirror facade.
 ///
@@ -20,5 +20,17 @@ impl<G> ObsMirrorGame<G> {
 impl<G: Game> Game for ObsMirrorGame<G> {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.game.update(frame)
+    }
+
+    fn tool_window_config(&self) -> Option<ToolWindowConfig> {
+        self.game.tool_window_config()
+    }
+
+    fn update_tool_window(&mut self, frame: &mut ToolFrame<'_>) {
+        self.game.update_tool_window(frame);
+    }
+
+    fn tool_window_closed(&mut self) {
+        self.game.tool_window_closed();
     }
 }
