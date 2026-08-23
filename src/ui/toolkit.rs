@@ -190,6 +190,26 @@ impl<'a> Ui<'a> {
         self.draw_text_left(rect, text, self.theme.muted_text);
     }
 
+    pub fn section(&mut self, title: &str) {
+        let rect = self.next_row();
+        let (title_width, _) = self.text_size(title);
+        self.draw_text_left(rect, title, self.theme.text);
+
+        let gap = 8;
+        let used_width = title_width.saturating_add(gap);
+        if used_width < rect.width {
+            let line_x = rect.x.saturating_add(u32_to_i32(used_width));
+            let line_y = centered_coordinate(rect.y, rect.height, 1);
+            self.framebuffer.fill_rect(
+                line_x,
+                line_y,
+                rect.width.saturating_sub(used_width),
+                1,
+                self.theme.border,
+            );
+        }
+    }
+
     /// Draws one ordinal tab-bar widget and returns a requested selection change.
     ///
     /// The consumer owns `selected`. A returned request must be committed only after
@@ -258,6 +278,64 @@ impl<'a> Ui<'a> {
         response
     }
 
+    pub fn select(&mut self, label: &str, selected: &mut usize, options: &[&str]) -> UiResponse {
+        let rect = self.next_row();
+        let ordinal = self.next_interactive();
+        let hovered = self.pointer_over(rect);
+        let left_button = self.input.mouse_button(MouseButton::Left);
+        let mut changed = false;
+        let mut normalized = false;
+
+        if left_button.pressed() && hovered {
+            self.state.focused = ordinal;
+        }
+
+        if !options.is_empty() && *selected >= options.len() {
+            *selected = options.len() - 1;
+            changed = true;
+            normalized = true;
+        }
+
+        let delta = self.horizontal_repeat_delta(ordinal);
+        if !normalized && options.len() > 1 && delta != 0 {
+            let before = *selected;
+            *selected = wrapped_index(*selected, options.len(), delta);
+            changed |= before != *selected;
+        }
+
+        let value_rect = Rect {
+            x: rect.x.saturating_add(u32_to_i32(rect.width / 2)),
+            y: rect.y,
+            width: rect.width.saturating_sub(rect.width / 2),
+            height: rect.height,
+        };
+        if !normalized
+            && options.len() > 1
+            && left_button.pressed()
+            && let Some(position) = self.input.mouse_position()
+            && value_rect.contains(position)
+        {
+            let midpoint = i64::from(value_rect.x) + i64::from(value_rect.width) / 2;
+            let mouse_delta = if i64::from(position.0) < midpoint {
+                -1
+            } else {
+                1
+            };
+            let before = *selected;
+            *selected = wrapped_index(*selected, options.len(), mouse_delta);
+            changed |= before != *selected;
+        }
+
+        let response = UiResponse {
+            focused: self.state.focused == ordinal,
+            hovered,
+            changed,
+            ..UiResponse::default()
+        };
+        self.draw_select(rect, value_rect, label, *selected, options, response);
+        response
+    }
+
     pub fn slider_f32(
         &mut self,
         label: &str,
@@ -294,32 +372,11 @@ impl<'a> Ui<'a> {
         }
 
         let focused = self.state.focused == ordinal;
-        if focused {
-            let config = RepeatConfig::default();
-            if self.state.horizontal_repeat_owner != Some(ordinal) {
-                self.state.left_repeat.reset(config);
-                self.state.right_repeat.reset(config);
-                self.state.horizontal_repeat_owner = Some(ordinal);
-            }
-            let left =
-                self.state
-                    .left_repeat
-                    .update(self.input.key(Key::Left), self.delta_time, config);
-            let right =
-                self.state
-                    .right_repeat
-                    .update(self.input.key(Key::Right), self.delta_time, config);
-            let direction = i64::from(right) - i64::from(left);
-            if direction != 0 {
-                let before = *value;
-                *value = stepped_slider_value(*value, &range, step, direction);
-                changed |= before != *value;
-            }
-        } else if self.state.horizontal_repeat_owner == Some(ordinal) {
-            let config = RepeatConfig::default();
-            self.state.left_repeat.reset(config);
-            self.state.right_repeat.reset(config);
-            self.state.horizontal_repeat_owner = None;
+        let delta = self.horizontal_repeat_delta(ordinal);
+        if delta != 0 {
+            let before = *value;
+            *value = stepped_slider_value(*value, &range, step, delta);
+            changed |= before != *value;
         }
 
         let response = UiResponse {
@@ -331,6 +388,34 @@ impl<'a> Ui<'a> {
         };
         self.draw_slider(rect, track, label, *value, &range, response);
         response
+    }
+
+    fn horizontal_repeat_delta(&mut self, ordinal: usize) -> i64 {
+        let config = RepeatConfig::default();
+        if self.state.focused != ordinal {
+            if self.state.horizontal_repeat_owner == Some(ordinal) {
+                self.state.left_repeat.reset(config);
+                self.state.right_repeat.reset(config);
+                self.state.horizontal_repeat_owner = None;
+            }
+            return 0;
+        }
+
+        if self.state.horizontal_repeat_owner != Some(ordinal) {
+            self.state.left_repeat.reset(config);
+            self.state.right_repeat.reset(config);
+            self.state.horizontal_repeat_owner = Some(ordinal);
+        }
+
+        let left =
+            self.state
+                .left_repeat
+                .update(self.input.key(Key::Left), self.delta_time, config);
+        let right =
+            self.state
+                .right_repeat
+                .update(self.input.key(Key::Right), self.delta_time, config);
+        i64::from(right) - i64::from(left)
     }
 
     fn next_row(&mut self) -> Rect {
@@ -436,6 +521,33 @@ impl<'a> Ui<'a> {
         };
         self.framebuffer
             .draw_rect(rect.x, rect.y, rect.width, rect.height, outer_border);
+    }
+
+    fn draw_select(
+        &mut self,
+        rect: Rect,
+        value_rect: Rect,
+        label: &str,
+        selected: usize,
+        options: &[&str],
+        response: UiResponse,
+    ) {
+        self.draw_control_frame(rect, response);
+        let label_rect = Rect {
+            x: rect.x.saturating_add(4),
+            y: rect.y,
+            width: rect.width / 2,
+            height: rect.height,
+        };
+        self.draw_text_left(label_rect, label, self.theme.text);
+
+        let value = options.get(selected).copied().unwrap_or("NONE");
+        let color = if options.is_empty() {
+            self.theme.muted_text
+        } else {
+            self.theme.text
+        };
+        self.draw_text_centered(value_rect, &format!("- {value} +"), color);
     }
 
     fn draw_slider(
@@ -577,6 +689,12 @@ fn stepped_slider_value(value: f32, range: &RangeInclusive<f32>, step: f32, dire
     snap_to_step(value + step * direction as f32, min, max, step)
 }
 
+fn wrapped_index(index: usize, len: usize, delta: i64) -> usize {
+    debug_assert!(len > 0);
+    let len = len as i128;
+    ((index as i128 + i128::from(delta)).rem_euclid(len)) as usize
+}
+
 fn slider_value_from_pointer(
     mouse_x: i32,
     track: Rect,
@@ -639,6 +757,15 @@ fn u32_to_i32(value: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn compact_theme() -> UiTheme {
+        UiTheme {
+            padding: 0,
+            row_height: 20,
+            row_spacing: 0,
+            ..UiTheme::default()
+        }
+    }
 
     fn three_buttons(input: &Input, state: &mut UiState) -> [UiResponse; 3] {
         let mut framebuffer = Framebuffer::new(120, 90);
@@ -720,12 +847,7 @@ mod tests {
 
     #[test]
     fn slider_drag_cancels_when_pointer_leaves() {
-        let theme = UiTheme {
-            padding: 0,
-            row_height: 20,
-            row_spacing: 0,
-            ..UiTheme::default()
-        };
+        let theme = compact_theme();
         let mut state = UiState::default();
         let mut framebuffer = Framebuffer::new(160, 20);
         let mut value = 0.0;
@@ -773,5 +895,248 @@ mod tests {
             ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1);
         }
         assert_eq!(value.to_bits(), cancelled.to_bits());
+    }
+
+    #[test]
+    fn select_keyboard_wraps_and_reports_changes() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut selected = 0;
+
+        let mut left = Input::default();
+        left.press_key(Key::Left);
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &left, Duration::ZERO, &mut state, theme);
+            ui.select("DIRECTION", &mut selected, &["A", "B", "C"])
+        };
+        assert_eq!(selected, 2);
+        assert!(response.changed);
+
+        state.reset_interaction();
+        let mut right = Input::default();
+        right.press_key(Key::Right);
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &right, Duration::ZERO, &mut state, theme);
+            ui.select("DIRECTION", &mut selected, &["A", "B", "C"])
+        };
+        assert_eq!(selected, 0);
+        assert!(response.changed);
+    }
+
+    #[test]
+    fn select_repeat_preserves_long_frame_pulse_count() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let options = ["0", "1", "2", "3", "4", "5", "6"];
+        let mut selected = 0;
+        let mut input = Input::default();
+
+        input.press_key(Key::Right);
+        {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            let response = ui.select("VALUE", &mut selected, &options);
+            assert!(response.changed);
+        }
+        assert_eq!(selected, 1);
+
+        input.advance_frame();
+        {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &input,
+                Duration::from_millis(299),
+                &mut state,
+                theme,
+            );
+            assert!(!ui.select("VALUE", &mut selected, &options).changed);
+        }
+        assert_eq!(selected, 1);
+
+        input.advance_frame();
+        {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &input,
+                Duration::from_millis(181),
+                &mut state,
+                theme,
+            );
+            assert!(ui.select("VALUE", &mut selected, &options).changed);
+        }
+        assert_eq!(selected, 5);
+    }
+
+    #[test]
+    fn select_edges_normalize_without_losing_ordinal() {
+        let theme = compact_theme();
+        let idle = Input::default();
+        let mut framebuffer = Framebuffer::new(200, 40);
+        let mut state = UiState::default();
+        let mut selected = 9;
+
+        let (empty, button) = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &idle,
+                Duration::from_millis(16),
+                &mut state,
+                theme,
+            );
+            let empty = ui.select("EMPTY", &mut selected, &[]);
+            let button = ui.button("AFTER");
+            (empty, button)
+        };
+        assert!(!empty.changed);
+        assert_eq!(selected, 9);
+        assert!(empty.focused);
+        assert!(!button.focused);
+        assert_eq!(state.focused_index(), Some(0));
+
+        let mut down = Input::default();
+        down.press_key(Key::Down);
+        let button = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &down,
+                Duration::from_millis(16),
+                &mut state,
+                theme,
+            );
+            ui.select("EMPTY", &mut selected, &[]);
+            ui.button("AFTER")
+        };
+        assert!(button.focused);
+        assert_eq!(state.focused_index(), Some(1));
+
+        state.reset_interaction();
+        selected = usize::MAX;
+        let normalized = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &idle,
+                Duration::from_millis(16),
+                &mut state,
+                theme,
+            );
+            ui.select("ONE", &mut selected, &["ONLY"])
+        };
+        assert_eq!(selected, 0);
+        assert!(normalized.changed);
+    }
+
+    #[test]
+    fn select_mouse_label_focuses_without_change_and_value_changes_without_capture() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let options = ["A", "B", "C"];
+        let mut selected = 1;
+
+        let mut label_click = Input::default();
+        label_click.set_mouse_position(Some((20, 10)));
+        label_click.press_mouse_button(MouseButton::Left);
+        let response = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &label_click,
+                Duration::from_millis(16),
+                &mut state,
+                theme,
+            );
+            ui.select("VALUE", &mut selected, &options)
+        };
+        assert!(response.focused);
+        assert!(!response.changed);
+        assert_eq!(selected, 1);
+        assert_eq!(state.pointer_active, None);
+
+        state.reset_interaction();
+        let mut left_value_click = Input::default();
+        left_value_click.set_mouse_position(Some((120, 10)));
+        left_value_click.press_mouse_button(MouseButton::Left);
+        let response = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &left_value_click,
+                Duration::from_millis(16),
+                &mut state,
+                theme,
+            );
+            ui.select("VALUE", &mut selected, &options)
+        };
+        assert!(response.changed);
+        assert_eq!(selected, 0);
+        assert_eq!(state.pointer_active, None);
+
+        state.reset_interaction();
+        let mut right_value_click = Input::default();
+        right_value_click.set_mouse_position(Some((180, 10)));
+        right_value_click.press_mouse_button(MouseButton::Left);
+        let response = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &right_value_click,
+                Duration::from_millis(16),
+                &mut state,
+                theme,
+            );
+            ui.select("VALUE", &mut selected, &options)
+        };
+        assert!(response.changed);
+        assert_eq!(selected, 1);
+        assert_eq!(state.pointer_active, None);
+    }
+
+    #[test]
+    fn section_does_not_consume_an_ordinal() {
+        let theme = compact_theme();
+        let idle = Input::default();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 40);
+
+        let button = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &idle,
+                Duration::from_millis(16),
+                &mut state,
+                theme,
+            );
+            ui.section("INPUT");
+            ui.button("FIRST")
+        };
+        assert!(button.focused);
+        assert_eq!(state.focused_index(), Some(0));
+    }
+
+    #[test]
+    fn slider_repeat_is_unchanged_after_horizontal_helper_extraction() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = 0.0;
+        let mut input = Input::default();
+
+        input.press_key(Key::Right);
+        {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            assert!(ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1).changed);
+        }
+        assert!((value - 0.1).abs() < f32::EPSILON);
+
+        input.advance_frame();
+        {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &input,
+                Duration::from_millis(480),
+                &mut state,
+                theme,
+            );
+            assert!(ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1).changed);
+        }
+        assert!((value - 0.5).abs() < f32::EPSILON);
     }
 }
