@@ -224,12 +224,12 @@ impl<'a> Ui<'a> {
             .input
             .mouse_position()
             .and_then(|position| tab_index_at_position(rect, labels.len(), position));
-        if self.input.mouse_button(MouseButton::Left).pressed() {
-            if let Some(index) = hovered_tab {
-                self.state.focused = ordinal;
-                if requested.is_none() && index != normalized {
-                    requested = Some(index);
-                }
+        if self.input.mouse_button(MouseButton::Left).pressed()
+            && let Some(index) = hovered_tab
+        {
+            self.state.focused = ordinal;
+            if requested.is_none() && index != normalized {
+                requested = Some(index);
             }
         }
 
