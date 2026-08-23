@@ -1,7 +1,7 @@
 #![deny(warnings)]
 
 use gotoo_pixel_engine::{
-    EngineConfig, Frame, Game, GameResult, Key, Pixel, ToolFrame, ToolWindowConfig, run,
+    EngineConfig, Frame, Game, GameResult, Input, Key, Pixel, ToolFrame, ToolWindowConfig, run,
 };
 
 const MAIN_WIDTH: u32 = 320;
@@ -24,12 +24,18 @@ impl ToolWindowProbe {
     }
 }
 
+fn control_shift_pressed(input: &Input, key: Key) -> bool {
+    let control = input.key(Key::LeftControl).held() || input.key(Key::RightControl).held();
+    let shift = input.key(Key::LeftShift).held() || input.key(Key::RightShift).held();
+    control && shift && input.key(key).pressed()
+}
+
 impl Game for ToolWindowProbe {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         if frame.input.key(Key::Escape).pressed() {
             return GameResult::Exit;
         }
-        if frame.input.key(Key::F).pressed() {
+        if control_shift_pressed(frame.input, Key::F) {
             self.tool_open = !self.tool_open;
         }
 
@@ -61,9 +67,9 @@ impl Game for ToolWindowProbe {
     }
 
     fn update_tool_window(&mut self, frame: &mut ToolFrame<'_>) {
-        // Do not reuse the opening F hotkey here. On desktop the newly created
-        // window can receive the still-held opener key when focus transfers.
-        // Escape and the OS close button exercise tool-only closing instead.
+        // Escape and the OS close button are intentionally tool-local. Opening
+        // uses a modifier chord in the main window so ordinary gameplay keys
+        // remain available to games embedding this primitive.
         if frame.input.key(Key::Escape).pressed() {
             self.tool_open = false;
         }
@@ -91,7 +97,7 @@ impl Game for ToolWindowProbe {
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
     run(
         EngineConfig {
-            title: "GPE Tool Window Probe - F opens tool".into(),
+            title: "GPE Tool Window Probe - Ctrl+Shift+F opens tool".into(),
             framebuffer_width: MAIN_WIDTH,
             framebuffer_height: MAIN_HEIGHT,
             window_width: 960,
