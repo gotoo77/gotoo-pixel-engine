@@ -22,7 +22,7 @@ pub mod ui;
 mod viewport;
 mod window_icon;
 
-pub use audio::{Audio, AudioError, NoopAudio, PlaybackId, SoundBank, SoundId};
+pub use audio::{Audio, AudioBus, AudioError, NoopAudio, PlaybackId, SoundBank, SoundId};
 pub use audio_wav::pcm16_mono_wav;
 pub use bitmap_font::{BitmapFont, BitmapGlyph, BitmapTextRenderer};
 #[cfg(not(target_arch = "wasm32"))]
