@@ -697,8 +697,13 @@ mod native {
         fn refresh_file_states(&mut self) {
             let mut newly_finished = Vec::new();
             for (id, playback) in &mut self.file_playbacks {
-                let ended = matches!(playback.state, PlaybackState::Playing | PlaybackState::Paused)
-                    && playback.player.as_ref().is_some_and(|player| player.empty());
+                let ended = matches!(
+                    playback.state,
+                    PlaybackState::Playing | PlaybackState::Paused
+                ) && playback
+                    .player
+                    .as_ref()
+                    .is_some_and(|player| player.empty());
                 if ended {
                     playback.state = PlaybackState::Finished;
                     newly_finished.push(*id);
@@ -772,7 +777,7 @@ mod native {
             id: SoundId,
             bus: AudioBus,
         ) -> Result<PlaybackId, AudioError> {
-            let Some(sound) = self.sounds.get(&id) else {
+            let Some(sound) = self.sounds.get(&id).cloned() else {
                 return Err(AudioError::new(format!(
                     "sound '{}' is not registered",
                     id.as_str()
@@ -930,7 +935,9 @@ mod native {
 
         fn playback_state(&mut self, playback: PlaybackId) -> Option<PlaybackState> {
             self.refresh_file_states();
-            self.file_playbacks.get(&playback).map(|active| active.state)
+            self.file_playbacks
+                .get(&playback)
+                .map(|active| active.state)
         }
 
         fn take_finished_playbacks(&mut self) -> Vec<PlaybackId> {
@@ -1345,9 +1352,7 @@ mod web {
 mod tests {
     use std::path::Path;
 
-    use super::{
-        Audio, AudioBus, NoopAudio, PlaybackState, SoundBank, SoundId, decode_wav,
-    };
+    use super::{Audio, AudioBus, NoopAudio, PlaybackState, SoundBank, SoundId, decode_wav};
 
     const TEST_SOUND: SoundId = SoundId::new("test.sound");
     const OTHER_SOUND: SoundId = SoundId::new("test.other");
@@ -1481,10 +1486,7 @@ mod tests {
             .start_file(Path::new("missing.mp3"), AudioBus::Music, 0.8)
             .expect("noop file playback should remain non-fatal");
 
-        assert_eq!(
-            audio.playback_state(playback),
-            Some(PlaybackState::Blocked)
-        );
+        assert_eq!(audio.playback_state(playback), Some(PlaybackState::Blocked));
         assert!(audio.pause_playback(playback).is_ok());
         assert!(audio.resume_playback(playback).is_ok());
         assert!(audio.take_finished_playbacks().is_empty());

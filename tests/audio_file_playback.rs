@@ -9,10 +9,7 @@ fn noop_file_playback_exposes_non_fatal_blocked_state() {
         .start_file(Path::new("missing.mp3"), AudioBus::Music, 0.75)
         .expect("noop backend should keep file playback non-fatal");
 
-    assert_eq!(
-        audio.playback_state(playback),
-        Some(PlaybackState::Blocked)
-    );
+    assert_eq!(audio.playback_state(playback), Some(PlaybackState::Blocked));
     assert!(audio.pause_playback(playback).is_ok());
     assert!(audio.resume_playback(playback).is_ok());
     assert!(audio.take_finished_playbacks().is_empty());
