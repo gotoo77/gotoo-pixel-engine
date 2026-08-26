@@ -70,7 +70,10 @@ impl GlyphProbe {
         framebuffer.draw_text(
             8,
             16,
-            &format!("PRINTABLE ASCII  FALLBACKS {}  {}", fallback_count, coverage),
+            &format!(
+                "PRINTABLE ASCII  FALLBACKS {}  {}",
+                fallback_count, coverage
+            ),
             if fallback_count == 0 { PASS } else { FAIL },
         );
 
@@ -133,19 +136,18 @@ fn draw_cell(framebuffer: &mut Framebuffer, font: Font, code: u8, rect: Rect) {
     );
 
     if fallback {
-        draw_fallback_marker(framebuffer, rect.x + 22, rect.y + 15);
-        framebuffer.draw_text(rect.x + 32, rect.y + 17, "MISS", FAIL);
+        draw_missing_marker(framebuffer, rect.x + 22, rect.y + 15);
+        framebuffer.draw_text(rect.x + 31, rect.y + 17, "MISS", FAIL);
     } else {
         framebuffer.draw_text(rect.x + 22, rect.y + 17, "OK", PASS);
     }
 }
 
-fn draw_fallback_marker(framebuffer: &mut Framebuffer, x: i32, y: i32) {
-    const SIZE: i32 = 7;
-    framebuffer.draw_rect(x, y, SIZE as u32, SIZE as u32, FAIL);
-    for offset in 1..(SIZE - 1) {
-        framebuffer.fill_rect(x + offset, y + offset, 1, 1, FAIL);
-        framebuffer.fill_rect(x + (SIZE - 1 - offset), y + offset, 1, 1, FAIL);
+fn draw_missing_marker(framebuffer: &mut Framebuffer, x: i32, y: i32) {
+    framebuffer.draw_rect(x, y, 7, 7, FAIL);
+    for offset in 1..6 {
+        framebuffer.set_pixel(x + offset, y + offset, FAIL);
+        framebuffer.set_pixel(x + 6 - offset, y + offset, FAIL);
     }
 }
 
@@ -248,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn question_mark_is_reference_glyph_not_fallback_failure() {
+    fn question_mark_is_not_an_accidental_fallback() {
         for font in [Font::Pixel5x7, Font::Mini3x5] {
             assert!(!is_accidental_fallback(font, '?'));
         }
