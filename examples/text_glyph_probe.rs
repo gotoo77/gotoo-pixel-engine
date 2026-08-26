@@ -114,15 +114,7 @@ fn draw_cell(framebuffer: &mut Framebuffer, font: Font, code: u8, rect: Rect) {
     framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, BORDER);
 
     let character = char::from(code);
-    let fallback = is_fallback_render(font, character);
-    let status = if character == '?' {
-        "REF"
-    } else if fallback {
-        "FALLBACK"
-    } else {
-        "OK"
-    };
-    let status_color = if fallback { FAIL } else { PASS };
+    let fallback = is_accidental_fallback(font, character);
 
     framebuffer.draw_text(
         rect.x + 3,
@@ -139,18 +131,33 @@ fn draw_cell(framebuffer: &mut Framebuffer, font: Font, code: u8, rect: Rect) {
         2,
         ACCENT,
     );
-    framebuffer.draw_text(rect.x + 22, rect.y + 17, status, status_color);
+
+    if fallback {
+        draw_fallback_marker(framebuffer, rect.x + 22, rect.y + 15);
+        framebuffer.draw_text(rect.x + 32, rect.y + 17, "MISS", FAIL);
+    } else {
+        framebuffer.draw_text(rect.x + 22, rect.y + 17, "OK", PASS);
+    }
+}
+
+fn draw_fallback_marker(framebuffer: &mut Framebuffer, x: i32, y: i32) {
+    const SIZE: i32 = 7;
+    framebuffer.draw_rect(x, y, SIZE as u32, SIZE as u32, FAIL);
+    for offset in 1..(SIZE - 1) {
+        framebuffer.fill_rect(x + offset, y + offset, 1, 1, FAIL);
+        framebuffer.fill_rect(x + (SIZE - 1 - offset), y + offset, 1, 1, FAIL);
+    }
 }
 
 fn printable_ascii_fallback_count(font: Font) -> usize {
     (ASCII_FIRST..=ASCII_LAST)
         .map(char::from)
-        .filter(|&character| character != '?' && is_fallback_render(font, character))
+        .filter(|&character| is_accidental_fallback(font, character))
         .count()
 }
 
-fn is_fallback_render(font: Font, character: char) -> bool {
-    glyph_signature(font, character) == glyph_signature(font, '?')
+fn is_accidental_fallback(font: Font, character: char) -> bool {
+    character != '?' && glyph_signature(font, character) == glyph_signature(font, '?')
 }
 
 fn glyph_signature(font: Font, character: char) -> Vec<u8> {
@@ -238,5 +245,12 @@ mod tests {
     fn bracket_names_are_safe_labels() {
         assert_eq!(ascii_name(0x5B), "LBRACKET");
         assert_eq!(ascii_name(0x5D), "RBRACKET");
+    }
+
+    #[test]
+    fn question_mark_is_reference_glyph_not_fallback_failure() {
+        for font in [Font::Pixel5x7, Font::Mini3x5] {
+            assert!(!is_accidental_fallback(font, '?'));
+        }
     }
 }
