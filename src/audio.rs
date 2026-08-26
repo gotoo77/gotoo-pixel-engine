@@ -69,11 +69,7 @@ pub trait Audio {
         )))
     }
 
-    fn start_loop_on_bus(
-        &mut self,
-        id: SoundId,
-        _bus: AudioBus,
-    ) -> Result<PlaybackId, AudioError> {
+    fn start_loop_on_bus(&mut self, id: SoundId, _bus: AudioBus) -> Result<PlaybackId, AudioError> {
         self.start_loop(id)
     }
 
@@ -328,11 +324,7 @@ impl Audio for NoopAudio {
         self.start_loop_on_bus(id, AudioBus::Sfx)
     }
 
-    fn start_loop_on_bus(
-        &mut self,
-        id: SoundId,
-        bus: AudioBus,
-    ) -> Result<PlaybackId, AudioError> {
+    fn start_loop_on_bus(&mut self, id: SoundId, bus: AudioBus) -> Result<PlaybackId, AudioError> {
         if !self.sounds.contains_key(&id) {
             return Err(AudioError::new(format!(
                 "sound '{}' is not registered",
@@ -697,9 +689,7 @@ mod native {
 mod web {
     use std::collections::{HashMap, HashSet};
 
-    use web_sys::{
-        AudioBuffer, AudioBufferSourceNode, AudioContext, AudioContextState, GainNode,
-    };
+    use web_sys::{AudioBuffer, AudioBufferSourceNode, AudioContext, AudioContextState, GainNode};
 
     use super::{
         Audio, AudioBus, AudioControlState, AudioError, DecodedSound, PlatformAudio, PlaybackId,
@@ -813,10 +803,7 @@ mod web {
             master
                 .connect_with_audio_node(&context.destination())
                 .map_err(|err| {
-                    AudioError::new(js_error_message(
-                        "failed to connect master GainNode",
-                        err,
-                    ))
+                    AudioError::new(js_error_message("failed to connect master GainNode", err))
                 })?;
             for node in [&music, &sfx, &ui] {
                 node.connect_with_audio_node(&master).map_err(|err| {
@@ -1178,7 +1165,10 @@ mod tests {
             .expect("bank should route loop to UI bus");
 
         assert_eq!(audio.loop_buses.get(&playback), Some(&AudioBus::Ui));
-        assert!(bank.play_on_bus(&mut audio, TEST_SOUND, AudioBus::Ui).is_ok());
+        assert!(
+            bank.play_on_bus(&mut audio, TEST_SOUND, AudioBus::Ui)
+                .is_ok()
+        );
     }
 
     #[test]
