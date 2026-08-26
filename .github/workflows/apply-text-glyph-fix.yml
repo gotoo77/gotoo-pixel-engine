@@ -3,19 +3,18 @@ name: Apply text glyph fix
 on:
   push:
     branches:
-      - probe/text-glyph-conformance-final
+      - "probe/text-glyph-conformance-final"
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: probe/text-glyph-conformance-final
+          ref: "probe/text-glyph-conformance-final"
 
       - name: Patch built-in glyph tables
         shell: bash
@@ -23,7 +22,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('src/framebuffer.rs')
+          path = Path("src/framebuffer.rs")
           text = path.read_text()
 
           pixel_anchor = """        '>' => [
@@ -101,7 +100,7 @@ jobs:
         ],
 """
           if text.count(pixel_anchor) != 1:
-              raise SystemExit('Pixel5x7 anchor mismatch')
+              raise SystemExit("Pixel5x7 anchor mismatch")
           text = text.replace(pixel_anchor, pixel_insert + pixel_anchor, 1)
 
           mini_anchor = """        '>' => [0b100, 0b010, 0b001, 0b010, 0b100, 0, 0],
@@ -131,7 +130,7 @@ jobs:
         '~' => [0b000, 0b000, 0b101, 0b010, 0b000, 0, 0],
 """
           if text.count(mini_anchor) != 1:
-              raise SystemExit('Mini3x5 anchor mismatch')
+              raise SystemExit("Mini3x5 anchor mismatch")
           text = text.replace(mini_anchor, mini_insert + mini_anchor, 1)
 
           old_test = """    #[test]
@@ -167,7 +166,7 @@ jobs:
     }
 """
           if text.count(old_test) != 1:
-              raise SystemExit('glyph coverage test anchor mismatch')
+              raise SystemExit("glyph coverage test anchor mismatch")
           text = text.replace(old_test, new_test, 1)
 
           path.write_text(text)
@@ -182,8 +181,8 @@ jobs:
         shell: bash
         run: |
           rm .github/workflows/apply-text-glyph-fix.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/framebuffer.rs examples/text_glyph_probe.rs .github/workflows/apply-text-glyph-fix.yml
           git commit -m "fix(text): cover printable ASCII in built-in fonts"
           git push origin HEAD:probe/text-glyph-conformance-final
