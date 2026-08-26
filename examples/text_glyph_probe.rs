@@ -55,6 +55,7 @@ impl GlyphProbe {
         framebuffer.clear(BG);
 
         let fallback_count = printable_ascii_fallback_count(self.font);
+        let coverage = if fallback_count == 0 { "PASS" } else { "FAIL" };
         framebuffer.draw_text(
             8,
             6,
@@ -69,7 +70,7 @@ impl GlyphProbe {
         framebuffer.draw_text(
             8,
             16,
-            &format!("PRINTABLE ASCII  FALLBACKS {}", fallback_count),
+            &format!("PRINTABLE ASCII  FALLBACKS {}  {}", fallback_count, coverage),
             if fallback_count == 0 { PASS } else { FAIL },
         );
 
