@@ -146,8 +146,8 @@ fn draw_cell(framebuffer: &mut Framebuffer, font: Font, code: u8, rect: Rect) {
 fn draw_missing_marker(framebuffer: &mut Framebuffer, x: i32, y: i32) {
     framebuffer.draw_rect(x, y, 7, 7, FAIL);
     for offset in 1..6 {
-        framebuffer.set_pixel(x + offset, y + offset, FAIL);
-        framebuffer.set_pixel(x + 6 - offset, y + offset, FAIL);
+        framebuffer.fill_rect(x + offset, y + offset, 1, 1, FAIL);
+        framebuffer.fill_rect(x + 6 - offset, y + offset, 1, 1, FAIL);
     }
 }
 
