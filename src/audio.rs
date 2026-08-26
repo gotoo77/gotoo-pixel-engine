@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Cursor;
 use std::num::NonZero;
+use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -24,6 +25,14 @@ impl PlaybackId {
     pub const fn new(id: u64) -> Self {
         Self(id)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PlaybackState {
+    Playing,
+    Paused,
+    Finished,
+    Blocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -78,6 +87,44 @@ pub trait Audio {
             "looped playback '{}' is not active",
             playback.0
         )))
+    }
+
+    fn start_file(
+        &mut self,
+        _path: &Path,
+        _bus: AudioBus,
+        _gain: f32,
+    ) -> Result<PlaybackId, AudioError> {
+        Err(AudioError::new("file playback is not supported"))
+    }
+
+    fn pause_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        Err(AudioError::new(format!(
+            "playback '{}' cannot be paused",
+            playback.0
+        )))
+    }
+
+    fn resume_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        Err(AudioError::new(format!(
+            "playback '{}' cannot be resumed",
+            playback.0
+        )))
+    }
+
+    fn stop_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        Err(AudioError::new(format!(
+            "playback '{}' is not active",
+            playback.0
+        )))
+    }
+
+    fn playback_state(&mut self, _playback: PlaybackId) -> Option<PlaybackState> {
+        None
+    }
+
+    fn take_finished_playbacks(&mut self) -> Vec<PlaybackId> {
+        Vec::new()
     }
 
     fn set_master_volume(&mut self, _volume: f32) -> Result<(), AudioError> {
@@ -296,8 +343,16 @@ pub struct NoopAudio {
     sounds: HashMap<SoundId, DecodedSound>,
     loop_playbacks: HashMap<PlaybackId, SoundId>,
     loop_buses: HashMap<PlaybackId, AudioBus>,
+    file_playbacks: HashMap<PlaybackId, PlaybackState>,
     controls: AudioControlState,
     next_playback_id: u64,
+}
+
+impl NoopAudio {
+    fn next_playback(&mut self) -> PlaybackId {
+        self.next_playback_id += 1;
+        PlaybackId::new(self.next_playback_id)
+    }
 }
 
 impl Audio for NoopAudio {
@@ -331,8 +386,7 @@ impl Audio for NoopAudio {
                 id.as_str()
             )));
         }
-        self.next_playback_id += 1;
-        let playback = PlaybackId::new(self.next_playback_id);
+        let playback = self.next_playback();
         self.loop_playbacks.insert(playback, id);
         self.loop_buses.insert(playback, bus);
         Ok(playback)
@@ -348,6 +402,85 @@ impl Audio for NoopAudio {
                 playback.0
             )))
         }
+    }
+
+    fn start_file(
+        &mut self,
+        _path: &Path,
+        _bus: AudioBus,
+        gain: f32,
+    ) -> Result<PlaybackId, AudioError> {
+        validate_volume(gain)?;
+        let playback = self.next_playback();
+        self.file_playbacks.insert(playback, PlaybackState::Blocked);
+        Ok(playback)
+    }
+
+    fn pause_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        let Some(state) = self.file_playbacks.get_mut(&playback) else {
+            return Err(AudioError::new(format!(
+                "playback '{}' is not active",
+                playback.0
+            )));
+        };
+        match state {
+            PlaybackState::Playing => *state = PlaybackState::Paused,
+            PlaybackState::Paused | PlaybackState::Blocked => {}
+            PlaybackState::Finished => {
+                return Err(AudioError::new(format!(
+                    "playback '{}' has already finished",
+                    playback.0
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn resume_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        let Some(state) = self.file_playbacks.get_mut(&playback) else {
+            return Err(AudioError::new(format!(
+                "playback '{}' is not active",
+                playback.0
+            )));
+        };
+        match state {
+            PlaybackState::Paused => *state = PlaybackState::Playing,
+            PlaybackState::Playing | PlaybackState::Blocked => {}
+            PlaybackState::Finished => {
+                return Err(AudioError::new(format!(
+                    "playback '{}' has already finished",
+                    playback.0
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn stop_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+        if self.file_playbacks.remove(&playback).is_some() {
+            Ok(())
+        } else {
+            Err(AudioError::new(format!(
+                "playback '{}' is not active",
+                playback.0
+            )))
+        }
+    }
+
+    fn playback_state(&mut self, playback: PlaybackId) -> Option<PlaybackState> {
+        self.file_playbacks.get(&playback).copied()
+    }
+
+    fn take_finished_playbacks(&mut self) -> Vec<PlaybackId> {
+        let finished = self
+            .file_playbacks
+            .iter()
+            .filter_map(|(id, state)| (*state == PlaybackState::Finished).then_some(*id))
+            .collect::<Vec<_>>();
+        for playback in &finished {
+            self.file_playbacks.remove(playback);
+        }
+        finished
     }
 
     fn set_master_volume(&mut self, volume: f32) -> Result<(), AudioError> {
@@ -487,15 +620,17 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedSound, AudioError> {
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use std::collections::{HashMap, HashSet};
+    use std::fs::File;
+    use std::path::Path;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use rodio::buffer::SamplesBuffer;
     use rodio::cpal::StreamError;
-    use rodio::{DeviceSinkBuilder, MixerDeviceSink, Player, Source};
+    use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 
     use super::{
         Audio, AudioBus, AudioControlState, AudioError, DecodedSound, PlatformAudio, PlaybackId,
-        SoundId, register_decoded_wav,
+        PlaybackState, SoundId, register_decoded_wav, validate_volume,
     };
 
     static XRUN_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -513,6 +648,13 @@ mod native {
         eprintln!("audio stream error: {error}");
     }
 
+    struct NativeFilePlayback {
+        bus: AudioBus,
+        source_gain: f32,
+        player: Option<Player>,
+        state: PlaybackState,
+    }
+
     #[derive(Default)]
     pub(crate) struct NativeAudio {
         sink: Option<MixerDeviceSink>,
@@ -521,6 +663,8 @@ mod native {
         active_loops: HashSet<PlaybackId>,
         loop_players: HashMap<PlaybackId, Player>,
         loop_buses: HashMap<PlaybackId, AudioBus>,
+        file_playbacks: HashMap<PlaybackId, NativeFilePlayback>,
+        finished_file_playbacks: Vec<PlaybackId>,
         controls: AudioControlState,
         next_playback_id: u64,
     }
@@ -541,8 +685,26 @@ mod native {
             })
         }
 
+        fn next_playback(&mut self) -> PlaybackId {
+            self.next_playback_id += 1;
+            PlaybackId::new(self.next_playback_id)
+        }
+
         fn prune_one_shots(&mut self) {
             self.one_shot_players.retain(|(_, player)| !player.empty());
+        }
+
+        fn refresh_file_states(&mut self) {
+            let mut newly_finished = Vec::new();
+            for (id, playback) in &mut self.file_playbacks {
+                let ended = matches!(playback.state, PlaybackState::Playing | PlaybackState::Paused)
+                    && playback.player.as_ref().is_some_and(|player| player.empty());
+                if ended {
+                    playback.state = PlaybackState::Finished;
+                    newly_finished.push(*id);
+                }
+            }
+            self.finished_file_playbacks.extend(newly_finished);
         }
 
         fn refresh_active_gains(&mut self) {
@@ -555,6 +717,14 @@ mod native {
             for (playback, player) in &self.loop_players {
                 if let Some(bus) = self.loop_buses.get(playback) {
                     player.set_volume(self.controls.effective_gain(*bus));
+                }
+            }
+
+            for playback in self.file_playbacks.values() {
+                if let Some(player) = playback.player.as_ref() {
+                    player.set_volume(
+                        self.controls.effective_gain(playback.bus) * playback.source_gain,
+                    );
                 }
             }
         }
@@ -609,8 +779,7 @@ mod native {
                 )));
             };
 
-            self.next_playback_id += 1;
-            let playback = PlaybackId::new(self.next_playback_id);
+            let playback = self.next_playback();
             self.active_loops.insert(playback);
             self.loop_buses.insert(playback, bus);
 
@@ -639,6 +808,138 @@ mod native {
                 player.stop();
             }
             Ok(())
+        }
+
+        fn start_file(
+            &mut self,
+            path: &Path,
+            bus: AudioBus,
+            gain: f32,
+        ) -> Result<PlaybackId, AudioError> {
+            let source_gain = validate_volume(gain)?;
+            let playback = self.next_playback();
+
+            let Some(sink) = self.sink.as_ref() else {
+                self.file_playbacks.insert(
+                    playback,
+                    NativeFilePlayback {
+                        bus,
+                        source_gain,
+                        player: None,
+                        state: PlaybackState::Blocked,
+                    },
+                );
+                return Ok(playback);
+            };
+
+            let file = File::open(path).map_err(|err| {
+                AudioError::new(format!(
+                    "failed to open audio file '{}': {err}",
+                    path.display()
+                ))
+            })?;
+            let decoder = Decoder::try_from(file).map_err(|err| {
+                AudioError::new(format!(
+                    "failed to decode audio file '{}': {err}",
+                    path.display()
+                ))
+            })?;
+
+            let player = Player::connect_new(sink.mixer());
+            player.set_volume(self.controls.effective_gain(bus) * source_gain);
+            player.append(decoder);
+            self.file_playbacks.insert(
+                playback,
+                NativeFilePlayback {
+                    bus,
+                    source_gain,
+                    player: Some(player),
+                    state: PlaybackState::Playing,
+                },
+            );
+            Ok(playback)
+        }
+
+        fn pause_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+            self.refresh_file_states();
+            let Some(active) = self.file_playbacks.get_mut(&playback) else {
+                return Err(AudioError::new(format!(
+                    "playback '{}' is not active",
+                    playback.0
+                )));
+            };
+
+            match active.state {
+                PlaybackState::Playing => {
+                    if let Some(player) = active.player.as_ref() {
+                        player.pause();
+                    }
+                    active.state = PlaybackState::Paused;
+                }
+                PlaybackState::Paused | PlaybackState::Blocked => {}
+                PlaybackState::Finished => {
+                    return Err(AudioError::new(format!(
+                        "playback '{}' has already finished",
+                        playback.0
+                    )));
+                }
+            }
+            Ok(())
+        }
+
+        fn resume_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+            self.refresh_file_states();
+            let Some(active) = self.file_playbacks.get_mut(&playback) else {
+                return Err(AudioError::new(format!(
+                    "playback '{}' is not active",
+                    playback.0
+                )));
+            };
+
+            match active.state {
+                PlaybackState::Paused => {
+                    if let Some(player) = active.player.as_ref() {
+                        player.play();
+                    }
+                    active.state = PlaybackState::Playing;
+                }
+                PlaybackState::Playing | PlaybackState::Blocked => {}
+                PlaybackState::Finished => {
+                    return Err(AudioError::new(format!(
+                        "playback '{}' has already finished",
+                        playback.0
+                    )));
+                }
+            }
+            Ok(())
+        }
+
+        fn stop_playback(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
+            let Some(active) = self.file_playbacks.remove(&playback) else {
+                return Err(AudioError::new(format!(
+                    "playback '{}' is not active",
+                    playback.0
+                )));
+            };
+            self.finished_file_playbacks.retain(|id| *id != playback);
+            if let Some(player) = active.player {
+                player.stop();
+            }
+            Ok(())
+        }
+
+        fn playback_state(&mut self, playback: PlaybackId) -> Option<PlaybackState> {
+            self.refresh_file_states();
+            self.file_playbacks.get(&playback).map(|active| active.state)
+        }
+
+        fn take_finished_playbacks(&mut self) -> Vec<PlaybackId> {
+            self.refresh_file_states();
+            let finished = std::mem::take(&mut self.finished_file_playbacks);
+            for playback in &finished {
+                self.file_playbacks.remove(playback);
+            }
+            finished
         }
 
         fn set_master_volume(&mut self, volume: f32) -> Result<(), AudioError> {
@@ -683,6 +984,37 @@ mod native {
     }
 
     impl PlatformAudio for NativeAudio {}
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn finished_file_playback_is_reported_once_without_device() {
+            let (player, _output) = Player::new();
+            player.stop();
+
+            let playback = PlaybackId::new(1);
+            let mut audio = NativeAudio::default();
+            audio.file_playbacks.insert(
+                playback,
+                NativeFilePlayback {
+                    bus: AudioBus::Music,
+                    source_gain: 1.0,
+                    player: Some(player),
+                    state: PlaybackState::Playing,
+                },
+            );
+
+            assert_eq!(
+                audio.playback_state(playback),
+                Some(PlaybackState::Finished)
+            );
+            assert_eq!(audio.take_finished_playbacks(), vec![playback]);
+            assert!(audio.take_finished_playbacks().is_empty());
+            assert_eq!(audio.playback_state(playback), None);
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1011,7 +1343,11 @@ mod web {
 
 #[cfg(test)]
 mod tests {
-    use super::{Audio, AudioBus, NoopAudio, SoundBank, SoundId, decode_wav};
+    use std::path::Path;
+
+    use super::{
+        Audio, AudioBus, NoopAudio, PlaybackState, SoundBank, SoundId, decode_wav,
+    };
 
     const TEST_SOUND: SoundId = SoundId::new("test.sound");
     const OTHER_SOUND: SoundId = SoundId::new("test.other");
@@ -1136,6 +1472,34 @@ mod tests {
             .stop_loop(playback)
             .expect_err("double stop should be explicit");
         assert!(error.to_string().contains("is not active"));
+    }
+
+    #[test]
+    fn noop_file_playback_is_blocked_without_io() {
+        let mut audio = NoopAudio::default();
+        let playback = audio
+            .start_file(Path::new("missing.mp3"), AudioBus::Music, 0.8)
+            .expect("noop file playback should remain non-fatal");
+
+        assert_eq!(
+            audio.playback_state(playback),
+            Some(PlaybackState::Blocked)
+        );
+        assert!(audio.pause_playback(playback).is_ok());
+        assert!(audio.resume_playback(playback).is_ok());
+        assert!(audio.take_finished_playbacks().is_empty());
+        assert!(audio.stop_playback(playback).is_ok());
+        assert_eq!(audio.playback_state(playback), None);
+    }
+
+    #[test]
+    fn noop_file_playback_rejects_invalid_gain() {
+        let mut audio = NoopAudio::default();
+        assert!(
+            audio
+                .start_file(Path::new("ignored.mp3"), AudioBus::Music, 1.1)
+                .is_err()
+        );
     }
 
     #[test]
