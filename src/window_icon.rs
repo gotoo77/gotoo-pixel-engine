@@ -27,6 +27,7 @@ pub fn set_window_icon_png(bytes: &[u8]) -> Result<(), ImageError> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn configured_window_icon() -> Option<Image> {
     window_icon_slot()
         .lock()
@@ -34,7 +35,7 @@ pub(crate) fn configured_window_icon() -> Option<Image> {
         .clone()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

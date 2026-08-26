@@ -23,13 +23,13 @@ wasm-bindgen = "=0.2.127"
 js-sys = "0.3.104"
 wasm-bindgen = "=0.2.127"
 wasm-bindgen-futures = "0.4.77"
-web-sys = { version = "0.3.104", features = ["AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioContextState", "AudioDestinationNode", "AudioNode", "BaseAudioContext", "Storage", "Window", "Response", "Gamepad", "GamepadButton", "GamepadMappingType", "Navigator"] }
+web-sys = { version = "0.3.104", features = ["AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioContextState", "AudioDestinationNode", "AudioNode", "AudioParam", "BaseAudioContext", "GainNode", "Storage", "Window", "Response", "Gamepad", "GamepadButton", "GamepadMappingType", "Navigator"] }
 web-time = "1.1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 directories = "6.0.0"
 gilrs = "0.11.2"
-rodio = { version = "0.22.2", default-features = false, features = ["playback"] }
+rodio = { version = "0.22.2", default-features = false, features = ["mp3", "playback"] }
 
 [[example]]
 name = "web_demo"
