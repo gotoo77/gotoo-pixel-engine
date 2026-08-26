@@ -187,6 +187,7 @@ impl AudioControlState {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn effective_gain(&self, bus: AudioBus) -> f32 {
         self.master.gain() * self.bus(bus).gain()
     }
