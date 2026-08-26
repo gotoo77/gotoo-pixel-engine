@@ -1,4 +1,6 @@
-use gotoo_pixel_engine::{EngineConfig, EngineError, Font, Frame, Framebuffer, Game, GameResult, Key, Pixel, Rect, run};
+use gotoo_pixel_engine::{
+    EngineConfig, EngineError, Font, Frame, Framebuffer, Game, GameResult, Key, Pixel, Rect, run,
+};
 
 const FRAMEBUFFER_WIDTH: u32 = 320;
 const FRAMEBUFFER_HEIGHT: u32 = 180;
@@ -82,12 +84,17 @@ impl GlyphProbe {
             let row = i32::from(slot / 4);
             let x = column * 80;
             let y = 32 + row * 31;
-            draw_cell(framebuffer, self.font, code, Rect {
-                x,
-                y,
-                width: 80,
-                height: 30,
-            });
+            draw_cell(
+                framebuffer,
+                self.font,
+                code,
+                Rect {
+                    x,
+                    y,
+                    width: 80,
+                    height: 30,
+                },
+            );
         }
 
         framebuffer.draw_text(8, 163, "LEFT RIGHT PAGE   F FONT   ESC QUIT", MUTED);
