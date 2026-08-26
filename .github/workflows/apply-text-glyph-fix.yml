@@ -16,6 +16,11 @@ jobs:
         with:
           ref: "probe/text-glyph-conformance-final"
 
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+
       - name: Apply patch
         run: python3 scripts/apply_text_glyph_fix.py
 
