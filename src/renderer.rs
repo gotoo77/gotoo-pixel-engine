@@ -1,6 +1,12 @@
 use std::fmt;
 use std::sync::Arc;
 
+#[cfg(feature = "diagnostics")]
+use crate::diagnostics::{
+    AdapterBackend, AdapterDeviceType, DeviceLostReason, DiagnosticsWriter, RendererDiagnostics,
+    RendererRole, SurfaceAlphaMode, SurfaceConfiguration, SurfaceFailure, SurfaceFormat,
+    SurfacePresentMode, WgpuErrorCategory,
+};
 use crate::{Framebuffer, Size, Viewport};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
@@ -93,6 +99,8 @@ pub struct Renderer {
     framebuffer_texture: wgpu::Texture,
     framebuffer_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
+    #[cfg(feature = "diagnostics")]
+    diagnostics: Option<RendererDiagnostics>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,13 +116,53 @@ impl Renderer {
         framebuffer_width: u32,
         framebuffer_height: u32,
     ) -> Result<Self, RendererInitError> {
+        Self::new_inner(
+            window,
+            framebuffer_width,
+            framebuffer_height,
+            #[cfg(feature = "diagnostics")]
+            None,
+        )
+        .await
+    }
+
+    #[cfg(feature = "diagnostics")]
+    pub(crate) async fn new_with_diagnostics(
+        window: Arc<Window>,
+        framebuffer_width: u32,
+        framebuffer_height: u32,
+        writer: DiagnosticsWriter,
+        role: RendererRole,
+    ) -> Result<Self, RendererInitError> {
+        Self::new_inner(
+            window,
+            framebuffer_width,
+            framebuffer_height,
+            Some(writer.begin_renderer(role)),
+        )
+        .await
+    }
+
+    async fn new_inner(
+        window: Arc<Window>,
+        framebuffer_width: u32,
+        framebuffer_height: u32,
+        #[cfg(feature = "diagnostics")] mut diagnostics: Option<RendererDiagnostics>,
+    ) -> Result<Self, RendererInitError> {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
-        let surface = instance
-            .create_surface(window)
-            .map_err(RendererInitError::CreateSurface)?;
+        let surface = match instance.create_surface(window) {
+            Ok(surface) => surface,
+            Err(error) => {
+                #[cfg(feature = "diagnostics")]
+                if let Some(diagnostics) = diagnostics.as_mut() {
+                    diagnostics.initialization_failed(WgpuErrorCategory::CreateSurface);
+                }
+                return Err(RendererInitError::CreateSurface(error));
+            }
+        };
 
-        let adapter = instance
+        let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
@@ -122,9 +170,28 @@ impl Renderer {
                 apply_limit_buckets: false,
             })
             .await
-            .map_err(RendererInitError::RequestAdapter)?;
+        {
+            Ok(adapter) => adapter,
+            Err(error) => {
+                #[cfg(feature = "diagnostics")]
+                if let Some(diagnostics) = diagnostics.as_mut() {
+                    diagnostics.initialization_failed(WgpuErrorCategory::RequestAdapter);
+                }
+                return Err(RendererInitError::RequestAdapter(error));
+            }
+        };
 
-        let (device, queue) = adapter
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = diagnostics.as_ref() {
+            let info = adapter.get_info();
+            diagnostics.adapter_facts(
+                adapter_backend(info.backend),
+                adapter_device_type(info.device_type),
+                (!info.name.is_empty()).then_some(info.name.as_str()),
+            );
+        }
+
+        let (device, queue) = match adapter
             .request_device(&wgpu::DeviceDescriptor {
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
@@ -134,7 +201,31 @@ impl Renderer {
                 trace: wgpu::Trace::Off,
             })
             .await
-            .map_err(RendererInitError::RequestDevice)?;
+        {
+            Ok(device_and_queue) => device_and_queue,
+            Err(error) => {
+                #[cfg(feature = "diagnostics")]
+                if let Some(diagnostics) = diagnostics.as_mut() {
+                    diagnostics.initialization_failed(WgpuErrorCategory::RequestDevice);
+                }
+                return Err(RendererInitError::RequestDevice(error));
+            }
+        };
+
+        #[cfg(feature = "diagnostics")]
+        if let Some((writer, source)) = diagnostics
+            .as_ref()
+            .and_then(RendererDiagnostics::callback_writer)
+        {
+            device.set_device_lost_callback(move |reason, message| {
+                RendererDiagnostics::device_lost(
+                    &writer,
+                    source,
+                    device_lost_reason(reason),
+                    &message,
+                );
+            });
+        }
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -167,6 +258,10 @@ impl Renderer {
             view_formats: vec![],
         };
         surface.configure(&device, &config);
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = diagnostics.as_ref() {
+            diagnostics.surface_configured(surface_configuration(&config));
+        }
 
         let framebuffer_size = Size {
             width: framebuffer_width,
@@ -292,6 +387,11 @@ impl Renderer {
             cache: None,
         });
 
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = diagnostics.as_ref() {
+            diagnostics.ready();
+        }
+
         Ok(Self {
             surface,
             device,
@@ -302,6 +402,8 @@ impl Renderer {
             framebuffer_texture,
             framebuffer_bind_group,
             render_pipeline,
+            #[cfg(feature = "diagnostics")]
+            diagnostics,
         })
     }
 
@@ -320,6 +422,10 @@ impl Renderer {
             self.framebuffer_size,
         );
         self.surface.configure(&self.device, &self.config);
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = self.diagnostics.as_ref() {
+            diagnostics.surface_configured(surface_configuration(&self.config));
+        }
     }
 
     pub fn viewport(&self) -> Viewport {
@@ -346,15 +452,35 @@ impl Renderer {
             wgpu_extent(self.framebuffer_size),
         );
 
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+        let surface_texture = self.surface.get_current_texture();
+        #[cfg(feature = "diagnostics")]
+        if let Some(failure) = surface_failure_from_acquisition(&surface_texture)
+            && let Some(diagnostics) = self.diagnostics.as_ref()
+        {
+            diagnostics.surface_failure(failure);
+        }
+        let frame = match surface_texture {
+            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                #[cfg(feature = "diagnostics")]
+                if let Some(diagnostics) = self.diagnostics.as_ref() {
+                    diagnostics.suboptimal();
+                }
+                frame
+            }
+            wgpu::CurrentSurfaceTexture::Outdated => {
                 return RenderOutcome::SurfaceChanged;
             }
-            wgpu::CurrentSurfaceTexture::Timeout
-            | wgpu::CurrentSurfaceTexture::Occluded
-            | wgpu::CurrentSurfaceTexture::Validation => {
+            wgpu::CurrentSurfaceTexture::Lost => {
+                return RenderOutcome::SurfaceChanged;
+            }
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                return RenderOutcome::Skipped;
+            }
+            wgpu::CurrentSurfaceTexture::Occluded => {
+                return RenderOutcome::Skipped;
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
                 return RenderOutcome::Skipped;
             }
         };
@@ -399,8 +525,90 @@ impl Renderer {
 
         self.queue.submit(std::iter::once(encoder.finish()));
         self.queue.present(frame);
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = self.diagnostics.as_mut() {
+            diagnostics.presented();
+        }
 
         RenderOutcome::Presented
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+fn adapter_backend(backend: wgpu::Backend) -> AdapterBackend {
+    match backend {
+        wgpu::Backend::Noop => AdapterBackend::Noop,
+        wgpu::Backend::Vulkan => AdapterBackend::Vulkan,
+        wgpu::Backend::Metal => AdapterBackend::Metal,
+        wgpu::Backend::Dx12 => AdapterBackend::Dx12,
+        wgpu::Backend::Gl => AdapterBackend::Gl,
+        wgpu::Backend::BrowserWebGpu => AdapterBackend::BrowserWebGpu,
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+fn adapter_device_type(device_type: wgpu::DeviceType) -> AdapterDeviceType {
+    match device_type {
+        wgpu::DeviceType::IntegratedGpu => AdapterDeviceType::IntegratedGpu,
+        wgpu::DeviceType::DiscreteGpu => AdapterDeviceType::DiscreteGpu,
+        wgpu::DeviceType::VirtualGpu => AdapterDeviceType::VirtualGpu,
+        wgpu::DeviceType::Cpu => AdapterDeviceType::Cpu,
+        wgpu::DeviceType::Other => AdapterDeviceType::Other,
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+fn surface_configuration(config: &wgpu::SurfaceConfiguration) -> SurfaceConfiguration {
+    SurfaceConfiguration {
+        format: match config.format {
+            wgpu::TextureFormat::Bgra8Unorm => SurfaceFormat::Bgra8Unorm,
+            wgpu::TextureFormat::Bgra8UnormSrgb => SurfaceFormat::Bgra8UnormSrgb,
+            wgpu::TextureFormat::Rgba8Unorm => SurfaceFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Rgba8UnormSrgb => SurfaceFormat::Rgba8UnormSrgb,
+            wgpu::TextureFormat::Rgba16Float => SurfaceFormat::Rgba16Float,
+            _ => SurfaceFormat::Other,
+        },
+        present_mode: match config.present_mode {
+            wgpu::PresentMode::Fifo => SurfacePresentMode::Fifo,
+            wgpu::PresentMode::FifoRelaxed => SurfacePresentMode::FifoRelaxed,
+            wgpu::PresentMode::Immediate => SurfacePresentMode::Immediate,
+            wgpu::PresentMode::Mailbox => SurfacePresentMode::Mailbox,
+            wgpu::PresentMode::AutoVsync => SurfacePresentMode::AutoVsync,
+            wgpu::PresentMode::AutoNoVsync => SurfacePresentMode::AutoNoVsync,
+        },
+        alpha_mode: match config.alpha_mode {
+            wgpu::CompositeAlphaMode::Auto => SurfaceAlphaMode::Auto,
+            wgpu::CompositeAlphaMode::Opaque => SurfaceAlphaMode::Opaque,
+            wgpu::CompositeAlphaMode::PreMultiplied => SurfaceAlphaMode::PreMultiplied,
+            wgpu::CompositeAlphaMode::PostMultiplied => SurfaceAlphaMode::PostMultiplied,
+            wgpu::CompositeAlphaMode::Inherit => SurfaceAlphaMode::Inherit,
+        },
+        width: config.width,
+        height: config.height,
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+fn device_lost_reason(reason: wgpu::DeviceLostReason) -> DeviceLostReason {
+    match reason {
+        wgpu::DeviceLostReason::Unknown => DeviceLostReason::Unknown,
+        wgpu::DeviceLostReason::Destroyed => DeviceLostReason::Destroyed,
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+fn surface_failure_from_acquisition(
+    outcome: &wgpu::CurrentSurfaceTexture,
+) -> Option<SurfaceFailure> {
+    match outcome {
+        wgpu::CurrentSurfaceTexture::Timeout => Some(SurfaceFailure::Timeout),
+        wgpu::CurrentSurfaceTexture::Occluded => Some(SurfaceFailure::Occluded),
+        wgpu::CurrentSurfaceTexture::Outdated => Some(SurfaceFailure::Outdated),
+        wgpu::CurrentSurfaceTexture::Lost => Some(SurfaceFailure::Lost),
+        wgpu::CurrentSurfaceTexture::Validation => Some(SurfaceFailure::Validation),
+        wgpu::CurrentSurfaceTexture::Success(_) | wgpu::CurrentSurfaceTexture::Suboptimal(_) => {
+            None
+        }
     }
 }
 
@@ -419,6 +627,11 @@ fn surface_needs_shader_srgb_encode(surface_format: wgpu::TextureFormat) -> bool
 #[cfg(test)]
 mod tests {
     use super::surface_needs_shader_srgb_encode;
+    #[cfg(feature = "diagnostics")]
+    use super::{
+        SurfaceAlphaMode, SurfaceFailure, SurfaceFormat, SurfacePresentMode, surface_configuration,
+        surface_failure_from_acquisition,
+    };
 
     #[test]
     fn srgb_surface_formats_use_hardware_encoding() {
@@ -441,5 +654,53 @@ mod tests {
         assert!(surface_needs_shader_srgb_encode(
             wgpu::TextureFormat::Rgba16Float
         ));
+    }
+
+    #[cfg(feature = "diagnostics")]
+    #[test]
+    fn surface_configuration_mapping_is_colocated_and_distinct() {
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            color_space: wgpu::SurfaceColorSpace::Auto,
+            width: 320,
+            height: 240,
+            present_mode: wgpu::PresentMode::Mailbox,
+            desired_maximum_frame_latency: 2,
+            alpha_mode: wgpu::CompositeAlphaMode::PreMultiplied,
+            view_formats: vec![],
+        };
+        let observed = surface_configuration(&config);
+        assert_eq!(observed.format, SurfaceFormat::Rgba8UnormSrgb);
+        assert_eq!(observed.present_mode, SurfacePresentMode::Mailbox);
+        assert_eq!(observed.alpha_mode, SurfaceAlphaMode::PreMultiplied);
+        assert_eq!((observed.width, observed.height), (320, 240));
+    }
+
+    #[cfg(feature = "diagnostics")]
+    #[test]
+    fn surface_failure_categories_are_not_reconstructed_from_render_outcome() {
+        let cases = [
+            (
+                wgpu::CurrentSurfaceTexture::Timeout,
+                SurfaceFailure::Timeout,
+            ),
+            (
+                wgpu::CurrentSurfaceTexture::Occluded,
+                SurfaceFailure::Occluded,
+            ),
+            (
+                wgpu::CurrentSurfaceTexture::Outdated,
+                SurfaceFailure::Outdated,
+            ),
+            (wgpu::CurrentSurfaceTexture::Lost, SurfaceFailure::Lost),
+            (
+                wgpu::CurrentSurfaceTexture::Validation,
+                SurfaceFailure::Validation,
+            ),
+        ];
+        for (outcome, expected) in cases {
+            assert_eq!(surface_failure_from_acquisition(&outcome), Some(expected));
+        }
     }
 }

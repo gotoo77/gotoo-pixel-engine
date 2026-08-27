@@ -6,6 +6,8 @@ mod capture_mirror;
 #[cfg(target_arch = "wasm32")]
 mod capture_mirror_stub;
 mod control;
+#[cfg(feature = "diagnostics")]
+mod diagnostics;
 pub mod framebuffer;
 mod gamepad;
 mod gamepad_profile;
@@ -32,6 +34,20 @@ pub use capture_mirror::ObsMirrorGame;
 #[cfg(target_arch = "wasm32")]
 pub use capture_mirror_stub::ObsMirrorGame;
 pub use control::{ActionId, ControlBinding, ControlMap};
+#[cfg(feature = "diagnostics")]
+pub use diagnostics::{
+    AdapterBackend, AdapterDeviceType, AdapterFacts, AudioBackend, AudioBackendError,
+    AudioErrorCategory, AudioInitializationOutcome, AudioSummary, Availability, BuildProfile,
+    BuildProvenance, CollectionMode, DeviceLostObservation, DeviceLostReason, DiagnosticEvent,
+    DiagnosticEventKind, DiagnosticField, DiagnosticObservation, DiagnosticProducer,
+    DiagnosticReadKind, DiagnosticSection, EngineDiagnostics, EngineDiagnosticsHandle,
+    EngineDiagnosticsRegistration, EventHistory, Freshness, ObservationStamp, OpaqueText,
+    PanicStrategy, PresentObservation, RendererIncarnation, RendererLifecycle,
+    RendererObservations, RendererRecord, RendererRole, RendererSource, RepresentationKind,
+    RuntimeLifecycle, RuntimeOutcome, RuntimeState, SaturatingCounter, StaleReason,
+    SurfaceAlphaMode, SurfaceConfiguration, SurfaceFailure, SurfaceFormat, SurfacePresentMode,
+    TargetFamily, WgpuErrorCategory,
+};
 pub use framebuffer::{Font, Framebuffer};
 pub use gamepad_profile::{AxisCalibration, GamepadProfile};
 pub use image::{Image, ImageError, ImageRegion};
@@ -40,6 +56,8 @@ pub use input::{
     MouseButton, Touch, TouchPhase,
 };
 pub use pixel::Pixel;
+#[cfg(feature = "diagnostics")]
+pub use platform::run_with_diagnostics;
 pub use platform::{
     EngineConfig, EngineError, Frame, Game, GameResult, ToolFrame, ToolWindowConfig,
     ToolWindowMode, run, tool_window_supported,

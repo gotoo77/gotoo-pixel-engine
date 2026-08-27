@@ -6,6 +6,10 @@ rust-version = "1.97.1"
 license = "MIT"
 repository = "https://github.com/gotoo77/gotoo-pixel-engine"
 
+[features]
+default = []
+diagnostics = []
+
 [dependencies]
 hound = "3.5.1"
 include_dir = "0.7.4"

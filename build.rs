@@ -3,6 +3,14 @@ use std::process::Command;
 fn main() {
     let build_id = git_build_id().unwrap_or_else(|| "UNKNOWN".to_string());
     println!("cargo:rustc-env=GPE_BUILD_ID={build_id}");
+    println!(
+        "cargo:rustc-env=GPE_BUILD_TARGET={}",
+        std::env::var("TARGET").unwrap_or_else(|_| "UNKNOWN".to_string())
+    );
+    println!(
+        "cargo:rustc-env=GPE_BUILD_PROFILE={}",
+        std::env::var("PROFILE").unwrap_or_else(|_| "UNKNOWN".to_string())
+    );
 }
 
 fn git_build_id() -> Option<String> {
