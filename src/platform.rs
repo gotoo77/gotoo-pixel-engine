@@ -11,6 +11,11 @@ mod branding;
 
 use crate::Framebuffer;
 use crate::audio::{Audio, PlatformAudio, platform_audio};
+#[cfg(feature = "diagnostics")]
+use crate::diagnostics::{
+    DiagnosticsWriter, EngineDiagnosticsRegistration, RegistrationAlreadyAttached, RendererRole,
+    RuntimeLifecycle, RuntimeOutcome,
+};
 use crate::gamepad::GamepadInputBackend;
 use crate::input::{Input, Key, MouseButton, Touch, TouchPhase};
 use crate::renderer::{RenderOutcome, Renderer, RendererInitError};
@@ -162,6 +167,13 @@ impl EngineError {
             message: format!("renderer failed: {err}"),
         }
     }
+
+    #[cfg(feature = "diagnostics")]
+    fn diagnostics(_: RegistrationAlreadyAttached) -> Self {
+        Self {
+            message: "diagnostics registration is already attached to a runtime".to_string(),
+        }
+    }
 }
 
 impl fmt::Display for EngineError {
@@ -192,6 +204,66 @@ pub fn run<G: Game + 'static>(config: EngineConfig, game: G) -> Result<(), Engin
     } else {
         Ok(())
     }
+}
+
+/// Runs GPE with one explicit, pre-created diagnostics registration.
+///
+/// The consumer retains the associated `EngineDiagnosticsHandle`. GPE does
+/// not install a panic hook or persist/present observations.
+#[cfg(feature = "diagnostics")]
+pub fn run_with_diagnostics<G: Game + 'static>(
+    config: EngineConfig,
+    game: G,
+    registration: EngineDiagnosticsRegistration,
+) -> Result<(), EngineError> {
+    let diagnostics = registration.attach().map_err(EngineError::diagnostics)?;
+    diagnostics.runtime_transition(RuntimeLifecycle::Initializing, None);
+
+    if let Err(error) = validate_config(&config) {
+        diagnostics
+            .runtime_transition(RuntimeLifecycle::Ended, Some(RuntimeOutcome::StartupFailed));
+        return Err(error);
+    }
+
+    let event_loop = match EventLoop::<PlatformEvent>::with_user_event().build() {
+        Ok(event_loop) => event_loop,
+        Err(error) => {
+            diagnostics
+                .runtime_transition(RuntimeLifecycle::Ended, Some(RuntimeOutcome::StartupFailed));
+            return Err(EngineError::event_loop(error));
+        }
+    };
+    #[cfg(target_arch = "wasm32")]
+    let mut app = PlatformApp::new_with_diagnostics(
+        config,
+        game,
+        event_loop.create_proxy(),
+        diagnostics.clone(),
+    );
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut app = PlatformApp::new_with_diagnostics(config, game, diagnostics.clone());
+
+    let event_loop_result = event_loop
+        .run_app(&mut app)
+        .map_err(EngineError::event_loop);
+    diagnostics.runtime_transition(RuntimeLifecycle::ShuttingDown, None);
+    let result = match event_loop_result {
+        Err(error) => Err(error),
+        Ok(()) => match app.pending_error.take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        },
+    };
+    drop(app);
+    diagnostics.runtime_transition(
+        RuntimeLifecycle::Ended,
+        Some(if result.is_ok() {
+            RuntimeOutcome::NormalExit
+        } else {
+            RuntimeOutcome::ErrorExit
+        }),
+    );
+    result
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -226,6 +298,8 @@ struct PlatformApp<G> {
     fps_frames: u32,
     last_non_zero_window_size: Option<PhysicalSize<u32>>,
     pending_error: Option<EngineError>,
+    #[cfg(feature = "diagnostics")]
+    diagnostics: Option<DiagnosticsWriter>,
     #[cfg(not(target_arch = "wasm32"))]
     tool_window: Option<ToolWindowState>,
     #[cfg(target_arch = "wasm32")]
@@ -248,12 +322,17 @@ impl<G: Game> PlatformApp<G> {
             modifiers: ModifiersState::empty(),
             gamepads: GamepadInputBackend::default(),
             storage: platform_storage(),
-            audio: platform_audio(),
+            audio: platform_audio(
+                #[cfg(feature = "diagnostics")]
+                None,
+            ),
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
             last_non_zero_window_size: None,
             pending_error: None,
+            #[cfg(feature = "diagnostics")]
+            diagnostics: None,
             tool_window: None,
         }
     }
@@ -273,14 +352,55 @@ impl<G: Game> PlatformApp<G> {
             modifiers: ModifiersState::empty(),
             gamepads: GamepadInputBackend::default(),
             storage: platform_storage(),
-            audio: platform_audio(),
+            audio: platform_audio(
+                #[cfg(feature = "diagnostics")]
+                None,
+            ),
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
             last_non_zero_window_size: None,
             pending_error: None,
+            #[cfg(feature = "diagnostics")]
+            diagnostics: None,
             event_loop_proxy,
         }
+    }
+
+    #[cfg(all(feature = "diagnostics", not(target_arch = "wasm32")))]
+    fn new_with_diagnostics(config: EngineConfig, game: G, diagnostics: DiagnosticsWriter) -> Self {
+        let mut app = Self::new(config, game);
+        app.audio = platform_audio(Some(diagnostics.clone()));
+        app.diagnostics = Some(diagnostics);
+        app
+    }
+
+    #[cfg(all(feature = "diagnostics", target_arch = "wasm32"))]
+    fn new_with_diagnostics(
+        config: EngineConfig,
+        game: G,
+        event_loop_proxy: EventLoopProxy<PlatformEvent>,
+        diagnostics: DiagnosticsWriter,
+    ) -> Self {
+        let mut app = Self::new(config, game, event_loop_proxy);
+        app.audio = platform_audio(Some(diagnostics.clone()));
+        app.diagnostics = Some(diagnostics);
+        app
+    }
+
+    #[cfg(feature = "diagnostics")]
+    fn diagnostics_running(&self) {
+        if let Some(diagnostics) = self.diagnostics.as_ref() {
+            diagnostics.runtime_transition(RuntimeLifecycle::Running, None);
+        }
+    }
+
+    fn request_exit(&self, event_loop: &ActiveEventLoop) {
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = self.diagnostics.as_ref() {
+            diagnostics.runtime_transition(RuntimeLifecycle::ShuttingDown, None);
+        }
+        event_loop.exit();
     }
 
     fn reset_frame_timing(&mut self) {
@@ -317,7 +437,7 @@ impl<G: Game> PlatformApp<G> {
         };
 
         if self.game.update(&mut frame) == GameResult::Exit {
-            event_loop.exit();
+            self.request_exit(event_loop);
             return;
         }
 
@@ -378,7 +498,7 @@ impl<G: Game> PlatformApp<G> {
 
         if let Err(error) = validate_tool_window_config(&config) {
             self.pending_error = Some(error);
-            event_loop.exit();
+            self.request_exit(event_loop);
             return;
         }
 
@@ -404,20 +524,38 @@ impl<G: Game> PlatformApp<G> {
             Ok(window) => Arc::new(window),
             Err(error) => {
                 self.pending_error = Some(EngineError::window(error));
-                event_loop.exit();
+                self.request_exit(event_loop);
                 return;
             }
         };
 
-        let renderer = match pollster::block_on(Renderer::new(
+        #[cfg(feature = "diagnostics")]
+        let renderer_result = match self.diagnostics.as_ref() {
+            Some(diagnostics) => pollster::block_on(Renderer::new_with_diagnostics(
+                Arc::clone(&window),
+                config.framebuffer_width,
+                config.framebuffer_height,
+                diagnostics.clone(),
+                RendererRole::Tool,
+            )),
+            None => pollster::block_on(Renderer::new(
+                Arc::clone(&window),
+                config.framebuffer_width,
+                config.framebuffer_height,
+            )),
+        };
+        #[cfg(all(not(target_arch = "wasm32"), not(feature = "diagnostics")))]
+        let renderer_result = pollster::block_on(Renderer::new(
             Arc::clone(&window),
             config.framebuffer_width,
             config.framebuffer_height,
-        )) {
+        ));
+        #[cfg(not(target_arch = "wasm32"))]
+        let renderer = match renderer_result {
             Ok(renderer) => renderer,
             Err(error) => {
                 self.pending_error = Some(EngineError::renderer(error));
-                event_loop.exit();
+                self.request_exit(event_loop);
                 return;
             }
         };
@@ -530,7 +668,7 @@ impl<G: Game> PlatformApp<G> {
             Ok(window) => Arc::new(window),
             Err(err) => {
                 self.pending_error = Some(EngineError::window(err));
-                event_loop.exit();
+                self.request_exit(event_loop);
                 return;
             }
         };
@@ -543,8 +681,25 @@ impl<G: Game> PlatformApp<G> {
             let proxy = self.event_loop_proxy.clone();
             let framebuffer_width = self.config.framebuffer_width;
             let framebuffer_height = self.config.framebuffer_height;
+            #[cfg(feature = "diagnostics")]
+            let diagnostics = self.diagnostics.clone();
 
             wasm_bindgen_futures::spawn_local(async move {
+                #[cfg(feature = "diagnostics")]
+                let result = match diagnostics {
+                    Some(diagnostics) => {
+                        Renderer::new_with_diagnostics(
+                            window,
+                            framebuffer_width,
+                            framebuffer_height,
+                            diagnostics,
+                            RendererRole::Primary,
+                        )
+                        .await
+                    }
+                    None => Renderer::new(window, framebuffer_width, framebuffer_height).await,
+                };
+                #[cfg(not(feature = "diagnostics"))]
                 let result = Renderer::new(window, framebuffer_width, framebuffer_height).await;
                 let _ = proxy.send_event(PlatformEvent::RendererReady(result));
             });
@@ -553,15 +708,33 @@ impl<G: Game> PlatformApp<G> {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        let renderer = match pollster::block_on(Renderer::new(
+        #[cfg(feature = "diagnostics")]
+        let renderer_result = match self.diagnostics.as_ref() {
+            Some(diagnostics) => pollster::block_on(Renderer::new_with_diagnostics(
+                Arc::clone(&window),
+                self.config.framebuffer_width,
+                self.config.framebuffer_height,
+                diagnostics.clone(),
+                RendererRole::Primary,
+            )),
+            None => pollster::block_on(Renderer::new(
+                Arc::clone(&window),
+                self.config.framebuffer_width,
+                self.config.framebuffer_height,
+            )),
+        };
+        #[cfg(all(not(target_arch = "wasm32"), not(feature = "diagnostics")))]
+        let renderer_result = pollster::block_on(Renderer::new(
             Arc::clone(&window),
             self.config.framebuffer_width,
             self.config.framebuffer_height,
-        )) {
+        ));
+        #[cfg(not(target_arch = "wasm32"))]
+        let renderer = match renderer_result {
             Ok(renderer) => renderer,
             Err(err) => {
                 self.pending_error = Some(EngineError::renderer(err));
-                event_loop.exit();
+                self.request_exit(event_loop);
                 return;
             }
         };
@@ -571,6 +744,8 @@ impl<G: Game> PlatformApp<G> {
             self.reset_frame_timing();
             self.window = Some(window);
             self.renderer = Some(renderer);
+            #[cfg(feature = "diagnostics")]
+            self.diagnostics_running();
         }
     }
 
@@ -583,7 +758,7 @@ impl<G: Game> PlatformApp<G> {
             Ok(renderer) => renderer,
             Err(err) => {
                 self.pending_error = Some(EngineError::renderer(err));
-                event_loop.exit();
+                self.request_exit(event_loop);
                 return;
             }
         };
@@ -593,6 +768,8 @@ impl<G: Game> PlatformApp<G> {
             renderer.resize(size);
         }
         self.renderer = Some(renderer);
+        #[cfg(feature = "diagnostics")]
+        self.diagnostics_running();
 
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
@@ -729,7 +906,7 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
         }
 
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => self.request_exit(event_loop),
             WindowEvent::Resized(size) => {
                 remember_non_zero_size(&mut self.last_non_zero_window_size, size);
                 if let Some(renderer) = self.renderer.as_mut() {

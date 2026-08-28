@@ -1,3 +1,7 @@
+#[cfg(all(feature = "diagnostics", not(target_arch = "wasm32")))]
+use crate::diagnostics::AudioErrorCategory;
+#[cfg(feature = "diagnostics")]
+use crate::diagnostics::{AudioBackend, AudioInitializationOutcome, DiagnosticsWriter};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::Cursor;
@@ -524,15 +528,51 @@ pub(crate) trait PlatformAudio: Audio {
 
 impl PlatformAudio for NoopAudio {}
 
-pub(crate) fn platform_audio() -> Box<dyn PlatformAudio> {
+pub(crate) fn platform_audio(
+    #[cfg(feature = "diagnostics")] diagnostics: Option<DiagnosticsWriter>,
+) -> Box<dyn PlatformAudio> {
     #[cfg(target_arch = "wasm32")]
     {
-        Box::new(web::WebAudio::default())
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = diagnostics.as_ref() {
+            diagnostics.audio_selected(AudioBackend::Web, AudioInitializationOutcome::NotAttempted);
+        }
+        Box::new(web::WebAudio::new(
+            #[cfg(feature = "diagnostics")]
+            diagnostics,
+        ))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        Box::new(native::NativeAudio::new().unwrap_or_default())
+        #[cfg(feature = "diagnostics")]
+        let result = native::NativeAudio::new(diagnostics.clone());
+        #[cfg(not(feature = "diagnostics"))]
+        let result = native::NativeAudio::new();
+        match result {
+            Ok(audio) => {
+                #[cfg(feature = "diagnostics")]
+                if let Some(diagnostics) = diagnostics.as_ref() {
+                    diagnostics.audio_selected(
+                        AudioBackend::Native,
+                        AudioInitializationOutcome::Succeeded,
+                    );
+                }
+                Box::new(audio)
+            }
+            Err(_error) => {
+                #[cfg(feature = "diagnostics")]
+                if let Some(diagnostics) = diagnostics.as_ref() {
+                    diagnostics.audio_selected(
+                        AudioBackend::Noop,
+                        AudioInitializationOutcome::FailedFallback,
+                    );
+                    diagnostics
+                        .audio_error(AudioErrorCategory::Initialization, Some(&_error.message));
+                }
+                Box::new(NoopAudio::default())
+            }
+        }
     }
 }
 
@@ -635,8 +675,18 @@ mod native {
 
     static XRUN_REPORTED: AtomicBool = AtomicBool::new(false);
 
-    fn report_stream_error(error: StreamError) {
+    fn report_stream_error(
+        error: StreamError,
+        #[cfg(feature = "diagnostics")] diagnostics: Option<&crate::diagnostics::DiagnosticsWriter>,
+    ) {
         if matches!(error, StreamError::BufferUnderrun) {
+            #[cfg(feature = "diagnostics")]
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.audio_error(
+                    crate::diagnostics::AudioErrorCategory::StreamUnderrunOrOverrun,
+                    None,
+                );
+            }
             if !XRUN_REPORTED.swap(true, Ordering::Relaxed) {
                 eprintln!(
                     "audio stream warning: buffer underrun/overrun occurred; suppressing repeats"
@@ -645,6 +695,10 @@ mod native {
             return;
         }
 
+        #[cfg(feature = "diagnostics")]
+        if let Some(diagnostics) = diagnostics {
+            diagnostics.audio_error(crate::diagnostics::AudioErrorCategory::Stream, None);
+        }
         eprintln!("audio stream error: {error}");
     }
 
@@ -670,10 +724,22 @@ mod native {
     }
 
     impl NativeAudio {
-        pub(crate) fn new() -> Result<Self, AudioError> {
+        pub(crate) fn new(
+            #[cfg(feature = "diagnostics")] diagnostics: Option<
+                crate::diagnostics::DiagnosticsWriter,
+            >,
+        ) -> Result<Self, AudioError> {
+            #[cfg(feature = "diagnostics")]
+            let callback_diagnostics = diagnostics;
             let builder = DeviceSinkBuilder::from_default_device()
                 .map_err(|err| AudioError::new(format!("audio device unavailable: {err}")))?
-                .with_error_callback(report_stream_error as fn(StreamError));
+                .with_error_callback(move |error| {
+                    report_stream_error(
+                        error,
+                        #[cfg(feature = "diagnostics")]
+                        callback_diagnostics.as_ref(),
+                    );
+                });
             let mut sink = builder
                 .open_sink_or_fallback()
                 .map_err(|err| AudioError::new(format!("audio device unavailable: {err}")))?;
@@ -1053,7 +1119,6 @@ mod web {
         }
     }
 
-    #[derive(Default)]
     pub(crate) struct WebAudio {
         context: Option<AudioContext>,
         unavailable: bool,
@@ -1064,9 +1129,31 @@ mod web {
         controls: AudioControlState,
         mix: Option<WebMix>,
         next_playback_id: u64,
+        #[cfg(feature = "diagnostics")]
+        diagnostics: Option<crate::diagnostics::DiagnosticsWriter>,
     }
 
     impl WebAudio {
+        pub(crate) fn new(
+            #[cfg(feature = "diagnostics")] diagnostics: Option<
+                crate::diagnostics::DiagnosticsWriter,
+            >,
+        ) -> Self {
+            Self {
+                context: None,
+                unavailable: false,
+                sounds: HashMap::new(),
+                decoded_sounds: HashMap::new(),
+                active_loops: HashSet::new(),
+                loop_sources: HashMap::new(),
+                controls: AudioControlState::default(),
+                mix: None,
+                next_playback_id: 0,
+                #[cfg(feature = "diagnostics")]
+                diagnostics,
+            }
+        }
+
         fn context(&mut self) -> Result<AudioContext, AudioError> {
             if self.unavailable {
                 return Err(AudioError::new("WebAudio is unavailable"));
@@ -1078,14 +1165,30 @@ mod web {
             match AudioContext::new() {
                 Ok(context) => {
                     self.context = Some(context.clone());
+                    #[cfg(feature = "diagnostics")]
+                    if let Some(diagnostics) = self.diagnostics.as_ref() {
+                        diagnostics.audio_selected(
+                            crate::diagnostics::AudioBackend::Web,
+                            crate::diagnostics::AudioInitializationOutcome::Succeeded,
+                        );
+                    }
                     Ok(context)
                 }
                 Err(err) => {
                     self.unavailable = true;
-                    Err(AudioError::new(js_error_message(
-                        "failed to create AudioContext",
-                        err,
-                    )))
+                    let message = js_error_message("failed to create AudioContext", err);
+                    #[cfg(feature = "diagnostics")]
+                    if let Some(diagnostics) = self.diagnostics.as_ref() {
+                        diagnostics.audio_selected(
+                            crate::diagnostics::AudioBackend::Web,
+                            crate::diagnostics::AudioInitializationOutcome::Unavailable,
+                        );
+                        diagnostics.audio_error(
+                            crate::diagnostics::AudioErrorCategory::WebAudio,
+                            Some(&message),
+                        );
+                    }
+                    Err(AudioError::new(message))
                 }
             }
         }
@@ -1172,6 +1275,15 @@ mod web {
             if let Some(mix) = self.mix.as_ref() {
                 Self::apply_mix_state(mix, &self.controls);
             }
+        }
+    }
+
+    impl Default for WebAudio {
+        fn default() -> Self {
+            Self::new(
+                #[cfg(feature = "diagnostics")]
+                None,
+            )
         }
     }
 

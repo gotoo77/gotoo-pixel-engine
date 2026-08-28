@@ -6,6 +6,11 @@ rust-version = "1.97.1"
 license = "MIT"
 repository = "https://github.com/gotoo77/gotoo-pixel-engine"
 
+[features]
+default = []
+diagnostics = []
+diagnostics-fault-injection = ["diagnostics"]
+
 [dependencies]
 hound = "3.5.1"
 include_dir = "0.7.4"
@@ -76,6 +81,16 @@ name = "arcade_web"
 path = "examples/arcade_web.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "diagnostics_environment_web"
+path = "examples/diagnostics_environment_web.rs"
+crate-type = ["cdylib"]
+
 [[bench]]
 name = "primitives"
 harness = false
+
+[[bin]]
+name = "diagnostics_fault_probe"
+path = "src/bin/diagnostics_fault_probe.rs"
+required-features = ["diagnostics-fault-injection"]
