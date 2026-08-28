@@ -1003,6 +1003,7 @@ impl RendererDiagnostics {
         self.source
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn adapter_facts(
         &self,
         backend: AdapterBackend,
@@ -2443,6 +2444,26 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn skipped_adapter_observation_remains_truthfully_unknown() {
+        let (handle, registration) = EngineDiagnostics::enabled();
+        let writer = registration.attach().unwrap();
+        let _renderer = writer.begin_renderer(RendererRole::Primary);
+
+        let record = handle.try_read().renderers.value.unwrap().records[0]
+            .clone()
+            .unwrap();
+        assert_eq!(record.adapter.backend.availability, Availability::Unknown);
+        assert_eq!(
+            record.adapter.device_type.availability,
+            Availability::Unknown
+        );
+        assert_eq!(record.adapter.name.availability, Availability::Unknown);
+        assert!(record.adapter.backend.value.is_none());
+        assert!(record.adapter.device_type.value.is_none());
+        assert!(record.adapter.name.value.is_none());
     }
 
     #[test]

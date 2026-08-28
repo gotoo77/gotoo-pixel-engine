@@ -1,11 +1,12 @@
 use std::fmt;
 use std::sync::Arc;
 
+#[cfg(all(feature = "diagnostics", not(target_arch = "wasm32")))]
+use crate::diagnostics::{AdapterBackend, AdapterDeviceType};
 #[cfg(feature = "diagnostics")]
 use crate::diagnostics::{
-    AdapterBackend, AdapterDeviceType, DeviceLostReason, DiagnosticsWriter, RendererDiagnostics,
-    RendererRole, SurfaceAlphaMode, SurfaceConfiguration, SurfaceFailure, SurfaceFormat,
-    SurfacePresentMode, WgpuErrorCategory,
+    DeviceLostReason, DiagnosticsWriter, RendererDiagnostics, RendererRole, SurfaceAlphaMode,
+    SurfaceConfiguration, SurfaceFailure, SurfaceFormat, SurfacePresentMode, WgpuErrorCategory,
 };
 use crate::{Framebuffer, Size, Viewport};
 use winit::dpi::PhysicalSize;
@@ -181,7 +182,10 @@ impl Renderer {
             }
         };
 
-        #[cfg(feature = "diagnostics")]
+        // Web's infallible Adapter::get_info dispatches to a JS property read. A
+        // null WebGPU adapter can cross the binding as an opaque Rust Adapter,
+        // so truthful unknown facts are safer than a diagnostics-only exception.
+        #[cfg(all(feature = "diagnostics", not(target_arch = "wasm32")))]
         if let Some(diagnostics) = diagnostics.as_ref() {
             let info = adapter.get_info();
             diagnostics.adapter_facts(
@@ -534,7 +538,7 @@ impl Renderer {
     }
 }
 
-#[cfg(feature = "diagnostics")]
+#[cfg(all(feature = "diagnostics", not(target_arch = "wasm32")))]
 fn adapter_backend(backend: wgpu::Backend) -> AdapterBackend {
     match backend {
         wgpu::Backend::Noop => AdapterBackend::Noop,
@@ -546,7 +550,7 @@ fn adapter_backend(backend: wgpu::Backend) -> AdapterBackend {
     }
 }
 
-#[cfg(feature = "diagnostics")]
+#[cfg(all(feature = "diagnostics", not(target_arch = "wasm32")))]
 fn adapter_device_type(device_type: wgpu::DeviceType) -> AdapterDeviceType {
     match device_type {
         wgpu::DeviceType::IntegratedGpu => AdapterDeviceType::IntegratedGpu,
