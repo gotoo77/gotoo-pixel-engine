@@ -81,6 +81,11 @@ name = "arcade_web"
 path = "examples/arcade_web.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "diagnostics_environment_web"
+path = "examples/diagnostics_environment_web.rs"
+crate-type = ["cdylib"]
+
 [[bench]]
 name = "primitives"
 harness = false
