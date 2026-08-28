@@ -1347,6 +1347,774 @@ impl EventRing {
     }
 }
 
+/// Mission 3-only fault seams. This module is absent unless the dedicated
+/// `diagnostics-fault-injection` feature is explicitly enabled.
+#[cfg(all(feature = "diagnostics-fault-injection", not(target_arch = "wasm32")))]
+#[doc(hidden)]
+pub mod fault_injection {
+    use super::*;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Instant;
+
+    #[cfg(not(test))]
+    mod controlled_allocator {
+        use super::*;
+        use std::alloc::{GlobalAlloc, Layout, System};
+        use std::sync::atomic::AtomicU64;
+
+        static FAIL: AtomicBool = AtomicBool::new(false);
+        static TRACK: AtomicBool = AtomicBool::new(false);
+        static COUNT: AtomicU64 = AtomicU64::new(0);
+
+        pub(super) struct ControlledAllocator;
+
+        // SAFETY: successful operations delegate unchanged to System. Returning
+        // null while the explicit failpoint is armed is the GlobalAlloc contract.
+        unsafe impl GlobalAlloc for ControlledAllocator {
+            unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+                if TRACK.load(Ordering::Relaxed) {
+                    COUNT.fetch_add(1, Ordering::Relaxed);
+                }
+                if FAIL.load(Ordering::Relaxed) {
+                    std::ptr::null_mut()
+                } else {
+                    // SAFETY: delegated unchanged to the system allocator.
+                    unsafe { System.alloc(layout) }
+                }
+            }
+
+            unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+                // SAFETY: delegated unchanged to the system allocator.
+                unsafe { System.dealloc(pointer, layout) };
+            }
+
+            unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+                if TRACK.load(Ordering::Relaxed) {
+                    COUNT.fetch_add(1, Ordering::Relaxed);
+                }
+                if FAIL.load(Ordering::Relaxed) {
+                    std::ptr::null_mut()
+                } else {
+                    // SAFETY: delegated unchanged to the system allocator.
+                    unsafe { System.alloc_zeroed(layout) }
+                }
+            }
+
+            unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+                if TRACK.load(Ordering::Relaxed) {
+                    COUNT.fetch_add(1, Ordering::Relaxed);
+                }
+                if FAIL.load(Ordering::Relaxed) {
+                    std::ptr::null_mut()
+                } else {
+                    // SAFETY: delegated unchanged to the system allocator.
+                    unsafe { System.realloc(pointer, layout, size) }
+                }
+            }
+        }
+
+        #[global_allocator]
+        static ALLOCATOR: ControlledAllocator = ControlledAllocator;
+
+        pub(super) fn fail(enabled: bool) {
+            FAIL.store(enabled, Ordering::SeqCst);
+        }
+
+        pub(super) fn track(enabled: bool) {
+            if enabled {
+                COUNT.store(0, Ordering::SeqCst);
+            }
+            TRACK.store(enabled, Ordering::SeqCst);
+        }
+
+        pub(super) fn count() -> u64 {
+            COUNT.load(Ordering::SeqCst)
+        }
+    }
+
+    pub const SCENARIOS: [&str; 22] = [
+        "F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12", "F13",
+        "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22",
+    ];
+
+    pub fn run_child(scenario: &str, artifact: &Path) -> Result<(), String> {
+        match scenario {
+            "F01" => f01(artifact),
+            "F02" => f02(artifact),
+            "F03" => f03(artifact),
+            "F04" => f04(artifact),
+            "F05" => f05(artifact),
+            "F06" => f06(artifact),
+            "F07" => f07(artifact),
+            "F08" => parked_partial("F08", artifact),
+            "F09" => parked_partial("F09", artifact),
+            "F10" => f10(artifact),
+            "F11" => f11(artifact),
+            "F12" => f12(artifact),
+            "F13" => f13(artifact),
+            "F14" => f14(artifact),
+            "F15" => f15(artifact),
+            "F16" => f16(artifact),
+            "F17" => f17(artifact),
+            "F18" => f18(artifact),
+            "F19" => f19(artifact),
+            "F20" => f20(artifact),
+            "F21" => f21(artifact),
+            "F22" => f22(artifact),
+            _ => Err(format!("unknown scenario {scenario}")),
+        }
+    }
+
+    fn enabled() -> (EngineDiagnosticsHandle, DiagnosticsWriter) {
+        let (handle, registration) = EngineDiagnostics::enabled();
+        let writer = registration.attach().expect("fresh registration attaches");
+        (handle, writer)
+    }
+
+    fn complete(artifact: &Path, scenario: &str, facts: &[String]) -> Result<(), String> {
+        let mut body = format!("SCENARIO={scenario}\nREPORT=SUCCESSFUL\n");
+        for fact in facts {
+            body.push_str(fact);
+            body.push('\n');
+        }
+        body.push_str(&format!("END REPORT {scenario}\n"));
+        fs::write(artifact, body).map_err(|error| error.to_string())
+    }
+
+    fn partial(artifact: &Path, scenario: &str, fact: &str) -> Result<(), String> {
+        fs::write(
+            artifact,
+            format!("SCENARIO={scenario}\nREPORT=PARTIAL\n{fact}\n"),
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    fn event_history(handle: &EngineDiagnosticsHandle) -> Result<EventHistory, String> {
+        handle
+            .try_read_degraded()
+            .events
+            .value
+            .ok_or_else(|| "event history unavailable".to_string())
+    }
+
+    fn f01(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        writer.runtime_transition(RuntimeLifecycle::Running, None);
+        let renderer = writer.begin_renderer(RendererRole::Primary);
+        renderer.ready();
+        let artifact = artifact.to_path_buf();
+        std::panic::set_hook(Box::new(move |info| {
+            let observation = handle.try_read_degraded();
+            let payload = info
+                .payload()
+                .downcast_ref::<&str>()
+                .copied()
+                .unwrap_or("non-str-payload");
+            let running = observation
+                .runtime
+                .value
+                .as_ref()
+                .and_then(|state| state.lifecycle.value)
+                == Some(RuntimeLifecycle::Running);
+            let primary = observation.renderers.value.as_ref().is_some_and(|records| {
+                records.records.iter().flatten().any(|record| {
+                    record.source.role == RendererRole::Primary
+                        && record.source.incarnation.get() > 0
+                })
+            });
+            let _ = complete(
+                &artifact,
+                "F01",
+                &[
+                    format!("PAYLOAD={payload}"),
+                    format!("RUNNING={running}"),
+                    format!("PRIMARY_INCARNATION={primary}"),
+                    format!("DEGRADED={}", observation.degraded),
+                ],
+            );
+        }));
+        panic!("F01 injected main panic");
+    }
+
+    fn f02(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        writer.runtime_transition(RuntimeLifecycle::Running, None);
+        let previous = std::panic::take_hook();
+        let hook_handle = handle.clone();
+        let hook_artifact = artifact.to_path_buf();
+        std::panic::set_hook(Box::new(move |info| {
+            let observation = hook_handle.try_read_degraded();
+            let _ = partial(
+                &hook_artifact,
+                "F02",
+                &format!(
+                    "HOOK_THREAD={:?};DEGRADED={}",
+                    thread::current().name(),
+                    observation.degraded
+                ),
+            );
+            let _ = info;
+        }));
+        let join = thread::Builder::new()
+            .name("f02-worker".to_string())
+            .spawn(|| panic!("F02 injected worker panic"))
+            .map_err(|error| error.to_string())?
+            .join();
+        std::panic::set_hook(previous);
+        if join.is_ok() {
+            return Err("worker did not panic".to_string());
+        }
+        let observation = handle.try_read();
+        complete(
+            artifact,
+            "F02",
+            &[
+                "WORKER_PANIC=OBSERVED".to_string(),
+                "MAIN_CONTINUED=true".to_string(),
+                format!("RUNTIME_AVAILABLE={:?}", observation.runtime.availability),
+                "FRAME_ASSOCIATION=NONE".to_string(),
+            ],
+        )
+    }
+
+    fn f03(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        let _renderer = writer.begin_renderer(RendererRole::Primary);
+        let guard = writer
+            .store
+            .renderers
+            .try_lock()
+            .map_err(|e| e.to_string())?;
+        let started = Instant::now();
+        let observation = handle.try_read_degraded();
+        let micros = started.elapsed().as_micros();
+        drop(guard);
+        if observation.renderers.availability != Availability::Unavailable
+            || observation.runtime.availability != Availability::Known
+            || !observation.degraded
+            || micros >= 100_000
+        {
+            return Err(format!("L2 contention oracle failed in {micros} us"));
+        }
+        complete(
+            artifact,
+            "F03",
+            &[
+                format!("READ_MICROS={micros}"),
+                "RENDERERS=UNAVAILABLE".to_string(),
+                "RUNTIME=KNOWN".to_string(),
+                "WAIT=false".to_string(),
+            ],
+        )
+    }
+
+    fn f04(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        writer.runtime_transition(RuntimeLifecycle::Running, None);
+        let before = event_history(&handle)?.retained;
+        let formatter: Result<(), &'static str> = Err("injected formatter failure");
+        let after = event_history(&handle)?.retained;
+        if formatter.is_ok() || before != after {
+            return Err("formatter fed back into capture".to_string());
+        }
+        complete(
+            artifact,
+            "F04",
+            &[
+                "FORMATTER_ERROR=OBSERVED".to_string(),
+                format!("EVENTS_BEFORE={before}"),
+                format!("EVENTS_AFTER={after}"),
+                "CAPTURE_MUTATED=false".to_string(),
+            ],
+        )
+    }
+
+    fn f05(artifact: &Path) -> Result<(), String> {
+        let guarded = Arc::new(AtomicBool::new(false));
+        let hook_guard = Arc::clone(&guarded);
+        let artifact = artifact.to_path_buf();
+        std::panic::set_hook(Box::new(move |_| {
+            if hook_guard.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let _ = partial(&artifact, "F05", "HOOK_ATTEMPTS=1");
+            panic!("F05 injected formatter re-panic");
+        }));
+        panic!("F05 initial panic");
+    }
+
+    fn f06(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        writer.runtime_transition(RuntimeLifecycle::Running, None);
+        let artifact = artifact.to_path_buf();
+        std::panic::set_hook(Box::new(move |_| {
+            let observation = handle.try_read_degraded();
+            let strategy = observation.build.panic_strategy.value;
+            let _ = complete(
+                &artifact,
+                "F06",
+                &[
+                    format!("PANIC_STRATEGY={strategy:?}"),
+                    "HOOK_ATTEMPT=1".to_string(),
+                    "UNWIND_CLAIM=false".to_string(),
+                ],
+            );
+        }));
+        panic!("F06 injected panic");
+    }
+
+    fn f07(artifact: &Path) -> Result<(), String> {
+        partial(artifact, "F07", "BREADCRUMB=BEFORE_ABORT")?;
+        std::process::abort();
+    }
+
+    fn parked_partial(scenario: &str, artifact: &Path) -> Result<(), String> {
+        partial(artifact, scenario, "HEARTBEAT=1")?;
+        loop {
+            thread::park();
+        }
+    }
+
+    fn f10(artifact: &Path) -> Result<(), String> {
+        partial(artifact, "F10", "HEARTBEAT=1;DEADLOCK=ENTERING")?;
+        let lock = Mutex::new(());
+        let _first = lock.lock().map_err(|error| error.to_string())?;
+        let _second = lock.lock().map_err(|error| error.to_string())?;
+        Err("deadlock unexpectedly resolved".to_string())
+    }
+
+    fn f11(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        writer.runtime_transition(RuntimeLifecycle::Running, None);
+        controlled_allocator::fail(true);
+        let observation = handle.try_read_degraded();
+        controlled_allocator::fail(false);
+        if observation.runtime.availability != Availability::Known {
+            return Err("fixed materialization did not survive failpoint".to_string());
+        }
+        complete(
+            artifact,
+            "F11",
+            &[
+                "ALLOCATOR_FAILPOINT=ARMED_DURING_READ".to_string(),
+                "MATERIALIZATION=SUCCESS".to_string(),
+                "REAL_HOST_OOM=UNVERIFIED".to_string(),
+            ],
+        )
+    }
+
+    fn f12(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        let renderer = writer.begin_renderer(RendererRole::Primary);
+        let source = renderer.source.expect("source");
+        renderer.surface_failure(SurfaceFailure::Validation);
+        let observation = handle.try_read();
+        let records = observation.renderers.value.ok_or("renderers unavailable")?;
+        let record = records
+            .records
+            .iter()
+            .flatten()
+            .find(|record| record.source == source)
+            .ok_or("record missing")?;
+        if record.last_surface_failure.value != Some(SurfaceFailure::Validation)
+            || record.last_wgpu_error.value != Some(WgpuErrorCategory::SurfaceValidation)
+        {
+            return Err("validation category mismatch".to_string());
+        }
+        complete(
+            artifact,
+            "F12",
+            &[
+                format!("INCARNATION={}", source.incarnation.get()),
+                "CATEGORY=VALIDATION".to_string(),
+                "SYNTHETIC_PATH=VERIFIED".to_string(),
+                "REAL_BACKEND_CALLBACK=UNVERIFIED".to_string(),
+                "UNCAPTURED_HANDLER_INSTALLED=false".to_string(),
+            ],
+        )
+    }
+
+    fn f13(artifact: &Path) -> Result<(), String> {
+        complete(
+            artifact,
+            "F13",
+            &[
+                "RESULT=UNVERIFIED".to_string(),
+                "REASON=NO_CONTRACT_COMPATIBLE_OOM_PRODUCER".to_string(),
+                "REAL_GPU_OOM=NOT_ATTEMPTED".to_string(),
+                "UNCAPTURED_HANDLER_INSTALLED=false".to_string(),
+            ],
+        )
+    }
+
+    fn f14(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        let renderer = writer.begin_renderer(RendererRole::Tool);
+        let source = renderer.source.expect("source");
+        let message = "x".repeat(OPAQUE_TEXT_CAPACITY * 4);
+        RendererDiagnostics::device_lost(&writer, source, DeviceLostReason::Destroyed, &message);
+        let observation = handle.try_read();
+        let records = observation.renderers.value.ok_or("renderers unavailable")?;
+        let lost = records
+            .records
+            .iter()
+            .flatten()
+            .find(|record| record.source == source)
+            .and_then(|record| record.device_lost.value.as_ref())
+            .ok_or("device-lost missing")?;
+        let bounded = lost
+            .message
+            .value
+            .as_ref()
+            .is_some_and(|text| text.stored_len() == OPAQUE_TEXT_CAPACITY && text.truncated);
+        if !bounded {
+            return Err("device-lost message was not physically bounded".to_string());
+        }
+        complete(
+            artifact,
+            "F14",
+            &[
+                format!("OLD_INCARNATION={}", source.incarnation.get()),
+                "MESSAGE_BYTES=192".to_string(),
+                "TRUNCATED=true".to_string(),
+                "SYNTHETIC_PATH=VERIFIED".to_string(),
+                "REAL_BACKEND_CALLBACK=UNVERIFIED".to_string(),
+            ],
+        )
+    }
+
+    fn f15(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        let renderer = writer.begin_renderer(RendererRole::Primary);
+        let source = renderer.source.expect("source");
+        renderer.surface_failure(SurfaceFailure::Lost);
+        renderer.surface_failure(SurfaceFailure::Outdated);
+        let observation = handle.try_read();
+        let records = observation.renderers.value.ok_or("renderers unavailable")?;
+        let record = records
+            .records
+            .iter()
+            .flatten()
+            .find(|record| record.source == source)
+            .ok_or("renderer missing")?;
+        let events = observation.events.value.ok_or("events unavailable")?;
+        let failures: Vec<_> = events
+            .records
+            .iter()
+            .flatten()
+            .filter_map(|event| match event.kind {
+                DiagnosticEventKind::SurfaceFailure {
+                    source: event_source,
+                    failure,
+                } if event_source == source => Some(failure),
+                _ => None,
+            })
+            .collect();
+        if failures != [SurfaceFailure::Lost, SurfaceFailure::Outdated]
+            || record.last_surface_failure.value != Some(SurfaceFailure::Outdated)
+        {
+            return Err(format!("surface failures collapsed: {failures:?}"));
+        }
+        complete(
+            artifact,
+            "F15",
+            &[
+                "EVENTS=LOST,OUTDATED".to_string(),
+                "LAST=OUTDATED".to_string(),
+                format!("INCARNATION={}", source.incarnation.get()),
+            ],
+        )
+    }
+
+    fn f16(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        writer.audio_selected(AudioBackend::Native, AudioInitializationOutcome::Succeeded);
+        writer.audio_error(AudioErrorCategory::Stream, None);
+        let audio = handle.try_read().audio.value.ok_or("audio unavailable")?;
+        let error = audio
+            .last_generic_backend_error
+            .value
+            .ok_or("audio error missing")?;
+        if audio.backend.value != Some(AudioBackend::Native)
+            || error.category != AudioErrorCategory::Stream
+        {
+            return Err("audio category/backend mismatch".to_string());
+        }
+        complete(
+            artifact,
+            "F16",
+            &[
+                "BACKEND=NATIVE".to_string(),
+                "CATEGORY=STREAM".to_string(),
+                "FRAME_ASSOCIATION=NONE".to_string(),
+                "SYNTHETIC_PATH=VERIFIED".to_string(),
+                "REAL_CPAL_CALLBACK=UNVERIFIED".to_string(),
+            ],
+        )
+    }
+
+    fn f17(artifact: &Path) -> Result<(), String> {
+        const ITERATIONS: u64 = 1_000_000;
+        let (handle, writer) = enabled();
+        controlled_allocator::track(true);
+        for _ in 0..ITERATIONS {
+            writer.runtime_transition(RuntimeLifecycle::Running, None);
+        }
+        let observation = handle.try_read();
+        controlled_allocator::track(false);
+        let allocations = controlled_allocator::count();
+        let events = observation.events.value.ok_or("events unavailable")?;
+        let expected_overwrites = ITERATIONS - EVENT_CAPACITY as u64;
+        let mut saturated = SaturatingCounter {
+            value: u64::MAX,
+            saturated: false,
+        };
+        saturated.increment();
+        if allocations != 0
+            || events.retained != EVENT_CAPACITY
+            || events.overwritten.value != expected_overwrites
+            || events.overwritten.saturated
+            || saturated.value != u64::MAX
+            || !saturated.saturated
+        {
+            return Err(format!(
+                "saturation mismatch allocations={allocations} retained={} overwritten={:?}",
+                events.retained, events.overwritten
+            ));
+        }
+        complete(
+            artifact,
+            "F17",
+            &[
+                format!("ITERATIONS={ITERATIONS}"),
+                format!("RETAINED={}", events.retained),
+                format!("OVERWRITTEN={}", events.overwritten.value),
+                format!("ALLOCATIONS={allocations}"),
+                format!("STORE_BYTES={}", std::mem::size_of::<Store>()),
+                format!(
+                    "OBSERVATION_BYTES={}",
+                    std::mem::size_of::<DiagnosticObservation>()
+                ),
+                "COUNTER_AT_MAX=18446744073709551615".to_string(),
+                "COUNTER_SATURATED=true".to_string(),
+                "COUNTER_WRAPPED=false".to_string(),
+            ],
+        )
+    }
+
+    fn f18(artifact: &Path) -> Result<(), String> {
+        const THREADS: usize = 4;
+        const ROUNDS: usize = 100;
+        const PER_ROUND: usize = 250;
+        let (handle, writer) = enabled();
+        let mut joins = Vec::with_capacity(THREADS);
+        for thread_index in 0..THREADS {
+            let writer = writer.clone();
+            joins.push(thread::spawn(move || {
+                for round in 0..ROUNDS {
+                    for index in 0..PER_ROUND {
+                        if (thread_index + round + index) % 2 == 0 {
+                            writer.runtime_transition(RuntimeLifecycle::Running, None);
+                        } else {
+                            writer.audio_error(AudioErrorCategory::Other, None);
+                        }
+                    }
+                }
+            }));
+        }
+        for join in joins {
+            join.join().map_err(|_| "producer panicked".to_string())?;
+        }
+        let events = event_history(&handle)?;
+        let attempted = (THREADS * ROUNDS * PER_ROUND) as u64;
+        let accounted = events.retained as u64 + events.overwritten.value + events.dropped.value;
+        if events.retained != EVENT_CAPACITY || accounted != attempted {
+            return Err(format!(
+                "concurrent accounting mismatch attempted={attempted} accounted={accounted}"
+            ));
+        }
+        if events
+            .records
+            .iter()
+            .take(events.retained)
+            .any(Option::is_none)
+        {
+            return Err("torn/empty retained record".to_string());
+        }
+        complete(
+            artifact,
+            "F18",
+            &[
+                format!("THREADS={THREADS}"),
+                format!("ROUNDS={ROUNDS}"),
+                format!("PER_ROUND={PER_ROUND}"),
+                format!("ATTEMPTED={attempted}"),
+                format!("RETAINED={}", events.retained),
+                format!("OVERWRITTEN={}", events.overwritten.value),
+                format!("DROPPED={}", events.dropped.value),
+                "TORN_RECORDS=0".to_string(),
+                "CAUSALITY_CLAIM=false".to_string(),
+            ],
+        )
+    }
+
+    fn f19(artifact: &Path) -> Result<(), String> {
+        let categories = [
+            WgpuErrorCategory::CreateSurface,
+            WgpuErrorCategory::RequestAdapter,
+            WgpuErrorCategory::RequestDevice,
+        ];
+        for category in categories {
+            let (handle, writer) = enabled();
+            writer.runtime_transition(RuntimeLifecycle::Initializing, None);
+            let mut renderer = writer.begin_renderer(RendererRole::Primary);
+            renderer.initialization_failed(category);
+            writer.runtime_transition(RuntimeLifecycle::Ended, Some(RuntimeOutcome::StartupFailed));
+            let observation = handle.try_read();
+            let records = observation.renderers.value.ok_or("renderers unavailable")?;
+            let record = records
+                .records
+                .iter()
+                .flatten()
+                .next()
+                .ok_or("record missing")?;
+            if record.lifecycle.value != Some(RendererLifecycle::InitializationFailed)
+                || record.last_wgpu_error.value != Some(category)
+                || record.surface_configuration.availability != Availability::Unknown
+            {
+                return Err(format!("startup stage mismatch for {category:?}"));
+            }
+        }
+        complete(
+            artifact,
+            "F19",
+            &[
+                "SYNTHETIC_STAGES=CREATE_SURFACE,REQUEST_ADAPTER,REQUEST_DEVICE".to_string(),
+                "FUTURE_SURFACE_FACTS=UNKNOWN".to_string(),
+                "REAL_OS_WGPU_STARTUP=UNVERIFIED".to_string(),
+            ],
+        )
+    }
+
+    fn f20(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        let first = writer.begin_renderer(RendererRole::Tool);
+        let first_source = first.source.expect("first source");
+        let callback: (DiagnosticsWriter, RendererSource) =
+            first.callback_writer().expect("callback writer");
+        drop(first);
+        let second = writer.begin_renderer(RendererRole::Tool);
+        let second_source = second.source.expect("second source");
+        RendererDiagnostics::device_lost(
+            &callback.0,
+            callback.1,
+            DeviceLostReason::Destroyed,
+            "late",
+        );
+        let records = handle
+            .try_read()
+            .renderers
+            .value
+            .ok_or("renderers unavailable")?;
+        let old = records
+            .records
+            .iter()
+            .flatten()
+            .find(|record| record.source == first_source)
+            .ok_or("old record missing")?;
+        let current = records
+            .records
+            .iter()
+            .flatten()
+            .find(|record| record.source == second_source)
+            .ok_or("new record missing")?;
+        if first_source == second_source
+            || old.device_lost.availability != Availability::Known
+            || current.device_lost.availability != Availability::Unknown
+        {
+            return Err("late callback was reused or misattributed".to_string());
+        }
+        complete(
+            artifact,
+            "F20",
+            &[
+                format!("OLD_INCARNATION={}", first_source.incarnation.get()),
+                format!("NEW_INCARNATION={}", second_source.incarnation.get()),
+                "LATE_EVENT_TARGET=OLD".to_string(),
+                "CURRENT_DEVICE_LOST=UNKNOWN".to_string(),
+                "REAL_TEARDOWN_CALLBACK=UNVERIFIED".to_string(),
+            ],
+        )
+    }
+
+    fn f21(artifact: &Path) -> Result<(), String> {
+        let (handle, writer) = enabled();
+        writer.runtime_transition(RuntimeLifecycle::Running, None);
+        let before = event_history(&handle)?.retained;
+        let denied_target: PathBuf = artifact
+            .parent()
+            .ok_or("artifact has no parent")?
+            .join("writer-target-is-directory");
+        fs::create_dir_all(&denied_target).map_err(|error| error.to_string())?;
+        let write_result = fs::write(&denied_target, b"must fail");
+        let after = event_history(&handle)?.retained;
+        if write_result.is_ok() || before != after {
+            return Err("writer failure fed back into capture".to_string());
+        }
+        complete(
+            artifact,
+            "F21",
+            &[
+                format!("WRITER_ERROR={}", write_result.unwrap_err()),
+                format!("EVENTS_BEFORE={before}"),
+                format!("EVENTS_AFTER={after}"),
+                "RETRIES=0".to_string(),
+                "REAL_DISK_FULL=UNVERIFIED".to_string(),
+            ],
+        )
+    }
+
+    fn f22(artifact: &Path) -> Result<(), String> {
+        let observation = EngineDiagnostics::disabled().try_read_degraded();
+        if observation.collection_mode != CollectionMode::RuntimeDisabled
+            || observation.runtime.availability != Availability::NotApplicable
+            || observation.renderers.availability != Availability::NotApplicable
+            || observation.audio.availability != Availability::NotApplicable
+            || observation.events.availability != Availability::NotApplicable
+            || observation.degraded
+        {
+            return Err("runtime-disabled semantics mismatch".to_string());
+        }
+        complete(
+            artifact,
+            "F22",
+            &[
+                "RUNTIME_MODE=COLLECTION_DISABLED".to_string(),
+                "RUNTIME_SECTIONS=NOT_APPLICABLE".to_string(),
+                format!(
+                    "DISABLED_HANDLE_BYTES={}",
+                    std::mem::size_of::<EngineDiagnosticsHandle>()
+                ),
+                "COMPILE_ABSENT=REQUIRES_EXTERNAL_BUILD_CHECK".to_string(),
+                "FULL_ENGINE_AB=UNVERIFIED".to_string(),
+            ],
+        )
+    }
+
+    #[cfg(test)]
+    mod controlled_allocator {
+        pub(super) fn fail(_: bool) {}
+        pub(super) fn track(_: bool) {}
+        pub(super) fn count() -> u64 {
+            0
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

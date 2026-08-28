@@ -9,6 +9,7 @@ repository = "https://github.com/gotoo77/gotoo-pixel-engine"
 [features]
 default = []
 diagnostics = []
+diagnostics-fault-injection = ["diagnostics"]
 
 [dependencies]
 hound = "3.5.1"
@@ -83,3 +84,8 @@ crate-type = ["cdylib"]
 [[bench]]
 name = "primitives"
 harness = false
+
+[[bin]]
+name = "diagnostics_fault_probe"
+path = "src/bin/diagnostics_fault_probe.rs"
+required-features = ["diagnostics-fault-injection"]

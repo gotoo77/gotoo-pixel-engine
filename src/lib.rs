@@ -34,6 +34,9 @@ pub use capture_mirror::ObsMirrorGame;
 #[cfg(target_arch = "wasm32")]
 pub use capture_mirror_stub::ObsMirrorGame;
 pub use control::{ActionId, ControlBinding, ControlMap};
+#[cfg(all(feature = "diagnostics-fault-injection", not(target_arch = "wasm32")))]
+#[doc(hidden)]
+pub use diagnostics::fault_injection as diagnostics_fault_probe;
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{
     AdapterBackend, AdapterDeviceType, AdapterFacts, AudioBackend, AudioBackendError,
