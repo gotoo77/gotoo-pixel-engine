@@ -1,9 +1,11 @@
 use crate::{
     framebuffer::Framebuffer,
     image::{Image, ImageRegion},
-    pixel::Pixel,
     viewport::Rect,
 };
+
+#[cfg(test)]
+use crate::pixel::Pixel;
 
 /// Controls how a source image is fitted into a destination rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
