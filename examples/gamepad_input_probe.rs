@@ -215,6 +215,8 @@ impl NormalizedRect {
     }
 }
 
+const CONTROLLER_ART_RECT: NormalizedRect = NormalizedRect::new(0.07, 0.09, 0.86, 0.80);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct GamepadVisualLayout {
     bounds: Rect,
@@ -233,21 +235,22 @@ struct GamepadVisualLayout {
 
 impl GamepadVisualLayout {
     fn within(panel: Rect, image_width: u32, image_height: u32) -> Self {
-        let bounds = contained_rect(controller_destination(panel), image_width, image_height);
+        let image_bounds = contained_rect(controller_destination(panel), image_width, image_height);
+        let bounds = normalized_subrect(image_bounds, CONTROLLER_ART_RECT);
 
         Self {
             bounds,
-            left_trigger: NormalizedRect::new(0.12, 0.01, 0.18, 0.13),
-            right_trigger: NormalizedRect::new(0.70, 0.01, 0.18, 0.13),
-            left_shoulder: NormalizedRect::new(0.08, 0.11, 0.27, 0.10),
-            right_shoulder: NormalizedRect::new(0.65, 0.11, 0.27, 0.10),
-            left_stick: NormalizedPoint::new(0.27, 0.43),
-            right_stick: NormalizedPoint::new(0.63, 0.70),
-            dpad: NormalizedPoint::new(0.34, 0.70),
-            face: NormalizedPoint::new(0.77, 0.43),
-            select: NormalizedPoint::new(0.42, 0.43),
-            guide: NormalizedPoint::new(0.50, 0.38),
-            start: NormalizedPoint::new(0.58, 0.43),
+            left_trigger: NormalizedRect::new(0.16, 0.00, 0.15, 0.08),
+            right_trigger: NormalizedRect::new(0.69, 0.00, 0.15, 0.08),
+            left_shoulder: NormalizedRect::new(0.14, 0.08, 0.20, 0.09),
+            right_shoulder: NormalizedRect::new(0.66, 0.08, 0.20, 0.09),
+            left_stick: NormalizedPoint::new(0.231, 0.279),
+            right_stick: NormalizedPoint::new(0.641, 0.508),
+            dpad: NormalizedPoint::new(0.361, 0.523),
+            face: NormalizedPoint::new(0.769, 0.281),
+            select: NormalizedPoint::new(0.420, 0.290),
+            guide: NormalizedPoint::new(0.500, 0.212),
+            start: NormalizedPoint::new(0.578, 0.290),
         }
     }
 
@@ -323,6 +326,29 @@ fn contained_rect(destination: Rect, source_width: u32, source_height: u32) -> R
     }
 }
 
+fn normalized_subrect(bounds: Rect, sub: NormalizedRect) -> Rect {
+    if bounds.width == 0 || bounds.height == 0 {
+        return Rect {
+            x: bounds.x,
+            y: bounds.y,
+            width: 0,
+            height: 0,
+        };
+    }
+
+    let offset_x = (bounds.width as f32 * sub.x.clamp(0.0, 1.0)).round() as u32;
+    let offset_y = (bounds.height as f32 * sub.y.clamp(0.0, 1.0)).round() as u32;
+    let width = (bounds.width as f32 * sub.width.max(0.0)).round() as u32;
+    let height = (bounds.height as f32 * sub.height.max(0.0)).round() as u32;
+
+    Rect {
+        x: bounds.x + offset_x as i32,
+        y: bounds.y + offset_y as i32,
+        width: width.min(bounds.width.saturating_sub(offset_x)),
+        height: height.min(bounds.height.saturating_sub(offset_y)),
+    }
+}
+
 fn draw_panel(
     fb: &mut Framebuffer,
     input: &Input,
@@ -353,7 +379,8 @@ fn draw_panel(
         },
     );
 
-    let layout = GamepadVisualLayout::within(rect, controller_image.width(), controller_image.height());
+    let layout =
+        GamepadVisualLayout::within(rect, controller_image.width(), controller_image.height());
     fb.draw_image_fit(
         controller_image,
         controller_destination(rect),
@@ -443,7 +470,13 @@ fn draw_trigger_overlay(
             );
         }
     } else if held && rect.width > 2 {
-        fb.fill_rect(rect.x + 1, rect.y + rect.height as i32 - 2, rect.width - 2, 1, color);
+        fb.fill_rect(
+            rect.x + 1,
+            rect.y + rect.height as i32 - 2,
+            rect.width - 2,
+            1,
+            color,
+        );
     }
     fb.draw_text_with_font(Font::Mini3x5, rect.x + 2, rect.y + 2, label, color);
 }
@@ -533,7 +566,7 @@ fn draw_stick(
 
 fn draw_dpad(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: GamepadVisualLayout) {
     let (x, y) = layout.point(layout.dpad);
-    let offset = layout.unit(0.055).max(5) as i32;
+    let offset = layout.unit(0.070).max(5) as i32;
     let marker = layout.unit(0.018).max(2);
     for (center, button) in [
         ((x, y - offset), GamepadButton::DPadUp),
@@ -552,8 +585,8 @@ fn draw_face_buttons(
     layout: GamepadVisualLayout,
 ) {
     let (x, y) = layout.point(layout.face);
-    let offset = layout.unit(0.055).max(6) as i32;
-    let radius = layout.unit(0.024).max(3);
+    let offset = layout.unit(0.095).max(6) as i32;
+    let radius = layout.unit(0.020).max(3);
     for (center, button, label) in [
         ((x, y - offset), GamepadButton::North, "N"),
         ((x, y + offset), GamepadButton::South, "S"),
@@ -612,7 +645,12 @@ fn draw_control_marker(
     let color = button_color(input, id, button);
     fb.draw_circle(center.0, center.1, radius, color);
     if held {
-        fb.fill_circle(center.0, center.1, radius.saturating_sub(1).max(1), color);
+        fb.fill_circle(
+            center.0,
+            center.1,
+            radius.saturating_sub(1).max(1),
+            color,
+        );
     }
 }
 
@@ -708,7 +746,10 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CONTROLLER_PNG, GamepadVisualLayout, contained_rect, panel_assignments};
+    use super::{
+        CONTROLLER_ART_RECT, CONTROLLER_PNG, GamepadVisualLayout, contained_rect,
+        normalized_subrect, panel_assignments,
+    };
     use gotoo_pixel_engine::{GamepadId, Image, Rect};
 
     const BOUNDS: Rect = Rect {
@@ -769,6 +810,25 @@ mod tests {
     }
 
     #[test]
+    fn controller_art_rect_stays_inside_contained_image() {
+        let image_bounds = Rect {
+            x: 20,
+            y: 30,
+            width: 500,
+            height: 375,
+        };
+        let art_bounds = normalized_subrect(image_bounds, CONTROLLER_ART_RECT);
+
+        assert!(image_bounds.contains((art_bounds.x, art_bounds.y)));
+        assert!(image_bounds.contains((
+            art_bounds.x + art_bounds.width as i32 - 1,
+            art_bounds.y + art_bounds.height as i32 - 1,
+        )));
+        assert!(art_bounds.width < image_bounds.width);
+        assert!(art_bounds.height < image_bounds.height);
+    }
+
+    #[test]
     fn normalized_controller_layout_is_deterministic_and_inside_every_panel_shape() {
         for count in 1..=4 {
             let ids = (0..count).map(GamepadId::new).collect::<Vec<_>>();
@@ -789,6 +849,19 @@ mod tests {
                     layout.start,
                 ] {
                     assert!(layout.bounds.contains(layout.point(point)));
+                }
+                for rect in [
+                    layout.left_trigger,
+                    layout.right_trigger,
+                    layout.left_shoulder,
+                    layout.right_shoulder,
+                ] {
+                    let rect = layout.rect(rect);
+                    assert!(layout.bounds.contains((rect.x, rect.y)));
+                    assert!(layout.bounds.contains((
+                        rect.x + rect.width as i32 - 1,
+                        rect.y + rect.height as i32 - 1,
+                    )));
                 }
             }
         }
