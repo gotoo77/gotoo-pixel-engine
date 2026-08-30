@@ -1,16 +1,15 @@
 use gotoo_pixel_engine::{
     EngineConfig, Font, Frame, Framebuffer, Game, GameResult, GamepadAxis, GamepadButton,
     GamepadCapability, GamepadConnectionEvent, GamepadId, GamepadMappingSource, GamepadProfile,
-    Input, Key, Pixel, Rect, run, split_view_layout,
+    Image, ImageFilter, ImageFit, Input, Key, Pixel, Rect, run, split_view_layout,
 };
+
+const CONTROLLER_PNG: &[u8] = include_bytes!("../assets/debug/gamepad/generic_controller.png");
 
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 360;
 const BG: Pixel = Pixel::rgb(7, 11, 17);
 const PANEL: Pixel = Pixel::rgb(13, 22, 31);
-const BODY: Pixel = Pixel::rgb(39, 50, 59);
-const BODY_EDGE: Pixel = Pixel::rgb(91, 116, 124);
-const SOCKET: Pixel = Pixel::rgb(9, 15, 21);
 const FG: Pixel = Pixel::rgb(126, 174, 170);
 const BRIGHT: Pixel = Pixel::rgb(218, 235, 225);
 const ACTIVE: Pixel = Pixel::rgb(88, 255, 145);
@@ -19,14 +18,15 @@ const UNAVAILABLE: Pixel = Pixel::rgb(48, 62, 69);
 
 struct Probe {
     profile: GamepadProfile,
-    body_cache: Vec<BodyGeometry>,
+    controller_image: Image,
 }
 
 impl Default for Probe {
     fn default() -> Self {
         Self {
             profile: GamepadProfile::standard(),
-            body_cache: Vec::new(),
+            controller_image: Image::decode_png(CONTROLLER_PNG)
+                .expect("embedded generic controller PNG must decode"),
         }
     }
 }
@@ -73,7 +73,7 @@ impl Game for Probe {
             frame.input,
             self.profile,
             &ids,
-            &mut self.body_cache,
+            &self.controller_image,
         );
         GameResult::Continue
     }
@@ -149,7 +149,7 @@ fn render(
     input: &Input,
     profile: GamepadProfile,
     ids: &[GamepadId],
-    body_cache: &mut Vec<BodyGeometry>,
+    controller_image: &Image,
 ) {
     fb.clear(BG);
     fb.draw_text(6, 5, "GPE GAMEPAD VISUAL PROBE", BRIGHT);
@@ -169,7 +169,7 @@ fn render(
             height: HEIGHT - 35,
         };
         for (id, rect) in panel_assignments(ids, bounds) {
-            draw_panel(fb, input, id, inset(rect, 2), body_cache);
+            draw_panel(fb, input, id, inset(rect, 2), controller_image);
         }
         if ids.len() > 4 {
             fb.draw_text(600, 5, &format!("+{}", ids.len() - 4), UNKNOWN);
@@ -231,37 +231,12 @@ struct GamepadVisualLayout {
     start: NormalizedPoint,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct BodyScanline {
-    y: u32,
-    start_x: u32,
-    width: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct BodyGeometry {
-    size: (u32, u32),
-    scanlines: Vec<BodyScanline>,
-}
-
 impl GamepadVisualLayout {
-    fn within(panel: Rect) -> Self {
-        let available_width = panel.width.saturating_sub(12);
-        let available_height = panel.height.saturating_sub(25);
-        let mut width = (available_width as f32 * 0.94).round() as u32;
-        let mut height = (available_height as f32 * 0.94).round() as u32;
-        height = height.min((width as f32 / 1.35).round() as u32);
-        width = width.min((height as f32 * 1.90).round() as u32);
-        let x = panel.x + (panel.width.saturating_sub(width) / 2) as i32;
-        let y = panel.y + 20 + (available_height.saturating_sub(height) / 2) as i32;
+    fn within(panel: Rect, image_width: u32, image_height: u32) -> Self {
+        let bounds = contained_rect(controller_destination(panel), image_width, image_height);
 
         Self {
-            bounds: Rect {
-                x,
-                y,
-                width,
-                height,
-            },
+            bounds,
             left_trigger: NormalizedRect::new(0.12, 0.01, 0.18, 0.13),
             right_trigger: NormalizedRect::new(0.70, 0.01, 0.18, 0.13),
             left_shoulder: NormalizedRect::new(0.08, 0.11, 0.27, 0.10),
@@ -299,12 +274,61 @@ impl GamepadVisualLayout {
     }
 }
 
+fn controller_destination(panel: Rect) -> Rect {
+    Rect {
+        x: panel.x + 6,
+        y: panel.y + 20,
+        width: panel.width.saturating_sub(12),
+        height: panel.height.saturating_sub(26),
+    }
+}
+
+fn contained_rect(destination: Rect, source_width: u32, source_height: u32) -> Rect {
+    if destination.width == 0
+        || destination.height == 0
+        || source_width == 0
+        || source_height == 0
+    {
+        return Rect {
+            x: destination.x,
+            y: destination.y,
+            width: 0,
+            height: 0,
+        };
+    }
+
+    let width_limited = u128::from(destination.width) * u128::from(source_height)
+        <= u128::from(destination.height) * u128::from(source_width);
+    let (width, height) = if width_limited {
+        let height = (u128::from(destination.width) * u128::from(source_height)
+            / u128::from(source_width)) as u32;
+        (
+            destination.width,
+            height.max(1).min(destination.height),
+        )
+    } else {
+        let width = (u128::from(destination.height) * u128::from(source_width)
+            / u128::from(source_height)) as u32;
+        (
+            width.max(1).min(destination.width),
+            destination.height,
+        )
+    };
+
+    Rect {
+        x: destination.x + (destination.width - width) as i32 / 2,
+        y: destination.y + (destination.height - height) as i32 / 2,
+        width,
+        height,
+    }
+}
+
 fn draw_panel(
     fb: &mut Framebuffer,
     input: &Input,
     id: GamepadId,
     rect: Rect,
-    body_cache: &mut Vec<BodyGeometry>,
+    controller_image: &Image,
 ) {
     fb.fill_rect(rect.x, rect.y, rect.width, rect.height, PANEL);
     fb.draw_rect(rect.x, rect.y, rect.width, rect.height, FG);
@@ -329,9 +353,15 @@ fn draw_panel(
         },
     );
 
-    let layout = GamepadVisualLayout::within(rect);
+    let layout = GamepadVisualLayout::within(rect, controller_image.width(), controller_image.height());
+    fb.draw_image_fit(
+        controller_image,
+        controller_destination(rect),
+        ImageFit::Contain,
+        ImageFilter::Linear,
+    );
+
     draw_triggers(fb, input, id, layout);
-    draw_controller_body(fb, layout, body_cache);
     draw_shoulders(fb, input, id, layout);
     draw_stick(
         fb,
@@ -362,102 +392,8 @@ fn draw_panel(
     draw_center_buttons(fb, input, id, layout);
 }
 
-fn draw_controller_body(
-    fb: &mut Framebuffer,
-    layout: GamepadVisualLayout,
-    cache: &mut Vec<BodyGeometry>,
-) {
-    let bounds = layout.bounds;
-    let size = (bounds.width, bounds.height);
-    let geometry_index = cache.iter().position(|geometry| geometry.size == size);
-    let geometry_index = geometry_index.unwrap_or_else(|| {
-        cache.push(BodyGeometry {
-            size,
-            scanlines: controller_body_scanlines(bounds.width, bounds.height),
-        });
-        cache.len() - 1
-    });
-    for scanline in &cache[geometry_index].scanlines {
-        fb.fill_rect(
-            bounds.x + scanline.start_x as i32,
-            bounds.y + scanline.y as i32,
-            scanline.width,
-            1,
-            BODY,
-        );
-        fb.draw(
-            bounds.x + scanline.start_x as i32,
-            bounds.y + scanline.y as i32,
-            BODY_EDGE,
-        );
-        fb.draw(
-            bounds.x + scanline.start_x as i32 + scanline.width as i32 - 1,
-            bounds.y + scanline.y as i32,
-            BODY_EDGE,
-        );
-    }
-}
-
-fn controller_body_scanlines(width: u32, height: u32) -> Vec<BodyScanline> {
-    let mut scanlines = Vec::with_capacity(height as usize);
-    for offset_y in 0..height {
-        let mut run_start = None;
-        for offset_x in 0..=width {
-            let x = (offset_x as f32 + 0.5) / width.max(1) as f32;
-            let y = (offset_y as f32 + 0.5) / height.max(1) as f32;
-            let inside = offset_x < width && controller_body_contains(x, y);
-            match (run_start, inside) {
-                (None, true) => run_start = Some(offset_x),
-                (Some(start), false) => {
-                    scanlines.push(BodyScanline {
-                        y: offset_y,
-                        start_x: start,
-                        width: offset_x - start,
-                    });
-                    run_start = None;
-                }
-                _ => {}
-            }
-        }
-    }
-    scanlines
-}
-
-fn controller_body_contains(x: f32, y: f32) -> bool {
-    let main = ellipse_contains(x, y, 0.50, 0.49, 0.45, 0.34);
-    let bridge = (0.19..=0.81).contains(&x) && (0.22..=0.66).contains(&y);
-    let left_grip = rotated_grip_contains(x, y, 0.22, -0.276_355_65);
-    let right_grip = rotated_grip_contains(x, y, 0.78, 0.276_355_65);
-    let bottom_cutout = ellipse_contains(x, y, 0.50, 1.03, 0.25, 0.23);
-    (main || bridge || left_grip || right_grip) && !bottom_cutout && y >= 0.14
-}
-
-fn ellipse_contains(
-    x: f32,
-    y: f32,
-    center_x: f32,
-    center_y: f32,
-    radius_x: f32,
-    radius_y: f32,
-) -> bool {
-    let normalized_x = (x - center_x) / radius_x;
-    let normalized_y = (y - center_y) / radius_y;
-    normalized_x * normalized_x + normalized_y * normalized_y <= 1.0
-}
-
-fn rotated_grip_contains(x: f32, y: f32, center_x: f32, sine: f32) -> bool {
-    const COSINE: f32 = 0.961_055_46;
-    let dx = x - center_x;
-    let dy = y - 0.68;
-    let rotated_x = dx * COSINE + dy * sine;
-    let rotated_y = -dx * sine + dy * COSINE;
-    let normalized_x = rotated_x / 0.18;
-    let normalized_y = rotated_y / 0.32;
-    normalized_x * normalized_x + normalized_y * normalized_y <= 1.0
-}
-
 fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: GamepadVisualLayout) {
-    draw_trigger(
+    draw_trigger_overlay(
         fb,
         input,
         id,
@@ -466,7 +402,7 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
         GamepadAxis::LeftTrigger,
         GamepadButton::LeftTrigger,
     );
-    draw_trigger(
+    draw_trigger_overlay(
         fb,
         input,
         id,
@@ -477,7 +413,7 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
     );
 }
 
-fn draw_trigger(
+fn draw_trigger_overlay(
     fb: &mut Framebuffer,
     input: &Input,
     id: GamepadId,
@@ -488,49 +424,32 @@ fn draw_trigger(
 ) {
     let analog = input.gamepad_axis_capability(id, axis);
     let digital = input.gamepad_button_capability(id, button);
+    let value = input.gamepad_axis(id, axis).clamp(0.0, 1.0);
     let held = input.gamepad_button(id, button).held();
     let capability = merge_capabilities(analog, digital);
-    let color = capability_color(capability, held);
-    fb.fill_rect(rect.x, rect.y, rect.width, rect.height, SOCKET);
-    if analog == GamepadCapability::Available {
-        let fill =
-            (rect.width.saturating_sub(2) as f32 * input.gamepad_axis(id, axis)).round() as u32;
-        fb.fill_rect(
-            rect.x + 1,
-            rect.y + 1,
-            fill,
-            rect.height.saturating_sub(2),
-            color,
-        );
-    } else if held {
-        fb.fill_rect(
-            rect.x + 1,
-            rect.y + 1,
-            rect.width.saturating_sub(2),
-            rect.height.saturating_sub(2),
-            color,
-        );
-    }
+    let active = held || (analog == GamepadCapability::Available && value > 0.02);
+    let color = capability_color(capability, active);
+
     fb.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
-    let value = match analog {
-        GamepadCapability::Available => format!("{label} {:.2}", input.gamepad_axis(id, axis)),
-        GamepadCapability::Unavailable if digital == GamepadCapability::Available => {
-            format!("{label} DIG")
+    if analog == GamepadCapability::Available {
+        let progress = (rect.width.saturating_sub(2) as f32 * value).round() as u32;
+        if progress > 0 {
+            fb.fill_rect(
+                rect.x + 1,
+                rect.y + rect.height as i32 - 2,
+                progress,
+                1,
+                color,
+            );
         }
-        GamepadCapability::Unavailable => format!("{label} N/A"),
-        GamepadCapability::Unknown => format!("{label} ?"),
-    };
-    fb.draw_text_with_font(
-        Font::Mini3x5,
-        rect.x + 2,
-        rect.y + 2,
-        &value,
-        if held { PANEL } else { color },
-    );
+    } else if held && rect.width > 2 {
+        fb.fill_rect(rect.x + 1, rect.y + rect.height as i32 - 2, rect.width - 2, 1, color);
+    }
+    fb.draw_text_with_font(Font::Mini3x5, rect.x + 2, rect.y + 2, label, color);
 }
 
 fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: GamepadVisualLayout) {
-    draw_shoulder(
+    draw_shoulder_overlay(
         fb,
         input,
         id,
@@ -538,7 +457,7 @@ fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Ga
         "LB",
         GamepadButton::LeftShoulder,
     );
-    draw_shoulder(
+    draw_shoulder_overlay(
         fb,
         input,
         id,
@@ -548,7 +467,7 @@ fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Ga
     );
 }
 
-fn draw_shoulder(
+fn draw_shoulder_overlay(
     fb: &mut Framebuffer,
     input: &Input,
     id: GamepadId,
@@ -558,18 +477,16 @@ fn draw_shoulder(
 ) {
     let held = input.gamepad_button(id, button).held();
     let color = button_color(input, id, button);
-    if held {
-        fb.fill_rect(rect.x, rect.y, rect.width, rect.height, color);
-    } else {
-        fb.fill_rect(rect.x, rect.y, rect.width, rect.height, SOCKET);
-    }
     fb.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
+    if held && rect.width > 2 {
+        fb.fill_rect(rect.x + 1, rect.y + 1, rect.width - 2, 1, color);
+    }
     fb.draw_text_with_font(
         Font::Mini3x5,
         rect.x + rect.width as i32 / 2 - 4,
         rect.y + 2,
         label,
-        if held { PANEL } else { color },
+        color,
     );
 }
 
@@ -583,68 +500,48 @@ fn draw_stick(
 ) {
     let (axes, press, label) = controls;
     let center = layout.point(normalized);
-    let radius = layout.unit(0.09).max(5);
-    let cursor_range = radius.saturating_sub(4) as f32;
+    let radius = layout.unit(0.055).max(4);
+    let cursor_range = radius.saturating_sub(2) as f32;
     let capability = merge_capabilities(
         input.gamepad_axis_capability(id, axes.0),
         input.gamepad_axis_capability(id, axes.1),
     );
     let pressed = input.gamepad_button(id, press).held();
-    let color = capability_color(capability, pressed);
-    fb.fill_circle(center.0, center.1, radius + 3, SOCKET);
-    fb.draw_circle(center.0, center.1, radius + 3, color);
-    fb.draw_circle(
-        center.0,
-        center.1,
-        radius,
-        if pressed { ACTIVE } else { BODY_EDGE },
-    );
     let axis_x = input.gamepad_axis(id, axes.0);
     let axis_y = input.gamepad_axis(id, axes.1);
+    let moved = axis_x.abs() > 0.02 || axis_y.abs() > 0.02;
+    let color = capability_color(capability, pressed || moved);
+
+    fb.draw_circle(center.0, center.1, radius + 2, color);
+    if pressed {
+        fb.draw_circle(center.0, center.1, radius, ACTIVE);
+    }
     fb.fill_circle(
         center.0 + (axis_x * cursor_range).round() as i32,
         center.1 - (axis_y * cursor_range).round() as i32,
-        layout.unit(0.025).max(2),
+        layout.unit(0.012).max(1),
         color,
     );
     fb.draw_text_with_font(
         Font::Mini3x5,
         center.0 - radius as i32,
-        center.1 + radius as i32 + 5,
-        &format!("{label} {axis_x:+.1}/{axis_y:+.1}"),
+        center.1 + radius as i32 + 4,
+        label,
         color,
     );
 }
 
 fn draw_dpad(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: GamepadVisualLayout) {
     let (x, y) = layout.point(layout.dpad);
-    let half = layout.unit(0.075).max(5) as i32;
-    let arm = (half * 2 / 3).max(3);
-    fb.fill_rect(x - arm / 2, y - half, arm as u32, (half * 2) as u32, SOCKET);
-    fb.fill_rect(x - half, y - arm / 2, (half * 2) as u32, arm as u32, SOCKET);
-    for (rect, button) in [
-        (
-            (x - arm / 2, y - half, arm as u32, half as u32),
-            GamepadButton::DPadUp,
-        ),
-        (
-            (x - arm / 2, y, arm as u32, half as u32),
-            GamepadButton::DPadDown,
-        ),
-        (
-            (x - half, y - arm / 2, half as u32, arm as u32),
-            GamepadButton::DPadLeft,
-        ),
-        (
-            (x, y - arm / 2, half as u32, arm as u32),
-            GamepadButton::DPadRight,
-        ),
+    let offset = layout.unit(0.055).max(5) as i32;
+    let marker = layout.unit(0.018).max(2);
+    for (center, button) in [
+        ((x, y - offset), GamepadButton::DPadUp),
+        ((x, y + offset), GamepadButton::DPadDown),
+        ((x - offset, y), GamepadButton::DPadLeft),
+        ((x + offset, y), GamepadButton::DPadRight),
     ] {
-        let color = button_color(input, id, button);
-        if input.gamepad_button(id, button).held() {
-            fb.fill_rect(rect.0, rect.1, rect.2, rect.3, color);
-        }
-        fb.draw_rect(rect.0, rect.1, rect.2, rect.3, color);
+        draw_control_marker(fb, input, id, center, marker, button);
     }
 }
 
@@ -655,15 +552,15 @@ fn draw_face_buttons(
     layout: GamepadVisualLayout,
 ) {
     let (x, y) = layout.point(layout.face);
-    let offset = layout.unit(0.075).max(7) as i32;
-    let radius = layout.unit(0.038).max(4);
+    let offset = layout.unit(0.055).max(6) as i32;
+    let radius = layout.unit(0.024).max(3);
     for (center, button, label) in [
         ((x, y - offset), GamepadButton::North, "N"),
         ((x, y + offset), GamepadButton::South, "S"),
         ((x + offset, y), GamepadButton::East, "E"),
         ((x - offset, y), GamepadButton::West, "W"),
     ] {
-        draw_round_button(fb, input, id, center, radius, label, button);
+        draw_labeled_marker(fb, input, id, center, radius, label, button);
     }
 }
 
@@ -673,8 +570,8 @@ fn draw_center_buttons(
     id: GamepadId,
     layout: GamepadVisualLayout,
 ) {
-    let radius = layout.unit(0.025).max(3);
-    draw_round_button(
+    let radius = layout.unit(0.018).max(2);
+    draw_labeled_marker(
         fb,
         input,
         id,
@@ -683,16 +580,16 @@ fn draw_center_buttons(
         "-",
         GamepadButton::Select,
     );
-    draw_round_button(
+    draw_labeled_marker(
         fb,
         input,
         id,
         layout.point(layout.guide),
-        radius + 2,
+        radius + 1,
         "G",
         GamepadButton::Guide,
     );
-    draw_round_button(
+    draw_labeled_marker(
         fb,
         input,
         id,
@@ -703,7 +600,23 @@ fn draw_center_buttons(
     );
 }
 
-fn draw_round_button(
+fn draw_control_marker(
+    fb: &mut Framebuffer,
+    input: &Input,
+    id: GamepadId,
+    center: (i32, i32),
+    radius: u32,
+    button: GamepadButton,
+) {
+    let held = input.gamepad_button(id, button).held();
+    let color = button_color(input, id, button);
+    fb.draw_circle(center.0, center.1, radius, color);
+    if held {
+        fb.fill_circle(center.0, center.1, radius.saturating_sub(1).max(1), color);
+    }
+}
+
+fn draw_labeled_marker(
     fb: &mut Framebuffer,
     input: &Input,
     id: GamepadId,
@@ -712,20 +625,14 @@ fn draw_round_button(
     label: &str,
     button: GamepadButton,
 ) {
-    let held = input.gamepad_button(id, button).held();
+    draw_control_marker(fb, input, id, center, radius, button);
     let color = button_color(input, id, button);
-    if held {
-        fb.fill_circle(center.0, center.1, radius, color);
-    } else {
-        fb.fill_circle(center.0, center.1, radius, SOCKET);
-    }
-    fb.draw_circle(center.0, center.1, radius, color);
     fb.draw_text_with_font(
         Font::Mini3x5,
         center.0 - 2,
         center.1 - 2,
         label,
-        if held { PANEL } else { color },
+        color,
     );
 }
 
@@ -801,8 +708,9 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{GamepadVisualLayout, panel_assignments};
-    use gotoo_pixel_engine::{GamepadId, Rect};
+    use super::{CONTROLLER_PNG, GamepadVisualLayout, contained_rect, panel_assignments};
+    use gotoo_pixel_engine::{GamepadId, Image, Rect};
+
     const BOUNDS: Rect = Rect {
         x: 0,
         y: 0,
@@ -836,12 +744,37 @@ mod tests {
     }
 
     #[test]
+    fn reference_controller_png_decodes() {
+        let image = Image::decode_png(CONTROLLER_PNG).expect("committed reference PNG must decode");
+        assert!(image.width() > 0);
+        assert!(image.height() > 0);
+    }
+
+    #[test]
+    fn contained_controller_rect_preserves_containment() {
+        let destination = Rect {
+            x: 10,
+            y: 20,
+            width: 300,
+            height: 200,
+        };
+        let rect = contained_rect(destination, 1600, 1000);
+        assert_eq!(rect.width, 300);
+        assert_eq!(rect.height, 187);
+        assert!(destination.contains((rect.x, rect.y)));
+        assert!(destination.contains((
+            rect.x + rect.width as i32 - 1,
+            rect.y + rect.height as i32 - 1,
+        )));
+    }
+
+    #[test]
     fn normalized_controller_layout_is_deterministic_and_inside_every_panel_shape() {
         for count in 1..=4 {
             let ids = (0..count).map(GamepadId::new).collect::<Vec<_>>();
             for (_, panel) in panel_assignments(&ids, BOUNDS) {
-                let layout = GamepadVisualLayout::within(panel);
-                assert_eq!(layout, GamepadVisualLayout::within(panel));
+                let layout = GamepadVisualLayout::within(panel, 1600, 1000);
+                assert_eq!(layout, GamepadVisualLayout::within(panel, 1600, 1000));
                 assert!(panel.contains((layout.bounds.x, layout.bounds.y)));
                 let last_x = layout.bounds.x + layout.bounds.width as i32 - 1;
                 let last_y = layout.bounds.y + layout.bounds.height as i32 - 1;
@@ -863,18 +796,26 @@ mod tests {
 
     #[test]
     fn controller_layout_scales_instead_of_using_fixed_probe_coordinates() {
-        let small = GamepadVisualLayout::within(Rect {
-            x: 10,
-            y: 20,
-            width: 240,
-            height: 140,
-        });
-        let large = GamepadVisualLayout::within(Rect {
-            x: 30,
-            y: 40,
-            width: 600,
-            height: 300,
-        });
+        let small = GamepadVisualLayout::within(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 240,
+                height: 140,
+            },
+            1600,
+            1000,
+        );
+        let large = GamepadVisualLayout::within(
+            Rect {
+                x: 30,
+                y: 40,
+                width: 600,
+                height: 300,
+            },
+            1600,
+            1000,
+        );
 
         assert!(large.bounds.width > small.bounds.width);
         assert!(large.bounds.height > small.bounds.height);
