@@ -89,8 +89,7 @@ impl AxisMap {
 
         Self {
             slope: scale_source_len,
-            offset: (source_len - 1) * scale_destination_len
-                - destination_len * scale_source_len,
+            offset: (source_len - 1) * scale_destination_len - destination_len * scale_source_len,
             denominator: scale_destination_len * 2,
         }
     }
@@ -207,13 +206,7 @@ impl Framebuffer {
             for destination_x in left..right {
                 let local_x = (i64::from(destination_x) - plan.draw.x) as u32;
                 let source = sample_rgba(
-                    image,
-                    region,
-                    plan.x_map,
-                    plan.y_map,
-                    local_x,
-                    local_y,
-                    filter,
+                    image, region, plan.x_map, plan.y_map, local_x, local_y, filter,
                 );
                 blend_scaled_pixel(self, destination_x, destination_y, source);
             }
@@ -456,13 +449,10 @@ fn blend_scaled_pixel(framebuffer: &mut Framebuffer, x: u32, y: u32, source: [u8
     let source_alpha = u16::from(source[3]);
     let inverse_alpha = 255 - source_alpha;
     let blend_channel = |source: u8, destination: u8| -> u8 {
-        ((u16::from(source) * source_alpha
-            + u16::from(destination) * inverse_alpha
-            + 127)
-            / 255) as u8
+        ((u16::from(source) * source_alpha + u16::from(destination) * inverse_alpha + 127) / 255)
+            as u8
     };
-    let output_alpha = source_alpha
-        + ((u16::from(destination[3]) * inverse_alpha + 127) / 255);
+    let output_alpha = source_alpha + ((u16::from(destination[3]) * inverse_alpha + 127) / 255);
 
     framebuffer.set_pixel_in_bounds(
         x,
@@ -481,7 +471,7 @@ mod tests {
     use super::*;
 
     fn image_from_pixels(width: u32, height: u32, pixels: &[Pixel]) -> Image {
-        let rgba8: Vec<u8> = pixels.iter().flat_map(|pixel| pixel.to_rgba8()).collect();
+        let rgba8 = pixels.iter().flat_map(|pixel| pixel.to_rgba8()).collect();
         Image::from_rgba8(width, height, rgba8).expect("test image dimensions must be valid")
     }
 
@@ -496,8 +486,12 @@ mod tests {
 
     #[test]
     fn contain_same_aspect_ratio_uses_full_destination() {
-        let plan = fit_plan(ImageRegion::new(0, 0, 4, 2), rect(10, 20, 12, 6), ImageFit::Contain)
-            .expect("non-empty fit");
+        let plan = fit_plan(
+            ImageRegion::new(0, 0, 4, 2),
+            rect(10, 20, 12, 6),
+            ImageFit::Contain,
+        )
+        .expect("non-empty fit");
 
         assert_eq!(
             plan.draw,
@@ -512,26 +506,74 @@ mod tests {
 
     #[test]
     fn contain_centers_inside_wider_and_taller_destinations() {
-        let wide = fit_plan(ImageRegion::new(0, 0, 4, 2), rect(10, 20, 12, 12), ImageFit::Contain)
-            .expect("non-empty fit");
-        let tall = fit_plan(ImageRegion::new(0, 0, 2, 4), rect(10, 20, 12, 12), ImageFit::Contain)
-            .expect("non-empty fit");
+        let wide = fit_plan(
+            ImageRegion::new(0, 0, 4, 2),
+            rect(10, 20, 12, 12),
+            ImageFit::Contain,
+        )
+        .expect("non-empty fit");
+        let tall = fit_plan(
+            ImageRegion::new(0, 0, 2, 4),
+            rect(10, 20, 12, 12),
+            ImageFit::Contain,
+        )
+        .expect("non-empty fit");
 
-        assert_eq!(wide.draw, RasterRect { x: 10, y: 23, width: 12, height: 6 });
-        assert_eq!(tall.draw, RasterRect { x: 13, y: 20, width: 6, height: 12 });
+        assert_eq!(
+            wide.draw,
+            RasterRect {
+                x: 10,
+                y: 23,
+                width: 12,
+                height: 6
+            }
+        );
+        assert_eq!(
+            tall.draw,
+            RasterRect {
+                x: 13,
+                y: 20,
+                width: 6,
+                height: 12
+            }
+        );
     }
 
     #[test]
     fn cover_keeps_destination_and_centers_source_crop() {
-        let horizontal = fit_plan(ImageRegion::new(0, 0, 4, 2), rect(0, 0, 6, 6), ImageFit::Cover)
-            .expect("non-empty fit");
-        let vertical = fit_plan(ImageRegion::new(0, 0, 2, 4), rect(0, 0, 6, 6), ImageFit::Cover)
-            .expect("non-empty fit");
+        let horizontal = fit_plan(
+            ImageRegion::new(0, 0, 4, 2),
+            rect(0, 0, 6, 6),
+            ImageFit::Cover,
+        )
+        .expect("non-empty fit");
+        let vertical = fit_plan(
+            ImageRegion::new(0, 0, 2, 4),
+            rect(0, 0, 6, 6),
+            ImageFit::Cover,
+        )
+        .expect("non-empty fit");
 
-        assert_eq!(horizontal.draw, RasterRect { x: 0, y: 0, width: 6, height: 6 });
+        assert_eq!(
+            horizontal.draw,
+            RasterRect {
+                x: 0,
+                y: 0,
+                width: 6,
+                height: 6
+            }
+        );
         assert_eq!(horizontal.x_map.nearest_index(0, 4), 1);
         assert_eq!(horizontal.x_map.nearest_index(5, 4), 2);
-        assert_eq!(vertical.draw, RasterRect { x: 0, y: 0, width: 6, height: 6 });
+        assert_eq!(
+            vertical.draw,
+            RasterRect {
+                x: 0,
+                y: 0,
+                width: 6,
+                height: 6
+            }
+        );
         assert_eq!(vertical.y_map.nearest_index(0, 4), 1);
         assert_eq!(vertical.y_map.nearest_index(5, 4), 2);
     }
@@ -542,7 +584,12 @@ mod tests {
         let mut framebuffer = Framebuffer::new(6, 2);
         framebuffer.clear(Pixel::BLACK);
 
-        framebuffer.draw_image_fit(&image, rect(0, 0, 6, 2), ImageFit::Contain, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 6, 2),
+            ImageFit::Contain,
+            ImageFilter::Nearest,
+        );
 
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLACK));
         assert_eq!(framebuffer.pixel(1, 1), Some(Pixel::BLACK));
@@ -554,14 +601,15 @@ mod tests {
 
     #[test]
     fn cover_crops_source_around_center() {
-        let image = image_from_pixels(
-            4,
-            1,
-            &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE],
-        );
+        let image = image_from_pixels(4, 1, &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE]);
         let mut framebuffer = Framebuffer::new(2, 2);
 
-        framebuffer.draw_image_fit(&image, rect(0, 0, 2, 2), ImageFit::Cover, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 2, 2),
+            ImageFit::Cover,
+            ImageFilter::Nearest,
+        );
 
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::GREEN));
         assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::BLUE));
@@ -571,14 +619,15 @@ mod tests {
 
     #[test]
     fn nearest_enlargement_repeats_source_texels() {
-        let image = image_from_pixels(
-            2,
-            2,
-            &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE],
-        );
+        let image = image_from_pixels(2, 2, &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE]);
         let mut framebuffer = Framebuffer::new(4, 4);
 
-        framebuffer.draw_image_fit(&image, rect(0, 0, 4, 4), ImageFit::Stretch, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 4, 4),
+            ImageFit::Stretch,
+            ImageFilter::Nearest,
+        );
 
         for y in 0..4 {
             for x in 0..4 {
@@ -595,14 +644,15 @@ mod tests {
 
     #[test]
     fn nearest_reduction_samples_destination_pixel_centers() {
-        let image = image_from_pixels(
-            4,
-            1,
-            &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE],
-        );
+        let image = image_from_pixels(4, 1, &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE]);
         let mut framebuffer = Framebuffer::new(2, 1);
 
-        framebuffer.draw_image_fit(&image, rect(0, 0, 2, 1), ImageFit::Stretch, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 2, 1),
+            ImageFit::Stretch,
+            ImageFilter::Nearest,
+        );
 
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::GREEN));
         assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::WHITE));
@@ -613,7 +663,12 @@ mod tests {
         let image = image_from_pixels(2, 1, &[Pixel::BLACK, Pixel::WHITE]);
         let mut framebuffer = Framebuffer::new(3, 1);
 
-        framebuffer.draw_image_fit(&image, rect(0, 0, 3, 1), ImageFit::Stretch, ImageFilter::Linear);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 3, 1),
+            ImageFit::Stretch,
+            ImageFilter::Linear,
+        );
 
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::BLACK));
         assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::rgb(128, 128, 128)));
@@ -646,11 +701,7 @@ mod tests {
 
     #[test]
     fn image_region_fit_scales_only_the_requested_subregion() {
-        let image = image_from_pixels(
-            4,
-            1,
-            &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE],
-        );
+        let image = image_from_pixels(4, 1, &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE]);
         let mut framebuffer = Framebuffer::new(4, 1);
 
         framebuffer.draw_image_region_fit(
@@ -671,11 +722,7 @@ mod tests {
 
     #[test]
     fn source_region_is_clipped_before_scaling_and_empty_region_draws_nothing() {
-        let image = image_from_pixels(
-            4,
-            1,
-            &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE],
-        );
+        let image = image_from_pixels(4, 1, &[Pixel::RED, Pixel::GREEN, Pixel::BLUE, Pixel::WHITE]);
         let mut framebuffer = Framebuffer::new(3, 1);
         framebuffer.clear(Pixel::BLACK);
 
@@ -705,11 +752,21 @@ mod tests {
         let mut framebuffer = Framebuffer::new(2, 1);
         framebuffer.clear(Pixel::BLACK);
 
-        framebuffer.draw_image_fit(&image, rect(-1, 0, 2, 1), ImageFit::Stretch, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(-1, 0, 2, 1),
+            ImageFit::Stretch,
+            ImageFilter::Nearest,
+        );
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::GREEN));
         assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::BLACK));
 
-        framebuffer.draw_image_fit(&image, rect(1, 0, 2, 1), ImageFit::Stretch, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(1, 0, 2, 1),
+            ImageFit::Stretch,
+            ImageFilter::Nearest,
+        );
         assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::RED));
     }
 
@@ -719,7 +776,12 @@ mod tests {
         let mut framebuffer = Framebuffer::new(2, 2);
         framebuffer.clear(Pixel::BLACK);
 
-        framebuffer.draw_image_fit(&image, rect(0, 0, 0, 2), ImageFit::Stretch, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 0, 2),
+            ImageFit::Stretch,
+            ImageFilter::Nearest,
+        );
         framebuffer.draw_image_fit(
             &image,
             rect(i32::MAX, i32::MAX, 10, 10),
@@ -727,10 +789,12 @@ mod tests {
             ImageFilter::Nearest,
         );
 
-        assert!(framebuffer
-            .as_rgba8()
-            .chunks_exact(4)
-            .all(|pixel| pixel == [0, 0, 0, 255]));
+        assert!(
+            framebuffer
+                .as_rgba8()
+                .chunks_exact(4)
+                .all(|pixel| pixel == [0, 0, 0, 255])
+        );
     }
 
     #[test]
@@ -755,7 +819,12 @@ mod tests {
         let mut framebuffer = Framebuffer::new(1, 1);
         framebuffer.set_pixel_in_bounds(0, 0, Pixel::rgba(20, 40, 60, 80));
 
-        framebuffer.draw_image_fit(&image, rect(0, 0, 1, 1), ImageFit::Stretch, ImageFilter::Nearest);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 1, 1),
+            ImageFit::Stretch,
+            ImageFilter::Nearest,
+        );
 
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::rgba(110, 70, 55, 168)));
     }
