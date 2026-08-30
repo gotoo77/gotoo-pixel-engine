@@ -238,11 +238,14 @@ struct SourceCircle {
     radius: f32,
 }
 
-// Calibration coordinates were measured directly against the complete contained
-// reference image. They are converted once into the committed PNG's native source
-// coordinate space, then every frame uses only source -> contained-image projection.
+// The human validation capture renders the reference image at exactly 786 x 590,
+// so calibration coordinates below map one-for-one to pixels in that raster. They
+// are converted once to the committed PNG's actual native dimensions.
 const CALIBRATION_REFERENCE_WIDTH: f32 = 786.0;
 const CALIBRATION_REFERENCE_HEIGHT: f32 = 590.0;
+const SHAPE_POINTS: usize = 9;
+
+type SourceShape = [SourcePoint; SHAPE_POINTS];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ControllerReferenceLayout {
@@ -261,10 +264,16 @@ struct ControllerReferenceLayout {
     select: SourceCircle,
     guide: SourceCircle,
     start: SourceCircle,
-    left_trigger: SourceRect,
-    right_trigger: SourceRect,
-    left_shoulder: SourceRect,
-    right_shoulder: SourceRect,
+    left_trigger: SourceShape,
+    right_trigger: SourceShape,
+    left_trigger_meter: SourceRect,
+    right_trigger_meter: SourceRect,
+    left_trigger_label: SourcePoint,
+    right_trigger_label: SourcePoint,
+    left_shoulder: SourceShape,
+    right_shoulder: SourceShape,
+    left_shoulder_label: SourcePoint,
+    right_shoulder_label: SourcePoint,
 }
 
 impl ControllerReferenceLayout {
@@ -280,27 +289,76 @@ impl ControllerReferenceLayout {
         let rect = |x: f32, y: f32, width: f32, height: f32| {
             SourceRect::new(x * scale_x, y * scale_y, width * scale_x, height * scale_y)
         };
+        let shape = |points: [(f32, f32); SHAPE_POINTS]| {
+            points.map(|(x, y)| point(x, y))
+        };
 
         Self {
-            left_stick: circle(212.0, 186.0, 27.0),
-            right_stick: circle(490.0, 294.0, 27.0),
+            left_stick: circle(212.0, 187.0, 27.0),
+            right_stick: circle(491.0, 295.0, 27.0),
             stick_cursor_range: 22.0 * scale,
             stick_cursor_radius: 4.0 * scale,
-            dpad_up: circle(300.0, 266.0, 10.0),
+            dpad_up: circle(300.0, 267.0, 10.0),
             dpad_down: circle(300.0, 334.0, 10.0),
-            dpad_left: circle(266.0, 300.0, 10.0),
+            dpad_left: circle(267.0, 300.0, 10.0),
             dpad_right: circle(334.0, 300.0, 10.0),
-            north: circle(575.0, 142.0, 16.0),
-            south: circle(576.0, 232.0, 16.0),
-            east: circle(623.0, 186.0, 16.0),
-            west: circle(531.0, 186.0, 16.0),
-            select: circle(340.0, 190.0, 10.0),
-            guide: circle(394.0, 154.0, 18.0),
-            start: circle(446.0, 190.0, 10.0),
-            left_trigger: rect(164.0, 55.0, 102.0, 37.0),
-            right_trigger: rect(522.0, 55.0, 102.0, 37.0),
-            left_shoulder: rect(150.0, 92.0, 136.0, 34.0),
-            right_shoulder: rect(502.0, 92.0, 136.0, 34.0),
+            north: circle(575.0, 142.0, 18.0),
+            south: circle(576.0, 234.0, 18.0),
+            east: circle(623.0, 184.0, 18.0),
+            west: circle(529.0, 188.0, 18.0),
+            select: circle(340.0, 190.0, 11.0),
+            guide: circle(394.0, 153.0, 23.0),
+            start: circle(447.0, 190.0, 11.0),
+            left_trigger: shape([
+                (164.0, 91.0),
+                (166.0, 82.0),
+                (174.0, 73.0),
+                (188.0, 66.0),
+                (207.0, 60.0),
+                (230.0, 56.0),
+                (250.0, 56.0),
+                (266.0, 58.0),
+                (266.0, 91.0),
+            ]),
+            right_trigger: shape([
+                (522.0, 91.0),
+                (522.0, 58.0),
+                (542.0, 56.0),
+                (562.0, 58.0),
+                (583.0, 63.0),
+                (601.0, 70.0),
+                (615.0, 79.0),
+                (624.0, 89.0),
+                (624.0, 91.0),
+            ]),
+            left_trigger_meter: rect(170.0, 87.0, 90.0, 3.0),
+            right_trigger_meter: rect(528.0, 87.0, 90.0, 3.0),
+            left_trigger_label: point(166.0, 58.0),
+            right_trigger_label: point(524.0, 58.0),
+            left_shoulder: shape([
+                (151.0, 111.0),
+                (158.0, 103.0),
+                (174.0, 96.0),
+                (197.0, 92.0),
+                (222.0, 92.0),
+                (246.0, 96.0),
+                (267.0, 103.0),
+                (282.0, 112.0),
+                (286.0, 119.0),
+            ]),
+            right_shoulder: shape([
+                (502.0, 119.0),
+                (506.0, 112.0),
+                (521.0, 103.0),
+                (542.0, 96.0),
+                (566.0, 92.0),
+                (591.0, 92.0),
+                (614.0, 96.0),
+                (630.0, 103.0),
+                (637.0, 111.0),
+            ]),
+            left_shoulder_label: point(211.0, 101.0),
+            right_shoulder_label: point(569.0, 101.0),
         }
     }
 }
@@ -530,7 +588,10 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
         fb,
         input,
         id,
-        layout.rect(layout.source.left_trigger),
+        layout,
+        &layout.source.left_trigger,
+        layout.source.left_trigger_meter,
+        layout.source.left_trigger_label,
         "LT",
         GamepadAxis::LeftTrigger,
         GamepadButton::LeftTrigger,
@@ -539,7 +600,10 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
         fb,
         input,
         id,
-        layout.rect(layout.source.right_trigger),
+        layout,
+        &layout.source.right_trigger,
+        layout.source.right_trigger_meter,
+        layout.source.right_trigger_label,
         "RT",
         GamepadAxis::RightTrigger,
         GamepadButton::RightTrigger,
@@ -550,7 +614,10 @@ fn draw_trigger_overlay(
     fb: &mut Framebuffer,
     input: &Input,
     id: GamepadId,
-    rect: Rect,
+    layout: GamepadVisualLayout,
+    shape: &[SourcePoint],
+    meter: SourceRect,
+    label_position: SourcePoint,
     label: &str,
     axis: GamepadAxis,
     button: GamepadButton,
@@ -563,28 +630,24 @@ fn draw_trigger_overlay(
     let active = held || (analog == GamepadCapability::Available && value > 0.02);
     let color = capability_color(capability, active);
 
-    fb.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
+    draw_source_polygon(fb, layout, shape, color);
+    let meter = layout.rect(meter);
     if analog == GamepadCapability::Available {
-        let progress = (rect.width.saturating_sub(2) as f32 * value).round() as u32;
+        let progress = (meter.width as f32 * value).round() as u32;
         if progress > 0 {
-            fb.fill_rect(
-                rect.x + 1,
-                rect.y + rect.height as i32 - 2,
-                progress,
-                1,
-                color,
-            );
+            fb.fill_rect(meter.x, meter.y, progress.min(meter.width), 1, color);
         }
-    } else if held && rect.width > 2 {
-        fb.fill_rect(
-            rect.x + 1,
-            rect.y + rect.height as i32 - 2,
-            rect.width - 2,
-            1,
-            color,
-        );
+    } else if held {
+        fb.fill_rect(meter.x, meter.y, meter.width, 1, color);
     }
-    fb.draw_text_with_font(Font::Mini3x5, rect.x + 2, rect.y + 2, label, color);
+    let label_position = layout.point(label_position);
+    fb.draw_text_with_font(
+        Font::Mini3x5,
+        label_position.0,
+        label_position.1,
+        label,
+        color,
+    );
 }
 
 fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: GamepadVisualLayout) {
@@ -592,7 +655,9 @@ fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Ga
         fb,
         input,
         id,
-        layout.rect(layout.source.left_shoulder),
+        layout,
+        &layout.source.left_shoulder,
+        layout.source.left_shoulder_label,
         "LB",
         GamepadButton::LeftShoulder,
     );
@@ -600,7 +665,9 @@ fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Ga
         fb,
         input,
         id,
-        layout.rect(layout.source.right_shoulder),
+        layout,
+        &layout.source.right_shoulder,
+        layout.source.right_shoulder_label,
         "RB",
         GamepadButton::RightShoulder,
     );
@@ -610,23 +677,70 @@ fn draw_shoulder_overlay(
     fb: &mut Framebuffer,
     input: &Input,
     id: GamepadId,
-    rect: Rect,
+    layout: GamepadVisualLayout,
+    shape: &[SourcePoint],
+    label_position: SourcePoint,
     label: &str,
     button: GamepadButton,
 ) {
-    let held = input.gamepad_button(id, button).held();
     let color = button_color(input, id, button);
-    fb.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
-    if held && rect.width > 2 {
-        fb.fill_rect(rect.x + 1, rect.y + 1, rect.width - 2, 1, color);
-    }
+    draw_source_polygon(fb, layout, shape, color);
+    let label_position = layout.point(label_position);
     fb.draw_text_with_font(
         Font::Mini3x5,
-        rect.x + rect.width as i32 / 2 - 4,
-        rect.y + 2,
+        label_position.0,
+        label_position.1,
         label,
         color,
     );
+}
+
+fn draw_source_polygon(
+    fb: &mut Framebuffer,
+    layout: GamepadVisualLayout,
+    points: &[SourcePoint],
+    color: Pixel,
+) {
+    if points.len() < 2 {
+        return;
+    }
+
+    for index in 0..points.len() {
+        let start = layout.point(points[index]);
+        let end = layout.point(points[(index + 1) % points.len()]);
+        draw_line_segment(fb, start, end, color);
+    }
+}
+
+fn draw_line_segment(
+    fb: &mut Framebuffer,
+    start: (i32, i32),
+    end: (i32, i32),
+    color: Pixel,
+) {
+    let (mut x0, mut y0) = start;
+    let (x1, y1) = end;
+    let dx = (x1 - x0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let dy = -(y1 - y0).abs();
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut error = dx + dy;
+
+    loop {
+        fb.draw(x0, y0, color);
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+        let twice_error = error * 2;
+        if twice_error >= dy {
+            error += dy;
+            x0 += sx;
+        }
+        if twice_error <= dx {
+            error += dx;
+            y0 += sy;
+        }
+    }
 }
 
 fn draw_stick(
@@ -651,8 +765,8 @@ fn draw_stick(
     let color = capability_color(capability, pressed || moved);
 
     fb.draw_circle(center.0, center.1, radius, color);
-    if pressed && radius > 1 {
-        fb.draw_circle(center.0, center.1, radius - 1, ACTIVE);
+    if pressed && radius > 2 {
+        fb.draw_circle(center.0, center.1, radius - 2, ACTIVE);
     }
     fb.fill_circle(
         center.0 + (axis_x * cursor_range).round() as i32,
@@ -725,8 +839,8 @@ fn draw_control_marker(
     let held = input.gamepad_button(id, button).held();
     let color = button_color(input, id, button);
     fb.draw_circle(center.0, center.1, radius, color);
-    if held {
-        fb.fill_circle(center.0, center.1, radius.saturating_sub(1).max(1), color);
+    if held && radius > 2 {
+        fb.draw_circle(center.0, center.1, radius - 2, ACTIVE);
     }
 }
 
@@ -921,12 +1035,19 @@ mod tests {
             assert!(circle.center.y + circle.radius <= height as f32);
         }
 
-        for rect in [
+        for shape in [
             layout.left_trigger,
             layout.right_trigger,
             layout.left_shoulder,
             layout.right_shoulder,
         ] {
+            for point in shape {
+                assert!(point.x >= 0.0 && point.x <= width as f32);
+                assert!(point.y >= 0.0 && point.y <= height as f32);
+            }
+        }
+
+        for rect in [layout.left_trigger_meter, layout.right_trigger_meter] {
             assert!(rect.x >= 0.0);
             assert!(rect.y >= 0.0);
             assert!(rect.x + rect.width <= width as f32);
@@ -973,12 +1094,18 @@ mod tests {
                     assert!(bounds.contains(layout.point(circle.center)));
                 }
 
-                for rect in [
+                for shape in [
                     source.left_trigger,
                     source.right_trigger,
                     source.left_shoulder,
                     source.right_shoulder,
                 ] {
+                    for point in shape {
+                        assert!(bounds.contains(layout.point(point)));
+                    }
+                }
+
+                for rect in [source.left_trigger_meter, source.right_trigger_meter] {
                     let rect = layout.rect(rect);
                     assert!(bounds.contains((rect.x, rect.y)));
                     assert!(bounds.contains((
