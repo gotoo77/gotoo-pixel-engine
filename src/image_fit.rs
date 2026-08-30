@@ -8,8 +8,8 @@ use crate::{
 /// Controls how a source image is fitted into a destination rectangle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageFit {
-    /// Preserves aspect ratio and fits the complete source inside the destination.
-    /// Unused destination pixels are left untouched.
+    /// Preserves aspect ratio as closely as integer raster dimensions allow and fits the
+    /// complete source inside the destination. Unused destination pixels are left untouched.
     Contain,
     /// Preserves aspect ratio and fills the complete destination, cropping the source
     /// symmetrically around its center when the aspect ratios differ.
@@ -23,7 +23,8 @@ pub enum ImageFit {
 pub enum ImageFilter {
     /// Selects the nearest source texel without blending neighboring texels.
     Nearest,
-    /// Bilinearly interpolates the four neighboring RGBA texels before framebuffer blending.
+    /// Bilinearly interpolates the four neighboring texels with alpha-correct premultiplied
+    /// color interpolation before framebuffer blending.
     Linear,
 }
 
@@ -159,9 +160,10 @@ impl AxisMap {
 impl Framebuffer {
     /// Draws a complete image into `destination` using the selected fitting and filtering modes.
     ///
-    /// `Contain` preserves aspect ratio and leaves letterbox/pillarbox pixels untouched.
-    /// `Cover` preserves aspect ratio and performs a centered crop. `Stretch` maps the
-    /// complete source to the complete destination. Drawing is clipped to the framebuffer.
+    /// `Contain` preserves aspect ratio as closely as integer raster dimensions allow and leaves
+    /// letterbox/pillarbox pixels untouched. `Cover` preserves aspect ratio and performs a
+    /// centered crop. `Stretch` maps the complete source to the complete destination. Drawing is
+    /// clipped to the framebuffer.
     pub fn draw_image_fit(
         &mut self,
         image: &Image,
@@ -388,15 +390,37 @@ fn bilinear_rgba(
     let x_low = x.weight_den - x.weight_num;
     let y_low = y.weight_den - y.weight_num;
     let denominator = x.weight_den * y.weight_den;
-    let mut output = [0; 4];
+    let weights = [
+        x_low * y_low,
+        x.weight_num * y_low,
+        x_low * y.weight_num,
+        x.weight_num * y.weight_num,
+    ];
+    let pixels = [top_left, top_right, bottom_left, bottom_right];
 
-    for channel in 0..4 {
-        let value = u128::from(top_left[channel]) * x_low * y_low
-            + u128::from(top_right[channel]) * x.weight_num * y_low
-            + u128::from(bottom_left[channel]) * x_low * y.weight_num
-            + u128::from(bottom_right[channel]) * x.weight_num * y.weight_num;
-        output[channel] = ((value + denominator / 2) / denominator) as u8;
+    let alpha_weighted: u128 = pixels
+        .iter()
+        .zip(weights.iter())
+        .map(|(pixel, &weight)| u128::from(pixel[3]) * weight)
+        .sum();
+    let alpha = ((alpha_weighted + denominator / 2) / denominator).min(255) as u8;
+    if alpha == 0 {
+        return [0; 4];
     }
+
+    let mut output = [0; 4];
+    for channel in 0..3 {
+        let premultiplied_weighted: u128 = pixels
+            .iter()
+            .zip(weights.iter())
+            .map(|(pixel, &weight)| {
+                u128::from(pixel[channel]) * u128::from(pixel[3]) * weight
+            })
+            .sum();
+        output[channel] =
+            ((premultiplied_weighted + alpha_weighted / 2) / alpha_weighted).min(255) as u8;
+    }
+    output[3] = alpha;
 
     output
 }
@@ -676,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn linear_filter_interpolates_rgba_consistently() {
+    fn linear_transparent_edge_is_alpha_correct() {
         let image = image_from_pixels(
             2,
             1,
@@ -695,8 +719,79 @@ mod tests {
                 0,
                 ImageFilter::Linear,
             ),
-            [128, 128, 128, 128]
+            [255, 255, 255, 128]
         );
+
+        let mut framebuffer = Framebuffer::new(3, 1);
+        framebuffer.clear(Pixel::BLACK);
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 3, 1),
+            ImageFit::Stretch,
+            ImageFilter::Linear,
+        );
+        assert_eq!(framebuffer.pixel(1, 0), Some(Pixel::rgb(128, 128, 128)));
+    }
+
+    #[test]
+    fn linear_fully_transparent_rgb_does_not_bleed() {
+        let hidden_black = image_from_pixels(
+            2,
+            1,
+            &[Pixel::rgba(0, 0, 0, 0), Pixel::rgba(0, 255, 0, 255)],
+        );
+        let hidden_magenta = image_from_pixels(
+            2,
+            1,
+            &[
+                Pixel::rgba(255, 0, 255, 0),
+                Pixel::rgba(0, 255, 0, 255),
+            ],
+        );
+
+        let mut first = Framebuffer::new(3, 1);
+        let mut second = Framebuffer::new(3, 1);
+        first.clear(Pixel::BLACK);
+        second.clear(Pixel::BLACK);
+        first.draw_image_fit(
+            &hidden_black,
+            rect(0, 0, 3, 1),
+            ImageFit::Stretch,
+            ImageFilter::Linear,
+        );
+        second.draw_image_fit(
+            &hidden_magenta,
+            rect(0, 0, 3, 1),
+            ImageFit::Stretch,
+            ImageFilter::Linear,
+        );
+
+        assert_eq!(first.as_rgba8(), second.as_rgba8());
+        assert_eq!(first.pixel(1, 0), Some(Pixel::rgb(0, 128, 0)));
+    }
+
+    #[test]
+    fn linear_2d_center_uses_four_texels() {
+        let image = image_from_pixels(
+            2,
+            2,
+            &[
+                Pixel::rgb(40, 0, 0),
+                Pixel::rgb(0, 80, 0),
+                Pixel::rgb(0, 0, 120),
+                Pixel::rgb(160, 200, 240),
+            ],
+        );
+        let mut framebuffer = Framebuffer::new(3, 3);
+
+        framebuffer.draw_image_fit(
+            &image,
+            rect(0, 0, 3, 3),
+            ImageFit::Stretch,
+            ImageFilter::Linear,
+        );
+
+        assert_eq!(framebuffer.pixel(1, 1), Some(Pixel::rgb(50, 70, 90)));
     }
 
     #[test]
