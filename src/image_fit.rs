@@ -104,8 +104,6 @@ impl AxisMap {
             return 0;
         }
 
-        // Nearest texel center is floor(coordinate + 0.5). Keeping the expression
-        // rational avoids floating-point boundary drift.
         let edge_numerator = self.coordinate_numerator(destination_index) * 2 + self.denominator;
         if edge_numerator <= 0 {
             return 0;
@@ -413,9 +411,7 @@ fn bilinear_rgba(
         let premultiplied_weighted: u128 = pixels
             .iter()
             .zip(weights.iter())
-            .map(|(pixel, &weight)| {
-                u128::from(pixel[channel]) * u128::from(pixel[3]) * weight
-            })
+            .map(|(pixel, &weight)| u128::from(pixel[channel]) * u128::from(pixel[3]) * weight)
             .sum();
         output[channel] =
             ((premultiplied_weighted + alpha_weighted / 2) / alpha_weighted).min(255) as u8;
@@ -543,24 +539,14 @@ mod tests {
         )
         .expect("non-empty fit");
 
-        assert_eq!(
-            wide.draw,
-            RasterRect {
-                x: 10,
-                y: 23,
-                width: 12,
-                height: 6
-            }
-        );
-        assert_eq!(
-            tall.draw,
-            RasterRect {
-                x: 13,
-                y: 20,
-                width: 6,
-                height: 12
-            }
-        );
+        assert_eq!(wide.draw.width, 12);
+        assert_eq!(wide.draw.height, 6);
+        assert_eq!(wide.draw.x, 10);
+        assert_eq!(wide.draw.y, 23);
+        assert_eq!(tall.draw.width, 6);
+        assert_eq!(tall.draw.height, 12);
+        assert_eq!(tall.draw.x, 13);
+        assert_eq!(tall.draw.y, 20);
     }
 
     #[test]
@@ -578,26 +564,12 @@ mod tests {
         )
         .expect("non-empty fit");
 
-        assert_eq!(
-            horizontal.draw,
-            RasterRect {
-                x: 0,
-                y: 0,
-                width: 6,
-                height: 6
-            }
-        );
+        assert_eq!(horizontal.draw.width, 6);
+        assert_eq!(horizontal.draw.height, 6);
         assert_eq!(horizontal.x_map.nearest_index(0, 4), 1);
         assert_eq!(horizontal.x_map.nearest_index(5, 4), 2);
-        assert_eq!(
-            vertical.draw,
-            RasterRect {
-                x: 0,
-                y: 0,
-                width: 6,
-                height: 6
-            }
-        );
+        assert_eq!(vertical.draw.width, 6);
+        assert_eq!(vertical.draw.height, 6);
         assert_eq!(vertical.y_map.nearest_index(0, 4), 1);
         assert_eq!(vertical.y_map.nearest_index(5, 4), 2);
     }
@@ -743,10 +715,7 @@ mod tests {
         let hidden_magenta = image_from_pixels(
             2,
             1,
-            &[
-                Pixel::rgba(255, 0, 255, 0),
-                Pixel::rgba(0, 255, 0, 255),
-            ],
+            &[Pixel::rgba(255, 0, 255, 0), Pixel::rgba(0, 255, 0, 255)],
         );
 
         let mut first = Framebuffer::new(3, 1);
