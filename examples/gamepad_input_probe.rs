@@ -13,6 +13,7 @@ const PANEL: Pixel = Pixel::rgb(13, 22, 31);
 const FG: Pixel = Pixel::rgb(126, 174, 170);
 const BRIGHT: Pixel = Pixel::rgb(218, 235, 225);
 const ACTIVE: Pixel = Pixel::rgb(88, 255, 145);
+const ACTIVE_FILL: Pixel = Pixel::rgba(88, 255, 145, 72);
 const UNKNOWN: Pixel = Pixel::rgb(245, 190, 70);
 const UNAVAILABLE: Pixel = Pixel::rgb(48, 62, 69);
 
@@ -296,16 +297,16 @@ impl ControllerReferenceLayout {
             right_stick: circle(486.0, 295.0, 27.0),
             stick_cursor_range: 22.0 * scale,
             stick_cursor_radius: 4.0 * scale,
-            dpad_up: circle(300.0, 267.0, 10.0),
-            dpad_down: circle(300.0, 334.0, 10.0),
-            dpad_left: circle(267.0, 301.0, 10.0),
-            dpad_right: circle(334.0, 301.0, 10.0),
-            north: circle(574.0, 141.0, 18.0),
+            dpad_up: circle(300.0, 264.0, 10.0),
+            dpad_down: circle(300.0, 331.0, 10.0),
+            dpad_left: circle(267.0, 298.0, 10.0),
+            dpad_right: circle(334.0, 298.0, 10.0),
+            north: circle(574.0, 138.0, 18.0),
             south: circle(575.0, 233.0, 18.0),
             east: circle(622.0, 186.0, 18.0),
             west: circle(527.0, 186.0, 18.0),
             select: circle(340.0, 190.0, 11.0),
-            guide: circle(393.0, 153.0, 23.0),
+            guide: circle(390.0, 150.0, 23.0),
             start: circle(446.0, 190.0, 11.0),
             left_trigger: shape([
                 (156.0, 96.0),
@@ -591,6 +592,7 @@ struct TriggerOverlaySpec<'a> {
     label: &'a str,
     axis: GamepadAxis,
     button: GamepadButton,
+    fill_from_right: bool,
 }
 
 struct ShoulderOverlaySpec<'a> {
@@ -613,6 +615,7 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
             label: "LT",
             axis: GamepadAxis::LeftTrigger,
             button: GamepadButton::LeftTrigger,
+            fill_from_right: false,
         },
     );
     draw_trigger_overlay(
@@ -627,6 +630,7 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
             label: "RT",
             axis: GamepadAxis::RightTrigger,
             button: GamepadButton::RightTrigger,
+            fill_from_right: true,
         },
     );
 }
@@ -645,7 +649,22 @@ fn draw_trigger_overlay(
     let capability = merge_capabilities(analog, digital);
     let active = held || (analog == GamepadCapability::Available && value > 0.02);
     let color = capability_color(capability, active);
+    let fill = if analog == GamepadCapability::Available {
+        value
+    } else if held {
+        1.0
+    } else {
+        0.0
+    };
 
+    fill_source_polygon_progress(
+        fb,
+        layout,
+        spec.shape,
+        fill,
+        spec.fill_from_right,
+        ACTIVE_FILL,
+    );
     draw_source_polygon(fb, layout, spec.shape, color);
     let meter = layout.rect(spec.meter);
     if analog == GamepadCapability::Available {
@@ -700,7 +719,11 @@ fn draw_shoulder_overlay(
     layout: GamepadVisualLayout,
     spec: ShoulderOverlaySpec<'_>,
 ) {
+    let held = input.gamepad_button(id, spec.button).held();
     let color = button_color(input, id, spec.button);
+    if held {
+        fill_source_polygon_progress(fb, layout, spec.shape, 1.0, false, ACTIVE_FILL);
+    }
     draw_source_polygon(fb, layout, spec.shape, color);
     let label_position = layout.point(spec.label_position);
     fb.draw_text_with_font(
@@ -709,6 +732,98 @@ fn draw_shoulder_overlay(
         label_position.1,
         spec.label,
         color,
+    );
+}
+
+fn fill_source_polygon_progress(
+    fb: &mut Framebuffer,
+    layout: GamepadVisualLayout,
+    points: &[SourcePoint],
+    progress: f32,
+    from_right: bool,
+    color: Pixel,
+) {
+    if points.len() < 3 {
+        return;
+    }
+
+    let progress = progress.clamp(0.0, 1.0);
+    if progress <= 0.0 {
+        return;
+    }
+
+    let projected = points
+        .iter()
+        .copied()
+        .map(|point| layout.point(point))
+        .collect::<Vec<_>>();
+    let min_x = projected.iter().map(|point| point.0).min().unwrap_or(0);
+    let max_x = projected.iter().map(|point| point.0).max().unwrap_or(0);
+    let min_y = projected.iter().map(|point| point.1).min().unwrap_or(0);
+    let max_y = projected.iter().map(|point| point.1).max().unwrap_or(0);
+    let span = (max_x - min_x + 1).max(1);
+    let filled = ((span as f32 * progress).ceil() as i32).clamp(1, span);
+    let (fill_min_x, fill_max_x) = if from_right {
+        (max_x - filled + 1, max_x)
+    } else {
+        (min_x, min_x + filled - 1)
+    };
+
+    for y in min_y..=max_y {
+        for x in fill_min_x..=fill_max_x {
+            if point_in_polygon((x as f32 + 0.5, y as f32 + 0.5), &projected) {
+                blend_framebuffer_pixel(fb, x, y, color);
+            }
+        }
+    }
+}
+
+fn point_in_polygon(point: (f32, f32), polygon: &[(i32, i32)]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+
+    let mut inside = false;
+    let mut previous = polygon[polygon.len() - 1];
+    for &current in polygon {
+        let (current_x, current_y) = (current.0 as f32, current.1 as f32);
+        let (previous_x, previous_y) = (previous.0 as f32, previous.1 as f32);
+        if (current_y > point.1) != (previous_y > point.1) {
+            let intersection_x = (previous_x - current_x) * (point.1 - current_y)
+                / (previous_y - current_y)
+                + current_x;
+            if point.0 < intersection_x {
+                inside = !inside;
+            }
+        }
+        previous = current;
+    }
+    inside
+}
+
+fn blend_framebuffer_pixel(fb: &mut Framebuffer, x: i32, y: i32, overlay: Pixel) {
+    if x < 0 || y < 0 || x >= fb.width() as i32 || y >= fb.height() as i32 {
+        return;
+    }
+
+    let index = (y as usize * fb.width() as usize + x as usize) * 4;
+    let (dst_r, dst_g, dst_b) = {
+        let pixels = fb.as_rgba8();
+        (pixels[index], pixels[index + 1], pixels[index + 2])
+    };
+    let alpha = u16::from(overlay.a);
+    let inverse_alpha = 255 - alpha;
+    let blend = |source: u8, destination: u8| {
+        ((u16::from(source) * alpha + u16::from(destination) * inverse_alpha + 127) / 255) as u8
+    };
+    fb.draw(
+        x,
+        y,
+        Pixel::rgb(
+            blend(overlay.r, dst_r),
+            blend(overlay.g, dst_g),
+            blend(overlay.b, dst_b),
+        ),
     );
 }
 
@@ -755,6 +870,16 @@ fn draw_line_segment(fb: &mut Framebuffer, start: (i32, i32), end: (i32, i32), c
     }
 }
 
+fn clamp_stick_cursor(axis_x: f32, axis_y: f32) -> (f32, f32) {
+    let magnitude_squared = axis_x * axis_x + axis_y * axis_y;
+    if magnitude_squared > 1.0 {
+        let inverse_magnitude = magnitude_squared.sqrt().recip();
+        (axis_x * inverse_magnitude, axis_y * inverse_magnitude)
+    } else {
+        (axis_x, axis_y)
+    }
+}
+
 fn draw_stick(
     fb: &mut Framebuffer,
     input: &Input,
@@ -773,6 +898,7 @@ fn draw_stick(
     let pressed = input.gamepad_button(id, press).held();
     let axis_x = input.gamepad_axis(id, axes.0);
     let axis_y = input.gamepad_axis(id, axes.1);
+    let (cursor_x, cursor_y) = clamp_stick_cursor(axis_x, axis_y);
     let moved = axis_x.abs() > 0.02 || axis_y.abs() > 0.02;
     let color = capability_color(capability, pressed || moved);
 
@@ -781,8 +907,8 @@ fn draw_stick(
         fb.draw_circle(center.0, center.1, radius - 2, ACTIVE);
     }
     fb.fill_circle(
-        center.0 + (axis_x * cursor_range).round() as i32,
-        center.1 - (axis_y * cursor_range).round() as i32,
+        center.0 + (cursor_x * cursor_range).round() as i32,
+        center.1 - (cursor_y * cursor_range).round() as i32,
         layout.source_distance(layout.source.stick_cursor_radius),
         color,
     );
@@ -944,7 +1070,7 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
 mod tests {
     use super::{
         CONTROLLER_PNG, ControllerReferenceLayout, GamepadVisualLayout, SourcePoint,
-        SourceTransform, contained_rect, panel_assignments,
+        SourceTransform, clamp_stick_cursor, contained_rect, panel_assignments,
     };
     use gotoo_pixel_engine::{GamepadId, Image, Rect};
 
@@ -1155,5 +1281,16 @@ mod tests {
 
         assert_eq!(small.point(source), (90, 80));
         assert_eq!(large.point(source), (190, 160));
+    }
+
+    #[test]
+    fn stick_cursor_motion_is_clamped_to_unit_circle() {
+        let unchanged = clamp_stick_cursor(0.5, -0.25);
+        assert_eq!(unchanged, (0.5, -0.25));
+
+        let diagonal = clamp_stick_cursor(1.0, 1.0);
+        let magnitude_squared = diagonal.0 * diagonal.0 + diagonal.1 * diagonal.1;
+        assert!((magnitude_squared - 1.0).abs() < 0.000_001);
+        assert!((diagonal.0 - diagonal.1).abs() < 0.000_001);
     }
 }
