@@ -19,14 +19,22 @@ const UNAVAILABLE: Pixel = Pixel::rgb(48, 62, 69);
 struct Probe {
     profile: GamepadProfile,
     controller_image: Image,
+    controller_layout: ControllerReferenceLayout,
 }
 
 impl Default for Probe {
     fn default() -> Self {
+        let controller_image = Image::decode_png(CONTROLLER_PNG)
+            .expect("embedded generic controller PNG must decode");
+        let controller_layout = ControllerReferenceLayout::for_image(
+            controller_image.width(),
+            controller_image.height(),
+        );
+
         Self {
             profile: GamepadProfile::standard(),
-            controller_image: Image::decode_png(CONTROLLER_PNG)
-                .expect("embedded generic controller PNG must decode"),
+            controller_image,
+            controller_layout,
         }
     }
 }
@@ -74,6 +82,7 @@ impl Game for Probe {
             self.profile,
             &ids,
             &self.controller_image,
+            self.controller_layout,
         );
         GameResult::Continue
     }
@@ -150,6 +159,7 @@ fn render(
     profile: GamepadProfile,
     ids: &[GamepadId],
     controller_image: &Image,
+    controller_layout: ControllerReferenceLayout,
 ) {
     fb.clear(BG);
     fb.draw_text(6, 5, "GPE GAMEPAD VISUAL PROBE", BRIGHT);
@@ -169,7 +179,14 @@ fn render(
             height: HEIGHT - 35,
         };
         for (id, rect) in panel_assignments(ids, bounds) {
-            draw_panel(fb, input, id, inset(rect, 2), controller_image);
+            draw_panel(
+                fb,
+                input,
+                id,
+                inset(rect, 2),
+                controller_image,
+                controller_layout,
+            );
         }
         if ids.len() > 4 {
             fb.draw_text(600, 5, &format!("+{}", ids.len() - 4), UNKNOWN);
@@ -185,26 +202,26 @@ fn render(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct NormalizedPoint {
+struct SourcePoint {
     x: f32,
     y: f32,
 }
 
-impl NormalizedPoint {
+impl SourcePoint {
     const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct NormalizedRect {
+struct SourceRect {
     x: f32,
     y: f32,
     width: f32,
     height: f32,
 }
 
-impl NormalizedRect {
+impl SourceRect {
     const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
@@ -215,65 +232,181 @@ impl NormalizedRect {
     }
 }
 
-const CONTROLLER_ART_RECT: NormalizedRect = NormalizedRect::new(0.07, 0.09, 0.86, 0.80);
-
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct GamepadVisualLayout {
-    bounds: Rect,
-    left_trigger: NormalizedRect,
-    right_trigger: NormalizedRect,
-    left_shoulder: NormalizedRect,
-    right_shoulder: NormalizedRect,
-    left_stick: NormalizedPoint,
-    right_stick: NormalizedPoint,
-    dpad: NormalizedPoint,
-    face: NormalizedPoint,
-    select: NormalizedPoint,
-    guide: NormalizedPoint,
-    start: NormalizedPoint,
+struct SourceCircle {
+    center: SourcePoint,
+    radius: f32,
 }
 
-impl GamepadVisualLayout {
-    fn within(panel: Rect, image_width: u32, image_height: u32) -> Self {
-        let image_bounds = contained_rect(controller_destination(panel), image_width, image_height);
-        let bounds = normalized_subrect(image_bounds, CONTROLLER_ART_RECT);
+// Calibration coordinates were measured directly against the complete contained
+// reference image. They are converted once into the committed PNG's native source
+// coordinate space, then every frame uses only source -> contained-image projection.
+const CALIBRATION_REFERENCE_WIDTH: f32 = 786.0;
+const CALIBRATION_REFERENCE_HEIGHT: f32 = 590.0;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ControllerReferenceLayout {
+    left_stick: SourceCircle,
+    right_stick: SourceCircle,
+    stick_cursor_range: f32,
+    stick_cursor_radius: f32,
+    dpad_up: SourceCircle,
+    dpad_down: SourceCircle,
+    dpad_left: SourceCircle,
+    dpad_right: SourceCircle,
+    north: SourceCircle,
+    south: SourceCircle,
+    east: SourceCircle,
+    west: SourceCircle,
+    select: SourceCircle,
+    guide: SourceCircle,
+    start: SourceCircle,
+    left_trigger: SourceRect,
+    right_trigger: SourceRect,
+    left_shoulder: SourceRect,
+    right_shoulder: SourceRect,
+}
+
+impl ControllerReferenceLayout {
+    fn for_image(image_width: u32, image_height: u32) -> Self {
+        let scale_x = image_width as f32 / CALIBRATION_REFERENCE_WIDTH;
+        let scale_y = image_height as f32 / CALIBRATION_REFERENCE_HEIGHT;
+        let scale = scale_x.min(scale_y);
+        let point = |x: f32, y: f32| SourcePoint::new(x * scale_x, y * scale_y);
+        let circle = |x: f32, y: f32, radius: f32| SourceCircle {
+            center: point(x, y),
+            radius: radius * scale,
+        };
+        let rect = |x: f32, y: f32, width: f32, height: f32| {
+            SourceRect::new(x * scale_x, y * scale_y, width * scale_x, height * scale_y)
+        };
 
         Self {
-            bounds,
-            left_trigger: NormalizedRect::new(0.16, 0.00, 0.15, 0.08),
-            right_trigger: NormalizedRect::new(0.69, 0.00, 0.15, 0.08),
-            left_shoulder: NormalizedRect::new(0.14, 0.08, 0.20, 0.09),
-            right_shoulder: NormalizedRect::new(0.66, 0.08, 0.20, 0.09),
-            left_stick: NormalizedPoint::new(0.231, 0.279),
-            right_stick: NormalizedPoint::new(0.641, 0.508),
-            dpad: NormalizedPoint::new(0.361, 0.523),
-            face: NormalizedPoint::new(0.769, 0.281),
-            select: NormalizedPoint::new(0.420, 0.290),
-            guide: NormalizedPoint::new(0.500, 0.212),
-            start: NormalizedPoint::new(0.578, 0.290),
+            left_stick: circle(212.0, 186.0, 27.0),
+            right_stick: circle(490.0, 294.0, 27.0),
+            stick_cursor_range: 22.0 * scale,
+            stick_cursor_radius: 4.0 * scale,
+            dpad_up: circle(300.0, 266.0, 10.0),
+            dpad_down: circle(300.0, 334.0, 10.0),
+            dpad_left: circle(266.0, 300.0, 10.0),
+            dpad_right: circle(334.0, 300.0, 10.0),
+            north: circle(575.0, 142.0, 16.0),
+            south: circle(576.0, 232.0, 16.0),
+            east: circle(623.0, 186.0, 16.0),
+            west: circle(531.0, 186.0, 16.0),
+            select: circle(340.0, 190.0, 10.0),
+            guide: circle(394.0, 154.0, 18.0),
+            start: circle(446.0, 190.0, 10.0),
+            left_trigger: rect(164.0, 55.0, 102.0, 37.0),
+            right_trigger: rect(522.0, 55.0, 102.0, 37.0),
+            left_shoulder: rect(150.0, 92.0, 136.0, 34.0),
+            right_shoulder: rect(502.0, 92.0, 136.0, 34.0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SourceTransform {
+    image_bounds: Rect,
+    source_width: f32,
+    source_height: f32,
+}
+
+impl SourceTransform {
+    fn new(image_bounds: Rect, source_width: u32, source_height: u32) -> Self {
+        Self {
+            image_bounds,
+            source_width: source_width as f32,
+            source_height: source_height as f32,
         }
     }
 
-    fn point(self, point: NormalizedPoint) -> (i32, i32) {
+    fn point(self, point: SourcePoint) -> (i32, i32) {
+        if self.source_width <= 0.0 || self.source_height <= 0.0 {
+            return (self.image_bounds.x, self.image_bounds.y);
+        }
+
         (
-            self.bounds.x + (self.bounds.width as f32 * point.x).round() as i32,
-            self.bounds.y + (self.bounds.height as f32 * point.y).round() as i32,
+            self.image_bounds.x
+                + (self.image_bounds.width as f32 * point.x / self.source_width).round() as i32,
+            self.image_bounds.y
+                + (self.image_bounds.height as f32 * point.y / self.source_height).round() as i32,
         )
     }
 
-    fn rect(self, rect: NormalizedRect) -> Rect {
+    fn rect(self, rect: SourceRect) -> Rect {
+        let (x, y) = self.point(SourcePoint::new(rect.x, rect.y));
+        if self.source_width <= 0.0 || self.source_height <= 0.0 {
+            return Rect {
+                x,
+                y,
+                width: 0,
+                height: 0,
+            };
+        }
+
         Rect {
-            x: self.bounds.x + (self.bounds.width as f32 * rect.x).round() as i32,
-            y: self.bounds.y + (self.bounds.height as f32 * rect.y).round() as i32,
-            width: (self.bounds.width as f32 * rect.width).round().max(1.0) as u32,
-            height: (self.bounds.height as f32 * rect.height).round().max(1.0) as u32,
+            x,
+            y,
+            width: (self.image_bounds.width as f32 * rect.width / self.source_width)
+                .round()
+                .max(1.0) as u32,
+            height: (self.image_bounds.height as f32 * rect.height / self.source_height)
+                .round()
+                .max(1.0) as u32,
         }
     }
 
-    fn unit(self, fraction: f32) -> u32 {
-        (self.bounds.width.min(self.bounds.height) as f32 * fraction)
-            .round()
-            .max(1.0) as u32
+    fn radius(self, source_radius: f32) -> u32 {
+        if self.source_width <= 0.0 || self.source_height <= 0.0 {
+            return 1;
+        }
+
+        let scale_x = self.image_bounds.width as f32 / self.source_width;
+        let scale_y = self.image_bounds.height as f32 / self.source_height;
+        (source_radius * scale_x.min(scale_y)).round().max(1.0) as u32
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GamepadVisualLayout {
+    source: ControllerReferenceLayout,
+    transform: SourceTransform,
+}
+
+impl GamepadVisualLayout {
+    fn within(
+        panel: Rect,
+        image_width: u32,
+        image_height: u32,
+        source: ControllerReferenceLayout,
+    ) -> Self {
+        let image_bounds = contained_rect(controller_destination(panel), image_width, image_height);
+        Self {
+            source,
+            transform: SourceTransform::new(image_bounds, image_width, image_height),
+        }
+    }
+
+    fn point(self, point: SourcePoint) -> (i32, i32) {
+        self.transform.point(point)
+    }
+
+    fn rect(self, rect: SourceRect) -> Rect {
+        self.transform.rect(rect)
+    }
+
+    fn circle(self, circle: SourceCircle) -> ((i32, i32), u32) {
+        (self.point(circle.center), self.transform.radius(circle.radius))
+    }
+
+    fn source_distance(self, distance: f32) -> u32 {
+        self.transform.radius(distance)
+    }
+
+    #[cfg(test)]
+    fn bounds(self) -> Rect {
+        self.transform.image_bounds
     }
 }
 
@@ -317,35 +450,13 @@ fn contained_rect(destination: Rect, source_width: u32, source_height: u32) -> R
     }
 }
 
-fn normalized_subrect(bounds: Rect, sub: NormalizedRect) -> Rect {
-    if bounds.width == 0 || bounds.height == 0 {
-        return Rect {
-            x: bounds.x,
-            y: bounds.y,
-            width: 0,
-            height: 0,
-        };
-    }
-
-    let offset_x = (bounds.width as f32 * sub.x.clamp(0.0, 1.0)).round() as u32;
-    let offset_y = (bounds.height as f32 * sub.y.clamp(0.0, 1.0)).round() as u32;
-    let width = (bounds.width as f32 * sub.width.max(0.0)).round() as u32;
-    let height = (bounds.height as f32 * sub.height.max(0.0)).round() as u32;
-
-    Rect {
-        x: bounds.x + offset_x as i32,
-        y: bounds.y + offset_y as i32,
-        width: width.min(bounds.width.saturating_sub(offset_x)),
-        height: height.min(bounds.height.saturating_sub(offset_y)),
-    }
-}
-
 fn draw_panel(
     fb: &mut Framebuffer,
     input: &Input,
     id: GamepadId,
     rect: Rect,
     controller_image: &Image,
+    controller_layout: ControllerReferenceLayout,
 ) {
     fb.fill_rect(rect.x, rect.y, rect.width, rect.height, PANEL);
     fb.draw_rect(rect.x, rect.y, rect.width, rect.height, FG);
@@ -370,8 +481,12 @@ fn draw_panel(
         },
     );
 
-    let layout =
-        GamepadVisualLayout::within(rect, controller_image.width(), controller_image.height());
+    let layout = GamepadVisualLayout::within(
+        rect,
+        controller_image.width(),
+        controller_image.height(),
+        controller_layout,
+    );
     fb.draw_image_fit(
         controller_image,
         controller_destination(rect),
@@ -386,7 +501,7 @@ fn draw_panel(
         input,
         id,
         layout,
-        layout.left_stick,
+        layout.source.left_stick,
         (
             (GamepadAxis::LeftStickX, GamepadAxis::LeftStickY),
             GamepadButton::LeftStickPress,
@@ -398,7 +513,7 @@ fn draw_panel(
         input,
         id,
         layout,
-        layout.right_stick,
+        layout.source.right_stick,
         (
             (GamepadAxis::RightStickX, GamepadAxis::RightStickY),
             GamepadButton::RightStickPress,
@@ -415,7 +530,7 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
         fb,
         input,
         id,
-        layout.rect(layout.left_trigger),
+        layout.rect(layout.source.left_trigger),
         "LT",
         GamepadAxis::LeftTrigger,
         GamepadButton::LeftTrigger,
@@ -424,7 +539,7 @@ fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Gam
         fb,
         input,
         id,
-        layout.rect(layout.right_trigger),
+        layout.rect(layout.source.right_trigger),
         "RT",
         GamepadAxis::RightTrigger,
         GamepadButton::RightTrigger,
@@ -477,7 +592,7 @@ fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Ga
         fb,
         input,
         id,
-        layout.rect(layout.left_shoulder),
+        layout.rect(layout.source.left_shoulder),
         "LB",
         GamepadButton::LeftShoulder,
     );
@@ -485,7 +600,7 @@ fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Ga
         fb,
         input,
         id,
-        layout.rect(layout.right_shoulder),
+        layout.rect(layout.source.right_shoulder),
         "RB",
         GamepadButton::RightShoulder,
     );
@@ -519,13 +634,12 @@ fn draw_stick(
     input: &Input,
     id: GamepadId,
     layout: GamepadVisualLayout,
-    normalized: NormalizedPoint,
+    source: SourceCircle,
     controls: ((GamepadAxis, GamepadAxis), GamepadButton, &str),
 ) {
     let (axes, press, label) = controls;
-    let center = layout.point(normalized);
-    let radius = layout.unit(0.055).max(4);
-    let cursor_range = radius.saturating_sub(2) as f32;
+    let (center, radius) = layout.circle(source);
+    let cursor_range = layout.source_distance(layout.source.stick_cursor_range) as f32;
     let capability = merge_capabilities(
         input.gamepad_axis_capability(id, axes.0),
         input.gamepad_axis_capability(id, axes.1),
@@ -536,36 +650,34 @@ fn draw_stick(
     let moved = axis_x.abs() > 0.02 || axis_y.abs() > 0.02;
     let color = capability_color(capability, pressed || moved);
 
-    fb.draw_circle(center.0, center.1, radius + 2, color);
-    if pressed {
-        fb.draw_circle(center.0, center.1, radius, ACTIVE);
+    fb.draw_circle(center.0, center.1, radius, color);
+    if pressed && radius > 1 {
+        fb.draw_circle(center.0, center.1, radius - 1, ACTIVE);
     }
     fb.fill_circle(
         center.0 + (axis_x * cursor_range).round() as i32,
         center.1 - (axis_y * cursor_range).round() as i32,
-        layout.unit(0.012).max(1),
+        layout.source_distance(layout.source.stick_cursor_radius),
         color,
     );
     fb.draw_text_with_font(
         Font::Mini3x5,
         center.0 - radius as i32,
-        center.1 + radius as i32 + 4,
+        center.1 + radius as i32 + 2,
         label,
         color,
     );
 }
 
 fn draw_dpad(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: GamepadVisualLayout) {
-    let (x, y) = layout.point(layout.dpad);
-    let offset = layout.unit(0.070).max(5) as i32;
-    let marker = layout.unit(0.018).max(2);
-    for (center, button) in [
-        ((x, y - offset), GamepadButton::DPadUp),
-        ((x, y + offset), GamepadButton::DPadDown),
-        ((x - offset, y), GamepadButton::DPadLeft),
-        ((x + offset, y), GamepadButton::DPadRight),
+    for (source, button) in [
+        (layout.source.dpad_up, GamepadButton::DPadUp),
+        (layout.source.dpad_down, GamepadButton::DPadDown),
+        (layout.source.dpad_left, GamepadButton::DPadLeft),
+        (layout.source.dpad_right, GamepadButton::DPadRight),
     ] {
-        draw_control_marker(fb, input, id, center, marker, button);
+        let (center, radius) = layout.circle(source);
+        draw_control_marker(fb, input, id, center, radius, button);
     }
 }
 
@@ -575,15 +687,13 @@ fn draw_face_buttons(
     id: GamepadId,
     layout: GamepadVisualLayout,
 ) {
-    let (x, y) = layout.point(layout.face);
-    let offset = layout.unit(0.095).max(6) as i32;
-    let radius = layout.unit(0.020).max(3);
-    for (center, button, label) in [
-        ((x, y - offset), GamepadButton::North, "N"),
-        ((x, y + offset), GamepadButton::South, "S"),
-        ((x + offset, y), GamepadButton::East, "E"),
-        ((x - offset, y), GamepadButton::West, "W"),
+    for (source, button, label) in [
+        (layout.source.north, GamepadButton::North, "N"),
+        (layout.source.south, GamepadButton::South, "S"),
+        (layout.source.east, GamepadButton::East, "E"),
+        (layout.source.west, GamepadButton::West, "W"),
     ] {
+        let (center, radius) = layout.circle(source);
         draw_labeled_marker(fb, input, id, center, radius, label, button);
     }
 }
@@ -594,34 +704,14 @@ fn draw_center_buttons(
     id: GamepadId,
     layout: GamepadVisualLayout,
 ) {
-    let radius = layout.unit(0.018).max(2);
-    draw_labeled_marker(
-        fb,
-        input,
-        id,
-        layout.point(layout.select),
-        radius,
-        "-",
-        GamepadButton::Select,
-    );
-    draw_labeled_marker(
-        fb,
-        input,
-        id,
-        layout.point(layout.guide),
-        radius + 1,
-        "G",
-        GamepadButton::Guide,
-    );
-    draw_labeled_marker(
-        fb,
-        input,
-        id,
-        layout.point(layout.start),
-        radius,
-        "+",
-        GamepadButton::Start,
-    );
+    for (source, button, label) in [
+        (layout.source.select, GamepadButton::Select, "-"),
+        (layout.source.guide, GamepadButton::Guide, "G"),
+        (layout.source.start, GamepadButton::Start, "+"),
+    ] {
+        let (center, radius) = layout.circle(source);
+        draw_labeled_marker(fb, input, id, center, radius, label, button);
+    }
 }
 
 fn draw_control_marker(
@@ -727,8 +817,8 @@ fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CONTROLLER_ART_RECT, CONTROLLER_PNG, GamepadVisualLayout, contained_rect,
-        normalized_subrect, panel_assignments,
+        CONTROLLER_PNG, ControllerReferenceLayout, GamepadVisualLayout, SourcePoint,
+        SourceTransform, contained_rect, panel_assignments,
     };
     use gotoo_pixel_engine::{GamepadId, Image, Rect};
 
@@ -790,55 +880,108 @@ mod tests {
     }
 
     #[test]
-    fn controller_art_rect_stays_inside_contained_image() {
-        let image_bounds = Rect {
-            x: 20,
-            y: 30,
-            width: 500,
-            height: 375,
+    fn source_projection_maps_image_edges_to_contained_bounds() {
+        let bounds = Rect {
+            x: 10,
+            y: 20,
+            width: 400,
+            height: 300,
         };
-        let art_bounds = normalized_subrect(image_bounds, CONTROLLER_ART_RECT);
+        let transform = SourceTransform::new(bounds, 800, 600);
 
-        assert!(image_bounds.contains((art_bounds.x, art_bounds.y)));
-        assert!(image_bounds.contains((
-            art_bounds.x + art_bounds.width as i32 - 1,
-            art_bounds.y + art_bounds.height as i32 - 1,
-        )));
-        assert!(art_bounds.width < image_bounds.width);
-        assert!(art_bounds.height < image_bounds.height);
+        assert_eq!(transform.point(SourcePoint::new(0.0, 0.0)), (10, 20));
+        assert_eq!(transform.point(SourcePoint::new(800.0, 600.0)), (410, 320));
     }
 
     #[test]
-    fn normalized_controller_layout_is_deterministic_and_inside_every_panel_shape() {
+    fn registered_controls_stay_inside_source_image() {
+        let image = Image::decode_png(CONTROLLER_PNG).expect("committed reference PNG must decode");
+        let width = image.width();
+        let height = image.height();
+        let layout = ControllerReferenceLayout::for_image(width, height);
+
+        for circle in [
+            layout.left_stick,
+            layout.right_stick,
+            layout.dpad_up,
+            layout.dpad_down,
+            layout.dpad_left,
+            layout.dpad_right,
+            layout.north,
+            layout.south,
+            layout.east,
+            layout.west,
+            layout.select,
+            layout.guide,
+            layout.start,
+        ] {
+            assert!(circle.center.x - circle.radius >= 0.0);
+            assert!(circle.center.y - circle.radius >= 0.0);
+            assert!(circle.center.x + circle.radius <= width as f32);
+            assert!(circle.center.y + circle.radius <= height as f32);
+        }
+
+        for rect in [
+            layout.left_trigger,
+            layout.right_trigger,
+            layout.left_shoulder,
+            layout.right_shoulder,
+        ] {
+            assert!(rect.x >= 0.0);
+            assert!(rect.y >= 0.0);
+            assert!(rect.x + rect.width <= width as f32);
+            assert!(rect.y + rect.height <= height as f32);
+        }
+    }
+
+    #[test]
+    fn source_registration_is_deterministic_and_inside_every_panel_shape() {
+        let image = Image::decode_png(CONTROLLER_PNG).expect("committed reference PNG must decode");
+        let width = image.width();
+        let height = image.height();
+        let source = ControllerReferenceLayout::for_image(width, height);
         for count in 1..=4 {
             let ids = (0..count).map(GamepadId::new).collect::<Vec<_>>();
             for (_, panel) in panel_assignments(&ids, BOUNDS) {
-                let layout = GamepadVisualLayout::within(panel, 1600, 1000);
-                assert_eq!(layout, GamepadVisualLayout::within(panel, 1600, 1000));
-                assert!(panel.contains((layout.bounds.x, layout.bounds.y)));
-                let last_x = layout.bounds.x + layout.bounds.width as i32 - 1;
-                let last_y = layout.bounds.y + layout.bounds.height as i32 - 1;
-                assert!(panel.contains((last_x, last_y)));
-                for point in [
-                    layout.left_stick,
-                    layout.right_stick,
-                    layout.dpad,
-                    layout.face,
-                    layout.select,
-                    layout.guide,
-                    layout.start,
+                let layout = GamepadVisualLayout::within(panel, width, height, source);
+                assert_eq!(
+                    layout,
+                    GamepadVisualLayout::within(panel, width, height, source)
+                );
+                let bounds = layout.bounds();
+                assert!(panel.contains((bounds.x, bounds.y)));
+                assert!(panel.contains((
+                    bounds.x + bounds.width as i32 - 1,
+                    bounds.y + bounds.height as i32 - 1,
+                )));
+
+                for circle in [
+                    source.left_stick,
+                    source.right_stick,
+                    source.dpad_up,
+                    source.dpad_down,
+                    source.dpad_left,
+                    source.dpad_right,
+                    source.north,
+                    source.south,
+                    source.east,
+                    source.west,
+                    source.select,
+                    source.guide,
+                    source.start,
                 ] {
-                    assert!(layout.bounds.contains(layout.point(point)));
+                    assert!(bounds.contains(layout.point(circle.center)));
                 }
+
                 for rect in [
-                    layout.left_trigger,
-                    layout.right_trigger,
-                    layout.left_shoulder,
-                    layout.right_shoulder,
+                    source.left_trigger,
+                    source.right_trigger,
+                    source.left_shoulder,
+                    source.right_shoulder,
                 ] {
                     let rect = layout.rect(rect);
-                    assert!(layout.bounds.contains((rect.x, rect.y)));
-                    assert!(layout.bounds.contains((
+                    assert!(bounds.contains((rect.x, rect.y)));
+                    assert!(bounds.contains((
                         rect.x + rect.width as i32 - 1,
                         rect.y + rect.height as i32 - 1,
                     )));
@@ -848,30 +991,30 @@ mod tests {
     }
 
     #[test]
-    fn controller_layout_scales_instead_of_using_fixed_probe_coordinates() {
-        let small = GamepadVisualLayout::within(
+    fn source_projection_scales_without_changing_relative_position() {
+        let source = SourcePoint::new(256.0, 192.0);
+        let small = SourceTransform::new(
             Rect {
                 x: 10,
                 y: 20,
-                width: 240,
-                height: 140,
+                width: 320,
+                height: 240,
             },
-            1600,
-            1000,
+            1024,
+            768,
         );
-        let large = GamepadVisualLayout::within(
+        let large = SourceTransform::new(
             Rect {
                 x: 30,
                 y: 40,
-                width: 600,
-                height: 300,
+                width: 640,
+                height: 480,
             },
-            1600,
-            1000,
+            1024,
+            768,
         );
 
-        assert!(large.bounds.width > small.bounds.width);
-        assert!(large.bounds.height > small.bounds.height);
-        assert_ne!(large.point(large.left_stick), small.point(small.left_stick));
+        assert_eq!(small.point(source), (90, 80));
+        assert_eq!(large.point(source), (190, 160));
     }
 }
