@@ -24,8 +24,8 @@ struct Probe {
 
 impl Default for Probe {
     fn default() -> Self {
-        let controller_image = Image::decode_png(CONTROLLER_PNG)
-            .expect("embedded generic controller PNG must decode");
+        let controller_image =
+            Image::decode_png(CONTROLLER_PNG).expect("embedded generic controller PNG must decode");
         let controller_layout = ControllerReferenceLayout::for_image(
             controller_image.width(),
             controller_image.height(),
@@ -289,9 +289,7 @@ impl ControllerReferenceLayout {
         let rect = |x: f32, y: f32, width: f32, height: f32| {
             SourceRect::new(x * scale_x, y * scale_y, width * scale_x, height * scale_y)
         };
-        let shape = |points: [(f32, f32); SHAPE_POINTS]| {
-            points.map(|(x, y)| point(x, y))
-        };
+        let shape = |points: [(f32, f32); SHAPE_POINTS]| points.map(|(x, y)| point(x, y));
 
         Self {
             left_stick: circle(212.0, 187.0, 27.0),
@@ -455,7 +453,10 @@ impl GamepadVisualLayout {
     }
 
     fn circle(self, circle: SourceCircle) -> ((i32, i32), u32) {
-        (self.point(circle.center), self.transform.radius(circle.radius))
+        (
+            self.point(circle.center),
+            self.transform.radius(circle.radius),
+        )
     }
 
     fn source_distance(self, distance: f32) -> u32 {
@@ -728,12 +729,7 @@ fn draw_source_polygon(
     }
 }
 
-fn draw_line_segment(
-    fb: &mut Framebuffer,
-    start: (i32, i32),
-    end: (i32, i32),
-    color: Pixel,
-) {
+fn draw_line_segment(fb: &mut Framebuffer, start: (i32, i32), end: (i32, i32), color: Pixel) {
     let (mut x0, mut y0) = start;
     let (x1, y1) = end;
     let dx = (x1 - x0).abs();
