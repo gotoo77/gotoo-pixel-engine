@@ -13,6 +13,72 @@ permissions:
   contents: read
 
 jobs:
+  conventional-commits:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Cocogitto
+        uses: cocogitto/cocogitto-action@v4.2.0
+        with:
+          install-only: true
+
+      - name: Validate Cocogitto configuration
+        run: |
+          set -eu
+          git config user.name "github-actions"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cog --version
+          cog verify "feat(render): add test feature"
+          if cog verify "did some stuff"; then
+            echo "invalid Conventional Commit was unexpectedly accepted" >&2
+            exit 1
+          fi
+
+      - name: Validate introduced commits
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          case "$EVENT_NAME" in
+            pull_request)
+              base="$(git merge-base "$PR_BASE_SHA" HEAD)"
+              ;;
+            push)
+              base="$PUSH_BEFORE_SHA"
+              if [[ "$base" =~ ^0+$ ]]; then
+                base="$(git rev-list --max-parents=0 HEAD)"
+              fi
+              ;;
+            *)
+              echo "unsupported event: $EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+
+          mapfile -t commits < <(git rev-list --reverse --no-merges "$base"..HEAD)
+          if ((${#commits[@]} == 0)); then
+            echo "No non-merge commits introduced by this event."
+            exit 0
+          fi
+
+          for commit in "${commits[@]}"; do
+            echo "Checking $(git show -s --format='%h %s' "$commit")"
+            git show -s --format=%B "$commit" | cog verify --file -
+          done
+
+      - name: Explain manual dispatch scope
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "Manual dispatch has no unambiguous introduced-commit range; commit policy is enforced on PRs and pushes to main."
+
   native:
     runs-on: ubuntu-latest
 

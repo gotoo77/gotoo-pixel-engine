@@ -1,0 +1,43 @@
+from_latest_tag = true
+ignore_merge_commits = true
+tag_prefix = "v"
+branch_whitelist = ["main"]
+
+# Cocogitto defaults to "[skip ci]" on its own commits. Keep CI active so a
+# future tag-triggered release workflow is not silently skipped.
+skip_ci = ""
+
+pre_bump_hooks = [
+    "python scripts/dev.py check",
+    "python scripts/dev.py check-web",
+    "python scripts/dev.py build-web",
+    "cargo set-version {{version}}",
+    "cargo check --locked",
+    "git add :/Cargo.lock",
+]
+post_bump_hooks = []
+
+[changelog]
+path = "CHANGELOG.md"
+template = "remote"
+remote = "github.com"
+owner = "gotoo77"
+repository = "gotoo-pixel-engine"
+
+[commit_types]
+feat = { changelog_title = "Features", order = 0 }
+fix = { changelog_title = "Bug Fixes", order = 1 }
+perf = { changelog_title = "Performance", order = 2 }
+revert = { changelog_title = "Reverts", order = 3 }
+docs = { changelog_title = "Documentation", order = 4 }
+refactor = { changelog_title = "", omit_from_changelog = true }
+test = { changelog_title = "", omit_from_changelog = true }
+build = { changelog_title = "", omit_from_changelog = true }
+ci = { changelog_title = "", omit_from_changelog = true }
+chore = { changelog_title = "", omit_from_changelog = true }
+style = { changelog_title = "", omit_from_changelog = true }
+
+[git_hooks.commit-msg]
+script = """#!/bin/sh
+exec cog verify --file "$1"
+"""
