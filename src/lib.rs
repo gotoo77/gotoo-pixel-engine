@@ -12,6 +12,7 @@ pub mod framebuffer;
 mod gamepad;
 mod gamepad_profile;
 mod image;
+mod image_fit;
 mod input;
 mod pixel;
 mod platform;
@@ -54,6 +55,7 @@ pub use diagnostics::{
 pub use framebuffer::{Font, Framebuffer};
 pub use gamepad_profile::{AxisCalibration, GamepadProfile};
 pub use image::{Image, ImageError, ImageRegion};
+pub use image_fit::{ImageFilter, ImageFit};
 pub use input::{
     ButtonState, GamepadButton, GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, Input, Key,
     MouseButton, Touch, TouchPhase,
