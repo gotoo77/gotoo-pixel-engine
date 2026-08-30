@@ -583,30 +583,50 @@ fn draw_panel(
     draw_center_buttons(fb, input, id, layout);
 }
 
+struct TriggerOverlaySpec<'a> {
+    shape: &'a [SourcePoint],
+    meter: SourceRect,
+    label_position: SourcePoint,
+    label: &'a str,
+    axis: GamepadAxis,
+    button: GamepadButton,
+}
+
+struct ShoulderOverlaySpec<'a> {
+    shape: &'a [SourcePoint],
+    label_position: SourcePoint,
+    label: &'a str,
+    button: GamepadButton,
+}
+
 fn draw_triggers(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: GamepadVisualLayout) {
     draw_trigger_overlay(
         fb,
         input,
         id,
         layout,
-        &layout.source.left_trigger,
-        layout.source.left_trigger_meter,
-        layout.source.left_trigger_label,
-        "LT",
-        GamepadAxis::LeftTrigger,
-        GamepadButton::LeftTrigger,
+        TriggerOverlaySpec {
+            shape: &layout.source.left_trigger,
+            meter: layout.source.left_trigger_meter,
+            label_position: layout.source.left_trigger_label,
+            label: "LT",
+            axis: GamepadAxis::LeftTrigger,
+            button: GamepadButton::LeftTrigger,
+        },
     );
     draw_trigger_overlay(
         fb,
         input,
         id,
         layout,
-        &layout.source.right_trigger,
-        layout.source.right_trigger_meter,
-        layout.source.right_trigger_label,
-        "RT",
-        GamepadAxis::RightTrigger,
-        GamepadButton::RightTrigger,
+        TriggerOverlaySpec {
+            shape: &layout.source.right_trigger,
+            meter: layout.source.right_trigger_meter,
+            label_position: layout.source.right_trigger_label,
+            label: "RT",
+            axis: GamepadAxis::RightTrigger,
+            button: GamepadButton::RightTrigger,
+        },
     );
 }
 
@@ -615,23 +635,18 @@ fn draw_trigger_overlay(
     input: &Input,
     id: GamepadId,
     layout: GamepadVisualLayout,
-    shape: &[SourcePoint],
-    meter: SourceRect,
-    label_position: SourcePoint,
-    label: &str,
-    axis: GamepadAxis,
-    button: GamepadButton,
+    spec: TriggerOverlaySpec<'_>,
 ) {
-    let analog = input.gamepad_axis_capability(id, axis);
-    let digital = input.gamepad_button_capability(id, button);
-    let value = input.gamepad_axis(id, axis).clamp(0.0, 1.0);
-    let held = input.gamepad_button(id, button).held();
+    let analog = input.gamepad_axis_capability(id, spec.axis);
+    let digital = input.gamepad_button_capability(id, spec.button);
+    let value = input.gamepad_axis(id, spec.axis).clamp(0.0, 1.0);
+    let held = input.gamepad_button(id, spec.button).held();
     let capability = merge_capabilities(analog, digital);
     let active = held || (analog == GamepadCapability::Available && value > 0.02);
     let color = capability_color(capability, active);
 
-    draw_source_polygon(fb, layout, shape, color);
-    let meter = layout.rect(meter);
+    draw_source_polygon(fb, layout, spec.shape, color);
+    let meter = layout.rect(spec.meter);
     if analog == GamepadCapability::Available {
         let progress = (meter.width as f32 * value).round() as u32;
         if progress > 0 {
@@ -640,12 +655,12 @@ fn draw_trigger_overlay(
     } else if held {
         fb.fill_rect(meter.x, meter.y, meter.width, 1, color);
     }
-    let label_position = layout.point(label_position);
+    let label_position = layout.point(spec.label_position);
     fb.draw_text_with_font(
         Font::Mini3x5,
         label_position.0,
         label_position.1,
-        label,
+        spec.label,
         color,
     );
 }
@@ -656,20 +671,24 @@ fn draw_shoulders(fb: &mut Framebuffer, input: &Input, id: GamepadId, layout: Ga
         input,
         id,
         layout,
-        &layout.source.left_shoulder,
-        layout.source.left_shoulder_label,
-        "LB",
-        GamepadButton::LeftShoulder,
+        ShoulderOverlaySpec {
+            shape: &layout.source.left_shoulder,
+            label_position: layout.source.left_shoulder_label,
+            label: "LB",
+            button: GamepadButton::LeftShoulder,
+        },
     );
     draw_shoulder_overlay(
         fb,
         input,
         id,
         layout,
-        &layout.source.right_shoulder,
-        layout.source.right_shoulder_label,
-        "RB",
-        GamepadButton::RightShoulder,
+        ShoulderOverlaySpec {
+            shape: &layout.source.right_shoulder,
+            label_position: layout.source.right_shoulder_label,
+            label: "RB",
+            button: GamepadButton::RightShoulder,
+        },
     );
 }
 
@@ -678,19 +697,16 @@ fn draw_shoulder_overlay(
     input: &Input,
     id: GamepadId,
     layout: GamepadVisualLayout,
-    shape: &[SourcePoint],
-    label_position: SourcePoint,
-    label: &str,
-    button: GamepadButton,
+    spec: ShoulderOverlaySpec<'_>,
 ) {
-    let color = button_color(input, id, button);
-    draw_source_polygon(fb, layout, shape, color);
-    let label_position = layout.point(label_position);
+    let color = button_color(input, id, spec.button);
+    draw_source_polygon(fb, layout, spec.shape, color);
+    let label_position = layout.point(spec.label_position);
     fb.draw_text_with_font(
         Font::Mini3x5,
         label_position.0,
         label_position.1,
-        label,
+        spec.label,
         color,
     );
 }
