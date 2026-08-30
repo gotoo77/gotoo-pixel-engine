@@ -53,6 +53,13 @@ impl GamepadId {
 pub struct GamepadDeviceInfo {
     pub id: GamepadId,
     pub name: String,
+    pub os_name: Option<String>,
+    pub mapping_name: Option<String>,
+    pub mapping_source: GamepadMappingSource,
+    pub guid: Option<String>,
+    pub vendor_id: Option<u16>,
+    pub product_id: Option<u16>,
+    pub capabilities: GamepadCapabilities,
 }
 
 impl GamepadDeviceInfo {
@@ -60,11 +67,81 @@ impl GamepadDeviceInfo {
         Self {
             id,
             name: name.into(),
+            os_name: None,
+            mapping_name: None,
+            mapping_source: GamepadMappingSource::Unknown,
+            guid: None,
+            vendor_id: None,
+            product_id: None,
+            capabilities: GamepadCapabilities::unknown(),
         }
     }
 
     fn unknown(id: GamepadId) -> Self {
         Self::new(id, format!("Gamepad {}", id.as_usize()))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum GamepadMappingSource {
+    SdlMappings,
+    Driver,
+    BrowserStandard,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum GamepadCapability {
+    Available,
+    Unavailable,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GamepadCapabilities {
+    buttons: [GamepadCapability; GAMEPAD_BUTTON_COUNT],
+    axes: [GamepadCapability; GAMEPAD_AXIS_COUNT],
+}
+
+impl GamepadCapabilities {
+    pub const fn unknown() -> Self {
+        Self {
+            buttons: [GamepadCapability::Unknown; GAMEPAD_BUTTON_COUNT],
+            axes: [GamepadCapability::Unknown; GAMEPAD_AXIS_COUNT],
+        }
+    }
+
+    pub const fn standard() -> Self {
+        Self {
+            buttons: [GamepadCapability::Available; GAMEPAD_BUTTON_COUNT],
+            axes: [GamepadCapability::Available; GAMEPAD_AXIS_COUNT],
+        }
+    }
+
+    pub fn button(&self, button: GamepadButton) -> GamepadCapability {
+        self.buttons[gamepad_button_index(button)]
+    }
+
+    pub fn axis(&self, axis: GamepadAxis) -> GamepadCapability {
+        self.axes[gamepad_axis_index(axis)]
+    }
+
+    #[cfg(any(not(target_arch = "wasm32"), test))]
+    pub(crate) fn set_button(&mut self, button: GamepadButton, capability: GamepadCapability) {
+        self.buttons[gamepad_button_index(button)] = capability;
+    }
+
+    #[cfg(any(not(target_arch = "wasm32"), test))]
+    pub(crate) fn set_axis(&mut self, axis: GamepadAxis, capability: GamepadCapability) {
+        self.axes[gamepad_axis_index(axis)] = capability;
+    }
+}
+
+impl Default for GamepadCapabilities {
+    fn default() -> Self {
+        Self::unknown()
     }
 }
 
@@ -92,6 +169,25 @@ pub enum GamepadButton {
     LeftStickDown,
     LeftStickLeft,
     LeftStickRight,
+    LeftTrigger,
+    RightTrigger,
+    LeftStickPress,
+    RightStickPress,
+    Guide,
+    RightStickUp,
+    RightStickDown,
+    RightStickLeft,
+    RightStickRight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GamepadAxis {
+    LeftStickX,
+    LeftStickY,
+    RightStickX,
+    RightStickY,
+    LeftTrigger,
+    RightTrigger,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -173,10 +269,11 @@ impl ButtonState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct GamepadState {
     info: GamepadDeviceInfo,
     buttons: [ButtonState; GAMEPAD_BUTTON_COUNT],
+    axes: [f32; GAMEPAD_AXIS_COUNT],
 }
 
 impl GamepadState {
@@ -184,9 +281,24 @@ impl GamepadState {
         Self {
             info,
             buttons: [ButtonState::default(); GAMEPAD_BUTTON_COUNT],
+            axes: [0.0; GAMEPAD_AXIS_COUNT],
         }
     }
 }
+
+impl PartialEq for GamepadState {
+    fn eq(&self, other: &Self) -> bool {
+        self.info == other.info
+            && self.buttons == other.buttons
+            && self
+                .axes
+                .iter()
+                .zip(other.axes.iter())
+                .all(|(left, right)| left.to_bits() == right.to_bits())
+    }
+}
+
+impl Eq for GamepadState {}
 
 #[derive(Debug, Clone)]
 pub struct Input {
@@ -245,6 +357,29 @@ impl Input {
         ButtonState { bits }
     }
 
+    pub fn gamepad_axis(&self, id: GamepadId, axis: GamepadAxis) -> f32 {
+        self.gamepads
+            .get(&id)
+            .map(|gamepad| gamepad.axes[gamepad_axis_index(axis)])
+            .unwrap_or(0.0)
+    }
+
+    pub fn gamepad_button_capability(
+        &self,
+        id: GamepadId,
+        button: GamepadButton,
+    ) -> GamepadCapability {
+        self.gamepad_info(id)
+            .map(|info| info.capabilities.button(button))
+            .unwrap_or(GamepadCapability::Unknown)
+    }
+
+    pub fn gamepad_axis_capability(&self, id: GamepadId, axis: GamepadAxis) -> GamepadCapability {
+        self.gamepad_info(id)
+            .map(|info| info.capabilities.axis(axis))
+            .unwrap_or(GamepadCapability::Unknown)
+    }
+
     pub fn gamepad_ids(&self) -> impl Iterator<Item = GamepadId> + '_ {
         self.gamepads.keys().copied()
     }
@@ -298,16 +433,34 @@ impl Input {
     }
 
     pub(crate) fn connect_gamepad(&mut self, id: GamepadId, name: impl Into<String>) {
-        let name = name.into();
+        self.connect_gamepad_info(GamepadDeviceInfo::new(id, name));
+    }
+
+    pub(crate) fn connect_gamepad_info(&mut self, info: GamepadDeviceInfo) {
+        let id = info.id;
         if let Some(gamepad) = self.gamepads.get_mut(&id) {
-            gamepad.info.name = name;
+            gamepad.info = info;
             return;
         }
 
-        let info = GamepadDeviceInfo::new(id, name);
         self.gamepads.insert(id, GamepadState::new(info.clone()));
         self.gamepad_connection_events
             .push(GamepadConnectionEvent::Connected(info));
+    }
+
+    pub(crate) fn set_gamepad_axis(&mut self, id: GamepadId, axis: GamepadAxis, value: f32) {
+        if !self.gamepads.contains_key(&id) {
+            self.connect_gamepad(id, format!("Gamepad {}", id.as_usize()));
+        }
+        let value = if value.is_finite() { value } else { 0.0 };
+        let range = match axis {
+            GamepadAxis::LeftTrigger | GamepadAxis::RightTrigger => 0.0..=1.0,
+            _ => -1.0..=1.0,
+        };
+        self.gamepads
+            .get_mut(&id)
+            .expect("gamepad state should exist after insertion")
+            .axes[gamepad_axis_index(axis)] = value.clamp(*range.start(), *range.end());
     }
 
     pub(crate) fn set_gamepad_button(&mut self, id: GamepadId, button: GamepadButton, held: bool) {
@@ -372,7 +525,8 @@ impl Default for Input {
 
 const KEY_COUNT: usize = 22;
 const MOUSE_BUTTON_COUNT: usize = 3;
-const GAMEPAD_BUTTON_COUNT: usize = 16;
+const GAMEPAD_BUTTON_COUNT: usize = 25;
+const GAMEPAD_AXIS_COUNT: usize = 6;
 
 fn key_index(key: Key) -> usize {
     match key {
@@ -427,13 +581,34 @@ fn gamepad_button_index(button: GamepadButton) -> usize {
         GamepadButton::LeftStickDown => 13,
         GamepadButton::LeftStickLeft => 14,
         GamepadButton::LeftStickRight => 15,
+        GamepadButton::LeftTrigger => 16,
+        GamepadButton::RightTrigger => 17,
+        GamepadButton::LeftStickPress => 18,
+        GamepadButton::RightStickPress => 19,
+        GamepadButton::Guide => 20,
+        GamepadButton::RightStickUp => 21,
+        GamepadButton::RightStickDown => 22,
+        GamepadButton::RightStickLeft => 23,
+        GamepadButton::RightStickRight => 24,
+    }
+}
+
+fn gamepad_axis_index(axis: GamepadAxis) -> usize {
+    match axis {
+        GamepadAxis::LeftStickX => 0,
+        GamepadAxis::LeftStickY => 1,
+        GamepadAxis::RightStickX => 2,
+        GamepadAxis::RightStickY => 3,
+        GamepadAxis::LeftTrigger => 4,
+        GamepadAxis::RightTrigger => 5,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        GamepadButton, GamepadConnectionEvent, GamepadId, Input, Key, MouseButton, Touch,
+        GamepadAxis, GamepadButton, GamepadCapabilities, GamepadCapability, GamepadConnectionEvent,
+        GamepadDeviceInfo, GamepadId, GamepadMappingSource, Input, Key, MouseButton, Touch,
         TouchPhase,
     };
     use crate::GamepadProfile;
@@ -644,6 +819,99 @@ mod tests {
             &[GamepadConnectionEvent::Disconnected(
                 super::GamepadDeviceInfo::new(id, "Disposable Pad")
             )]
+        );
+    }
+
+    #[test]
+    fn gamepad_axes_are_device_scoped_clamped_and_neutral_when_unknown() {
+        let mut input = Input::default();
+        let first = GamepadId::new(1);
+        let second = GamepadId::new(2);
+
+        input.set_gamepad_axis(first, GamepadAxis::RightStickX, 1.5);
+        input.set_gamepad_axis(second, GamepadAxis::RightStickX, -0.25);
+        input.set_gamepad_axis(first, GamepadAxis::LeftTrigger, -0.5);
+        input.set_gamepad_axis(first, GamepadAxis::RightTrigger, f32::NAN);
+
+        assert_eq!(input.gamepad_axis(first, GamepadAxis::RightStickX), 1.0);
+        assert_eq!(input.gamepad_axis(second, GamepadAxis::RightStickX), -0.25);
+        assert_eq!(input.gamepad_axis(first, GamepadAxis::LeftTrigger), 0.0);
+        assert_eq!(input.gamepad_axis(first, GamepadAxis::RightTrigger), 0.0);
+        assert_eq!(
+            input.gamepad_axis(GamepadId::new(99), GamepadAxis::LeftStickY),
+            0.0
+        );
+    }
+
+    #[test]
+    fn disconnect_removes_axes_metadata_and_capabilities() {
+        let mut input = Input::default();
+        let id = GamepadId::new(4);
+        let mut capabilities = GamepadCapabilities::unknown();
+        capabilities.set_axis(GamepadAxis::RightStickX, GamepadCapability::Available);
+        input.connect_gamepad_info(GamepadDeviceInfo {
+            id,
+            name: "Mapped Pad".to_owned(),
+            os_name: Some("OS Pad".to_owned()),
+            mapping_name: Some("Test Mapping".to_owned()),
+            mapping_source: GamepadMappingSource::SdlMappings,
+            guid: Some("001122".to_owned()),
+            vendor_id: Some(0x1234),
+            product_id: Some(0xabcd),
+            capabilities,
+        });
+        input.set_gamepad_axis(id, GamepadAxis::RightStickX, 0.75);
+        assert_eq!(
+            input.gamepad_axis_capability(id, GamepadAxis::RightStickX),
+            GamepadCapability::Available
+        );
+
+        input.disconnect_gamepad(id);
+
+        assert_eq!(input.gamepad_axis(id, GamepadAxis::RightStickX), 0.0);
+        assert!(input.gamepad_info(id).is_none());
+        assert_eq!(
+            input.gamepad_axis_capability(id, GamepadAxis::RightStickX),
+            GamepadCapability::Unknown
+        );
+    }
+
+    #[test]
+    fn unknown_mapping_does_not_fabricate_capabilities() {
+        let mut input = Input::default();
+        let id = GamepadId::new(8);
+        input.connect_gamepad(id, "Unknown Pad");
+
+        assert_eq!(
+            input.gamepad_button_capability(id, GamepadButton::Guide),
+            GamepadCapability::Unknown
+        );
+        assert_eq!(
+            input.gamepad_axis_capability(id, GamepadAxis::LeftTrigger),
+            GamepadCapability::Unknown
+        );
+    }
+
+    #[test]
+    fn device_metadata_is_scoped_by_gamepad_id() {
+        let mut input = Input::default();
+        let first = GamepadId::new(1);
+        let second = GamepadId::new(2);
+        let mut first_info = GamepadDeviceInfo::new(first, "First");
+        first_info.vendor_id = Some(0x1111);
+        let mut second_info = GamepadDeviceInfo::new(second, "Second");
+        second_info.vendor_id = Some(0x2222);
+
+        input.connect_gamepad_info(first_info);
+        input.connect_gamepad_info(second_info);
+
+        assert_eq!(
+            input.gamepad_info(first).and_then(|info| info.vendor_id),
+            Some(0x1111)
+        );
+        assert_eq!(
+            input.gamepad_info(second).and_then(|info| info.vendor_id),
+            Some(0x2222)
         );
     }
 

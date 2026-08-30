@@ -52,10 +52,11 @@ pub use diagnostics::{
     TargetFamily, WgpuErrorCategory,
 };
 pub use framebuffer::{Font, Framebuffer};
-pub use gamepad_profile::{AxisCalibration, GamepadProfile};
+pub use gamepad_profile::{AxisCalibration, GamepadProfile, TriggerCalibration};
 pub use image::{Image, ImageError, ImageRegion};
 pub use input::{
-    ButtonState, GamepadButton, GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, Input, Key,
+    ButtonState, GamepadAxis, GamepadButton, GamepadCapabilities, GamepadCapability,
+    GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, GamepadMappingSource, Input, Key,
     MouseButton, Touch, TouchPhase,
 };
 pub use pixel::Pixel;
@@ -69,5 +70,5 @@ pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
 pub use text::TextRenderer;
-pub use viewport::{Rect, Size, Viewport};
+pub use viewport::{MAX_SPLIT_VIEWS, Rect, Size, Viewport, split_view_layout};
 pub use window_icon::{set_window_icon, set_window_icon_png};
