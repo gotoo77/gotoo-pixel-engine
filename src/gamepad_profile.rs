@@ -82,9 +82,47 @@ fn same_direction(value: f32, reference: f32) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TriggerCalibration {
+    raw_released: f32,
+    raw_pressed: f32,
+    dead_zone: f32,
+}
+
+impl TriggerCalibration {
+    pub const fn new(raw_released: f32, raw_pressed: f32, dead_zone: f32) -> Self {
+        Self {
+            raw_released,
+            raw_pressed,
+            dead_zone,
+        }
+    }
+
+    pub const fn standard(dead_zone: f32) -> Self {
+        Self::new(0.0, 1.0, dead_zone)
+    }
+
+    pub fn normalize(self, raw: f32) -> f32 {
+        let span = self.raw_pressed - self.raw_released;
+        if !raw.is_finite() || span.abs() <= f32::EPSILON {
+            return 0.0;
+        }
+        let value = ((raw - self.raw_released) / span).clamp(0.0, 1.0);
+        if value <= self.dead_zone.clamp(0.0, 0.95) {
+            0.0
+        } else {
+            value
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GamepadProfile {
     pub left_stick_x: AxisCalibration,
     pub left_stick_y: AxisCalibration,
+    pub right_stick_x: AxisCalibration,
+    pub right_stick_y: AxisCalibration,
+    pub left_trigger: TriggerCalibration,
+    pub right_trigger: TriggerCalibration,
     pub dpad_x: AxisCalibration,
     pub dpad_y: AxisCalibration,
     pub digital_threshold: f32,
@@ -95,6 +133,10 @@ impl GamepadProfile {
         Self {
             left_stick_x: AxisCalibration::standard(0.20),
             left_stick_y: AxisCalibration::standard(0.20),
+            right_stick_x: AxisCalibration::standard(0.20),
+            right_stick_y: AxisCalibration::standard(0.20),
+            left_trigger: TriggerCalibration::standard(0.02),
+            right_trigger: TriggerCalibration::standard(0.02),
             dpad_x: AxisCalibration::standard(0.10),
             dpad_y: AxisCalibration::standard(0.10),
             digital_threshold: 0.50,
@@ -108,6 +150,26 @@ impl GamepadProfile {
 
     pub fn with_left_stick_y(mut self, calibration: AxisCalibration) -> Self {
         self.left_stick_y = calibration;
+        self
+    }
+
+    pub fn with_right_stick_x(mut self, calibration: AxisCalibration) -> Self {
+        self.right_stick_x = calibration;
+        self
+    }
+
+    pub fn with_right_stick_y(mut self, calibration: AxisCalibration) -> Self {
+        self.right_stick_y = calibration;
+        self
+    }
+
+    pub fn with_left_trigger(mut self, calibration: TriggerCalibration) -> Self {
+        self.left_trigger = calibration;
+        self
+    }
+
+    pub fn with_right_trigger(mut self, calibration: TriggerCalibration) -> Self {
+        self.right_trigger = calibration;
         self
     }
 
@@ -154,7 +216,7 @@ impl GamepadProfiles {
 
 #[cfg(test)]
 mod tests {
-    use super::{AxisCalibration, GamepadProfile, GamepadProfiles};
+    use super::{AxisCalibration, GamepadProfile, GamepadProfiles, TriggerCalibration};
     use crate::GamepadId;
 
     #[test]
@@ -190,6 +252,15 @@ mod tests {
 
         assert_eq!(axis.normalize(0.0), 1.0);
         assert_eq!(axis.normalize(1.0), -1.0);
+    }
+
+    #[test]
+    fn trigger_calibration_is_unipolar_and_clamped() {
+        let trigger = TriggerCalibration::new(-1.0, 1.0, 0.05);
+        assert_eq!(trigger.normalize(-1.0), 0.0);
+        assert_eq!(trigger.normalize(0.0), 0.5);
+        assert_eq!(trigger.normalize(1.0), 1.0);
+        assert_eq!(trigger.normalize(2.0), 1.0);
     }
 
     #[test]

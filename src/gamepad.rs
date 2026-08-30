@@ -1,4 +1,10 @@
-use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
+use crate::{
+    AxisCalibration, GamepadAxis, GamepadButton, GamepadCapabilities, GamepadDeviceInfo, GamepadId,
+    GamepadMappingSource, GamepadProfile, Input,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::GamepadCapability;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
@@ -44,18 +50,17 @@ impl GamepadInputBackend {
 
         let connected = gilrs
             .gamepads()
-            .map(|(id, gamepad)| (GamepadId::new(usize::from(id)), gamepad.name().to_owned()))
+            .map(|(id, gamepad)| device_info(GamepadId::new(usize::from(id)), gamepad))
             .collect::<Vec<_>>();
-        for (id, name) in connected {
-            input.connect_gamepad(id, name);
+        for info in connected {
+            input.connect_gamepad_info(info);
         }
 
         while let Some(event) = gilrs.next_event() {
             let id = GamepadId::new(usize::from(event.id));
             match event.event {
                 gilrs::EventType::Connected => {
-                    let name = gilrs.gamepad(event.id).name().to_owned();
-                    input.connect_gamepad(id, name);
+                    input.connect_gamepad_info(device_info(id, gilrs.gamepad(event.id)));
                 }
                 gilrs::EventType::ButtonPressed(button, _) => {
                     if let Some(button) = button_from_gilrs(button) {
@@ -105,8 +110,13 @@ fn button_from_gilrs(button: gilrs::Button) -> Option<GamepadButton> {
         gilrs::Button::West => Some(GamepadButton::West),
         gilrs::Button::LeftTrigger => Some(GamepadButton::LeftShoulder),
         gilrs::Button::RightTrigger => Some(GamepadButton::RightShoulder),
+        gilrs::Button::LeftTrigger2 => Some(GamepadButton::LeftTrigger),
+        gilrs::Button::RightTrigger2 => Some(GamepadButton::RightTrigger),
         gilrs::Button::Start => Some(GamepadButton::Start),
         gilrs::Button::Select => Some(GamepadButton::Select),
+        gilrs::Button::Mode => Some(GamepadButton::Guide),
+        gilrs::Button::LeftThumb => Some(GamepadButton::LeftStickPress),
+        gilrs::Button::RightThumb => Some(GamepadButton::RightStickPress),
         gilrs::Button::DPadUp => Some(GamepadButton::DPadUp),
         gilrs::Button::DPadDown => Some(GamepadButton::DPadDown),
         gilrs::Button::DPadLeft => Some(GamepadButton::DPadLeft),
@@ -114,6 +124,121 @@ fn button_from_gilrs(button: gilrs::Button) -> Option<GamepadButton> {
         _ => None,
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+fn device_info(id: GamepadId, gamepad: gilrs::Gamepad<'_>) -> GamepadDeviceInfo {
+    let mapping_source = match gamepad.mapping_source() {
+        gilrs::MappingSource::SdlMappings => GamepadMappingSource::SdlMappings,
+        gilrs::MappingSource::Driver => GamepadMappingSource::Driver,
+        gilrs::MappingSource::None => GamepadMappingSource::Unknown,
+    };
+    let capabilities = if gamepad.mapping_source() == gilrs::MappingSource::None {
+        GamepadCapabilities::unknown()
+    } else {
+        capabilities_from_gilrs(gamepad)
+    };
+    let guid = gamepad
+        .uuid()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+
+    GamepadDeviceInfo {
+        id,
+        name: gamepad.name().to_owned(),
+        os_name: Some(gamepad.os_name().to_owned()),
+        mapping_name: gamepad.map_name().map(str::to_owned),
+        mapping_source,
+        guid: Some(guid),
+        vendor_id: gamepad.vendor_id(),
+        product_id: gamepad.product_id(),
+        capabilities,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn capabilities_from_gilrs(gamepad: gilrs::Gamepad<'_>) -> GamepadCapabilities {
+    let mut capabilities = GamepadCapabilities::unknown();
+    for (source, target) in GILRS_BUTTONS {
+        capabilities.set_button(target, availability(gamepad.button_code(source).is_some()));
+    }
+    for (source, target) in GILRS_AXES {
+        capabilities.set_axis(target, availability(gamepad.axis_code(source).is_some()));
+    }
+    capabilities.set_axis(
+        GamepadAxis::LeftTrigger,
+        capabilities.button(GamepadButton::LeftTrigger),
+    );
+    capabilities.set_axis(
+        GamepadAxis::RightTrigger,
+        capabilities.button(GamepadButton::RightTrigger),
+    );
+    for (axis, negative, positive) in [
+        (
+            GamepadAxis::LeftStickX,
+            GamepadButton::LeftStickLeft,
+            GamepadButton::LeftStickRight,
+        ),
+        (
+            GamepadAxis::LeftStickY,
+            GamepadButton::LeftStickDown,
+            GamepadButton::LeftStickUp,
+        ),
+        (
+            GamepadAxis::RightStickX,
+            GamepadButton::RightStickLeft,
+            GamepadButton::RightStickRight,
+        ),
+        (
+            GamepadAxis::RightStickY,
+            GamepadButton::RightStickDown,
+            GamepadButton::RightStickUp,
+        ),
+    ] {
+        let capability = capabilities.axis(axis);
+        capabilities.set_button(negative, capability);
+        capabilities.set_button(positive, capability);
+    }
+    capabilities
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn availability(available: bool) -> GamepadCapability {
+    if available {
+        GamepadCapability::Available
+    } else {
+        GamepadCapability::Unavailable
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const GILRS_BUTTONS: [(gilrs::Button, GamepadButton); 17] = [
+    (gilrs::Button::South, GamepadButton::South),
+    (gilrs::Button::East, GamepadButton::East),
+    (gilrs::Button::North, GamepadButton::North),
+    (gilrs::Button::West, GamepadButton::West),
+    (gilrs::Button::LeftTrigger, GamepadButton::LeftShoulder),
+    (gilrs::Button::RightTrigger, GamepadButton::RightShoulder),
+    (gilrs::Button::LeftTrigger2, GamepadButton::LeftTrigger),
+    (gilrs::Button::RightTrigger2, GamepadButton::RightTrigger),
+    (gilrs::Button::Start, GamepadButton::Start),
+    (gilrs::Button::Select, GamepadButton::Select),
+    (gilrs::Button::Mode, GamepadButton::Guide),
+    (gilrs::Button::LeftThumb, GamepadButton::LeftStickPress),
+    (gilrs::Button::RightThumb, GamepadButton::RightStickPress),
+    (gilrs::Button::DPadUp, GamepadButton::DPadUp),
+    (gilrs::Button::DPadDown, GamepadButton::DPadDown),
+    (gilrs::Button::DPadLeft, GamepadButton::DPadLeft),
+    (gilrs::Button::DPadRight, GamepadButton::DPadRight),
+];
+
+#[cfg(not(target_arch = "wasm32"))]
+const GILRS_AXES: [(gilrs::Axis, GamepadAxis); 4] = [
+    (gilrs::Axis::LeftStickX, GamepadAxis::LeftStickX),
+    (gilrs::Axis::LeftStickY, GamepadAxis::LeftStickY),
+    (gilrs::Axis::RightStickX, GamepadAxis::RightStickX),
+    (gilrs::Axis::RightStickY, GamepadAxis::RightStickY),
+];
 
 #[cfg(not(target_arch = "wasm32"))]
 fn update_button_edge(
@@ -145,6 +270,25 @@ fn update_button_value(
     const CENTER_HIGH: f32 = 0.8;
 
     let Some(axis) = dpad_axis(button) else {
+        if matches!(
+            button,
+            GamepadButton::LeftTrigger | GamepadButton::RightTrigger
+        ) {
+            let (axis, value) = match button {
+                GamepadButton::LeftTrigger => (
+                    GamepadAxis::LeftTrigger,
+                    profile.left_trigger.normalize(value),
+                ),
+                GamepadButton::RightTrigger => (
+                    GamepadAxis::RightTrigger,
+                    profile.right_trigger.normalize(value),
+                ),
+                _ => unreachable!(),
+            };
+            input.set_gamepad_axis(id, axis, value);
+            input.set_gamepad_button(id, button, value >= profile.digital_threshold);
+            return;
+        }
         input.set_gamepad_button(id, button, value >= profile.digital_threshold);
         return;
     };
@@ -225,20 +369,40 @@ fn update_axis(
     profile: GamepadProfile,
 ) {
     match axis {
-        gilrs::Axis::LeftStickX => set_axis_buttons(
+        gilrs::Axis::LeftStickX => set_stick_axis(
             input,
             id,
+            GamepadAxis::LeftStickX,
             GamepadButton::LeftStickLeft,
             GamepadButton::LeftStickRight,
             profile.left_stick_x.normalize(value),
             profile.digital_threshold,
         ),
-        gilrs::Axis::LeftStickY => set_axis_buttons(
+        gilrs::Axis::LeftStickY => set_stick_axis(
             input,
             id,
+            GamepadAxis::LeftStickY,
             GamepadButton::LeftStickDown,
             GamepadButton::LeftStickUp,
             profile.left_stick_y.normalize(value),
+            profile.digital_threshold,
+        ),
+        gilrs::Axis::RightStickX => set_stick_axis(
+            input,
+            id,
+            GamepadAxis::RightStickX,
+            GamepadButton::RightStickLeft,
+            GamepadButton::RightStickRight,
+            profile.right_stick_x.normalize(value),
+            profile.digital_threshold,
+        ),
+        gilrs::Axis::RightStickY => set_stick_axis(
+            input,
+            id,
+            GamepadAxis::RightStickY,
+            GamepadButton::RightStickDown,
+            GamepadButton::RightStickUp,
+            profile.right_stick_y.normalize(value),
             profile.digital_threshold,
         ),
         gilrs::Axis::DPadX => set_axis_buttons(
@@ -262,6 +426,20 @@ fn update_axis(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn set_stick_axis(
+    input: &mut Input,
+    id: GamepadId,
+    axis: GamepadAxis,
+    negative: GamepadButton,
+    positive: GamepadButton,
+    value: f32,
+    threshold: f32,
+) {
+    input.set_gamepad_axis(id, axis, value);
+    set_axis_buttons(input, id, negative, positive, value, threshold);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn set_axis_buttons(
     input: &mut Input,
     id: GamepadId,
@@ -279,13 +457,13 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        DPadAxis, button_from_gilrs, centered_dpad_calibration, set_axis_buttons,
+        DPadAxis, button_from_gilrs, centered_dpad_calibration, set_axis_buttons, update_axis,
         update_button_edge, update_button_value,
     };
-    use crate::{AxisCalibration, GamepadButton, GamepadId, GamepadProfile, Input};
+    use crate::{AxisCalibration, GamepadAxis, GamepadButton, GamepadId, GamepadProfile, Input};
 
     #[test]
-    fn trigger_buttons_map_to_shoulders() {
+    fn gilrs_buttons_map_shoulders_triggers_stick_presses_and_guide() {
         assert_eq!(
             button_from_gilrs(gilrs::Button::LeftTrigger),
             Some(GamepadButton::LeftShoulder)
@@ -293,6 +471,82 @@ mod tests {
         assert_eq!(
             button_from_gilrs(gilrs::Button::RightTrigger),
             Some(GamepadButton::RightShoulder)
+        );
+        assert_eq!(
+            button_from_gilrs(gilrs::Button::LeftTrigger2),
+            Some(GamepadButton::LeftTrigger)
+        );
+        assert_eq!(
+            button_from_gilrs(gilrs::Button::RightTrigger2),
+            Some(GamepadButton::RightTrigger)
+        );
+        assert_eq!(
+            button_from_gilrs(gilrs::Button::LeftThumb),
+            Some(GamepadButton::LeftStickPress)
+        );
+        assert_eq!(
+            button_from_gilrs(gilrs::Button::RightThumb),
+            Some(GamepadButton::RightStickPress)
+        );
+        assert_eq!(
+            button_from_gilrs(gilrs::Button::Mode),
+            Some(GamepadButton::Guide)
+        );
+    }
+
+    #[test]
+    fn trigger_values_update_analog_and_digital_state() {
+        let id = GamepadId::new(5);
+        let mut input = Input::default();
+        let mut centered = HashMap::new();
+        let profile = GamepadProfile::default();
+
+        for (value, held) in [(0.0, false), (0.25, false), (0.75, true), (1.0, true)] {
+            update_button_value(
+                &mut input,
+                &mut centered,
+                id,
+                GamepadButton::LeftTrigger,
+                value,
+                profile,
+            );
+            assert_eq!(
+                input.gamepad_axis(id, crate::GamepadAxis::LeftTrigger),
+                value
+            );
+            assert_eq!(
+                input.gamepad_button(id, GamepadButton::LeftTrigger).held(),
+                held
+            );
+        }
+    }
+
+    #[test]
+    fn right_stick_axes_update_analog_and_digital_state() {
+        let id = GamepadId::new(6);
+        let mut input = Input::default();
+        let profile = GamepadProfile::default();
+
+        update_axis(&mut input, id, gilrs::Axis::RightStickX, -0.8, profile);
+        update_axis(&mut input, id, gilrs::Axis::RightStickY, 0.7, profile);
+
+        assert_eq!(input.gamepad_axis(id, GamepadAxis::RightStickX), -0.8);
+        assert_eq!(input.gamepad_axis(id, GamepadAxis::RightStickY), 0.7);
+        assert!(
+            input
+                .gamepad_button(id, GamepadButton::RightStickLeft)
+                .held()
+        );
+        assert!(input.gamepad_button(id, GamepadButton::RightStickUp).held());
+        assert!(
+            !input
+                .gamepad_button(id, GamepadButton::RightStickRight)
+                .held()
+        );
+        assert!(
+            !input
+                .gamepad_button(id, GamepadButton::RightStickDown)
+                .held()
         );
     }
 

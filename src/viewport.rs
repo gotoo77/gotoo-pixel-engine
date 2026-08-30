@@ -12,6 +12,79 @@ pub struct Rect {
     pub height: u32,
 }
 
+/// Maximum number of panels produced by [`split_view_layout`].
+pub const MAX_SPLIT_VIEWS: usize = 4;
+
+/// Splits `bounds` into at most four deterministic, non-overlapping view rectangles.
+///
+/// The function is deliberately geometry-only: callers own view identity and decide when to
+/// recompute. Two views split along the bounds' longest axis. Three views give half of the long
+/// axis to the first view and divide the other half between the remaining views. Four views use
+/// a 2-by-2 grid. Counts above four are clamped to [`MAX_SPLIT_VIEWS`].
+pub fn split_view_layout(bounds: Rect, view_count: usize) -> Vec<Rect> {
+    let count = view_count.min(MAX_SPLIT_VIEWS);
+    if count == 0 || bounds.width == 0 || bounds.height == 0 {
+        return Vec::new();
+    }
+
+    let vertical = bounds.width >= bounds.height;
+    match count {
+        1 => vec![bounds],
+        2 if vertical => split_columns(bounds).to_vec(),
+        2 => split_rows(bounds).to_vec(),
+        3 if vertical => {
+            let [left, right] = split_columns(bounds);
+            let [top_right, bottom_right] = split_rows(right);
+            vec![left, top_right, bottom_right]
+        }
+        3 => {
+            let [top, bottom] = split_rows(bounds);
+            let [bottom_left, bottom_right] = split_columns(bottom);
+            vec![top, bottom_left, bottom_right]
+        }
+        _ => {
+            let [top, bottom] = split_rows(bounds);
+            let [top_left, top_right] = split_columns(top);
+            let [bottom_left, bottom_right] = split_columns(bottom);
+            vec![top_left, top_right, bottom_left, bottom_right]
+        }
+    }
+}
+
+fn split_columns(bounds: Rect) -> [Rect; 2] {
+    let first_width = bounds.width / 2;
+    [
+        Rect {
+            width: first_width,
+            ..bounds
+        },
+        Rect {
+            x: bounds.x.saturating_add(u32_to_i32(first_width)),
+            width: bounds.width - first_width,
+            ..bounds
+        },
+    ]
+}
+
+fn split_rows(bounds: Rect) -> [Rect; 2] {
+    let first_height = bounds.height / 2;
+    [
+        Rect {
+            height: first_height,
+            ..bounds
+        },
+        Rect {
+            y: bounds.y.saturating_add(u32_to_i32(first_height)),
+            height: bounds.height - first_height,
+            ..bounds
+        },
+    ]
+}
+
+fn u32_to_i32(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
+}
+
 impl Rect {
     pub fn contains(self, position: (i32, i32)) -> bool {
         if self.width == 0 || self.height == 0 {
@@ -144,12 +217,110 @@ fn pixel_art_scale(raw_scale: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Rect, Size, Viewport};
+    use super::{MAX_SPLIT_VIEWS, Rect, Size, Viewport, split_view_layout};
 
     const FRAMEBUFFER: Size = Size {
         width: 480,
         height: 204,
     };
+
+    #[test]
+    fn split_layout_covers_zero_through_four_views() {
+        let bounds = Rect {
+            x: 7,
+            y: 11,
+            width: 101,
+            height: 61,
+        };
+        assert!(split_view_layout(bounds, 0).is_empty());
+        assert_eq!(split_view_layout(bounds, 1), vec![bounds]);
+        for count in 2..=4 {
+            assert_eq!(split_view_layout(bounds, count).len(), count);
+        }
+        assert_eq!(split_view_layout(bounds, 99).len(), MAX_SPLIT_VIEWS);
+    }
+
+    #[test]
+    fn split_layout_uses_long_axis_for_landscape_and_portrait() {
+        let landscape = Rect {
+            x: 0,
+            y: 0,
+            width: 120,
+            height: 60,
+        };
+        let portrait = Rect {
+            x: 0,
+            y: 0,
+            width: 60,
+            height: 120,
+        };
+
+        assert_eq!(split_view_layout(landscape, 2)[1].x, 60);
+        assert_eq!(split_view_layout(landscape, 2)[1].y, 0);
+        assert_eq!(split_view_layout(portrait, 2)[1].x, 0);
+        assert_eq!(split_view_layout(portrait, 2)[1].y, 60);
+    }
+
+    #[test]
+    fn split_layout_is_deterministic_inside_bounds_and_non_overlapping() {
+        for bounds in [
+            Rect {
+                x: -13,
+                y: 5,
+                width: 121,
+                height: 70,
+            },
+            Rect {
+                x: 4,
+                y: -9,
+                width: 71,
+                height: 123,
+            },
+        ] {
+            for count in 1..=4 {
+                let first = split_view_layout(bounds, count);
+                assert_eq!(first, split_view_layout(bounds, count));
+                for (index, rect) in first.iter().copied().enumerate() {
+                    assert!(rect.width > 0 && rect.height > 0);
+                    assert!(bounds.contains((rect.x, rect.y)));
+                    let last_x = i64::from(rect.x) + i64::from(rect.width) - 1;
+                    let last_y = i64::from(rect.y) + i64::from(rect.height) - 1;
+                    assert!(bounds.contains((last_x as i32, last_y as i32)));
+                    for other in first.iter().copied().skip(index + 1) {
+                        assert!(!rect.intersects(other));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn empty_bounds_produce_no_views() {
+        assert!(
+            split_view_layout(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 10
+                },
+                1
+            )
+            .is_empty()
+        );
+        assert!(
+            split_view_layout(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 10,
+                    height: 0
+                },
+                4
+            )
+            .is_empty()
+        );
+    }
 
     #[test]
     fn same_ratio_surface_uses_full_surface() {
