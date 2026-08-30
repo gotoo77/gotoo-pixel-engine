@@ -287,10 +287,7 @@ fn controller_destination(panel: Rect) -> Rect {
 }
 
 fn contained_rect(destination: Rect, source_width: u32, source_height: u32) -> Rect {
-    if destination.width == 0
-        || destination.height == 0
-        || source_width == 0
-        || source_height == 0
+    if destination.width == 0 || destination.height == 0 || source_width == 0 || source_height == 0
     {
         return Rect {
             x: destination.x,
@@ -305,17 +302,11 @@ fn contained_rect(destination: Rect, source_width: u32, source_height: u32) -> R
     let (width, height) = if width_limited {
         let height = (u128::from(destination.width) * u128::from(source_height)
             / u128::from(source_width)) as u32;
-        (
-            destination.width,
-            height.max(1).min(destination.height),
-        )
+        (destination.width, height.max(1).min(destination.height))
     } else {
         let width = (u128::from(destination.height) * u128::from(source_width)
             / u128::from(source_height)) as u32;
-        (
-            width.max(1).min(destination.width),
-            destination.height,
-        )
+        (width.max(1).min(destination.width), destination.height)
     };
 
     Rect {
@@ -645,12 +636,7 @@ fn draw_control_marker(
     let color = button_color(input, id, button);
     fb.draw_circle(center.0, center.1, radius, color);
     if held {
-        fb.fill_circle(
-            center.0,
-            center.1,
-            radius.saturating_sub(1).max(1),
-            color,
-        );
+        fb.fill_circle(center.0, center.1, radius.saturating_sub(1).max(1), color);
     }
 }
 
@@ -665,13 +651,7 @@ fn draw_labeled_marker(
 ) {
     draw_control_marker(fb, input, id, center, radius, button);
     let color = button_color(input, id, button);
-    fb.draw_text_with_font(
-        Font::Mini3x5,
-        center.0 - 2,
-        center.1 - 2,
-        label,
-        color,
-    );
+    fb.draw_text_with_font(Font::Mini3x5, center.0 - 2, center.1 - 2, label, color);
 }
 
 fn button_color(input: &Input, id: GamepadId, button: GamepadButton) -> Pixel {
