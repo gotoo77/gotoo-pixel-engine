@@ -208,7 +208,7 @@ impl Framebuffer {
                 let source = sample_rgba(
                     image, region, plan.x_map, plan.y_map, local_x, local_y, filter,
                 );
-                blend_scaled_pixel(self, destination_x, destination_y, source);
+                self.blend_rgba8(destination_x, destination_y, &source);
             }
         }
     }
@@ -438,52 +438,6 @@ fn image_pixel_rgba(image: &Image, x: u32, y: u32) -> [u8; 4] {
     };
 
     [pixel[0], pixel[1], pixel[2], pixel[3]]
-}
-
-fn blend_scaled_pixel(framebuffer: &mut Framebuffer, x: u32, y: u32, source: [u8; 4]) {
-    if x >= framebuffer.width() || y >= framebuffer.height() || source[3] == 0 {
-        return;
-    }
-    if source[3] == 255 {
-        framebuffer.set_pixel_in_bounds(x, y, Pixel::rgba(source[0], source[1], source[2], 255));
-        return;
-    }
-
-    let index = (u64::from(y) * u64::from(framebuffer.width()) + u64::from(x)) * 4;
-    let Ok(index) = usize::try_from(index) else {
-        return;
-    };
-    let Some(end) = index.checked_add(4) else {
-        return;
-    };
-    let Some(destination) = framebuffer.as_rgba8().get(index..end) else {
-        return;
-    };
-    let destination = [
-        destination[0],
-        destination[1],
-        destination[2],
-        destination[3],
-    ];
-
-    let source_alpha = u16::from(source[3]);
-    let inverse_alpha = 255 - source_alpha;
-    let blend_channel = |source: u8, destination: u8| -> u8 {
-        ((u16::from(source) * source_alpha + u16::from(destination) * inverse_alpha + 127) / 255)
-            as u8
-    };
-    let output_alpha = source_alpha + ((u16::from(destination[3]) * inverse_alpha + 127) / 255);
-
-    framebuffer.set_pixel_in_bounds(
-        x,
-        y,
-        Pixel::rgba(
-            blend_channel(source[0], destination[0]),
-            blend_channel(source[1], destination[1]),
-            blend_channel(source[2], destination[2]),
-            output_alpha.min(255) as u8,
-        ),
-    );
 }
 
 #[cfg(test)]

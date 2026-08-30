@@ -426,7 +426,7 @@ impl Framebuffer {
         }
     }
 
-    fn blend_rgba8(&mut self, x: u32, y: u32, source: &[u8]) {
+    pub(crate) fn blend_rgba8(&mut self, x: u32, y: u32, source: &[u8]) {
         debug_assert_eq!(source.len(), 4);
         debug_assert!(x < self.width);
         debug_assert!(y < self.height);
