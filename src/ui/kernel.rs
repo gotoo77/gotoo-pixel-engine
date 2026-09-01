@@ -240,7 +240,7 @@ pub(crate) struct UiInteractionOutput {
 }
 
 impl UiInteractionOutput {
-    pub(crate) const fn new(focused: Option<UiId>, hovered: Option<UiId>, cancelled: bool) -> Self {
+    pub(crate) fn new(focused: Option<UiId>, hovered: Option<UiId>, cancelled: bool) -> Self {
         Self {
             focused,
             hovered,
