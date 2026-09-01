@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION P2 / CONSUMER-GRADE LAYOUT COMPOSITION v0.1
 
-Status: **ACTIVE IMPLEMENTATION CONTRACT — P2 ONLY**
+Status: **IMPLEMENTATION COMPLETE — HUMAN RUNTIME GATE PENDING**
 
 Parent roadmap:
 
@@ -13,6 +13,14 @@ P1 result:
 Baseline entering P2:
 
 `2e8650c205827c883e0590b6d655958ca5fe3a27`
+
+Validated implementation head:
+
+`2170c3c2656fb247ae682f439986c34e2ddfb104`
+
+Automated validation:
+
+`CI #668` — **PASS**
 
 ---
 
@@ -94,7 +102,7 @@ cell height is preferred height capped by available fit
 final geometry uses integer pixels only
 ```
 
-`experimental_spatial::GridSpec` may remain as a compatibility alias during P2.
+`experimental_spatial::GridSpec` may remain as a compatibility alias/wrapper during P2.
 
 ---
 
@@ -126,9 +134,9 @@ Panel remains a semantic/painted container that may use the shared vertical layo
 
 # 5. Builder integration
 
-P2 should make responsive Grid a generic layout capability rather than a Card-owned algorithm.
+P2 makes responsive Grid a generic layout capability rather than a Card-owned algorithm.
 
-Target direction:
+Implemented direction:
 
 ```text
 UiBuilder
@@ -137,9 +145,9 @@ UiBuilder
     Grid(UiGridSpec)
 ```
 
-Grid children are arbitrary transient UI nodes. Grid layout must not know about cards.
+Grid children are arbitrary transient UI nodes. Grid layout does not know about cards.
 
-The existing `experimental_spatial::run_card_grid*` calls remain compatibility adapters during P2 and must preserve MFE-001B behavior.
+The existing `experimental_spatial::run_card_grid*` calls remain compatibility adapters during P2 and preserve MFE-001B behavior.
 
 No public v1 naming/API freeze is authorized by this slice.
 
@@ -189,93 +197,114 @@ animation
 legacy toolkit removal
 ```
 
-P2 must not change platform/input transport semantics.
+P2 does not change platform/input transport semantics.
 
 ---
 
 # 8. Implementation sequence
 
-## P2.1 — shared integer layout primitives
+## P2.1 — shared integer layout primitives — PASS
 
-- introduce a layout-focused module/primitive layer;
-- move generic inset, vertical arrangement and responsive grid geometry there;
-- add exact headless unit tests for edge cases and MFE-001B track behavior.
+- introduced `src/ui/layout.rs`;
+- canonical `UiGridSpec` and generic `UiGridLayout`;
+- deterministic inset and responsive grid track geometry;
+- exact tests for 1/2/3 columns, remainder distribution, zero/unusable geometry and saturating inset.
 
-## P2.2 — Spatial adapter convergence
+## P2.2 — Spatial adapter convergence — PASS
 
-- make `GridSpec` a compatibility alias/wrapper over the shared grid spec;
-- replace Card-owned grid track computation with the shared layout layer;
-- keep Card-specific image/text subdivision and painter behavior outside the generic layer;
-- preserve all MFE-001B tests.
+- Spatial card cells are resolved through shared `layout_responsive_grid`;
+- Card-specific image/text subdivision remains in `experimental_spatial`;
+- independent Card-owned track computation is removed;
+- accepted MFE-001B behavior remains covered.
 
-## P2.3 — transactional builder Grid
+## P2.3 — transactional builder Grid — PASS
 
-- add generic Grid layout node support to the transient transactional graph;
-- use the same shared responsive grid geometry;
-- preserve existing Column/Panel behavior;
-- add headless tests proving arbitrary widgets can compose in responsive Grid.
+- `UiBuilder::grid(UiGridSpec, ...)` added to the transient graph;
+- arbitrary widgets compose inside Grid;
+- transactional Grid uses the same shared responsive grid geometry as Spatial;
+- headless responsive composition test added.
 
-## P2.4 — linear convergence
+## P2.4 — linear convergence — PASS
 
-- route Root/Column/Panel vertical final geometry through the shared linear primitive;
-- remove duplicate vertical placement arithmetic where safely possible;
-- preserve measurement and all transactional behavior.
+- shared `layout_vertical_children` owns final vertical child placement;
+- Root/Column/Panel arrangement routes through that primitive;
+- measurement and transactional behavior remain unchanged in intent and covered by the existing test suite.
 
-## P2.5 — closure review
+## P2.5 — closure review — PASS
 
-Prove:
+Proven on implementation head `2170c3c2656fb247ae682f439986c34e2ddfb104`:
 
 ```text
-one generic responsive grid algorithm
-one generic vertical child-placement algorithm
-no Card-specific track computation remains
-no styling/input/platform scope creep
+one generic responsive grid algorithm      = layout::layout_responsive_grid
+one generic vertical child-placement algo  = layout::layout_vertical_children
+Spatial Grid uses shared resolved cells     = YES
+transactional Grid uses shared resolved cells = YES
+Card-specific track computation remains    = NO
+styling scope creep                         = NO
+input/platform scope creep                  = NO
+```
+
+PR #79 changed-file boundary at closure review:
+
+```text
+docs/ui/GPE_UI_PRODUCTIONIZATION_P2_LAYOUT_v0.1.md
+src/ui/experimental.rs
+src/ui/experimental_spatial.rs
+src/ui/layout.rs
+src/ui/mod.rs
 ```
 
 ---
 
 # 9. Acceptance gates
 
-Automated:
+Automated gates on CI #668 / implementation head `2170c3c2656fb247ae682f439986c34e2ddfb104`:
 
 ```text
-cargo fmt --check
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
-cargo build --release --examples
-Web build/package CI
-Conventional Commits CI
+cargo fmt --check                                      PASS
+cargo test                                             PASS
+cargo clippy --all-targets --all-features -- -D warnings PASS
+cargo build --release --examples                      PASS
+Web build/package CI                                   PASS
+Conventional Commits CI                               PASS
 ```
 
 Headless behavioral gates:
 
 ```text
-zero-size geometry deterministic
-padding/gap saturating arithmetic deterministic
-responsive 1/2/3-column behavior preserved
-remainder-pixel distribution preserved
-arbitrary transactional widgets can live in Grid
-nested Column/Panel geometry preserved
-spatial focus ranking still consumes final resolved geometry
-pointer/touch behavior unchanged
-consumer build closure still runs once
+zero-size geometry deterministic                       PASS
+padding/gap saturating arithmetic deterministic        PASS
+responsive 1/2/3-column behavior preserved            PASS
+remainder-pixel distribution preserved                 PASS
+arbitrary transactional widgets can live in Grid      PASS
+nested Column/Panel geometry preserved by regression suite
+spatial focus ranking consumes final resolved geometry PASS
+pointer/touch behavior unchanged by regression suite  PASS
+consumer build closure still runs once                PASS
 ```
 
 Human runtime:
 
-A final Native smoke test of the existing MFE-001B probe is required because P2 changes resolved geometry.
+**PENDING.** A final Native smoke test of the existing MFE-001B probe is required because P2 changes resolved geometry.
 
-A browser runtime rerun is required only if platform/render/input transport semantics change. P2 must not change them; Web build/package is otherwise sufficient.
+A browser runtime rerun is not required: P2 did not change platform/render/input transport semantics; Web build/package is PASS.
 
 ---
 
 # 10. STOP
 
-When P2 passes:
+Current state:
 
 ```text
-GPE.UI PRODUCTIONIZATION P2 = PASS / PASS WITH CONDITIONS / FAIL
-STOP
+P2 IMPLEMENTATION = COMPLETE
+P2 AUTOMATED GATES = PASS
+P2 CLOSURE REVIEW = PASS
+P2 HUMAN NATIVE RUNTIME = PENDING
+STOP BEFORE MERGE
 ```
 
-Record a formal P2 result before starting P3.
+Final verdict is intentionally withheld until the human Native gate:
+
+```text
+GPE.UI PRODUCTIONIZATION P2 = PENDING HUMAN RUNTIME
+```
