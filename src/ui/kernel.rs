@@ -191,6 +191,26 @@ impl UiInteractionState {
     /// transaction while preserving the deterministic fallback behavior proven
     /// by MFE-001B.
     pub(crate) fn repair_for_current_order(&mut self, current_order: &[UiId]) {
+        self.repair_for_current_order_with(current_order, |_| false);
+    }
+
+    /// Transactional compatibility variant that treats IDs whose widget kind
+    /// changed this generation as invalid for state preservation. Fallback
+    /// selection intentionally still uses the previous stable index, matching
+    /// MFE-001A behavior even when that resolves to the same ID.
+    pub(crate) fn repair_for_current_order_excluding(
+        &mut self,
+        current_order: &[UiId],
+        invalid: &HashSet<UiId>,
+    ) {
+        self.repair_for_current_order_with(current_order, |id| invalid.contains(&id));
+    }
+
+    fn repair_for_current_order_with(
+        &mut self,
+        current_order: &[UiId],
+        is_invalid: impl Fn(UiId) -> bool,
+    ) {
         if current_order.is_empty() {
             self.focused = None;
             self.pointer_capture = None;
@@ -200,10 +220,12 @@ impl UiInteractionState {
         }
 
         let current = current_order.iter().copied().collect::<HashSet<_>>();
-        self.pointer_capture = self.pointer_capture.filter(|id| current.contains(id));
-        self.touch_capture.retain(|_, id| current.contains(id));
+        let is_current_valid = |id: UiId| current.contains(&id) && !is_invalid(id);
+        self.pointer_capture = self.pointer_capture.filter(|id| is_current_valid(*id));
+        self.touch_capture
+            .retain(|_, id| is_current_valid(*id));
 
-        if self.focused.is_some_and(|id| current.contains(&id)) {
+        if self.focused.is_some_and(is_current_valid) {
             return;
         }
 
@@ -217,6 +239,30 @@ impl UiInteractionState {
             .unwrap_or(0)
             .min(current_order.len() - 1);
         self.focused = Some(current_order[fallback_index]);
+    }
+
+    pub(crate) fn navigate_linear(&mut self, nav: UiNavInput, current_order: &[UiId]) {
+        if current_order.is_empty() {
+            self.focused = None;
+            return;
+        }
+
+        let current = self
+            .focused
+            .and_then(|focused| current_order.iter().position(|id| *id == focused))
+            .unwrap_or(0);
+
+        self.focused = match (nav.up, nav.down) {
+            (true, false) => Some(
+                current_order[if current == 0 {
+                    current_order.len() - 1
+                } else {
+                    current - 1
+                }],
+            ),
+            (false, true) => Some(current_order[(current + 1) % current_order.len()]),
+            _ => Some(current_order[current]),
+        };
     }
 
     pub(crate) fn commit_order(&mut self, current_order: &[UiId]) {
@@ -480,6 +526,47 @@ mod tests {
         assert_eq!(state.touch_capture_id(9), Some(ids[2]));
         assert_eq!(state.touch_capture_count(), 1);
         assert!(state.is_active(ids[2]));
+    }
+
+    #[test]
+    fn invalid_current_target_resets_capture_but_preserves_fallback_index() {
+        let ids = ids();
+        let mut state = UiInteractionState::default();
+        state.repair_for_current_order(&ids);
+        state.set_focused_id(Some(ids[1]));
+        state.set_pointer_capture(Some(ids[1]));
+        state.commit_order(&ids);
+        let invalid = HashSet::from([ids[1]]);
+
+        state.repair_for_current_order_excluding(&ids, &invalid);
+
+        assert_eq!(state.pointer_capture_id(), None);
+        assert_eq!(state.focused_id(), Some(ids[1]));
+    }
+
+    #[test]
+    fn linear_navigation_uses_shared_focus_authority_and_wraps() {
+        let ids = ids();
+        let mut state = UiInteractionState::default();
+        state.repair_for_current_order(&ids);
+
+        state.navigate_linear(
+            UiNavInput {
+                up: true,
+                ..UiNavInput::default()
+            },
+            &ids,
+        );
+        assert_eq!(state.focused_id(), Some(ids[2]));
+
+        state.navigate_linear(
+            UiNavInput {
+                down: true,
+                ..UiNavInput::default()
+            },
+            &ids,
+        );
+        assert_eq!(state.focused_id(), Some(ids[0]));
     }
 
     #[test]
