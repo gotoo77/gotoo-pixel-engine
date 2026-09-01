@@ -180,15 +180,25 @@ mod tests {
     #[test]
     fn responsive_grid_distributes_remainder_pixels_from_first_track() {
         let layout = layout_responsive_grid(bounds(358), mfe_grid_spec(), 3);
-        let widths = layout.rects.iter().map(|rect| rect.width).collect::<Vec<_>>();
+        let widths = layout
+            .rects
+            .iter()
+            .map(|rect| rect.width)
+            .collect::<Vec<_>>();
 
         assert_eq!(widths, vec![109, 109, 108]);
     }
 
     #[test]
     fn responsive_grid_is_deterministic_for_zero_or_unusable_space() {
-        assert_eq!(layout_responsive_grid(bounds(0), mfe_grid_spec(), 6).columns, 0);
-        assert_eq!(layout_responsive_grid(bounds(360), mfe_grid_spec(), 0).rows, 0);
+        assert_eq!(
+            layout_responsive_grid(bounds(0), mfe_grid_spec(), 6).columns,
+            0
+        );
+        assert_eq!(
+            layout_responsive_grid(bounds(360), mfe_grid_spec(), 0).rows,
+            0
+        );
 
         let unusable = layout_responsive_grid(
             Rect {
