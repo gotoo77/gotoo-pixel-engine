@@ -5,9 +5,13 @@ use std::ops::RangeInclusive;
 
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
+pub use super::kernel::{UiInput, UiPointerInput};
 use super::{
     UiTheme,
-    kernel::{UiInteractionOutput, UiInteractionState},
+    kernel::{
+        UiInteractionOutput, UiInteractionState, UiNavigationPolicy, UiResolvedTarget,
+        run_interaction_pass,
+    },
 };
 
 const ROOT_ID: u64 = 0xcbf29ce484222325;
@@ -38,6 +42,10 @@ pub enum WidgetKind {
 impl WidgetKind {
     fn is_interactive(self) -> bool {
         matches!(self, Self::Button | Self::ToggleBool | Self::SliderF32)
+    }
+
+    fn accepts_activation(self) -> bool {
+        matches!(self, Self::Button | Self::ToggleBool)
     }
 }
 
@@ -322,6 +330,28 @@ impl<'a> Node<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct InteractionTarget {
+    id: UiId,
+    rect: Rect,
+    activatable: bool,
+    action: Option<ActionId>,
+}
+
+impl UiResolvedTarget for InteractionTarget {
+    fn ui_id(&self) -> UiId {
+        self.id
+    }
+
+    fn ui_rect(&self) -> Rect {
+        self.rect
+    }
+
+    fn ui_accepts_activation(&self) -> bool {
+        self.activatable
+    }
+}
+
 #[derive(Debug)]
 struct ScopeFrame {
     id: UiId,
@@ -501,11 +531,30 @@ pub fn run<'a, R>(
     theme: UiTheme,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
+    run_with_input(
+        framebuffer,
+        state,
+        UiInput {
+            nav,
+            ..UiInput::default()
+        },
+        theme,
+        build,
+    )
+}
+
+pub fn run_with_input<'a, R>(
+    framebuffer: &mut Framebuffer,
+    state: &mut UiStateStore,
+    input: UiInput<'_>,
+    theme: UiTheme,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
     let surface = Size {
         width: framebuffer.width(),
         height: framebuffer.height(),
     };
-    run_impl(surface, Some(framebuffer), state, nav, theme, build)
+    run_impl(surface, Some(framebuffer), state, input, theme, build)
 }
 
 pub fn run_headless<'a, R>(
@@ -515,14 +564,33 @@ pub fn run_headless<'a, R>(
     theme: UiTheme,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
-    run_impl(surface, None, state, nav, theme, build)
+    run_headless_with_input(
+        surface,
+        state,
+        UiInput {
+            nav,
+            ..UiInput::default()
+        },
+        theme,
+        build,
+    )
+}
+
+pub fn run_headless_with_input<'a, R>(
+    surface: Size,
+    state: &mut UiStateStore,
+    input: UiInput<'_>,
+    theme: UiTheme,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
+    run_impl(surface, None, state, input, theme, build)
 }
 
 fn run_impl<'a, R>(
     surface: Size,
     framebuffer: Option<&mut Framebuffer>,
     state: &mut UiStateStore,
-    nav: UiNavInput,
+    input: UiInput<'_>,
     theme: UiTheme,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
@@ -550,14 +618,24 @@ fn run_impl<'a, R>(
         theme,
     );
 
-    let mut current_focus_order = Vec::new();
+    let mut targets = Vec::new();
     let mut incompatible_ids = HashSet::new();
     for node in &nodes {
         if !node.kind.is_interactive() {
             continue;
         }
 
-        current_focus_order.push(node.id);
+        let action = match &node.content {
+            NodeContent::Button { action, .. } => *action,
+            _ => None,
+        };
+        targets.push(InteractionTarget {
+            id: node.id,
+            rect: node.rect,
+            activatable: node.kind.accepts_activation(),
+            action,
+        });
+
         match state.entries.get(&node.id).copied() {
             Some(entry) if entry.kind != node.kind => {
                 diagnostics.push(UiDiagnostic::WidgetKindChanged {
@@ -590,34 +668,42 @@ fn run_impl<'a, R>(
         }
     }
 
+    let current_focus_order = targets.iter().map(|target| target.id).collect::<Vec<_>>();
     state
         .interaction
         .repair_for_current_order_excluding(&current_focus_order, &incompatible_ids);
-    state.interaction.navigate_linear(nav, &current_focus_order);
 
-    let focused = state.interaction.focused_id();
-    let mut interaction = UiInteractionOutput::new(focused, None, nav.cancel);
+    let interaction = run_interaction_pass(
+        &mut state.interaction,
+        input,
+        &targets,
+        UiNavigationPolicy::Linear,
+        |id| {
+            targets
+                .iter()
+                .find(|target| target.id == id)
+                .and_then(|target| target.action)
+        },
+    );
+
+    let focused = interaction.focused_id();
     let mut changed_values = HashMap::new();
+
+    for activated in interaction.activated_ids().iter().copied() {
+        if let Some(index) = nodes.iter().position(|node| node.id == activated)
+            && let NodeContent::ToggleBool {
+                input, effective, ..
+            } = &mut nodes[index].content
+        {
+            *effective = !*input;
+            changed_values.insert(activated, UiValue::Bool(*effective));
+        }
+    }
 
     if let Some(focused) = focused
         && let Some(index) = nodes.iter().position(|node| node.id == focused)
     {
-        if nav.confirm {
-            match &mut nodes[index].content {
-                NodeContent::Button { action, .. } => {
-                    interaction.activate(focused, *action);
-                }
-                NodeContent::ToggleBool {
-                    input, effective, ..
-                } => {
-                    *effective = !*input;
-                    changed_values.insert(focused, UiValue::Bool(*effective));
-                }
-                _ => {}
-            }
-        }
-
-        let slider_delta = i64::from(nav.right) - i64::from(nav.left);
+        let slider_delta = i64::from(input.nav.right) - i64::from(input.nav.left);
         if slider_delta != 0
             && let NodeContent::SliderF32 {
                 input,
@@ -650,12 +736,10 @@ fn run_impl<'a, R>(
     state
         .entries
         .retain(|_, entry| entry.last_seen_generation == generation);
-    state.interaction.commit_order(&current_focus_order);
-    interaction.set_focused_id(state.interaction.focused_id());
 
     let metrics = UiMetrics {
         node_count: nodes.len(),
-        interactive_count: current_focus_order.len(),
+        interactive_count: targets.len(),
         persistent_state_entries: state.entries.len(),
         value_change_count: changed_values.len(),
         activation_count: interaction.activation_count(),
@@ -1189,6 +1273,8 @@ fn u32_to_i32(value: u32) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Touch, TouchPhase};
+
     use super::*;
 
     const RESUME: ActionId = ActionId::new("mfe.resume");
@@ -1202,6 +1288,10 @@ mod tests {
 
     fn theme() -> UiTheme {
         UiTheme::default()
+    }
+
+    fn first_control_position() -> (i32, i32) {
+        (12, 12)
     }
 
     #[test]
@@ -1242,6 +1332,127 @@ mod tests {
         assert!(output.activated(resume));
         assert!(output.action_pressed(RESUME));
         assert!(!output.cancel_requested());
+    }
+
+    #[test]
+    fn pointer_focus_and_release_activate_transactional_button() {
+        let mut state = UiStateStore::default();
+        let position = first_control_position();
+
+        let _ = run_headless_with_input(
+            size(),
+            &mut state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some(position),
+                    pressed: true,
+                    released: false,
+                },
+                ..UiInput::default()
+            },
+            theme(),
+            |ui| ui.button_action("RESUME", RESUME),
+        );
+
+        let (output, resume) = run_headless_with_input(
+            size(),
+            &mut state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some(position),
+                    pressed: false,
+                    released: true,
+                },
+                ..UiInput::default()
+            },
+            theme(),
+            |ui| ui.button_action("RESUME", RESUME),
+        );
+
+        assert_eq!(output.hovered_id(), Some(resume.id()));
+        assert_eq!(output.focused_id(), Some(resume.id()));
+        assert!(output.activated(resume));
+        assert!(output.action_pressed(RESUME));
+    }
+
+    #[test]
+    fn pointer_activation_proposes_transactional_toggle_value() {
+        let mut state = UiStateStore::default();
+        let position = first_control_position();
+
+        let _ = run_headless_with_input(
+            size(),
+            &mut state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some(position),
+                    pressed: true,
+                    released: false,
+                },
+                ..UiInput::default()
+            },
+            theme(),
+            |ui| ui.toggle("ENABLED", false),
+        );
+
+        let (output, toggle) = run_headless_with_input(
+            size(),
+            &mut state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some(position),
+                    pressed: false,
+                    released: true,
+                },
+                ..UiInput::default()
+            },
+            theme(),
+            |ui| ui.toggle("ENABLED", false),
+        );
+
+        assert!(output.activated(toggle));
+        assert_eq!(output.changed(toggle), Some(true));
+    }
+
+    #[test]
+    fn transactional_touch_move_off_cancels_capture() {
+        let mut state = UiStateStore::default();
+        let position = first_control_position();
+        let started = [Touch {
+            id: 41,
+            phase: TouchPhase::Started,
+            position: Some(position),
+        }];
+        let moved = [Touch {
+            id: 41,
+            phase: TouchPhase::Moved,
+            position: Some((230, 150)),
+        }];
+
+        let _ = run_headless_with_input(
+            size(),
+            &mut state,
+            UiInput {
+                touches: &started,
+                ..UiInput::default()
+            },
+            theme(),
+            |ui| ui.button_action("RESUME", RESUME),
+        );
+        assert_eq!(state.interaction.touch_capture_count(), 1);
+
+        let (output, resume) = run_headless_with_input(
+            size(),
+            &mut state,
+            UiInput {
+                touches: &moved,
+                ..UiInput::default()
+            },
+            theme(),
+            |ui| ui.button_action("RESUME", RESUME),
+        );
+        assert_eq!(state.interaction.touch_capture_count(), 0);
+        assert!(!output.activated(resume));
     }
 
     #[test]
