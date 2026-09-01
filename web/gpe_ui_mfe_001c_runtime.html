@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GPE.UI MFE-001C Browser Runtime Gate</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #05080d;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+      }
+
+      canvas {
+        display: block;
+        width: 960px;
+        height: 540px;
+        max-width: 100vw;
+        max-height: 100vh;
+        touch-action: none;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      const status = document.createElement("pre");
+      status.style.position = "fixed";
+      status.style.left = "8px";
+      status.style.bottom = "8px";
+      status.style.margin = "0";
+      status.style.color = "#8fd7ff";
+      status.style.font = "12px monospace";
+      status.textContent = navigator.gpu
+        ? "WebGPU: navigator.gpu present"
+        : "WebGPU: navigator.gpu unavailable";
+      document.body.appendChild(status);
+
+      import init from "./pkg/gpe_ui_mfe_001b_probe.js";
+
+      init().catch((error) => {
+        status.textContent += `\nRuntime error: ${error}`;
+        console.error(error);
+      });
+    </script>
+  </body>
+</html>
