@@ -77,9 +77,7 @@ impl Constraints {
     fn constrain(self, size: Size) -> Size {
         let normalized = self.normalized();
         Size {
-            width: size
-                .width
-                .clamp(normalized.min_width, normalized.max_width),
+            width: size.width.clamp(normalized.min_width, normalized.max_width),
             height: size
                 .height
                 .clamp(normalized.min_height, normalized.max_height),
@@ -355,10 +353,7 @@ impl<'a> UiBuilder<'a> {
 
     pub fn keyed<R>(&mut self, key: &str, build: impl FnOnce(&mut Self) -> R) -> R {
         let scope = self.scope_stack.last_mut().expect("root scope");
-        let occurrence = scope
-            .explicit_key_counts
-            .entry(key.to_owned())
-            .or_insert(0);
+        let occurrence = scope.explicit_key_counts.entry(key.to_owned()).or_insert(0);
         let current_occurrence = *occurrence;
         *occurrence = occurrence.saturating_add(1);
 
@@ -407,11 +402,7 @@ impl<'a> UiBuilder<'a> {
         self.button_internal(label.into(), Some(action))
     }
 
-    pub fn toggle(
-        &mut self,
-        label: impl Into<Cow<'a, str>>,
-        value: bool,
-    ) -> WidgetRef<bool> {
+    pub fn toggle(&mut self, label: impl Into<Cow<'a, str>>, value: bool) -> WidgetRef<bool> {
         let id = self.allocate_implicit_id();
         self.push_leaf(
             id,
@@ -729,11 +720,13 @@ fn apply_vertical_navigation(state: &mut UiStateStore, nav: UiNavInput, focus_or
         .unwrap_or(0);
 
     state.focused = match (nav.up, nav.down) {
-        (true, false) => Some(focus_order[if current == 0 {
-            focus_order.len() - 1
-        } else {
-            current - 1
-        }]),
+        (true, false) => Some(
+            focus_order[if current == 0 {
+                focus_order.len() - 1
+            } else {
+                current - 1
+            }],
+        ),
         (false, true) => Some(focus_order[(current + 1) % focus_order.len()]),
         _ => Some(focus_order[current]),
     };
@@ -806,12 +799,11 @@ fn measure_node(
             let (width, height) = text_renderer.text_size(text.as_ref(), theme.text_scale.max(1));
             constraints.constrain(Size { width, height })
         }
-        WidgetKind::Button | WidgetKind::ToggleBool | WidgetKind::SliderF32 => {
-            constraints.constrain(Size {
+        WidgetKind::Button | WidgetKind::ToggleBool | WidgetKind::SliderF32 => constraints
+            .constrain(Size {
                 width: constraints.max_width,
                 height: theme.row_height,
-            })
-        }
+            }),
     };
     nodes[index].measured = size;
     size
@@ -827,8 +819,12 @@ fn measure_linear_container(
     text_renderer: TextRenderer,
 ) -> Size {
     let children = std::mem::take(&mut nodes[index].children);
-    let inner_max_width = constraints.max_width.saturating_sub(padding.saturating_mul(2));
-    let inner_max_height = constraints.max_height.saturating_sub(padding.saturating_mul(2));
+    let inner_max_width = constraints
+        .max_width
+        .saturating_sub(padding.saturating_mul(2));
+    let inner_max_height = constraints
+        .max_height
+        .saturating_sub(padding.saturating_mul(2));
     let mut width = 0_u32;
     let mut height = 0_u32;
 
@@ -860,9 +856,15 @@ fn measure_linear_container(
 fn arrange_node(nodes: &mut [Node<'_>], index: usize, rect: Rect, theme: UiTheme) {
     nodes[index].rect = rect;
     match nodes[index].kind {
-        WidgetKind::Root => arrange_linear_children(nodes, index, rect, theme.padding, theme.row_spacing, theme),
-        WidgetKind::Column => arrange_linear_children(nodes, index, rect, 0, theme.row_spacing, theme),
-        WidgetKind::Panel => arrange_linear_children(nodes, index, rect, theme.padding, theme.row_spacing, theme),
+        WidgetKind::Root => {
+            arrange_linear_children(nodes, index, rect, theme.padding, theme.row_spacing, theme)
+        }
+        WidgetKind::Column => {
+            arrange_linear_children(nodes, index, rect, 0, theme.row_spacing, theme)
+        }
+        WidgetKind::Panel => {
+            arrange_linear_children(nodes, index, rect, theme.padding, theme.row_spacing, theme)
+        }
         _ => {}
     }
 }
@@ -931,11 +933,25 @@ fn paint_node(
             );
         }
         NodeContent::Text { text } => {
-            draw_text_left(framebuffer, text_renderer, node.rect, text.as_ref(), theme.text_scale, theme.text);
+            draw_text_left(
+                framebuffer,
+                text_renderer,
+                node.rect,
+                text.as_ref(),
+                theme.text_scale,
+                theme.text,
+            );
         }
         NodeContent::Button { label, .. } => {
             draw_control_frame(framebuffer, node.rect, theme, focused == Some(node.id));
-            draw_text_centered(framebuffer, text_renderer, node.rect, label.as_ref(), theme.text_scale, theme.text);
+            draw_text_centered(
+                framebuffer,
+                text_renderer,
+                node.rect,
+                label.as_ref(),
+                theme.text_scale,
+                theme.text,
+            );
         }
         NodeContent::ToggleBool {
             label, effective, ..
@@ -943,7 +959,14 @@ fn paint_node(
             draw_control_frame(framebuffer, node.rect, theme, focused == Some(node.id));
             let suffix = if *effective { "ON" } else { "OFF" };
             let text = format!("{}: {}", label, suffix);
-            draw_text_centered(framebuffer, text_renderer, node.rect, &text, theme.text_scale, theme.text);
+            draw_text_centered(
+                framebuffer,
+                text_renderer,
+                node.rect,
+                &text,
+                theme.text_scale,
+                theme.text,
+            );
         }
         NodeContent::SliderF32 {
             label,
@@ -968,13 +991,7 @@ fn paint_node(
                 theme.text,
             );
             let track = slider_track_rect(node.rect);
-            framebuffer.fill_rect(
-                track.x,
-                track.y,
-                track.width,
-                track.height,
-                theme.border,
-            );
+            framebuffer.fill_rect(track.x, track.y, track.width, track.height, theme.border);
             let ratio = if *max > *min {
                 ((*effective - *min) / (*max - *min)).clamp(0.0, 1.0)
             } else {
@@ -1077,7 +1094,11 @@ fn dump_node(
 ) {
     let node = &nodes[index];
     let indent = "  ".repeat(depth);
-    let focus = if focused == Some(node.id) { " focused" } else { "" };
+    let focus = if focused == Some(node.id) {
+        " focused"
+    } else {
+        ""
+    };
     let activation = if activated.contains(&node.id) {
         " activated"
     } else {
@@ -1204,11 +1225,7 @@ fn stepped_slider_value(value: f32, min: f32, max: f32, step: f32, direction: i6
 
 fn slider_track_rect(rect: Rect) -> Rect {
     let x_offset = rect.width / 2;
-    let width = rect
-        .width
-        .saturating_sub(x_offset)
-        .saturating_sub(8)
-        .max(1);
+    let width = rect.width.saturating_sub(x_offset).saturating_sub(8).max(1);
     let height = 5_u32.min(rect.height.max(1));
     Rect {
         x: rect.x.saturating_add(u32_to_i32(x_offset)),
@@ -1247,18 +1264,13 @@ mod tests {
     #[test]
     fn tiny_ui_builds_headlessly_with_small_concept_surface() {
         let mut state = UiStateStore::default();
-        let (output, resume) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| {
+        let (output, resume) =
+            run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
                 ui.panel(|ui| {
                     ui.text("PAUSED");
                     ui.button_action("RESUME", RESUME)
                 })
-            },
-        );
+            });
 
         assert_eq!(output.metrics().interactive_count, 1);
         assert_eq!(output.metrics().persistent_state_entries, 1);
@@ -1312,16 +1324,10 @@ mod tests {
         let mut state = UiStateStore::default();
         let volume = 0.65_f32;
 
-        let (_, _) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| {
-                ui.toggle("ENABLED", true);
-                ui.slider_f32("VOLUME", volume, 0.0..=1.0, 0.05)
-            },
-        );
+        let (_, _) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            ui.toggle("ENABLED", true);
+            ui.slider_f32("VOLUME", volume, 0.0..=1.0, 0.05)
+        });
 
         let (output, slider) = run_headless(
             size(),
@@ -1352,16 +1358,10 @@ mod tests {
         let mut state = UiStateStore::default();
         let mut calls = 0;
 
-        let _ = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| {
-                calls += 1;
-                ui.button("ONLY ONCE");
-            },
-        );
+        let _ = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            calls += 1;
+            ui.button("ONLY ONCE");
+        });
 
         assert_eq!(calls, 1);
     }
@@ -1370,17 +1370,11 @@ mod tests {
     fn keyed_identity_survives_sibling_insertion_and_reorder() {
         let mut state = UiStateStore::default();
 
-        let (_, (_, b1)) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| {
-                let a = ui.keyed("a", |ui| ui.button("A"));
-                let b = ui.keyed("b", |ui| ui.button("B"));
-                (a, b)
-            },
-        );
+        let (_, (_, b1)) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            let a = ui.keyed("a", |ui| ui.button("A"));
+            let b = ui.keyed("b", |ui| ui.button("B"));
+            (a, b)
+        });
 
         let (_, (_, b2)) = run_headless(
             size(),
@@ -1399,18 +1393,12 @@ mod tests {
         assert_eq!(b1.id(), b2.id());
         assert_eq!(state.focused_id(), Some(b2.id()));
 
-        let (_, b3) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| {
-                ui.keyed("x", |ui| ui.button("X"));
-                let b = ui.keyed("b", |ui| ui.button("B"));
-                ui.keyed("a", |ui| ui.button("A"));
-                b
-            },
-        );
+        let (_, b3) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            ui.keyed("x", |ui| ui.button("X"));
+            let b = ui.keyed("b", |ui| ui.button("B"));
+            ui.keyed("a", |ui| ui.button("A"));
+            b
+        });
 
         assert_eq!(b2.id(), b3.id());
         assert_eq!(state.focused_id(), Some(b3.id()));
@@ -1420,16 +1408,10 @@ mod tests {
     fn removing_focused_widget_uses_deterministic_fallback_and_prunes_state() {
         let mut state = UiStateStore::default();
 
-        let _ = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| {
-                ui.keyed("a", |ui| ui.button("A"));
-                ui.keyed("b", |ui| ui.button("B"));
-            },
-        );
+        let _ = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            ui.keyed("a", |ui| ui.button("A"));
+            ui.keyed("b", |ui| ui.button("B"));
+        });
         let _ = run_headless(
             size(),
             &mut state,
@@ -1444,13 +1426,9 @@ mod tests {
             },
         );
 
-        let (_, a) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| ui.keyed("a", |ui| ui.button("A")),
-        );
+        let (_, a) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            ui.keyed("a", |ui| ui.button("A"))
+        });
 
         assert_eq!(state.focused_id(), Some(a.id()));
         assert_eq!(state.entry_count(), 1);
@@ -1460,16 +1438,10 @@ mod tests {
     fn duplicate_explicit_key_is_diagnosed_deterministically() {
         let mut state = UiStateStore::default();
 
-        let (output, _) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| {
-                ui.keyed("dup", |ui| ui.button("FIRST"));
-                ui.keyed("dup", |ui| ui.button("SECOND"));
-            },
-        );
+        let (output, _) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            ui.keyed("dup", |ui| ui.button("FIRST"));
+            ui.keyed("dup", |ui| ui.button("SECOND"));
+        });
 
         assert!(matches!(
             output.diagnostics(),
@@ -1485,13 +1457,10 @@ mod tests {
     fn widget_kind_reuse_resets_state_and_is_diagnosed() {
         let mut state = UiStateStore::default();
 
-        let (_, old_button) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| ui.keyed("same", |ui| ui.button("BUTTON")),
-        );
+        let (_, old_button) =
+            run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+                ui.keyed("same", |ui| ui.button("BUTTON"))
+            });
 
         let (output, new_toggle) = run_headless(
             size(),
@@ -1520,13 +1489,9 @@ mod tests {
     fn widget_ref_is_generation_scoped_for_output_queries() {
         let mut state = UiStateStore::default();
 
-        let (_, first) = run_headless(
-            size(),
-            &mut state,
-            UiNavInput::default(),
-            theme(),
-            |ui| ui.slider_f32("VOLUME", 0.5, 0.0..=1.0, 0.1),
-        );
+        let (_, first) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            ui.slider_f32("VOLUME", 0.5, 0.0..=1.0, 0.1)
+        });
 
         let (second_output, second) = run_headless(
             size(),
@@ -1580,9 +1545,11 @@ mod tests {
         );
 
         assert_eq!(output.metrics().interactive_count, 1);
-        assert!(framebuffer
-            .as_rgba8()
-            .chunks_exact(4)
-            .any(|pixel| pixel.iter().any(|channel| *channel != 0)));
+        assert!(
+            framebuffer
+                .as_rgba8()
+                .chunks_exact(4)
+                .any(|pixel| pixel.iter().any(|channel| *channel != 0))
+        );
     }
 }
