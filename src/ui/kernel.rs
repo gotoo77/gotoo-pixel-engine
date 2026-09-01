@@ -222,8 +222,7 @@ impl UiInteractionState {
         let current = current_order.iter().copied().collect::<HashSet<_>>();
         let is_current_valid = |id: UiId| current.contains(&id) && !is_invalid(id);
         self.pointer_capture = self.pointer_capture.filter(|id| is_current_valid(*id));
-        self.touch_capture
-            .retain(|_, id| is_current_valid(*id));
+        self.touch_capture.retain(|_, id| is_current_valid(*id));
 
         if self.focused.is_some_and(is_current_valid) {
             return;

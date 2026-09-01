@@ -5,7 +5,10 @@ use std::ops::RangeInclusive;
 
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
-use super::{UiTheme, kernel::{UiInteractionOutput, UiInteractionState}};
+use super::{
+    UiTheme,
+    kernel::{UiInteractionOutput, UiInteractionState},
+};
 
 const ROOT_ID: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
