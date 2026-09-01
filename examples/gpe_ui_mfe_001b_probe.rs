@@ -114,7 +114,50 @@ impl CardPainter for ProbeCardPainter {
         visual: CardVisualState,
         theme: UiTheme,
     ) {
-        DefaultCardPainter.paint(framebuffer, card, layout, visual, theme);
+        const COMPACT_HEIGHT: u32 = 44;
+
+        if layout.rect.height >= COMPACT_HEIGHT {
+            DefaultCardPainter.paint(framebuffer, card, layout, visual, theme);
+        } else {
+            let border = if visual.focused || visual.hovered {
+                theme.accent
+            } else {
+                theme.border
+            };
+            framebuffer.fill_rect(
+                layout.rect.x,
+                layout.rect.y,
+                layout.rect.width,
+                layout.rect.height,
+                theme.control_background,
+            );
+            framebuffer.draw_rect(
+                layout.rect.x,
+                layout.rect.y,
+                layout.rect.width,
+                layout.rect.height,
+                border,
+            );
+
+            let text = TextRenderer::new(theme.font);
+            let (text_width, text_height) = text.text_size(card.title, theme.text_scale.max(1));
+            let text_x = layout.rect.x.saturating_add(
+                i32::try_from(layout.rect.width.saturating_sub(text_width) / 2).unwrap_or(i32::MAX),
+            );
+            let text_y = layout.rect.y.saturating_add(
+                i32::try_from(layout.rect.height.saturating_sub(text_height) / 2)
+                    .unwrap_or(i32::MAX),
+            );
+            text.draw_scaled(
+                framebuffer,
+                text_x,
+                text_y,
+                card.title,
+                theme.text_scale.max(1),
+                theme.text,
+            );
+        }
+
         if visual.focused {
             framebuffer.fill_rect(
                 layout.rect.x,
@@ -197,23 +240,47 @@ impl Mfe001bProbe {
                     .input
                     .gamepad_button_any(GamepadButton::South)
                     .pressed(),
-            cancel: false,
+            cancel: frame.input.key(Key::Escape).pressed()
+                || frame
+                    .input
+                    .gamepad_button_any(GamepadButton::East)
+                    .pressed(),
         }
     }
 }
 
 impl Game for Mfe001bProbe {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
-        if frame.input.key(Key::Escape).pressed() {
+        if frame.input.key(Key::Escape).pressed()
+            || frame
+                .input
+                .gamepad_button_any(GamepadButton::East)
+                .pressed()
+        {
             return GameResult::Exit;
         }
-        if frame.input.key(Key::F).pressed() {
+        if frame.input.key(Key::F).pressed()
+            || frame
+                .input
+                .gamepad_button_any(GamepadButton::West)
+                .pressed()
+        {
             self.filtered = !self.filtered;
         }
-        if frame.input.key(Key::R).pressed() {
+        if frame.input.key(Key::R).pressed()
+            || frame
+                .input
+                .gamepad_button_any(GamepadButton::North)
+                .pressed()
+        {
             self.reversed = !self.reversed;
         }
-        if frame.input.key(Key::L).pressed() {
+        if frame.input.key(Key::L).pressed()
+            || frame
+                .input
+                .gamepad_button_any(GamepadButton::LeftShoulder)
+                .pressed()
+        {
             self.width_mode = self.width_mode.next();
         }
 
@@ -303,7 +370,7 @@ impl Game for Mfe001bProbe {
             frame.framebuffer,
             8,
             30,
-            "L: WIDTH   F: FILTER DYNAMIC LIST   R: REORDER   ESC: EXIT",
+            "L/LB: WIDTH   F/WEST: FILTER   R/NORTH: REORDER   ESC/EAST: EXIT",
             normal,
         );
         text.draw(
