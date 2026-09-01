@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
-use super::UiTheme;
+use super::{UiTheme, kernel::UiInteractionOutput};
 
 const ROOT_ID: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
@@ -171,10 +171,8 @@ impl UiValueType for f32 {
 #[derive(Debug, Clone)]
 pub struct UiOutput {
     generation: u64,
-    activated: HashSet<UiId>,
-    actions: Vec<ActionId>,
+    interaction: UiInteractionOutput,
     changed_values: HashMap<UiId, UiValue>,
-    cancelled: bool,
     diagnostics: Vec<UiDiagnostic>,
     dump: String,
     metrics: UiMetrics,
@@ -185,12 +183,20 @@ impl UiOutput {
         self.generation
     }
 
+    pub const fn focused_id(&self) -> Option<UiId> {
+        self.interaction.focused_id()
+    }
+
+    pub const fn hovered_id(&self) -> Option<UiId> {
+        self.interaction.hovered_id()
+    }
+
     pub fn activated<T>(&self, handle: WidgetRef<T>) -> bool {
-        handle.generation == self.generation && self.activated.contains(&handle.id)
+        handle.generation == self.generation && self.interaction.activated(handle.id)
     }
 
     pub fn action_pressed(&self, action: ActionId) -> bool {
-        self.actions.contains(&action)
+        self.interaction.action_pressed(action)
     }
 
     pub fn changed<T: UiValueType>(&self, handle: WidgetRef<T>) -> Option<T> {
@@ -200,7 +206,7 @@ impl UiOutput {
     }
 
     pub const fn cancel_requested(&self) -> bool {
-        self.cancelled
+        self.interaction.cancel_requested()
     }
 
     pub fn diagnostics(&self) -> &[UiDiagnostic] {
@@ -595,8 +601,7 @@ fn run_impl<'a, R>(
 
     apply_vertical_navigation(state, nav, &current_focus_order);
 
-    let mut activated = HashSet::new();
-    let mut actions = Vec::new();
+    let mut interaction = UiInteractionOutput::new(state.focused, None, nav.cancel);
     let mut changed_values = HashMap::new();
 
     if let Some(focused) = state.focused
@@ -605,10 +610,7 @@ fn run_impl<'a, R>(
         if nav.confirm {
             match &mut nodes[index].content {
                 NodeContent::Button { action, .. } => {
-                    activated.insert(focused);
-                    if let Some(action) = *action {
-                        actions.push(action);
-                    }
+                    interaction.activate(focused, *action);
                 }
                 NodeContent::ToggleBool {
                     input, effective, ..
@@ -643,7 +645,12 @@ fn run_impl<'a, R>(
         paint_node(&nodes, 0, framebuffer, theme, text_renderer, state.focused);
     }
 
-    let dump = dump_nodes(&nodes, state.focused, &changed_values, &activated);
+    let dump = dump_nodes(
+        &nodes,
+        state.focused,
+        &changed_values,
+        interaction.activated_ids(),
+    );
 
     state
         .entries
@@ -656,23 +663,22 @@ fn run_impl<'a, R>(
     {
         state.focused = state.previous_focus_order.first().copied();
     }
+    interaction.set_focused_id(state.focused);
 
     let metrics = UiMetrics {
         node_count: nodes.len(),
         interactive_count: state.previous_focus_order.len(),
         persistent_state_entries: state.entries.len(),
         value_change_count: changed_values.len(),
-        activation_count: activated.len(),
+        activation_count: interaction.activation_count(),
         diagnostic_count: diagnostics.len(),
     };
 
     (
         UiOutput {
             generation,
-            activated,
-            actions,
+            interaction,
             changed_values,
-            cancelled: nav.cancel,
             diagnostics,
             dump,
             metrics,
@@ -1275,6 +1281,8 @@ mod tests {
         assert_eq!(output.metrics().interactive_count, 1);
         assert_eq!(output.metrics().persistent_state_entries, 1);
         assert_eq!(state.focused_id(), Some(resume.id()));
+        assert_eq!(output.focused_id(), Some(resume.id()));
+        assert_eq!(output.hovered_id(), None);
         assert!(output.dump().contains("Button"));
         assert!(output.dump().contains("PAUSED"));
     }
