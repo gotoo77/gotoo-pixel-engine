@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::Touch;
+use crate::{Rect, Touch};
 
 pub(crate) use super::experimental::{UiId, UiNavInput};
 
@@ -26,6 +26,106 @@ pub struct UiInput<'a> {
     pub nav: UiNavInput,
     pub pointer: UiPointerInput,
     pub touches: &'a [Touch],
+}
+
+/// Frame-local resolved target contract consumed by generic hit-testing and
+/// spatial navigation.
+///
+/// The target itself may be a widget/layout-specific record such as the
+/// MFE-001B `CardLayout`; the interaction kernel only requires stable identity
+/// and final integer geometry.
+pub(crate) trait UiResolvedTarget {
+    fn ui_id(&self) -> UiId;
+    fn ui_rect(&self) -> Rect;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UiNavDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl UiNavDirection {
+    pub(crate) fn from_nav(nav: UiNavInput) -> Option<Self> {
+        match (nav.up, nav.down, nav.left, nav.right) {
+            (true, false, false, false) => Some(Self::Up),
+            (false, true, false, false) => Some(Self::Down),
+            (false, false, true, false) => Some(Self::Left),
+            (false, false, false, true) => Some(Self::Right),
+            _ => None,
+        }
+    }
+}
+
+/// Returns the top-most resolved target at `position` using stable resolved
+/// order as the z-order tiebreaker, matching the MFE-001B reverse hit-test.
+pub(crate) fn hit_test_resolved<T: UiResolvedTarget>(
+    position: (i32, i32),
+    targets: &[T],
+) -> Option<UiId> {
+    targets
+        .iter()
+        .rev()
+        .find(|target| rect_contains(target.ui_rect(), position))
+        .map(UiResolvedTarget::ui_id)
+}
+
+/// Selects the deterministic spatial-navigation candidate proven by MFE-001B.
+///
+/// Ranking is intentionally unchanged:
+///
+/// 1. requested direction filter;
+/// 2. primary-axis distance;
+/// 3. secondary-axis distance;
+/// 4. stable resolved order.
+pub(crate) fn spatial_candidate<T: UiResolvedTarget>(
+    focused: UiId,
+    direction: UiNavDirection,
+    targets: &[T],
+) -> Option<UiId> {
+    let focused_target = targets.iter().find(|target| target.ui_id() == focused)?;
+    let (fx, fy) = rect_center(focused_target.ui_rect());
+
+    targets
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| candidate.ui_id() != focused)
+        .filter_map(|(index, candidate)| {
+            let (cx, cy) = rect_center(candidate.ui_rect());
+            let (primary, secondary) = match direction {
+                UiNavDirection::Up if cy < fy => (fy - cy, (cx - fx).abs()),
+                UiNavDirection::Down if cy > fy => (cy - fy, (cx - fx).abs()),
+                UiNavDirection::Left if cx < fx => (fx - cx, (cy - fy).abs()),
+                UiNavDirection::Right if cx > fx => (cx - fx, (cy - fy).abs()),
+                _ => return None,
+            };
+            Some(((primary, secondary, index), candidate.ui_id()))
+        })
+        .min_by_key(|(score, _)| *score)
+        .map(|(_, id)| id)
+}
+
+fn rect_contains(rect: Rect, position: (i32, i32)) -> bool {
+    if rect.width == 0 || rect.height == 0 {
+        return false;
+    }
+
+    let px = i64::from(position.0);
+    let py = i64::from(position.1);
+    let left = i64::from(rect.x);
+    let top = i64::from(rect.y);
+    let right = left + i64::from(rect.width);
+    let bottom = top + i64::from(rect.height);
+    px >= left && px < right && py >= top && py < bottom
+}
+
+fn rect_center(rect: Rect) -> (i64, i64) {
+    (
+        i64::from(rect.x) + i64::from(rect.width) / 2,
+        i64::from(rect.y) + i64::from(rect.height) / 2,
+    )
 }
 
 /// Shared persistent interaction state for one UI transaction surface.
@@ -137,6 +237,22 @@ mod tests {
 
     const ACTION: ActionId = ActionId::new("kernel.interaction.test");
 
+    #[derive(Debug, Clone, Copy)]
+    struct TestTarget {
+        id: UiId,
+        rect: Rect,
+    }
+
+    impl UiResolvedTarget for TestTarget {
+        fn ui_id(&self) -> UiId {
+            self.id
+        }
+
+        fn ui_rect(&self) -> Rect {
+            self.rect
+        }
+    }
+
     fn ids() -> Vec<UiId> {
         let mut state = UiStateStore::default();
         let (_, ids) = run_headless(
@@ -164,6 +280,91 @@ mod tests {
         assert_eq!(input.nav, UiNavInput::default());
         assert_eq!(input.pointer, UiPointerInput::default());
         assert!(input.touches.is_empty());
+    }
+
+    #[test]
+    fn nav_direction_requires_exactly_one_spatial_direction() {
+        assert_eq!(
+            UiNavDirection::from_nav(UiNavInput {
+                right: true,
+                ..UiNavInput::default()
+            }),
+            Some(UiNavDirection::Right)
+        );
+        assert_eq!(
+            UiNavDirection::from_nav(UiNavInput {
+                right: true,
+                down: true,
+                ..UiNavInput::default()
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn resolved_hit_test_prefers_last_overlapping_target() {
+        let ids = ids();
+        let targets = [
+            TestTarget {
+                id: ids[0],
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 20,
+                    height: 20,
+                },
+            },
+            TestTarget {
+                id: ids[1],
+                rect: Rect {
+                    x: 5,
+                    y: 5,
+                    width: 20,
+                    height: 20,
+                },
+            },
+        ];
+
+        assert_eq!(hit_test_resolved((10, 10), &targets), Some(ids[1]));
+        assert_eq!(hit_test_resolved((30, 30), &targets), None);
+    }
+
+    #[test]
+    fn resolved_spatial_ranking_preserves_primary_secondary_then_order() {
+        let ids = ids();
+        let focused = TestTarget {
+            id: ids[0],
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 10,
+            },
+        };
+        let farther_primary = TestTarget {
+            id: ids[1],
+            rect: Rect {
+                x: 0,
+                y: 30,
+                width: 10,
+                height: 10,
+            },
+        };
+        let nearer_primary = TestTarget {
+            id: ids[2],
+            rect: Rect {
+                x: 20,
+                y: 20,
+                width: 10,
+                height: 10,
+            },
+        };
+        let targets = [focused, farther_primary, nearer_primary];
+
+        assert_eq!(
+            spatial_candidate(ids[0], UiNavDirection::Down, &targets),
+            Some(ids[2])
+        );
     }
 
     #[test]
