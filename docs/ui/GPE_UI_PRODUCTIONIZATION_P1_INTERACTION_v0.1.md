@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION P1 / UNIFIED INPUT + INTERACTION v0.1
 
-Status: **ACTIVE IMPLEMENTATION CONTRACT — P1 ONLY**
+Status: **COMPLETE — PASS / STOP**
 
 Parent roadmap:
 
@@ -10,9 +10,17 @@ P0 result:
 
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P0_RESULT_v0.1.md`
 
+P1 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P1_RESULT_v0.1.md`
+
 Baseline entering P1:
 
 `2d6a2968807c804e1652c06f3e954325dd67a0cc`
+
+Validated implementation head before result documentation:
+
+`cd164600c23e29402a666f93b3f2b007dc0fd8a0`
 
 ---
 
@@ -20,7 +28,7 @@ Baseline entering P1:
 
 Finish the interaction convergence that P0 made possible.
 
-P0 established one canonical input vocabulary and one persistent interaction authority, but the two compatibility adapters still execute different interaction passes:
+P0 established one canonical input vocabulary and one persistent interaction authority, but the two compatibility adapters still executed different interaction passes:
 
 ```text
 transactional/Tiny
@@ -35,7 +43,7 @@ spatial/Grid
     confirm activation
 ```
 
-P1 must make both adapters consume one kernel interaction pass while preserving their accepted behavior.
+P1 makes both adapters consume one kernel interaction pass while preserving their accepted behavior.
 
 ---
 
@@ -63,14 +71,14 @@ commit current order
 UiInteractionOutput
 ```
 
-The pass must support at least two deterministic navigation policies:
+The pass supports two deterministic navigation policies:
 
 ```text
 Linear
 Spatial
 ```
 
-The policy selects navigation behavior only. It must not create a second state/output model.
+The policy selects navigation behavior only. It does not create a second state/output model.
 
 ---
 
@@ -97,13 +105,13 @@ experimental_spatial::run_card_grid(..., SpatialInput, ...)
 experimental_spatial::run_card_grid_headless(..., SpatialInput, ...)
 ```
 
-P1 may add explicit full-input transactional entry points, but must not break the existing MFE calls.
+P1 also adds explicit full-input transactional entry points without breaking the existing MFE calls.
 
 ---
 
 # 4. Generic target contract
 
-Resolved targets used by the interaction pass must provide enough information for generic interaction without becoming a permanent widget tree.
+Resolved targets used by the interaction pass provide enough information for generic interaction without becoming a permanent widget tree.
 
 Minimum semantics:
 
@@ -114,7 +122,7 @@ focusable / interactive participation
 activation capability
 ```
 
-Action mapping may remain an adapter callback/lookup so the kernel does not depend on Card or widget content types.
+Action mapping remains an adapter callback/lookup so the kernel does not depend on Card or widget content types.
 
 Important distinction:
 
@@ -128,9 +136,9 @@ Example: a Slider may take focus and pointer focus without treating Confirm as a
 
 # 5. Transactional adapter behavior
 
-The Tiny/transactional path must gain a full-input entry point using `UiInput` while retaining the nav-only adapters.
+The Tiny/transactional path now has a full-input entry point using `UiInput` while retaining the nav-only adapters.
 
-Required P1 behavior:
+Preserved/validated P1 behavior:
 
 ```text
 pointer press on Button/Toggle/Slider -> focus target
@@ -158,9 +166,9 @@ P1 does not implement pointer dragging for Slider.
 
 # 6. Spatial adapter behavior
 
-The Grid must stop owning its own pointer/touch/confirm interaction algorithm.
+The Grid no longer owns its own pointer/touch/confirm interaction algorithm.
 
-It should provide:
+It provides:
 
 ```text
 resolved CardLayout targets
@@ -168,9 +176,9 @@ Spatial navigation policy
 ActionId lookup for card IDs
 ```
 
-and delegate generic interaction to the shared kernel pass.
+and delegates generic interaction to the shared kernel pass.
 
-Accepted MFE-001B behavior must remain unchanged:
+Accepted MFE-001B behavior remains unchanged:
 
 ```text
 spatial direction ranking
@@ -186,7 +194,7 @@ cancel output
 
 # 7. Scope boundaries
 
-P1 MUST NOT implement:
+P1 did not implement:
 
 ```text
 layout convergence / graph Grid      -> P2
@@ -197,7 +205,7 @@ public v1 naming/API freeze          -> P6
 consumer migration                   -> P7
 ```
 
-P1 must not move platform event handling into the UI kernel.
+P1 does not move platform event handling into the UI kernel.
 
 ---
 
@@ -205,76 +213,84 @@ P1 must not move platform event handling into the UI kernel.
 
 ## P1.1 — kernel interaction policy/pass
 
-- define explicit Linear/Spatial navigation policy;
-- extend resolved-target semantics only as required;
-- centralize generic nav + hover + pointer + touch + confirm interaction;
-- preserve exact MFE spatial ranking and capture rules.
+Status: **PASS**.
+
+- explicit Linear/Spatial navigation policy;
+- resolved-target activation semantics;
+- centralized generic nav + hover + pointer + touch + confirm interaction;
+- preserved deterministic spatial ranking and capture rules.
 
 ## P1.2 — migrate Spatial adapter
 
-- replace its bespoke pointer/touch/confirm logic with the shared pass;
-- keep Grid geometry/painter/output compatibility surface;
-- regression tests prove MFE behavior unchanged.
+Status: **PASS**.
+
+- bespoke pointer/touch/confirm logic removed from the production adapter;
+- Grid geometry/painter/output compatibility surface preserved;
+- regression behavior retained.
 
 ## P1.3 — migrate transactional adapter
 
-- add full `UiInput` transaction entry points;
-- keep nav-only `run` / `run_headless` as compatibility adapters;
-- route linear focus + pointer/touch + generic activation through the shared pass;
-- keep typed value semantics in the transactional adapter.
+Status: **PASS**.
+
+- full `UiInput` transaction entry points added;
+- nav-only `run` / `run_headless` remain compatibility adapters;
+- linear focus + pointer/touch + generic activation route through the shared pass;
+- typed value semantics remain transactional-adapter responsibilities.
 
 ## P1.4 — closure review
 
-Prove there is one generic interaction algorithm under both adapters and no duplicated pointer/touch/capture/confirm implementation remains.
+Status: **PASS**.
+
+One generic interaction algorithm is used under both adapters. No duplicated production pointer/touch/capture/confirm implementation remains in the adapters.
 
 ---
 
 # 9. Acceptance gates
 
-Automated:
+Automated validation on implementation head `cd164600c23e29402a666f93b3f2b007dc0fd8a0`, GitHub Actions CI run **#655**:
 
 ```text
-cargo fmt --check
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
-cargo build --release --examples
-Web build/package CI
-Conventional Commits CI
+cargo fmt --check                                      PASS
+cargo test                                             PASS
+cargo clippy --all-targets --all-features -- -D warnings PASS
+cargo build --release --examples                       PASS
+Web build/package CI                                   PASS
+Conventional Commits CI                                PASS
 ```
 
 Headless behavioral gates:
 
 ```text
-Linear navigation wrap preserved
-Spatial ranking preserved
-Button confirm/action preserved
-Toggle confirm typed proposal preserved
-Slider left/right typed proposal preserved
-Transactional pointer focus + Button activation
-Transactional pointer Toggle activation
-Transactional touch activation + move-off cancellation
-Spatial pointer/touch behavior unchanged
-hover exposed consistently
-capture pruned when target disappears
-cancel preserved
-single consumer build closure execution preserved
+Linear navigation wrap preserved                       PASS
+Spatial ranking preserved                              PASS
+Button confirm/action preserved                        PASS
+Toggle confirm typed proposal preserved                PASS
+Slider left/right typed proposal preserved             PASS
+Transactional pointer focus + Button activation        PASS
+Transactional pointer Toggle activation                PASS
+Transactional touch activation + move-off cancellation PASS
+Spatial pointer/touch behavior unchanged               PASS
+hover exposed consistently                             PASS
+capture pruned when target disappears                  PASS
+cancel preserved                                       PASS
+single consumer build closure execution preserved      PASS
 ```
 
-Human runtime:
+Human Native runtime gate:
 
-A final Native smoke test is required because P1 changes input/interaction semantics.
+```text
+P1 NATIVE RUNTIME = PASS
+```
 
-Web browser runtime is required only if P1 changes platform/input transport. This slice must not do so; otherwise Web build/package is the required P1 Web gate.
+Web browser runtime was not rerun because P1 did not modify platform/input transport semantics; Web build/package is the required P1 Web gate.
 
 ---
 
 # 10. STOP
 
-When P1 passes:
-
 ```text
-GPE.UI PRODUCTIONIZATION P1 = PASS / PASS WITH CONDITIONS / FAIL
+GPE.UI PRODUCTIONIZATION P1 = PASS
 STOP
 ```
 
-Record a formal P1 result before starting P2.
+P1 is complete. Do not begin P2 on this implementation branch. P2 requires an explicit new start from the merged P1 baseline.
