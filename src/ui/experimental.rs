@@ -5,7 +5,7 @@ use std::ops::RangeInclusive;
 
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
-use super::{UiTheme, kernel::UiInteractionOutput};
+use super::{UiTheme, kernel::{UiInteractionOutput, UiInteractionState}};
 
 const ROOT_ID: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
@@ -241,14 +241,13 @@ struct StateEntry {
 #[derive(Debug, Default)]
 pub struct UiStateStore {
     generation: u64,
-    focused: Option<UiId>,
+    interaction: UiInteractionState,
     entries: HashMap<UiId, StateEntry>,
-    previous_focus_order: Vec<UiId>,
 }
 
 impl UiStateStore {
     pub const fn focused_id(&self) -> Option<UiId> {
-        self.focused
+        self.interaction.focused_id()
     }
 
     pub fn entry_count(&self) -> usize {
@@ -548,9 +547,6 @@ fn run_impl<'a, R>(
         theme,
     );
 
-    let previous_focused = state.focused;
-    let previous_focus_order = state.previous_focus_order.clone();
-
     let mut current_focus_order = Vec::new();
     let mut incompatible_ids = HashSet::new();
     for node in &nodes {
@@ -591,20 +587,16 @@ fn run_impl<'a, R>(
         }
     }
 
-    repair_focus(
-        state,
-        previous_focused,
-        &previous_focus_order,
-        &current_focus_order,
-        &incompatible_ids,
-    );
+    state
+        .interaction
+        .repair_for_current_order_excluding(&current_focus_order, &incompatible_ids);
+    state.interaction.navigate_linear(nav, &current_focus_order);
 
-    apply_vertical_navigation(state, nav, &current_focus_order);
-
-    let mut interaction = UiInteractionOutput::new(state.focused, None, nav.cancel);
+    let focused = state.interaction.focused_id();
+    let mut interaction = UiInteractionOutput::new(focused, None, nav.cancel);
     let mut changed_values = HashMap::new();
 
-    if let Some(focused) = state.focused
+    if let Some(focused) = focused
         && let Some(index) = nodes.iter().position(|node| node.id == focused)
     {
         if nav.confirm {
@@ -642,12 +634,12 @@ fn run_impl<'a, R>(
     }
 
     if let Some(framebuffer) = framebuffer {
-        paint_node(&nodes, 0, framebuffer, theme, text_renderer, state.focused);
+        paint_node(&nodes, 0, framebuffer, theme, text_renderer, focused);
     }
 
     let dump = dump_nodes(
         &nodes,
-        state.focused,
+        focused,
         &changed_values,
         interaction.activated_ids(),
     );
@@ -655,19 +647,12 @@ fn run_impl<'a, R>(
     state
         .entries
         .retain(|_, entry| entry.last_seen_generation == generation);
-    state.previous_focus_order = current_focus_order;
-
-    if state
-        .focused
-        .is_some_and(|focused| !state.entries.contains_key(&focused))
-    {
-        state.focused = state.previous_focus_order.first().copied();
-    }
-    interaction.set_focused_id(state.focused);
+    state.interaction.commit_order(&current_focus_order);
+    interaction.set_focused_id(state.interaction.focused_id());
 
     let metrics = UiMetrics {
         node_count: nodes.len(),
-        interactive_count: state.previous_focus_order.len(),
+        interactive_count: current_focus_order.len(),
         persistent_state_entries: state.entries.len(),
         value_change_count: changed_values.len(),
         activation_count: interaction.activation_count(),
@@ -685,57 +670,6 @@ fn run_impl<'a, R>(
         },
         result,
     )
-}
-
-fn repair_focus(
-    state: &mut UiStateStore,
-    previous_focused: Option<UiId>,
-    previous_order: &[UiId],
-    current_order: &[UiId],
-    incompatible_ids: &HashSet<UiId>,
-) {
-    if current_order.is_empty() {
-        state.focused = None;
-        return;
-    }
-
-    if let Some(focused) = previous_focused
-        && current_order.contains(&focused)
-        && !incompatible_ids.contains(&focused)
-    {
-        state.focused = Some(focused);
-        return;
-    }
-
-    let fallback_index = previous_focused
-        .and_then(|focused| previous_order.iter().position(|id| *id == focused))
-        .unwrap_or(0)
-        .min(current_order.len() - 1);
-    state.focused = Some(current_order[fallback_index]);
-}
-
-fn apply_vertical_navigation(state: &mut UiStateStore, nav: UiNavInput, focus_order: &[UiId]) {
-    if focus_order.is_empty() {
-        state.focused = None;
-        return;
-    }
-
-    let current = state
-        .focused
-        .and_then(|focused| focus_order.iter().position(|id| *id == focused))
-        .unwrap_or(0);
-
-    state.focused = match (nav.up, nav.down) {
-        (true, false) => Some(
-            focus_order[if current == 0 {
-                focus_order.len() - 1
-            } else {
-                current - 1
-            }],
-        ),
-        (false, true) => Some(focus_order[(current + 1) % focus_order.len()]),
-        _ => Some(focus_order[current]),
-    };
 }
 
 fn measure_node(
@@ -1281,6 +1215,7 @@ mod tests {
         assert_eq!(output.metrics().interactive_count, 1);
         assert_eq!(output.metrics().persistent_state_entries, 1);
         assert_eq!(state.focused_id(), Some(resume.id()));
+        assert_eq!(state.interaction.focused_id(), Some(resume.id()));
         assert_eq!(output.focused_id(), Some(resume.id()));
         assert_eq!(output.hovered_id(), None);
         assert!(output.dump().contains("Button"));
