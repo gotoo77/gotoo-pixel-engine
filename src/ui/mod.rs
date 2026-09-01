@@ -2,6 +2,7 @@ pub mod experimental;
 pub mod experimental_spatial;
 
 mod kernel;
+mod layout;
 mod pause;
 mod toolkit;
 mod virtual_pad;
