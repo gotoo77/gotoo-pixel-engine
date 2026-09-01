@@ -10,6 +10,7 @@ use super::{
         UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavigationPolicy, UiPointerInput,
         UiResolvedTarget, run_interaction_pass,
     },
+    layout::{UiGridSpec, inset_rect, layout_responsive_grid},
 };
 
 /// Compatibility name retained while the MFE-001B spatial adapter converges
@@ -334,69 +335,19 @@ fn layout_cards(
     spec: GridSpec,
     cards: &[SpatialCard<'_>],
 ) -> (usize, usize, Vec<CardLayout>) {
-    if cards.is_empty() || bounds.width == 0 || bounds.height == 0 {
-        return (0, 0, Vec::new());
-    }
-
-    let inner_width = bounds.width.saturating_sub(spec.padding.saturating_mul(2));
-    let inner_height = bounds.height.saturating_sub(spec.padding.saturating_mul(2));
-    if inner_width == 0 || inner_height == 0 {
-        return (0, 0, Vec::new());
-    }
-
-    let denominator = spec.min_cell_width.max(1).saturating_add(spec.gap).max(1);
-    let columns = inner_width
-        .saturating_add(spec.gap)
-        .checked_div(denominator)
-        .unwrap_or(1)
-        .max(1)
-        .min(cards.len() as u32) as usize;
-    let rows = cards.len().div_ceil(columns);
-
-    let horizontal_gap_total = spec.gap.saturating_mul(columns.saturating_sub(1) as u32);
-    let distributable_width = inner_width.saturating_sub(horizontal_gap_total);
-    let base_width = distributable_width / columns as u32;
-    let width_remainder = distributable_width % columns as u32;
-
-    let vertical_gap_total = spec.gap.saturating_mul(rows.saturating_sub(1) as u32);
-    let distributable_height = inner_height.saturating_sub(vertical_gap_total);
-    let fit_height = distributable_height / rows as u32;
-    let cell_height = spec.preferred_cell_height.min(fit_height).max(1);
-
-    let mut x_positions = Vec::with_capacity(columns);
-    let mut widths = Vec::with_capacity(columns);
-    let mut x = bounds.x.saturating_add(u32_to_i32(spec.padding));
-    for column in 0..columns {
-        let width = base_width
-            + if (column as u32) < width_remainder {
-                1
-            } else {
-                0
-            };
-        x_positions.push(x);
-        widths.push(width);
-        x = x
-            .saturating_add(u32_to_i32(width))
-            .saturating_add(u32_to_i32(spec.gap));
-    }
+    let grid = layout_responsive_grid(
+        bounds,
+        UiGridSpec {
+            min_cell_width: spec.min_cell_width,
+            preferred_cell_height: spec.preferred_cell_height,
+            gap: spec.gap,
+            padding: spec.padding,
+        },
+        cards.len(),
+    );
 
     let mut layouts = Vec::with_capacity(cards.len());
-    for (index, card) in cards.iter().enumerate() {
-        let row = index / columns;
-        let column = index % columns;
-        let y = bounds
-            .y
-            .saturating_add(u32_to_i32(spec.padding))
-            .saturating_add(u32_to_i32(
-                (cell_height.saturating_add(spec.gap)).saturating_mul(row as u32),
-            ));
-        let rect = Rect {
-            x: x_positions[column],
-            y,
-            width: widths[column],
-            height: cell_height,
-        };
-
+    for (card, rect) in cards.iter().zip(grid.rects.iter().copied()) {
         let inner = inset_rect(rect, 4);
         let image_height = if card.image.is_some() {
             inner.height.saturating_mul(3) / 5
@@ -424,16 +375,7 @@ fn layout_cards(
         });
     }
 
-    (columns, rows, layouts)
-}
-
-fn inset_rect(rect: Rect, inset: u32) -> Rect {
-    Rect {
-        x: rect.x.saturating_add(u32_to_i32(inset)),
-        y: rect.y.saturating_add(u32_to_i32(inset)),
-        width: rect.width.saturating_sub(inset.saturating_mul(2)),
-        height: rect.height.saturating_sub(inset.saturating_mul(2)),
-    }
+    (grid.columns, grid.rows, layouts)
 }
 
 fn draw_centered(

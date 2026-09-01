@@ -5,13 +5,17 @@ use std::ops::RangeInclusive;
 
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
-pub use super::kernel::{UiInput, UiPointerInput};
 use super::{
     UiTheme,
     kernel::{
         UiInteractionOutput, UiInteractionState, UiNavigationPolicy, UiResolvedTarget,
         run_interaction_pass,
     },
+    layout::{layout_responsive_grid, layout_vertical_children},
+};
+pub use super::{
+    kernel::{UiInput, UiPointerInput},
+    layout::UiGridSpec,
 };
 
 const ROOT_ID: u64 = 0xcbf29ce484222325;
@@ -33,6 +37,7 @@ pub enum WidgetKind {
     Root,
     Column,
     Panel,
+    Grid,
     Text,
     Button,
     ToggleBool,
@@ -275,6 +280,9 @@ enum NodeContent<'a> {
     Root,
     Column,
     Panel,
+    Grid {
+        spec: UiGridSpec,
+    },
     Text {
         text: Cow<'a, str>,
     },
@@ -416,6 +424,10 @@ impl<'a> UiBuilder<'a> {
 
     pub fn panel<R>(&mut self, build: impl FnOnce(&mut Self) -> R) -> R {
         self.container(WidgetKind::Panel, NodeContent::Panel, build)
+    }
+
+    pub fn grid<R>(&mut self, spec: UiGridSpec, build: impl FnOnce(&mut Self) -> R) -> R {
+        self.container(WidgetKind::Grid, NodeContent::Grid { spec }, build)
     }
 
     pub fn text(&mut self, text: impl Into<Cow<'a, str>>) -> UiId {
@@ -819,6 +831,13 @@ fn measure_node(
             theme,
             text_renderer,
         ),
+        WidgetKind::Grid => {
+            let spec = match &nodes[index].content {
+                NodeContent::Grid { spec } => *spec,
+                _ => unreachable!(),
+            };
+            measure_grid_container(nodes, index, constraints, spec, theme, text_renderer)
+        }
         WidgetKind::Text => {
             let NodeContent::Text { text } = &nodes[index].content else {
                 unreachable!();
@@ -880,6 +899,69 @@ fn measure_linear_container(
     })
 }
 
+fn measure_grid_container(
+    nodes: &mut [Node<'_>],
+    index: usize,
+    constraints: Constraints,
+    spec: UiGridSpec,
+    theme: UiTheme,
+    text_renderer: TextRenderer,
+) -> Size {
+    let constraints = constraints.normalized();
+    let children = std::mem::take(&mut nodes[index].children);
+    let layout = layout_responsive_grid(
+        Rect {
+            x: 0,
+            y: 0,
+            width: constraints.max_width,
+            height: constraints.max_height,
+        },
+        spec,
+        children.len(),
+    );
+
+    for (position, child) in children.iter().copied().enumerate() {
+        let cell = layout.rects.get(position).copied().unwrap_or(Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        });
+        measure_node(
+            nodes,
+            child,
+            Constraints::loose(Size {
+                width: cell.width,
+                height: cell.height,
+            }),
+            theme,
+            text_renderer,
+        );
+    }
+
+    let height = layout
+        .rects
+        .iter()
+        .map(|rect| {
+            u32::try_from(rect.y.max(0))
+                .unwrap_or(u32::MAX)
+                .saturating_add(rect.height)
+        })
+        .max()
+        .unwrap_or_else(|| spec.padding.saturating_mul(2))
+        .saturating_add(if layout.rects.is_empty() {
+            0
+        } else {
+            spec.padding
+        });
+
+    nodes[index].children = children;
+    constraints.constrain(Size {
+        width: constraints.max_width,
+        height,
+    })
+}
+
 fn arrange_node(nodes: &mut [Node<'_>], index: usize, rect: Rect, theme: UiTheme) {
     nodes[index].rect = rect;
     match nodes[index].kind {
@@ -891,6 +973,13 @@ fn arrange_node(nodes: &mut [Node<'_>], index: usize, rect: Rect, theme: UiTheme
         }
         WidgetKind::Panel => {
             arrange_linear_children(nodes, index, rect, theme.padding, theme.row_spacing, theme)
+        }
+        WidgetKind::Grid => {
+            let spec = match &nodes[index].content {
+                NodeContent::Grid { spec } => *spec,
+                _ => unreachable!(),
+            };
+            arrange_grid_children(nodes, index, rect, spec, theme);
         }
         _ => {}
     }
@@ -905,27 +994,31 @@ fn arrange_linear_children(
     theme: UiTheme,
 ) {
     let children = std::mem::take(&mut nodes[index].children);
-    let content_x = rect.x.saturating_add(u32_to_i32(padding));
-    let content_width = rect.width.saturating_sub(padding.saturating_mul(2));
-    let content_top = rect.y.saturating_add(u32_to_i32(padding));
-    let mut y = content_top;
+    let child_heights = children
+        .iter()
+        .map(|&child| nodes[child].measured.height)
+        .collect::<Vec<_>>();
+    let child_rects = layout_vertical_children(rect, padding, gap, &child_heights);
 
-    for child in children.iter().copied() {
-        let height = nodes[child].measured.height;
-        arrange_node(
-            nodes,
-            child,
-            Rect {
-                x: content_x,
-                y,
-                width: content_width,
-                height,
-            },
-            theme,
-        );
-        y = y
-            .saturating_add(u32_to_i32(height))
-            .saturating_add(u32_to_i32(gap));
+    for (child, child_rect) in children.iter().copied().zip(child_rects) {
+        arrange_node(nodes, child, child_rect, theme);
+    }
+
+    nodes[index].children = children;
+}
+
+fn arrange_grid_children(
+    nodes: &mut [Node<'_>],
+    index: usize,
+    rect: Rect,
+    spec: UiGridSpec,
+    theme: UiTheme,
+) {
+    let children = std::mem::take(&mut nodes[index].children);
+    let layout = layout_responsive_grid(rect, spec, children.len());
+
+    for (child, child_rect) in children.iter().copied().zip(layout.rects) {
+        arrange_node(nodes, child, child_rect, theme);
     }
 
     nodes[index].children = children;
@@ -942,7 +1035,7 @@ fn paint_node(
     let node = &nodes[index];
 
     match &node.content {
-        NodeContent::Root | NodeContent::Column => {}
+        NodeContent::Root | NodeContent::Column | NodeContent::Grid { .. } => {}
         NodeContent::Panel => {
             framebuffer.fill_rect(
                 node.rect.x,
@@ -1146,6 +1239,10 @@ fn dump_node(
         NodeContent::Root => String::new(),
         NodeContent::Column => String::new(),
         NodeContent::Panel => String::new(),
+        NodeContent::Grid { spec } => format!(
+            " min_cell_width={} preferred_cell_height={} gap={} padding={}",
+            spec.min_cell_width, spec.preferred_cell_height, spec.gap, spec.padding
+        ),
         NodeContent::Text { text } => format!(" text={:?}", text.as_ref()),
         NodeContent::Button { label, action } => {
             format!(" label={:?} action={:?}", label.as_ref(), action)
@@ -1292,6 +1389,30 @@ mod tests {
 
     fn first_control_position() -> (i32, i32) {
         (12, 12)
+    }
+
+    fn rect_for_label(dump: &str, label: &str) -> Rect {
+        let needle = format!("label={label:?}");
+        let line = dump
+            .lines()
+            .find(|line| line.contains(&needle))
+            .expect("label in dump");
+        let rect_text = line
+            .split_once("rect=[")
+            .expect("rect prefix")
+            .1
+            .split_once(']')
+            .expect("rect suffix")
+            .0;
+        let (coordinates, size) = rect_text.split_once(' ').expect("rect separator");
+        let (x, y) = coordinates.split_once(',').expect("coordinate separator");
+        let (width, height) = size.split_once('x').expect("size separator");
+        Rect {
+            x: x.parse().expect("x"),
+            y: y.parse().expect("y"),
+            width: width.parse().expect("width"),
+            height: height.parse().expect("height"),
+        }
     }
 
     #[test]
@@ -1521,6 +1642,70 @@ mod tests {
         });
 
         assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn transactional_grid_composes_arbitrary_widgets_responsively() {
+        let spec = UiGridSpec {
+            min_cell_width: 100,
+            preferred_cell_height: 70,
+            gap: 8,
+            padding: 8,
+        };
+
+        let mut wide_state = UiStateStore::default();
+        let (wide, (button_a, _, _, _)) = run_headless(
+            Size {
+                width: 360,
+                height: 220,
+            },
+            &mut wide_state,
+            UiNavInput::default(),
+            theme(),
+            |ui| {
+                ui.grid(spec, |ui| {
+                    let button_a = ui.button("A");
+                    let button_b = ui.button("B");
+                    let toggle = ui.toggle("ENABLED", false);
+                    let slider = ui.slider_f32("VOLUME", 0.5, 0.0..=1.0, 0.1);
+                    ui.text("GRID LABEL");
+                    (button_a, button_b, toggle, slider)
+                })
+            },
+        );
+        assert_eq!(wide.metrics().interactive_count, 4);
+        assert_eq!(wide.focused_id(), Some(button_a.id()));
+        assert!(wide.dump().contains("Grid"));
+        assert!(wide.dump().contains("ToggleBool"));
+        assert!(wide.dump().contains("SliderF32"));
+        assert!(wide.dump().contains("GRID LABEL"));
+
+        let wide_a = rect_for_label(wide.dump(), "A");
+        let wide_b = rect_for_label(wide.dump(), "B");
+        assert!(wide_b.x > wide_a.x);
+
+        let mut small_state = UiStateStore::default();
+        let (small, _) = run_headless(
+            Size {
+                width: 120,
+                height: 220,
+            },
+            &mut small_state,
+            UiNavInput::default(),
+            theme(),
+            |ui| {
+                ui.grid(spec, |ui| {
+                    ui.button("A");
+                    ui.button("B");
+                    ui.toggle("ENABLED", false);
+                    ui.slider_f32("VOLUME", 0.5, 0.0..=1.0, 0.1);
+                    ui.text("GRID LABEL");
+                })
+            },
+        );
+        let small_a = rect_for_label(small.dump(), "A");
+        let small_b = rect_for_label(small.dump(), "B");
+        assert_eq!(small_a.x, small_b.x);
     }
 
     #[test]

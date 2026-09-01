@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN — P0/P1 COMPLETE**
+Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE**
 
 Baseline:
 
@@ -16,6 +16,7 @@ MFE-001C       PASS WITH CONDITIONS
 Architecture B GO
 P0             PASS
 P1             PASS
+P2             PASS
 ```
 
 ## Mission
@@ -39,7 +40,7 @@ Productionization must preserve the strategic direction validated by the MFE seq
 
 ## 0. Productionization convergence checkpoint
 
-P0 and P1 have now removed the experimental split at the interaction-kernel level.
+P0 and P1 removed the experimental split at the interaction-kernel level. P2 has now converged the proven layout algorithms and passed its Native human runtime gate.
 
 The productionization checkpoint is:
 
@@ -50,11 +51,13 @@ one UiInteractionState authority
 one UiInteractionOutput semantic result
 one generic kernel interaction pass
 Linear / Spatial as deterministic navigation policies
+one generic responsive Grid algorithm
+one generic vertical child-placement algorithm
 ```
 
-The compatibility modules still exist as evidence/migration surfaces, but they no longer justify separate interaction runtimes.
+The compatibility modules still exist as evidence/migration surfaces, but they no longer justify separate interaction or layout runtimes.
 
-Therefore the original prohibition remains in force:
+The original prohibition remains in force:
 
 ```text
 DO NOT simply rename experimental.rs -> core.rs and call it production.
@@ -69,6 +72,10 @@ P0 result:
 P1 result:
 
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P1_RESULT_v0.1.md`
+
+P2 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P2_RESULT_v0.1.md`
 
 ---
 
@@ -128,14 +135,28 @@ P1 did not change platform/input transport semantics.
 
 ## P2 — Consumer-grade layout composition
 
-Status: **NOT STARTED**.
+Status: **PASS / STOP**.
 
-Only after P1 is merged and P2 is explicitly started from the resulting `main` baseline:
+Validated implementation head:
 
-- consolidate linear + spatial layout entry points;
-- preserve integer/pixel-aware resolved geometry;
-- avoid a permanent Card/Grid-only production subsystem;
-- add only abstractions justified by accepted MFE behavior and concrete consumer probes.
+`2170c3c2656fb247ae682f439986c34e2ddfb104`
+
+CI #668: PASS.
+
+Human Native runtime: PASS.
+
+Converged:
+
+```text
+shared integer/pixel-aware layout module
+one responsive Grid track algorithm
+one vertical child-placement algorithm
+Spatial compatibility Grid delegates to shared cells
+transactional UiBuilder::grid composes arbitrary widgets
+Root/Column/Panel final vertical placement uses shared primitive
+```
+
+P2 changed resolved geometry but did not change platform/render/input transport semantics. Web build/package passed; a browser runtime rerun was therefore not required.
 
 ## P3 — Styling / theming / customization
 
@@ -170,6 +191,8 @@ sprite / nine-slice where consumer evidence supports it
 ```
 
 Do not turn this into CSS.
+
+P3 is **not started by the P2 closure**. It must begin explicitly from the merged P2 `main` baseline on its own implementation branch.
 
 ## P4 — Typography follow-up
 
@@ -238,6 +261,8 @@ Reviews and checkpoints are commits/PR state on that branch, not branch prolifer
 
 CI green proves build/test/package gates only; human runtime gates remain explicit where required.
 
+Rust changes must be formatter-clean before commit/push; CI is a validator, not the primary rustfmt detector.
+
 ---
 
 # 5. Current STOP
@@ -245,7 +270,10 @@ CI green proves build/test/package gates only; human runtime gates remain explic
 ```text
 P0 = PASS
 P1 = PASS
+P2 = PASS
 STOP
 ```
 
-Do not begin P2 until P1 is merged and P2 is explicitly started from the resulting `main` baseline.
+Merge P2 only after the final closing-documentation CI is green.
+
+Do not begin P3 until P2 is merged and P3 is explicitly started from the resulting `main` baseline.
