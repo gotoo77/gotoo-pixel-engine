@@ -36,21 +36,11 @@ pub struct PointerInput {
     pub released: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SpatialInput<'a> {
     pub nav: UiNavInput,
     pub pointer: PointerInput,
     pub touches: &'a [Touch],
-}
-
-impl Default for SpatialInput<'static> {
-    fn default() -> Self {
-        Self {
-            nav: UiNavInput::default(),
-            pointer: PointerInput::default(),
-            touches: &[],
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -167,7 +157,10 @@ impl CardPainter for DefaultCardPainter {
                         .y
                         .saturating_add(u32_to_i32(layout.text_rect.height / 2)),
                     width: layout.text_rect.width,
-                    height: layout.text_rect.height.saturating_sub(layout.text_rect.height / 2),
+                    height: layout
+                        .text_rect
+                        .height
+                        .saturating_sub(layout.text_rect.height / 2),
                 },
                 card.subtitle,
                 theme.text_scale.max(1),
@@ -249,6 +242,7 @@ impl SpatialOutput {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_card_grid<P: CardPainter>(
     framebuffer: &mut Framebuffer,
     bounds: Rect,
@@ -415,7 +409,12 @@ fn repair_state_for_current_cards(state: &mut SpatialState, current_order: &[UiI
 
     let fallback_index = state
         .focused
-        .and_then(|id| state.previous_order.iter().position(|previous| *previous == id))
+        .and_then(|id| {
+            state
+                .previous_order
+                .iter()
+                .position(|previous| *previous == id)
+        })
         .unwrap_or(0)
         .min(current_order.len() - 1);
     state.focused = Some(current_order[fallback_index]);
@@ -471,12 +470,8 @@ fn layout_cards(
         return (0, 0, Vec::new());
     }
 
-    let inner_width = bounds
-        .width
-        .saturating_sub(spec.padding.saturating_mul(2));
-    let inner_height = bounds
-        .height
-        .saturating_sub(spec.padding.saturating_mul(2));
+    let inner_width = bounds.width.saturating_sub(spec.padding.saturating_mul(2));
+    let inner_height = bounds.height.saturating_sub(spec.padding.saturating_mul(2));
     if inner_width == 0 || inner_height == 0 {
         return (0, 0, Vec::new());
     }
@@ -490,9 +485,7 @@ fn layout_cards(
         .min(cards.len() as u32) as usize;
     let rows = cards.len().div_ceil(columns);
 
-    let horizontal_gap_total = spec
-        .gap
-        .saturating_mul(columns.saturating_sub(1) as u32);
+    let horizontal_gap_total = spec.gap.saturating_mul(columns.saturating_sub(1) as u32);
     let distributable_width = inner_width.saturating_sub(horizontal_gap_total);
     let base_width = distributable_width / columns as u32;
     let width_remainder = distributable_width % columns as u32;
@@ -506,7 +499,12 @@ fn layout_cards(
     let mut widths = Vec::with_capacity(columns);
     let mut x = bounds.x.saturating_add(u32_to_i32(spec.padding));
     for column in 0..columns {
-        let width = base_width + if (column as u32) < width_remainder { 1 } else { 0 };
+        let width = base_width
+            + if (column as u32) < width_remainder {
+                1
+            } else {
+                0
+            };
         x_positions.push(x);
         widths.push(width);
         x = x
@@ -640,6 +638,7 @@ fn u32_to_i32(value: u32) -> i32 {
     i32::try_from(value).unwrap_or(i32::MAX)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dump_layout(
     bounds: Rect,
     columns: usize,
@@ -660,8 +659,16 @@ fn dump_layout(
         bounds.x, bounds.y, bounds.width, bounds.height, columns, rows
     );
     for layout in layouts {
-        let focused_marker = if focused == Some(layout.id) { " focused" } else { "" };
-        let hovered_marker = if hovered == Some(layout.id) { " hovered" } else { "" };
+        let focused_marker = if focused == Some(layout.id) {
+            " focused"
+        } else {
+            ""
+        };
+        let hovered_marker = if hovered == Some(layout.id) {
+            " hovered"
+        } else {
+            ""
+        };
         let active_marker = if pointer_capture == Some(layout.id)
             || touch_capture.values().any(|id| *id == layout.id)
         {
@@ -771,11 +778,29 @@ mod tests {
         };
 
         let mut small_state = SpatialState::default();
-        let small = run_card_grid_headless(bounds(120), &mut small_state, SpatialInput::default(), spec, &cards);
+        let small = run_card_grid_headless(
+            bounds(120),
+            &mut small_state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
         let mut medium_state = SpatialState::default();
-        let medium = run_card_grid_headless(bounds(240), &mut medium_state, SpatialInput::default(), spec, &cards);
+        let medium = run_card_grid_headless(
+            bounds(240),
+            &mut medium_state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
         let mut wide_state = SpatialState::default();
-        let wide = run_card_grid_headless(bounds(360), &mut wide_state, SpatialInput::default(), spec, &cards);
+        let wide = run_card_grid_headless(
+            bounds(360),
+            &mut wide_state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
 
         assert_eq!(small.columns(), 1);
         assert_eq!(medium.columns(), 2);
@@ -783,7 +808,13 @@ mod tests {
         assert_eq!(wide.rows(), 2);
 
         let mut replay_state = SpatialState::default();
-        let replay = run_card_grid_headless(bounds(360), &mut replay_state, SpatialInput::default(), spec, &cards);
+        let replay = run_card_grid_headless(
+            bounds(360),
+            &mut replay_state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
         assert_eq!(wide.dump(), replay.dump());
     }
 
@@ -854,7 +885,13 @@ mod tests {
             ..GridSpec::default()
         };
 
-        let _ = run_card_grid_headless(bounds(360), &mut state, SpatialInput::default(), spec, &cards[..5]);
+        let _ = run_card_grid_headless(
+            bounds(360),
+            &mut state,
+            SpatialInput::default(),
+            spec,
+            &cards[..5],
+        );
         assert_eq!(state.focused_id(), Some(ids[0]));
         let right = run_card_grid_headless(
             bounds(360),
@@ -885,7 +922,13 @@ mod tests {
         let ids = ids();
         let cards = cards(&ids);
         let mut state = SpatialState::default();
-        let baseline = run_card_grid_headless(bounds(360), &mut state, SpatialInput::default(), GridSpec::default(), &cards);
+        let baseline = run_card_grid_headless(
+            bounds(360),
+            &mut state,
+            SpatialInput::default(),
+            GridSpec::default(),
+            &cards,
+        );
         let position = center_i32(baseline.layouts()[0].rect);
 
         let _ = run_card_grid_headless(
@@ -930,7 +973,13 @@ mod tests {
         let ids = ids();
         let cards = cards(&ids);
         let mut state = SpatialState::default();
-        let baseline = run_card_grid_headless(bounds(360), &mut state, SpatialInput::default(), GridSpec::default(), &cards);
+        let baseline = run_card_grid_headless(
+            bounds(360),
+            &mut state,
+            SpatialInput::default(),
+            GridSpec::default(),
+            &cards,
+        );
         let position = center_i32(baseline.layouts()[0].rect);
 
         let started = [Touch {
@@ -975,7 +1024,13 @@ mod tests {
         let ids = ids();
         let cards = cards(&ids);
         let mut state = SpatialState::default();
-        let baseline = run_card_grid_headless(bounds(360), &mut state, SpatialInput::default(), GridSpec::default(), &cards);
+        let baseline = run_card_grid_headless(
+            bounds(360),
+            &mut state,
+            SpatialInput::default(),
+            GridSpec::default(),
+            &cards,
+        );
         let position = center_i32(baseline.layouts()[0].rect);
         let touches = [
             Touch {
@@ -1027,7 +1082,9 @@ mod tests {
         let cards = cards(&ids[..3]);
         let mut state = SpatialState::default();
         let mut framebuffer = Framebuffer::new(360, 220);
-        let painter = CountingPainter { calls: Cell::new(0) };
+        let painter = CountingPainter {
+            calls: Cell::new(0),
+        };
         let _ = run_card_grid(
             &mut framebuffer,
             bounds(360),
@@ -1070,9 +1127,10 @@ mod tests {
             &DefaultCardPainter,
         );
         let center = center_i32(output.layouts()[0].image_rect);
-        let x = u32::try_from(center.0).expect("positive x");
-        let y = u32::try_from(center.1).expect("positive y");
-        assert_eq!(framebuffer.pixel(x, y), Some(Pixel::rgb(220, 20, 20)));
+        assert_eq!(
+            framebuffer.pixel(center.0, center.1),
+            Some(Pixel::rgb(220, 20, 20))
+        );
     }
 
     fn center_i32(rect: Rect) -> (i32, i32) {
