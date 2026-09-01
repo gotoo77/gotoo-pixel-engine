@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN — P0/P1 COMPLETE**
+Status: **ACTIVE PLAN — P0/P1 COMPLETE, P2 HUMAN GATE PENDING**
 
 Baseline:
 
@@ -16,6 +16,8 @@ MFE-001C       PASS WITH CONDITIONS
 Architecture B GO
 P0             PASS
 P1             PASS
+P2 automated   PASS
+P2 human       PENDING
 ```
 
 ## Mission
@@ -39,7 +41,7 @@ Productionization must preserve the strategic direction validated by the MFE seq
 
 ## 0. Productionization convergence checkpoint
 
-P0 and P1 have now removed the experimental split at the interaction-kernel level.
+P0 and P1 removed the experimental split at the interaction-kernel level. P2 has now converged the proven layout algorithms at implementation level, pending the final human Native runtime gate.
 
 The productionization checkpoint is:
 
@@ -50,9 +52,11 @@ one UiInteractionState authority
 one UiInteractionOutput semantic result
 one generic kernel interaction pass
 Linear / Spatial as deterministic navigation policies
+one generic responsive Grid algorithm
+one generic vertical child-placement algorithm
 ```
 
-The compatibility modules still exist as evidence/migration surfaces, but they no longer justify separate interaction runtimes.
+The compatibility modules still exist as evidence/migration surfaces, but they no longer justify separate interaction or layout runtimes.
 
 Therefore the original prohibition remains in force:
 
@@ -69,6 +73,10 @@ P0 result:
 P1 result:
 
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P1_RESULT_v0.1.md`
+
+P2 contract:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P2_LAYOUT_v0.1.md`
 
 ---
 
@@ -128,14 +136,26 @@ P1 did not change platform/input transport semantics.
 
 ## P2 — Consumer-grade layout composition
 
-Status: **NOT STARTED**.
+Status: **IMPLEMENTATION + AUTOMATED GATES PASS — HUMAN NATIVE GATE PENDING**.
 
-Only after P1 is merged and P2 is explicitly started from the resulting `main` baseline:
+Validated implementation head:
 
-- consolidate linear + spatial layout entry points;
-- preserve integer/pixel-aware resolved geometry;
-- avoid a permanent Card/Grid-only production subsystem;
-- add only abstractions justified by accepted MFE behavior and concrete consumer probes.
+`2170c3c2656fb247ae682f439986c34e2ddfb104`
+
+CI #668: PASS.
+
+Converged:
+
+```text
+shared integer/pixel-aware layout module
+one responsive Grid track algorithm
+one vertical child-placement algorithm
+Spatial compatibility Grid delegates to shared cells
+transactional UiBuilder::grid composes arbitrary widgets
+Root/Column/Panel final vertical placement uses shared primitive
+```
+
+P2 remains under STOP until the required MFE-001B Native smoke test passes and the formal P2 result is finalized.
 
 ## P3 — Styling / theming / customization
 
@@ -245,7 +265,10 @@ CI green proves build/test/package gates only; human runtime gates remain explic
 ```text
 P0 = PASS
 P1 = PASS
-STOP
+P2 AUTOMATED = PASS
+P2 CLOSURE REVIEW = PASS
+P2 HUMAN NATIVE RUNTIME = PENDING
+STOP BEFORE P3 / STOP BEFORE MERGE
 ```
 
-Do not begin P2 until P1 is merged and P2 is explicitly started from the resulting `main` baseline.
+Do not begin P3 until P2 is formally closed and merged.
