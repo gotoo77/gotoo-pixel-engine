@@ -8,7 +8,10 @@ use crate::{
 
 use super::{
     UiTheme,
-    kernel::{UiId, UiInput, UiInteractionState, UiNavInput, UiPointerInput},
+    kernel::{
+        UiId, UiInput, UiInteractionState, UiNavDirection, UiNavInput, UiPointerInput,
+        UiResolvedTarget, hit_test_resolved, spatial_candidate as resolved_spatial_candidate,
+    },
 };
 
 /// Compatibility name retained while the MFE-001B spatial adapter converges
@@ -53,6 +56,16 @@ pub struct CardLayout {
     pub rect: Rect,
     pub image_rect: Rect,
     pub text_rect: Rect,
+}
+
+impl UiResolvedTarget for CardLayout {
+    fn ui_id(&self) -> UiId {
+        self.id
+    }
+
+    fn ui_rect(&self) -> Rect {
+        self.rect
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -280,9 +293,9 @@ fn resolve_card_grid(
     let current_order = cards.iter().map(|card| card.id).collect::<Vec<_>>();
     state.interaction.repair_for_current_order(&current_order);
 
-    if let Some(direction) = nav_direction(input.nav)
+    if let Some(direction) = UiNavDirection::from_nav(input.nav)
         && let Some(focused) = state.interaction.focused_id()
-        && let Some(next) = spatial_candidate(focused, direction, &layouts)
+        && let Some(next) = resolved_spatial_candidate(focused, direction, &layouts)
     {
         state.interaction.set_focused_id(Some(next));
     }
@@ -290,7 +303,7 @@ fn resolve_card_grid(
     let hovered = input
         .pointer
         .position
-        .and_then(|position| hit_test(position, &layouts));
+        .and_then(|position| hit_test_resolved(position, &layouts));
 
     let mut activated = HashSet::new();
     let mut actions = Vec::new();
@@ -315,7 +328,7 @@ fn resolve_card_grid(
         match touch.phase {
             TouchPhase::Started => {
                 if let Some(position) = touch.position
-                    && let Some(target) = hit_test(position, &layouts)
+                    && let Some(target) = hit_test_resolved(position, &layouts)
                 {
                     state.interaction.set_touch_capture(touch.id, target);
                     state.interaction.set_focused_id(Some(target));
@@ -327,7 +340,7 @@ fn resolve_card_grid(
                 };
                 if !touch
                     .position
-                    .and_then(|position| hit_test(position, &layouts))
+                    .and_then(|position| hit_test_resolved(position, &layouts))
                     .is_some_and(|target| target == captured)
                 {
                     state.interaction.clear_touch_capture(touch.id);
@@ -337,7 +350,7 @@ fn resolve_card_grid(
                 if let Some(captured) = state.interaction.remove_touch_capture(touch.id)
                     && touch
                         .position
-                        .and_then(|position| hit_test(position, &layouts))
+                        .and_then(|position| hit_test_resolved(position, &layouts))
                         == Some(captured)
                 {
                     activate(captured, cards, &mut activated, &mut actions);
@@ -380,47 +393,6 @@ fn resolve_card_grid(
         layouts,
         dump,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
-fn nav_direction(nav: UiNavInput) -> Option<Direction> {
-    match (nav.up, nav.down, nav.left, nav.right) {
-        (true, false, false, false) => Some(Direction::Up),
-        (false, true, false, false) => Some(Direction::Down),
-        (false, false, true, false) => Some(Direction::Left),
-        (false, false, false, true) => Some(Direction::Right),
-        _ => None,
-    }
-}
-
-fn spatial_candidate(focused: UiId, direction: Direction, layouts: &[CardLayout]) -> Option<UiId> {
-    let focused_layout = layouts.iter().find(|layout| layout.id == focused)?;
-    let (fx, fy) = rect_center(focused_layout.rect);
-
-    layouts
-        .iter()
-        .enumerate()
-        .filter(|(_, candidate)| candidate.id != focused)
-        .filter_map(|(index, candidate)| {
-            let (cx, cy) = rect_center(candidate.rect);
-            let (primary, secondary) = match direction {
-                Direction::Up if cy < fy => (fy - cy, (cx - fx).abs()),
-                Direction::Down if cy > fy => (cy - fy, (cx - fx).abs()),
-                Direction::Left if cx < fx => (fx - cx, (cy - fy).abs()),
-                Direction::Right if cx > fx => (cx - fx, (cy - fy).abs()),
-                _ => return None,
-            };
-            Some(((primary, secondary, index), candidate.id))
-        })
-        .min_by_key(|(score, _)| *score)
-        .map(|(_, id)| id)
 }
 
 fn layout_cards(
@@ -533,34 +505,6 @@ fn activate(
     if let Some(card) = cards.iter().find(|card| card.id == id) {
         actions.push(card.action);
     }
-}
-
-fn hit_test(position: (i32, i32), layouts: &[CardLayout]) -> Option<UiId> {
-    layouts
-        .iter()
-        .rev()
-        .find(|layout| rect_contains(layout.rect, position))
-        .map(|layout| layout.id)
-}
-
-fn rect_contains(rect: Rect, position: (i32, i32)) -> bool {
-    if rect.width == 0 || rect.height == 0 {
-        return false;
-    }
-    let px = i64::from(position.0);
-    let py = i64::from(position.1);
-    let left = i64::from(rect.x);
-    let top = i64::from(rect.y);
-    let right = left + i64::from(rect.width);
-    let bottom = top + i64::from(rect.height);
-    px >= left && px < right && py >= top && py < bottom
-}
-
-fn rect_center(rect: Rect) -> (i64, i64) {
-    (
-        i64::from(rect.x) + i64::from(rect.width) / 2,
-        i64::from(rect.y) + i64::from(rect.height) / 2,
-    )
 }
 
 fn inset_rect(rect: Rect, inset: u32) -> Rect {
