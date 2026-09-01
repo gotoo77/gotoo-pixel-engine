@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
+use crate::{ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer};
 #[cfg(test)]
 use crate::{Touch, TouchPhase};
-use crate::{ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer};
 
 use super::{
     UiTheme,
     kernel::{
-        UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavigationPolicy,
-        UiPointerInput, UiResolvedTarget, run_interaction_pass,
+        UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavigationPolicy, UiPointerInput,
+        UiResolvedTarget, run_interaction_pass,
     },
 };
 
@@ -298,7 +298,12 @@ fn resolve_card_grid(
         input,
         &layouts,
         UiNavigationPolicy::Spatial,
-        |id| cards.iter().find(|card| card.id == id).map(|card| card.action),
+        |id| {
+            cards
+                .iter()
+                .find(|card| card.id == id)
+                .map(|card| card.action)
+        },
     );
 
     let focused = interaction.focused_id();

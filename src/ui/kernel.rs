@@ -225,12 +225,8 @@ where
     output
 }
 
-fn activate_target<T, F>(
-    id: UiId,
-    targets: &[T],
-    action_for: &F,
-    output: &mut UiInteractionOutput,
-) where
+fn activate_target<T, F>(id: UiId, targets: &[T], action_for: &F, output: &mut UiInteractionOutput)
+where
     T: UiResolvedTarget,
     F: Fn(UiId) -> Option<ActionId>,
 {
