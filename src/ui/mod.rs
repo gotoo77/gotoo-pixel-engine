@@ -1,3 +1,5 @@
+pub mod experimental;
+
 mod pause;
 mod toolkit;
 mod virtual_pad;
@@ -206,7 +208,6 @@ mod tests {
     fn standard_menu_control_map_is_idle_for_default_input() {
         let mut controls = standard_menu_controls(MENU_UP, MENU_DOWN, MENU_CONFIRM);
         controls.update(&Input::default());
-
         assert!(!controls.action(MENU_UP).held());
         assert!(!controls.action(MENU_DOWN).held());
         assert!(!controls.action(MENU_CONFIRM).held());
