@@ -868,7 +868,7 @@ fn pixel_5x7_glyph_for(character: char) -> Glyph {
         ],
         ' ' => [0; MAX_FONT_GLYPH_HEIGHT],
         _ => [
-            0b11111, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
+            0b11111, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b11111,
         ],
     }
 }
@@ -944,7 +944,7 @@ fn mini_3x5_glyph_for(character: char) -> Glyph {
         '!' => [0b010, 0b010, 0b010, 0b000, 0b010, 0, 0],
         '?' => [0b111, 0b001, 0b010, 0b000, 0b010, 0, 0],
         ' ' => [0; MAX_FONT_GLYPH_HEIGHT],
-        _ => [0b111, 0b001, 0b010, 0b000, 0b010, 0, 0],
+        _ => [0b111, 0b101, 0b010, 0b101, 0b111, 0, 0],
     }
 }
 
@@ -1541,6 +1541,43 @@ mod tests {
             glyph_for(Font::Pixel5x7, 'A')
         );
         assert_eq!(glyph_for(Font::Mini3x5, 'z'), glyph_for(Font::Mini3x5, 'Z'));
+    }
+
+    #[test]
+    fn literal_question_mark_renders_its_glyph() {
+        let pixel5x7_question = glyph_for(Font::Pixel5x7, '?');
+        let mini3x5_question = glyph_for(Font::Mini3x5, '?');
+
+        assert_eq!(
+            pixel5x7_question,
+            [
+                0b11111, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100,
+            ]
+        );
+        assert_eq!(mini3x5_question, [0b111, 0b001, 0b010, 0b000, 0b010, 0, 0]);
+    }
+
+    #[test]
+    fn unsupported_character_renders_missing_glyph_pixel5x7() {
+        let missing_glyph = glyph_for(Font::Pixel5x7, '—');
+        let question_glyph = glyph_for(Font::Pixel5x7, '?');
+
+        assert_ne!(missing_glyph, question_glyph);
+        assert_eq!(
+            missing_glyph,
+            [
+                0b11111, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b11111,
+            ]
+        );
+    }
+
+    #[test]
+    fn unsupported_character_renders_missing_glyph_mini3x5() {
+        let missing_glyph = glyph_for(Font::Mini3x5, '—');
+        let question_glyph = glyph_for(Font::Mini3x5, '?');
+
+        assert_ne!(missing_glyph, question_glyph);
+        assert_eq!(missing_glyph, [0b111, 0b101, 0b010, 0b101, 0b111, 0, 0]);
     }
 
     #[test]
