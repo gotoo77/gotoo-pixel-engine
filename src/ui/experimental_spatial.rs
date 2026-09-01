@@ -1,16 +1,14 @@
 use std::collections::HashMap;
 
 #[cfg(test)]
-use crate::Touch;
-use crate::{
-    ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer, TouchPhase,
-};
+use crate::{Touch, TouchPhase};
+use crate::{ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer};
 
 use super::{
     UiTheme,
     kernel::{
-        UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavDirection, UiPointerInput,
-        UiResolvedTarget, hit_test_resolved, spatial_candidate as resolved_spatial_candidate,
+        UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavigationPolicy,
+        UiPointerInput, UiResolvedTarget, run_interaction_pass,
     },
 };
 
@@ -295,86 +293,16 @@ fn resolve_card_grid(
     cards: &[SpatialCard<'_>],
 ) -> SpatialOutput {
     let (columns, rows, layouts) = layout_cards(bounds, spec, cards);
-    let current_order = cards.iter().map(|card| card.id).collect::<Vec<_>>();
-    state.interaction.repair_for_current_order(&current_order);
+    let interaction = run_interaction_pass(
+        &mut state.interaction,
+        input,
+        &layouts,
+        UiNavigationPolicy::Spatial,
+        |id| cards.iter().find(|card| card.id == id).map(|card| card.action),
+    );
 
-    if let Some(direction) = UiNavDirection::from_nav(input.nav)
-        && let Some(focused) = state.interaction.focused_id()
-        && let Some(next) = resolved_spatial_candidate(focused, direction, &layouts)
-    {
-        state.interaction.set_focused_id(Some(next));
-    }
-
-    let hovered = input
-        .pointer
-        .position
-        .and_then(|position| hit_test_resolved(position, &layouts));
-    let mut interaction = UiInteractionOutput::new(None, hovered, input.nav.cancel);
-
-    if input.pointer.pressed {
-        state.interaction.set_pointer_capture(hovered);
-        if hovered.is_some() {
-            state.interaction.set_focused_id(hovered);
-        }
-    }
-
-    if input.pointer.released {
-        if let Some(captured) = state.interaction.pointer_capture_id()
-            && hovered == Some(captured)
-        {
-            activate(captured, cards, &mut interaction);
-        }
-        state.interaction.set_pointer_capture(None);
-    }
-
-    for touch in input.touches {
-        match touch.phase {
-            TouchPhase::Started => {
-                if let Some(position) = touch.position
-                    && let Some(target) = hit_test_resolved(position, &layouts)
-                {
-                    state.interaction.set_touch_capture(touch.id, target);
-                    state.interaction.set_focused_id(Some(target));
-                }
-            }
-            TouchPhase::Moved => {
-                let Some(captured) = state.interaction.touch_capture_id(touch.id) else {
-                    continue;
-                };
-                if !touch
-                    .position
-                    .and_then(|position| hit_test_resolved(position, &layouts))
-                    .is_some_and(|target| target == captured)
-                {
-                    state.interaction.clear_touch_capture(touch.id);
-                }
-            }
-            TouchPhase::Ended => {
-                if let Some(captured) = state.interaction.remove_touch_capture(touch.id)
-                    && touch
-                        .position
-                        .and_then(|position| hit_test_resolved(position, &layouts))
-                        == Some(captured)
-                {
-                    activate(captured, cards, &mut interaction);
-                }
-            }
-            TouchPhase::Cancelled => {
-                state.interaction.clear_touch_capture(touch.id);
-            }
-        }
-    }
-
-    if input.nav.confirm
-        && let Some(focused) = state.interaction.focused_id()
-    {
-        activate(focused, cards, &mut interaction);
-    }
-
-    state.interaction.commit_order(&current_order);
-
-    let focused = state.interaction.focused_id();
-    interaction.set_focused_id(focused);
+    let focused = interaction.focused_id();
+    let hovered = interaction.hovered_id();
     let dump = dump_layout(
         bounds,
         columns,
@@ -492,14 +420,6 @@ fn layout_cards(
     }
 
     (columns, rows, layouts)
-}
-
-fn activate(id: UiId, cards: &[SpatialCard<'_>], output: &mut UiInteractionOutput) {
-    let action = cards
-        .iter()
-        .find(|card| card.id == id)
-        .map(|card| card.action);
-    output.activate(id, action);
 }
 
 fn inset_rect(rect: Rect, inset: u32) -> Rect {
