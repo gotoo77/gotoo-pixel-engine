@@ -70,12 +70,8 @@ impl Game for Mfe001aProbe {
         let nav = Self::nav(frame);
         let theme = UiTheme::default();
 
-        let (output, controls) = experimental::run(
-            frame.framebuffer,
-            &mut self.ui_state,
-            nav,
-            theme,
-            |ui| {
+        let (output, controls) =
+            experimental::run(frame.framebuffer, &mut self.ui_state, nav, theme, |ui| {
                 ui.panel(|ui| {
                     ui.text("GPE.UI MFE-001A — T1 TRANSACTION");
                     ui.text("UP/DOWN: FOCUS   LEFT/RIGHT: SLIDER   SPACE: ACTIVATE");
@@ -96,8 +92,7 @@ impl Game for Mfe001aProbe {
                         Controls { enabled, volume }
                     })
                 })
-            },
-        );
+            });
 
         if let Some(value) = output.changed(controls.enabled) {
             self.settings.enabled = value;
