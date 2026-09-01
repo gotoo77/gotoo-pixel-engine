@@ -97,7 +97,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("GPE.UI MFE-001C COST PROBE");
-    println!("os={} arch={}", std::env::consts::OS, std::env::consts::ARCH);
+    println!(
+        "os={} arch={}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
     println!(
         "warmup_iterations={} sample_iterations={}",
         WARMUP_ITERATIONS, SAMPLE_ITERATIONS
