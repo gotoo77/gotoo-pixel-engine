@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
+use crate::Touch;
 use crate::{
     ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer, TouchPhase,
 };
-#[cfg(test)]
-use crate::Touch;
 
 use super::{
     UiTheme,
