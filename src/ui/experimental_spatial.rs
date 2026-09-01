@@ -9,8 +9,8 @@ use crate::{
 use super::{
     UiTheme,
     kernel::{
-        UiId, UiInput, UiInteractionState, UiNavDirection, UiNavInput, UiPointerInput,
-        UiResolvedTarget, hit_test_resolved, spatial_candidate as resolved_spatial_candidate,
+        UiId, UiInput, UiInteractionState, UiNavDirection, UiPointerInput, UiResolvedTarget,
+        hit_test_resolved, spatial_candidate as resolved_spatial_candidate,
     },
 };
 
@@ -612,6 +612,7 @@ mod tests {
 
     use super::*;
     use crate::ui::experimental::{UiStateStore, run_headless};
+    use crate::ui::kernel::UiNavInput;
 
     const ACTION_A: ActionId = ActionId::new("mfe001b.a");
     const ACTION_B: ActionId = ActionId::new("mfe001b.b");
