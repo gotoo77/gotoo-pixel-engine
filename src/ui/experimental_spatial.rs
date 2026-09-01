@@ -8,7 +8,7 @@ use crate::{
 
 use super::{
     UiTheme,
-    kernel::{UiId, UiInput, UiNavInput, UiPointerInput},
+    kernel::{UiId, UiInput, UiInteractionState, UiNavInput, UiPointerInput},
 };
 
 /// Compatibility name retained while the MFE-001B spatial adapter converges
@@ -167,23 +167,20 @@ impl CardPainter for DefaultCardPainter {
 
 #[derive(Debug, Default)]
 pub struct SpatialState {
-    focused: Option<UiId>,
-    pointer_capture: Option<UiId>,
-    touch_capture: HashMap<u64, UiId>,
-    previous_order: Vec<UiId>,
+    interaction: UiInteractionState,
 }
 
 impl SpatialState {
     pub const fn focused_id(&self) -> Option<UiId> {
-        self.focused
+        self.interaction.focused_id()
     }
 
     pub const fn pointer_capture_id(&self) -> Option<UiId> {
-        self.pointer_capture
+        self.interaction.pointer_capture_id()
     }
 
     pub fn touch_capture_count(&self) -> usize {
-        self.touch_capture.len()
+        self.interaction.touch_capture_count()
     }
 }
 
@@ -254,8 +251,7 @@ pub fn run_card_grid<P: CardPainter>(
         let visual = CardVisualState {
             focused: output.focused == Some(card.id),
             hovered: output.hovered == Some(card.id),
-            active: state.pointer_capture == Some(card.id)
-                || state.touch_capture.values().any(|id| *id == card.id),
+            active: state.interaction.is_active(card.id),
         };
         painter.paint(framebuffer, card, layout, visual, theme);
     }
@@ -282,13 +278,13 @@ fn resolve_card_grid(
 ) -> SpatialOutput {
     let (columns, rows, layouts) = layout_cards(bounds, spec, cards);
     let current_order = cards.iter().map(|card| card.id).collect::<Vec<_>>();
-    repair_state_for_current_cards(state, &current_order);
+    state.interaction.repair_for_current_order(&current_order);
 
     if let Some(direction) = nav_direction(input.nav)
-        && let Some(focused) = state.focused
+        && let Some(focused) = state.interaction.focused_id()
         && let Some(next) = spatial_candidate(focused, direction, &layouts)
     {
-        state.focused = Some(next);
+        state.interaction.set_focused_id(Some(next));
     }
 
     let hovered = input
@@ -300,19 +296,19 @@ fn resolve_card_grid(
     let mut actions = Vec::new();
 
     if input.pointer.pressed {
-        state.pointer_capture = hovered;
+        state.interaction.set_pointer_capture(hovered);
         if hovered.is_some() {
-            state.focused = hovered;
+            state.interaction.set_focused_id(hovered);
         }
     }
 
     if input.pointer.released {
-        if let Some(captured) = state.pointer_capture
+        if let Some(captured) = state.interaction.pointer_capture_id()
             && hovered == Some(captured)
         {
             activate(captured, cards, &mut activated, &mut actions);
         }
-        state.pointer_capture = None;
+        state.interaction.set_pointer_capture(None);
     }
 
     for touch in input.touches {
@@ -321,12 +317,12 @@ fn resolve_card_grid(
                 if let Some(position) = touch.position
                     && let Some(target) = hit_test(position, &layouts)
                 {
-                    state.touch_capture.insert(touch.id, target);
-                    state.focused = Some(target);
+                    state.interaction.set_touch_capture(touch.id, target);
+                    state.interaction.set_focused_id(Some(target));
                 }
             }
             TouchPhase::Moved => {
-                let Some(captured) = state.touch_capture.get(&touch.id).copied() else {
+                let Some(captured) = state.interaction.touch_capture_id(touch.id) else {
                     continue;
                 };
                 if !touch
@@ -334,11 +330,11 @@ fn resolve_card_grid(
                     .and_then(|position| hit_test(position, &layouts))
                     .is_some_and(|target| target == captured)
                 {
-                    state.touch_capture.remove(&touch.id);
+                    state.interaction.clear_touch_capture(touch.id);
                 }
             }
             TouchPhase::Ended => {
-                if let Some(captured) = state.touch_capture.remove(&touch.id)
+                if let Some(captured) = state.interaction.remove_touch_capture(touch.id)
                     && touch
                         .position
                         .and_then(|position| hit_test(position, &layouts))
@@ -348,33 +344,34 @@ fn resolve_card_grid(
                 }
             }
             TouchPhase::Cancelled => {
-                state.touch_capture.remove(&touch.id);
+                state.interaction.clear_touch_capture(touch.id);
             }
         }
     }
 
     if input.nav.confirm
-        && let Some(focused) = state.focused
+        && let Some(focused) = state.interaction.focused_id()
     {
         activate(focused, cards, &mut activated, &mut actions);
     }
 
-    state.previous_order = current_order;
+    state.interaction.commit_order(&current_order);
 
+    let focused = state.interaction.focused_id();
     let dump = dump_layout(
         bounds,
         columns,
         rows,
         &layouts,
-        state.focused,
+        focused,
         hovered,
-        state.pointer_capture,
-        &state.touch_capture,
+        state.interaction.pointer_capture_id(),
+        state.interaction.touch_captures(),
         &activated,
     );
 
     SpatialOutput {
-        focused: state.focused,
+        focused,
         hovered,
         activated,
         actions,
@@ -383,36 +380,6 @@ fn resolve_card_grid(
         layouts,
         dump,
     }
-}
-
-fn repair_state_for_current_cards(state: &mut SpatialState, current_order: &[UiId]) {
-    if current_order.is_empty() {
-        state.focused = None;
-        state.pointer_capture = None;
-        state.touch_capture.clear();
-        state.previous_order.clear();
-        return;
-    }
-
-    let current = current_order.iter().copied().collect::<HashSet<_>>();
-    state.pointer_capture = state.pointer_capture.filter(|id| current.contains(id));
-    state.touch_capture.retain(|_, id| current.contains(id));
-
-    if state.focused.is_some_and(|id| current.contains(&id)) {
-        return;
-    }
-
-    let fallback_index = state
-        .focused
-        .and_then(|id| {
-            state
-                .previous_order
-                .iter()
-                .position(|previous| *previous == id)
-        })
-        .unwrap_or(0)
-        .min(current_order.len() - 1);
-    state.focused = Some(current_order[fallback_index]);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
