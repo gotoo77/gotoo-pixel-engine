@@ -1,6 +1,10 @@
 # GPE.UI — PRODUCTIONIZATION P0 / KERNEL CONVERGENCE v0.1
 
-Status: **IMPLEMENTATION CONTRACT — P0 ONLY**
+Status: **COMPLETE — PASS / STOP**
+
+Final result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P0_RESULT_v0.1.md`
 
 Parent plan:
 
@@ -20,298 +24,154 @@ It must not add styling, rounded corners, consumer migration, markup, SVG, Taffy
 
 ---
 
-# 1. Current split to eliminate
-
-## Transactional path
-
-`src/ui/experimental.rs`
-
-Owns:
+# 1. Final P0 result
 
 ```text
-UiId
-UiNavInput
-UiStateStore
-UiOutput
-WidgetRef<T>
-UiDiagnostic
-UiMetrics
-transient Node graph
-measure / arrange
-linear focus repair/navigation
-typed value proposals
-ActionId activation
-paint
-debug dump
+P0.1 shared input vocabulary               PASS
+P0.2 shared interaction state primitives   PASS
+P0.3 generic resolved interaction targets  PASS
+P0.4 semantic output convergence           PASS
+P0.5 adapter closure                       PASS
+
+Automated CI                               PASS
+Native human runtime                       PASS
+Web build/package                          PASS
+
+GPE.UI PRODUCTIONIZATION P0                PASS
+STOP                                       YES
 ```
 
-## Spatial path
+Final validated PR head:
 
-`src/ui/experimental_spatial.rs`
+`a7455b9682d64d90f685595f45534fd6a20808ec`
 
-Owns separately:
+Merged by PR #75 into:
 
-```text
-PointerInput
-SpatialInput
-SpatialState
-SpatialOutput
-spatial focus repair/navigation
-pointer capture
-touch capture
-activation / ActionId output
-resolved Card layouts
-debug dump
-```
+`e3a5366370e01eee6779ef773c242441ef17abec`
 
-The duplication is experimental debt, not a desired production abstraction.
+CI:
+
+`#648 — SUCCESS`
+
+Human runtime:
+
+`P0 NATIVE RUNTIME = PASS`
 
 ---
 
 # 2. Canonical P0 concepts
 
-P0 introduces one canonical kernel vocabulary.
-
-Names below are productionization names, not yet v1 stability promises.
-
-## 2.1 Identity
-
-```rust
-UiId
-```
-
-Keep the deterministic identity behavior proven by MFE-001A.
-
-No second spatial/card identity type.
-
-## 2.2 Input snapshot
-
-Canonical shape:
-
-```rust
-UiInput<'a> {
-    nav: UiNavInput,
-    pointer: UiPointerInput,
-    touches: &'a [Touch],
-}
-
-UiPointerInput {
-    position: Option<(i32, i32)>,
-    pressed: bool,
-    released: bool,
-}
-```
-
-Rules:
-
-- kernel sees semantic nav, not physical Space/South/WASD policy;
-- pointer/touch are spatial facts;
-- existing `experimental::run(..., UiNavInput, ...)` may remain as compatibility adapter using default pointer/touch input;
-- existing `SpatialInput` / `PointerInput` names may remain temporary aliases/adapters during P0.
-
-## 2.3 Persistent interaction state
-
-One canonical store owns:
-
-```text
-generation
-focused UiId
-per-id kind/lifetime bookkeeping
-previous focus order / deterministic repair data
-pointer capture UiId
-touch-id -> UiId capture
-```
-
-Required invariant:
-
-> there is one focused `UiId` authority for one UI transaction surface.
-
-`SpatialState` must not survive as an independent production state owner.
-
-It may temporarily wrap/borrow the canonical store solely to keep the MFE probe compiling while migration is incomplete.
-
-## 2.4 Resolved interaction target
-
-After layout, every interactive element needed by the kernel can be represented conceptually as:
+## Identity
 
 ```text
 UiId
-Rect
-interaction kind / sense
-semantic action metadata
-navigation grouping/policy metadata when required
-stable resolved order
 ```
 
-This is not a DOM node and need not survive the frame.
+## Input
 
-Pointer hit-testing and spatial navigation operate on resolved targets, not Card-specific structs.
+```text
+UiInput
+UiPointerInput
+UiNavInput
+```
 
-## 2.5 Output
+## Persistent interaction authority
 
-One canonical semantic output owns:
+```text
+UiInteractionState
+```
+
+Owns shared focus/order/capture semantics used by both transactional and spatial paths.
+
+## Resolved targets
+
+Generic resolved targets expose stable identity plus final integer geometry for hit-testing and spatial navigation.
+
+## Semantic output
+
+```text
+UiInteractionOutput
+```
+
+Owns:
 
 ```text
 focused id
-hovered id when pointer input exists
+hovered id
 activated ids
 ActionId intentions
 cancel request
 ```
 
-Transactional `UiOutput` additionally owns:
-
-```text
-typed proposed value changes
-diagnostics
-metrics
-transaction/debug trace data
-```
-
-Grid-specific geometry observations may remain widget/layout-specific data returned to a probe, but activation/focus/action state must not require a second `SpatialOutput` authority.
+Transactional and spatial wrappers retain only their own additional data.
 
 ---
 
-# 3. Transaction order
-
-Preserve the accepted T1 semantics:
+# 3. Preserved architecture invariants
 
 ```text
-input snapshot
-    ↓
-build transient description
-    ↓
-resolve identity/style inputs
-    ↓
-measure
-    ↓
-arrange integer geometry
-    ↓
-collect resolved interaction targets
-    ↓
-repair focus/capture against current IDs
-    ↓
-linear/spatial nav + pointer/touch interaction
-    ↓
-frame-local effective values / semantic actions
-    ↓
-paint
-    ↓
-finalize persistent interaction state
-    ↓
-return UiOutput
-    ↓
-consumer commits gameplay/product state
+one identity model
+one interaction-state authority
+one semantic output model
+multiple deterministic navigation policies
+consumer-owned product/game state
+frame-local transient UI description
+integer/pixel-aware final geometry
+paint through existing GPE primitives
 ```
 
-Do not replay the consumer build closure.
+No DOM, permanent widget tree, global UI manager, second renderer or browser dependency was introduced.
 
 ---
 
 # 4. Navigation convergence
 
-Do not solve convergence by forcing one navigation algorithm globally.
-
-Required production concept:
+Production direction remains:
 
 ```text
 one focus authority
-multiple deterministic navigation policies/scopes
+multiple deterministic navigation policies
 ```
 
-Initial policies proven by current MFEs:
+Current proven policies:
 
 ```text
 Linear
-    declaration/resolved order
-
 Spatial
-    resolved Rect geometry
-    direction filter
-    primary distance
-    secondary distance
-    stable order tiebreak
 ```
 
-A Grid may establish a spatial navigation scope while a simple menu/column uses linear navigation.
+Spatial ranking remains:
 
-P0 does not require full modal/focus-scope implementation, but the representation must not prevent it.
+```text
+direction filter
+primary-axis distance
+secondary-axis distance
+stable resolved-order tiebreak
+```
 
 ---
 
 # 5. Pointer/touch convergence
 
-Pointer and touch capture move to canonical interaction state.
+Pointer and touch capture use the shared interaction-state authority.
 
-Required semantics preserved from MFE-001B:
-
-```text
-mouse press on target
-    -> capture target
-    -> focus target
-
-mouse release on same captured target
-    -> activate
-
-mouse release elsewhere
-    -> no activation
-    -> clear capture
-
-touch Started inside target
-    -> capture touch-id -> target
-    -> focus target
-
-touch Moved outside captured target
-    -> cancel that capture
-
-touch Ended inside still-captured target
-    -> activate
-    -> clear capture
-
-touch Cancelled
-    -> clear capture
-```
-
-When a captured target disappears during a structural change, capture is deterministically pruned.
+MFE-001B capture/activation semantics remain covered by headless tests.
 
 ---
 
 # 6. Dynamic identity/focus repair
 
-Preserve both MFE guarantees:
+Keyed identity survives reorder.
 
-- keyed identity survives reorder;
-- if focused target disappears, deterministic fallback uses prior resolved position/order where possible.
+Focused-target removal repairs deterministically.
 
-The exact internal repair data may change, but observable behavior must remain deterministic and headless-testable.
-
-Same `UiId` reused for an incompatible interaction/value kind must continue to reset/diagnose rather than silently inherit incompatible state.
+Incompatible widget-kind reuse remains diagnosed rather than silently inheriting incompatible state.
 
 ---
 
-# 7. Debug/diagnostic boundary
+# 7. Compatibility bridge
 
-P0 introduces the architectural separation but does not need to finish allocation optimization.
-
-Target distinction:
-
-```text
-mandatory transaction result
-vs
-debug/headless textual dump
-```
-
-Current `dump()` compatibility may remain during P0.
-
-P5 will make dump construction opt-in/attributed and remeasure allocations.
-
-Do not delete deterministic traces merely to improve a benchmark.
-
----
-
-# 8. Compatibility bridge
-
-During P0 the following existing experimental calls should continue to compile unless a smaller explicit migration is reviewed first:
+The MFE compatibility entry points remain available while productionization continues:
 
 ```text
 experimental::run
@@ -320,125 +180,33 @@ experimental_spatial::run_card_grid
 experimental_spatial::run_card_grid_headless
 ```
 
-Compatibility implementation may delegate into the converged kernel.
-
-The adapters are temporary evidence-preservation surfaces, not proposed v1 names.
+These are compatibility/evidence surfaces, not frozen v1 API names.
 
 ---
 
-# 9. P0 implementation sequence
+# 8. Carried condition
 
-## P0.1 — shared input vocabulary
+Debug/headless textual dump construction remains intentionally deferred to later cost-hardening work.
 
-- introduce canonical `UiPointerInput` + `UiInput`;
-- retain compatibility aliases for `PointerInput` / `SpatialInput`;
-- zero behavior change.
-
-Status: **IMPLEMENTED / CI PASS at checkpoint**.
-
-## P0.2 — shared interaction state primitives
-
-- move focus/pointer/touch capture authority toward one state representation;
-- keep keyed-kind/generation bookkeeping intact;
-- headless tests prove reorder/removal/capture behavior.
-
-Status: **IMPLEMENTED / CI PASS at checkpoint**.
-
-## P0.3 — resolved generic interaction targets
-
-- extract Card-specific hit-test/navigation mechanics into generic resolved-target helpers;
-- preserve exact deterministic spatial ranking.
-
-Status: **IMPLEMENTED / CI PASS at checkpoint**.
-
-## P0.4 — output convergence
-
-- activation/actions/focus/hover flow into canonical output concepts;
-- Card/Grid-specific output retains geometry only where useful;
-- avoid two competing semantic output authorities.
-
-Status: **IMPLEMENTED — validation pending on current head**.
-
-Current implementation:
+Disposition:
 
 ```text
-kernel::UiInteractionOutput
-    focused
-    hovered
-    activated ids
-    ActionId intentions
-    cancel request
-
-experimental::UiOutput
-    delegates semantic queries to UiInteractionOutput
-    retains generation + typed proposals + diagnostics + metrics + dump
-
-experimental_spatial::SpatialOutput
-    delegates semantic queries to UiInteractionOutput
-    retains Grid geometry + dump only
+P5 — debug/cost hardening
 ```
 
-## P0.5 — adapter closure
-
-- existing MFE probes exercise the converged internals;
-- no second independent runtime remains underneath the compatibility API.
-
-Status: **NOT STARTED**.
+The deterministic dumps were not deleted merely to improve benchmark numbers.
 
 ---
 
-# 10. P0 acceptance gates
-
-Automated:
+# 9. STOP
 
 ```text
-cargo fmt --check
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
-cargo build --release --examples
-Web build/package CI
-```
-
-Behavioral/headless minimum:
-
-```text
-T1 typed value proposal behavior unchanged
-stable WidgetRef generation behavior unchanged
-incompatible UiId kind diagnostic unchanged
-keyed spatial focus survives reorder
-focused removed target repairs deterministically
-mouse capture/release semantics unchanged
-touch move-off cancellation unchanged
-touch activation unchanged
-spatial direction ranking unchanged
-headless deterministic replay unchanged
-```
-
-Human runtime:
-
-A single final P0 probe run is sufficient if automated tests preserve the exact previously accepted MFE behavior.
-
-Check:
-
-```text
-Native: responsive Grid + focus/filter/reorder + mouse/gamepad
-Web: build/package required
-actual browser rerun only if P0 touches platform/input transport semantics
-```
-
----
-
-# 11. P0 STOP
-
-When P0 passes:
-
-```text
+GPE.UI PRODUCTIONIZATION P0 = PASS
 STOP
-review convergence
-record P0 result
-squash merge
 ```
 
-Do not opportunistically begin P1/P2/P3 in the same implementation slice.
+P0 is closed.
 
-In particular, **do not implement styling or rounded corners inside P0** even though they are already committed roadmap items for P3.
+No P1/P2/P3 implementation is part of this contract closure.
+
+The next authorized roadmap slice, when explicitly started, is P1 from updated `main`.
