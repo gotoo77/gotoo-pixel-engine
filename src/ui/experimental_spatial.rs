@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[cfg(test)]
 use crate::Touch;
@@ -9,8 +9,8 @@ use crate::{
 use super::{
     UiTheme,
     kernel::{
-        UiId, UiInput, UiInteractionState, UiNavDirection, UiPointerInput, UiResolvedTarget,
-        hit_test_resolved, spatial_candidate as resolved_spatial_candidate,
+        UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavDirection, UiPointerInput,
+        UiResolvedTarget, hit_test_resolved, spatial_candidate as resolved_spatial_candidate,
     },
 };
 
@@ -197,12 +197,13 @@ impl SpatialState {
     }
 }
 
+/// Compatibility wrapper retained for the MFE-001B probes.
+///
+/// Semantic interaction state is owned by the shared kernel output. This type
+/// only adds Grid-specific geometry and the deterministic textual dump.
 #[derive(Debug, Clone)]
 pub struct SpatialOutput {
-    focused: Option<UiId>,
-    hovered: Option<UiId>,
-    activated: HashSet<UiId>,
-    actions: Vec<ActionId>,
+    interaction: UiInteractionOutput,
     columns: usize,
     rows: usize,
     layouts: Vec<CardLayout>,
@@ -211,19 +212,23 @@ pub struct SpatialOutput {
 
 impl SpatialOutput {
     pub const fn focused_id(&self) -> Option<UiId> {
-        self.focused
+        self.interaction.focused_id()
     }
 
     pub const fn hovered_id(&self) -> Option<UiId> {
-        self.hovered
+        self.interaction.hovered_id()
     }
 
     pub fn activated(&self, id: UiId) -> bool {
-        self.activated.contains(&id)
+        self.interaction.activated(id)
     }
 
     pub fn action_pressed(&self, action: ActionId) -> bool {
-        self.actions.contains(&action)
+        self.interaction.action_pressed(action)
+    }
+
+    pub const fn cancel_requested(&self) -> bool {
+        self.interaction.cancel_requested()
     }
 
     pub const fn columns(&self) -> usize {
@@ -262,8 +267,8 @@ pub fn run_card_grid<P: CardPainter>(
 
     for (card, layout) in cards.iter().zip(output.layouts.iter().copied()) {
         let visual = CardVisualState {
-            focused: output.focused == Some(card.id),
-            hovered: output.hovered == Some(card.id),
+            focused: output.focused_id() == Some(card.id),
+            hovered: output.hovered_id() == Some(card.id),
             active: state.interaction.is_active(card.id),
         };
         painter.paint(framebuffer, card, layout, visual, theme);
@@ -304,9 +309,7 @@ fn resolve_card_grid(
         .pointer
         .position
         .and_then(|position| hit_test_resolved(position, &layouts));
-
-    let mut activated = HashSet::new();
-    let mut actions = Vec::new();
+    let mut interaction = UiInteractionOutput::new(None, hovered, input.nav.cancel);
 
     if input.pointer.pressed {
         state.interaction.set_pointer_capture(hovered);
@@ -319,7 +322,7 @@ fn resolve_card_grid(
         if let Some(captured) = state.interaction.pointer_capture_id()
             && hovered == Some(captured)
         {
-            activate(captured, cards, &mut activated, &mut actions);
+            activate(captured, cards, &mut interaction);
         }
         state.interaction.set_pointer_capture(None);
     }
@@ -353,7 +356,7 @@ fn resolve_card_grid(
                         .and_then(|position| hit_test_resolved(position, &layouts))
                         == Some(captured)
                 {
-                    activate(captured, cards, &mut activated, &mut actions);
+                    activate(captured, cards, &mut interaction);
                 }
             }
             TouchPhase::Cancelled => {
@@ -365,12 +368,13 @@ fn resolve_card_grid(
     if input.nav.confirm
         && let Some(focused) = state.interaction.focused_id()
     {
-        activate(focused, cards, &mut activated, &mut actions);
+        activate(focused, cards, &mut interaction);
     }
 
     state.interaction.commit_order(&current_order);
 
     let focused = state.interaction.focused_id();
+    interaction.set_focused_id(focused);
     let dump = dump_layout(
         bounds,
         columns,
@@ -380,14 +384,11 @@ fn resolve_card_grid(
         hovered,
         state.interaction.pointer_capture_id(),
         state.interaction.touch_captures(),
-        &activated,
+        interaction.activated_ids(),
     );
 
     SpatialOutput {
-        focused,
-        hovered,
-        activated,
-        actions,
+        interaction,
         columns,
         rows,
         layouts,
@@ -493,18 +494,12 @@ fn layout_cards(
     (columns, rows, layouts)
 }
 
-fn activate(
-    id: UiId,
-    cards: &[SpatialCard<'_>],
-    activated: &mut HashSet<UiId>,
-    actions: &mut Vec<ActionId>,
-) {
-    if !activated.insert(id) {
-        return;
-    }
-    if let Some(card) = cards.iter().find(|card| card.id == id) {
-        actions.push(card.action);
-    }
+fn activate(id: UiId, cards: &[SpatialCard<'_>], output: &mut UiInteractionOutput) {
+    let action = cards
+        .iter()
+        .find(|card| card.id == id)
+        .map(|card| card.action);
+    output.activate(id, action);
 }
 
 fn inset_rect(rect: Rect, inset: u32) -> Rect {
@@ -554,7 +549,7 @@ fn dump_layout(
     hovered: Option<UiId>,
     pointer_capture: Option<UiId>,
     touch_capture: &HashMap<u64, UiId>,
-    activated: &HashSet<UiId>,
+    activated: &std::collections::HashSet<UiId>,
 ) -> String {
     use std::fmt::Write as _;
 
@@ -873,6 +868,25 @@ mod tests {
         assert!(released.activated(ids[0]));
         assert!(released.action_pressed(ACTION_A));
         assert_eq!(state.pointer_capture_id(), None);
+    }
+
+    #[test]
+    fn cancel_flows_through_shared_semantic_output() {
+        let ids = ids();
+        let cards = cards(&ids);
+        let mut state = SpatialState::default();
+        let output = run_card_grid_headless(
+            bounds(360),
+            &mut state,
+            input(UiNavInput {
+                cancel: true,
+                ..UiNavInput::default()
+            }),
+            GridSpec::default(),
+            &cards,
+        );
+
+        assert!(output.cancel_requested());
     }
 
     #[test]
