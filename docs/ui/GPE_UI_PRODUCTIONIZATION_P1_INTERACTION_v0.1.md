@@ -28,20 +28,7 @@ Validated implementation head before result documentation:
 
 Finish the interaction convergence that P0 made possible.
 
-P0 established one canonical input vocabulary and one persistent interaction authority, but the two compatibility adapters still executed different interaction passes:
-
-```text
-transactional/Tiny
-    run(..., UiNavInput, ...)
-    linear focus + confirm/value handling
-    no pointer/touch transaction input
-
-spatial/Grid
-    run_card_grid(..., UiInput, ...)
-    spatial focus
-    pointer/touch capture
-    confirm activation
-```
+P0 established one canonical input vocabulary and one persistent interaction authority, but the two compatibility adapters still executed different interaction passes.
 
 P1 makes both adapters consume one kernel interaction pass while preserving their accepted behavior.
 
@@ -215,27 +202,13 @@ P1 does not move platform event handling into the UI kernel.
 
 Status: **PASS**.
 
-- explicit Linear/Spatial navigation policy;
-- resolved-target activation semantics;
-- centralized generic nav + hover + pointer + touch + confirm interaction;
-- preserved deterministic spatial ranking and capture rules.
-
 ## P1.2 — migrate Spatial adapter
 
 Status: **PASS**.
 
-- bespoke pointer/touch/confirm logic removed from the production adapter;
-- Grid geometry/painter/output compatibility surface preserved;
-- regression behavior retained.
-
 ## P1.3 — migrate transactional adapter
 
 Status: **PASS**.
-
-- full `UiInput` transaction entry points added;
-- nav-only `run` / `run_headless` remain compatibility adapters;
-- linear focus + pointer/touch + generic activation route through the shared pass;
-- typed value semantics remain transactional-adapter responsibilities.
 
 ## P1.4 — closure review
 
@@ -250,12 +223,12 @@ One generic interaction algorithm is used under both adapters. No duplicated pro
 Automated validation on implementation head `cd164600c23e29402a666f93b3f2b007dc0fd8a0`, GitHub Actions CI run **#655**:
 
 ```text
-cargo fmt --check                                      PASS
-cargo test                                             PASS
+cargo fmt --check                                         PASS
+cargo test                                                PASS
 cargo clippy --all-targets --all-features -- -D warnings PASS
-cargo build --release --examples                       PASS
-Web build/package CI                                   PASS
-Conventional Commits CI                                PASS
+cargo build --release --examples                          PASS
+Web build/package CI                                      PASS
+Conventional Commits CI                                   PASS
 ```
 
 Headless behavioral gates:
