@@ -512,7 +512,7 @@ pub fn run_headless<'a, R>(
 
 fn run_impl<'a, R>(
     surface: Size,
-    mut framebuffer: Option<&mut Framebuffer>,
+    framebuffer: Option<&mut Framebuffer>,
     state: &mut UiStateStore,
     nav: UiNavInput,
     theme: UiTheme,
@@ -639,7 +639,7 @@ fn run_impl<'a, R>(
         }
     }
 
-    if let Some(framebuffer) = framebuffer.as_deref_mut() {
+    if let Some(framebuffer) = framebuffer {
         paint_node(&nodes, 0, framebuffer, theme, text_renderer, state.focused);
     }
 
