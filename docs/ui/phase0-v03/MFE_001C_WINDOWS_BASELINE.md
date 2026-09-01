@@ -12,7 +12,7 @@ warmup iterations: 250
 sample iterations: 2000
 ```
 
-## Observed results
+## Observed transaction results
 
 ```text
 TINY
@@ -39,11 +39,54 @@ CURRENT PROBE EXECUTABLE
 236544 bytes
 ```
 
+## Observed artifact sizes
+
+Same branch / release profile / pinned toolchain, measured on the Windows human environment.
+
+### Native x86_64 Windows executables
+
+```text
+control std-only   115200 bytes
+tiny UI            169472 bytes
+spatial Grid       187392 bytes
+
+raw deltas:
+tiny - control      54272 bytes
+spatial - control   72192 bytes
+spatial - tiny      17920 bytes
+```
+
+### Raw wasm32-unknown-unknown modules
+
+```text
+control std-only      22538 bytes
+tiny UI             1444176 bytes
+spatial Grid        1462432 bytes
+
+raw deltas:
+tiny - control      1421638 bytes
+spatial - control   1439894 bytes
+spatial - tiny        18256 bytes
+```
+
+The duplicated hashed/non-hashed WASM files produced by Cargo had identical sizes; each target is counted once above.
+
 ## Interpretation boundary
 
 The transaction timings are observationally very small on this machine. No threshold is invented from these numbers.
 
 The allocation counts are **not yet attributable to the minimal UI kernel alone**. The current experimental paths construct textual headless/debug dumps on every transaction, and those allocations are included by the counting allocator.
+
+The std-only artifact control does **not reference the GPE crate at all**. Therefore the very large raw WASM `tiny - control` delta must not be described as "GPE.UI adds ~1.4 MB". It conflates activation/linkage of GPE code and transitive code with the UI path itself.
+
+The most internally comparable observation currently available is the additional Spatial path over Tiny:
+
+```text
+Native spatial - tiny = 17920 bytes
+Raw WASM spatial - tiny = 18256 bytes
+```
+
+Those are observations, not acceptance thresholds.
 
 Therefore:
 
@@ -52,11 +95,16 @@ CPU COST SIGNAL:
 NO CURRENT RED FLAG AT THIS SCALE
 
 ALLOCATION COST SIGNAL:
-REQUIRES ATTRIBUTION BEFORE ARCHITECTURAL VERDICT
+REQUIRES ATTRIBUTION / PRODUCTIONIZATION REVIEW
+NO CURRENT ARCHITECTURE-B REJECTION SIGNAL
 
-236544-BYTE EXECUTABLE:
-ABSOLUTE OBSERVATION ONLY
-NOT AN INCREMENTAL GPE.UI SIZE DELTA
+STD-ONLY -> UI ARTIFACT DELTA:
+NOT A PURE UI DELTA
+REQUIRES A GPE-NON-UI CONTROL
+
+SPATIAL -> TINY INCREMENT:
+BOUNDED AND OBSERVED
+NO ACCEPTABILITY THRESHOLD INVENTED
 ```
 
-MFE-001C continues with bounded same-toolchain control / Tiny / Spatial artifact comparisons for Native and WASM.
+MFE-001C continues with a GPE non-UI artifact control, Native runtime confirmation, and the Web browser runtime gate when an actual WebGPU-capable environment is available.
