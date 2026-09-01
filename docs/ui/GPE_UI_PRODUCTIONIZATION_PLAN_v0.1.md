@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN**
+Status: **ACTIVE PLAN — P0/P1 COMPLETE**
 
 Baseline:
 
@@ -14,6 +14,8 @@ MFE-001A       PASS
 MFE-001B       PASS
 MFE-001C       PASS WITH CONDITIONS
 Architecture B GO
+P0             PASS
+P1             PASS
 ```
 
 ## Mission
@@ -35,31 +37,24 @@ Productionization must preserve the strategic direction validated by the MFE seq
 - no global UI manager;
 - no mandatory heavy external dependency.
 
-## 0. Non-negotiable correction before stabilization
+## 0. Productionization convergence checkpoint
 
-The current experimental code contains **two separate runtime/state/output paths**:
+P0 and P1 have now removed the experimental split at the interaction-kernel level.
+
+The productionization checkpoint is:
 
 ```text
-experimental.rs
-    UiStateStore
-    UiOutput
-    UiBuilder
-    run / run_headless
-    vertical focus/navigation
-
-experimental_spatial.rs
-    SpatialState
-    SpatialOutput
-    run_card_grid / run_card_grid_headless
-    pointer/touch capture
-    spatial focus/navigation
+one UiId model
+one UiInput vocabulary
+one UiInteractionState authority
+one UiInteractionOutput semantic result
+one generic kernel interaction pass
+Linear / Spatial as deterministic navigation policies
 ```
 
-This split was valid for falsifiable MFEs, but it is **not an acceptable production endpoint**.
+The compatibility modules still exist as evidence/migration surfaces, but they no longer justify separate interaction runtimes.
 
-Productionization must converge these paths around one kernel-level identity/input/state/output transaction model before stable public naming is chosen.
-
-Therefore:
+Therefore the original prohibition remains in force:
 
 ```text
 DO NOT simply rename experimental.rs -> core.rs and call it production.
@@ -67,7 +62,13 @@ DO NOT stabilize SpatialState/SpatialOutput as an independent second UI runtime.
 DO NOT create a permanent Card-only spatial subsystem beside the main UI transaction.
 ```
 
-The spatial MFE remains evidence and migration input, not a second architecture.
+P0 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P0_RESULT_v0.1.md`
+
+P1 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P1_RESULT_v0.1.md`
 
 ---
 
@@ -78,371 +79,173 @@ The existing legacy toolkit remains available during productionization:
 ```text
 Ui
 UiState
-UiResponse
 UiTheme
-RepeatConfig
+UiResponse
 RepeatState
-PauseGame
-VirtualPad
-existing menu helpers
 ```
 
-Rules:
+Do not delete or silently redirect it during kernel work.
 
-- no behavior-breaking rewrite of the legacy toolkit in place;
-- no legacy removal until real consumers have migrated successfully;
-- `UiTheme` is a compatibility source for default production style tokens;
-- compatibility adapters are allowed when small and explicit;
-- deprecation, if any, happens only after consumer evidence.
+The experimental Architecture B surfaces remain compatibility/evidence adapters until an explicit later migration slice decides their production names and removal path.
 
 ---
 
-# 2. Production dependency direction
+# 2. Productionization sequence
 
-Keep the public namespace:
+## P0 — Kernel convergence
+
+Status: **PASS / STOP**.
+
+Converged:
 
 ```text
-gpe::ui
+shared input vocabulary
+shared interaction state primitives
+generic resolved targets
+semantic output convergence
+adapter closure over shared state/output primitives
 ```
 
-No separate `gpe-ui` crate during this phase.
+## P1 — Unified input / interaction
 
-Logical dependency direction:
+Status: **PASS / STOP**.
+
+Converged:
 
 ```text
-GPE primitives
-Framebuffer / Rect / Size / Image / Text / Input / ActionId
-        ↑
-     ui kernel
-identity / state / constraints / events / input snapshot
-        ↑
-  layout + style
-        ↑
-     widgets
-        ↑
-debug / diagnostics / adapters
+one kernel interaction pass
+explicit Linear / Spatial navigation policy
+shared hover
+shared pointer/touch capture semantics
+shared confirm activation
+shared cancel propagation
+Spatial adapter delegation
+transactional full-UiInput entry points
+nav-only compatibility adapters preserved
 ```
 
-Forbidden dependencies:
+P1 did not change platform/input transport semantics.
+
+## P2 — Consumer-grade layout composition
+
+Status: **NOT STARTED**.
+
+Only after P1 is merged and P2 is explicitly started from the resulting `main` baseline:
+
+- consolidate linear + spatial layout entry points;
+- preserve integer/pixel-aware resolved geometry;
+- avoid a permanent Card/Grid-only production subsystem;
+- add only abstractions justified by accepted MFE behavior and concrete consumer probes.
+
+## P3 — Styling / theming / customization
+
+Strategic requirement, not speculative polish.
+
+Target precedence:
 
 ```text
-ui kernel -> Audio
-ui kernel -> scene/game state
-ui kernel -> platform window/event loop
-ui kernel -> Web/DOM
-```
-
----
-
-# 3. Productionization slices
-
-## P0 — Convergence contract and module boundaries
-
-Goal:
-
-Define and implement the smallest shared kernel boundary that both MFE paths can use without changing accepted behavior.
-
-Required outcomes:
-
-- one canonical `UiId`;
-- one canonical semantic navigation type;
-- one canonical interaction-state owner;
-- one canonical output/event surface;
-- pointer/touch state integrated into the same transaction model rather than a separate runtime;
-- diagnostics/debug dump separated conceptually from mandatory production output;
-- no public API freeze.
-
-Gate:
-
-```text
-MFE-001A transaction semantics preserved
-MFE-001B spatial behavior preserved
-headless traces deterministic
-legacy toolkit unchanged
-```
-
-A transitional adapter may keep the existing MFE probes compiling while internals converge.
-
-## P1 — Unified input / focus / interaction
-
-Goal:
-
-Introduce one UI input snapshot capable of carrying:
-
-```text
-semantic navigation
-pointer position + transitions
-touch contacts/events
-```
-
-Required behavior:
-
-- linear and spatial navigation share one focused `UiId` authority;
-- pointer/touch capture is keyed by the same identity store;
-- dynamic insertion/removal/reorder preserves or deterministically repairs focus;
-- modal/focus-scope hooks remain possible without implementing a full scene manager;
-- physical key/gamepad policy stays outside the kernel.
-
-## P2 — Layout convergence
-
-Goal:
-
-Move the responsive Grid evidence into the transient graph/layout model.
-
-Core candidates to prove, not quota-fill:
-
-```text
-Padding
-Column
-Row
-Grid (auto-fit minimum width + deterministic remainder)
-Align / Sized / Constrained as required
-```
-
-Rules:
-
-- final authoritative geometry remains integer `Rect` / `Size`;
-- no CSS Grid implementation;
-- no Taffy dependency unless custom layout complexity creates concrete evidence for a comparison spike;
-- current Card-only grid function becomes adapter/test fixture or disappears after equivalent graph behavior is proven.
-
-## P3 — Styling / theming / visual customization
-
-Goal:
-
-Generalize the current flat `UiTheme` into the validated three-layer model:
-
-```text
-Theme/design tokens
-        ↓
+Theme defaults
+    ↓
 component style
-        ↓
+    ↓
 local override
 ```
 
-Initial production style capabilities:
+Candidate production capabilities:
 
 ```text
-background / foreground
-border color
+background
+border
 border width
-corner radius
-padding / gap
-text roles
-focus treatment
-hovered / focused / active / disabled / selected visual states
-```
-
-Initial component style candidates:
-
-```text
-PanelStyle
-ButtonStyle
-CardStyle
-```
-
-`SliderStyle` / other styles are added only when their widgets enter the production path.
-
-### Rounded corners
-
-Rounded/pixel-stepped corners are explicitly in scope for this slice.
-
-Preferred direction:
-
-- a small reusable GPE drawing primitive if the implementation remains deterministic, clipped and pixel-aware;
-- integer radius;
-- radius `0` exactly preserves square rendering;
-- no mandatory antialiasing or vector renderer;
-- custom painter/nine-slice remains an escape hatch for elaborate skins.
-
-Do not emulate CSS selectors or a cascade.
-
-## P4 — Custom widget / custom paint contract
-
-Goal:
-
-Promote the successful MFE custom Card painter lesson into a generic escape hatch.
-
-Kernel owns as much generic interaction as possible:
-
-```text
-identity
-resolved rect
-focus
+text / muted text
+accent
+padding / spacing
 hover
-capture
-activation
-semantic action
+focus
+pressed
+disabled
+corner radius / rounded rect where renderer support is appropriate
+custom painter / custom widget escape hatch
+sprite / nine-slice where consumer evidence supports it
 ```
 
-Consumer/custom component owns domain-specific paint/content.
+Do not turn this into CSS.
 
-Avoid forcing every custom widget to reimplement pointer/touch capture.
+## P4 — Typography follow-up
 
-## P5 — Debug/cost hardening
+Track issue #69 separately.
 
-Goal:
+- explicit missing-glyph behavior;
+- preserve bitmap pixel font option;
+- improve typography quality;
+- assess TTF/OTF path without forcing a giant text stack.
 
-Close the MFE-001C allocation condition.
+## P5 — Cost attribution / debug boundary
 
-Required:
+MFE-001C found no CPU red flag but allocation attribution remains a productionization condition.
 
-- debug/headless textual dumps are not mandatory production-frame work unless requested;
-- measure allocation/timing again after separation;
-- retain deterministic dumps for tests/diagnostics;
-- no invented zero-allocation requirement;
-- optimize only where measured cost justifies it.
+- distinguish mandatory runtime output from opt-in debug dump;
+- remeasure allocation calls/bytes after convergence;
+- no optimization before attribution.
 
-## P6 — Production public surface candidate
+## P6 — First real consumers
 
-Only after P0–P5 behavior is green:
+Only after kernel/layout/styling are coherent enough:
 
-- choose final module/type names;
-- stop exposing `experimental*` as the intended consumer path;
-- keep compatibility aliases/adapters only where they materially ease migration;
-- document state ownership and transaction timing;
-- no API stability promise beyond the explicit candidate surface yet.
+1. Arcade-like card/grid consumer;
+2. unlike consumer such as Settings/Pause/HUD.
 
-## P7 — Real consumer validation
+A single consumer must not dictate the final API.
 
-At least two materially different consumer probes before calling the API a v1 candidate.
+## P7 — v1 candidate review
 
-Recommended order:
+Only after at least two unlike consumers:
 
-```text
-Consumer A: Arcade / responsive Card selection
-Consumer B: Settings/Pause/HUD style UI
-```
+- API ergonomics;
+- customization coverage;
+- deterministic/headless testing;
+- Native/Web behavior;
+- cost/module surface;
+- migration from legacy `src/ui`;
+- decide what can be called GPE.UI v1 candidate.
 
-Purpose:
+---
 
-- validate responsive grid/cards and multimodal navigation in a real app;
-- validate non-Card controls and styling;
-- avoid an Arcade-shaped API;
-- measure migration friction;
-- discover missing small-game ergonomics before deprecating legacy UI.
+# 3. Explicit non-goals before their slice
 
-## P8 — v1 candidate checkpoint
-
-Possible result:
+Do not opportunistically implement:
 
 ```text
-GO v1 candidate
-REVISE
-STOP / retain experimental
-```
-
-A v1 candidate still does not automatically include:
-
-```text
+styling features before P3
+rounded corners before P3
+typography changes outside P4
 markup
 SVG
-animation framework
-inspector
-accessibility projection
-advanced layout engine
-```
-
-Those remain later/optional capabilities unless new evidence changes priority.
-
----
-
-# 4. Cross-cutting gates
-
-Every implementation slice must keep:
-
-```text
-cargo fmt --check
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
-cargo build --release --examples
-Web build/package CI
-```
-
-When behavior is visible or input-dependent, add a bounded human runtime gate.
-
-Build/package is never evidence of browser runtime behavior by itself.
-
----
-
-# 5. Current carried conditions / backlog
-
-## Allocation attribution
-
-Source: MFE-001C.
-
-Current experimental dumps are constructed on every transaction and contaminate allocation counts.
-
-Disposition:
-
-```text
-P5 — mandatory before v1 candidate
-not an Architecture-B blocker
-```
-
-## Web `GameResult::Exit`
-
-Tracked independently:
-
-`#73 — web: define GameResult::Exit browser lifecycle semantics`
-
-Disposition:
-
-```text
-generic platform lifecycle backlog
-not a GPE.UI productionization blocker
-must not be hidden by UI-specific behavior
-```
-
-## Typography / missing glyph
-
-Existing UI follow-up remains active.
-
-Disposition:
-
-```text
-parallel visual-quality backlog
-must be addressed before showcase-quality/v1 UX claim
-not a P0 convergence blocker
+Taffy integration without evidence
+animation without an explicit slice
+Arcade migration before consumer gates
+legacy UI removal before migration review
+public API freeze before P7
 ```
 
 ---
 
-# 6. Branch / review discipline
+# 4. Branch / review discipline
 
-Use one active implementation branch for the current productionization slice.
+Use one active implementation branch per explicit productionization slice.
 
-Do not create review-only branches.
+Reviews and checkpoints are commits/PR state on that branch, not branch proliferation.
 
-A draft PR may be used as CI harness, but it is not merge approval.
-
-After a coherent slice passes automated and required human gates:
-
-```text
-formal result/checkpoint
-squash merge
-branch cleanup
-next slice from updated main
-```
-
-This keeps history reviewable without maintaining multiple divergent UI implementations.
+CI green proves build/test/package gates only; human runtime gates remain explicit where required.
 
 ---
 
-# 7. Immediate execution direction
-
-Start with **P0 only**.
-
-P0 must not implement rounded corners, a style system, consumer migration, markup, SVG, or API deprecation.
-
-The first code change should reduce architectural duplication rather than add visible features.
-
-Expected P0 output:
+# 5. Current STOP
 
 ```text
-shared kernel interaction types/state/output boundary
-spatial MFE behavior routed toward that boundary
-existing MFE probes remain valid
-no consumer-visible regression
-STOP for review before P1/P2
+P0 = PASS
+P1 = PASS
+STOP
 ```
+
+Do not begin P2 until P1 is merged and P2 is explicitly started from the resulting `main` baseline.
