@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION P2 RESULT v0.1
 
-Status: **READY FOR HUMAN NATIVE RUNTIME GATE**
+Status: **PASS / STOP**
 
 P2 contract:
 
@@ -18,9 +18,13 @@ Validation workflow:
 
 `CI #668` — **PASS**
 
+Human runtime gate:
+
+`P2 NATIVE RUNTIME = PASS`
+
 ---
 
-# 1. Verdict before human runtime
+# 1. Final verdict
 
 ```text
 P2.1 shared layout primitives     PASS
@@ -29,15 +33,15 @@ P2.3 transactional Grid           PASS
 P2.4 linear convergence           PASS
 P2.5 closure review               PASS
 Automated Native gates            PASS
-Web build/package                  PASS
-Conventional Commits               PASS
-Human Native runtime              PENDING
+Web build/package                 PASS
+Conventional Commits              PASS
+Human Native runtime              PASS
 
-GPE.UI PRODUCTIONIZATION P2       PENDING HUMAN RUNTIME
-STOP BEFORE MERGE / STOP BEFORE P3
+GPE.UI PRODUCTIONIZATION P2       PASS
+STOP
 ```
 
-No final P2 PASS is claimed until the required Native runtime gate is completed.
+P2 is complete. This verdict closes P2 only; it does not start or authorize P3 implementation in this branch.
 
 ---
 
@@ -45,7 +49,7 @@ No final P2 PASS is claimed until the required Native runtime gate is completed.
 
 P2 removes the remaining proven layout split without creating a browser-style layout subsystem.
 
-Shared `src/ui/layout.rs` now owns the generic geometry rules:
+Shared `src/ui/layout.rs` owns the generic geometry rules:
 
 ```text
 UiGridSpec
@@ -59,7 +63,7 @@ The shared layer is independent of Card/Image/TextRenderer/ActionId/interaction 
 
 The Spatial compatibility adapter resolves generic card-cell Rects through `layout_responsive_grid` and retains only Card-specific image/text subdivision and painting.
 
-The transactional graph now supports:
+The transactional graph supports:
 
 ```text
 UiBuilder::column
@@ -84,7 +88,7 @@ saturating inset arithmetic
 vertical padding/gap/child-height placement
 ```
 
-Transactional coverage additionally proves a responsive Grid containing unlike arbitrary widgets:
+Transactional coverage proves a responsive Grid containing unlike arbitrary widgets:
 
 ```text
 Button
@@ -94,8 +98,6 @@ SliderF32
 Text
 ```
 
-The wide and small surfaces resolve different column geometries through the same Grid contract.
-
 Existing P1/MFE regression coverage continues to validate interaction, keyed focus, pointer/touch capture, typed proposals, deterministic fallback and single-build transaction semantics.
 
 ---
@@ -104,34 +106,23 @@ Existing P1/MFE regression coverage continues to validate interaction, keyed foc
 
 P2.5 reviewed the production paths rather than only the tests.
 
-Result:
-
 ```text
-one generic responsive grid algorithm      YES
+one generic responsive grid algorithm          YES
     layout::layout_responsive_grid
 
-one generic vertical placement algorithm   YES
+one generic vertical placement algorithm       YES
     layout::layout_vertical_children
 
-Spatial card track computation duplicated  NO
+Spatial card track computation duplicated      NO
 transactional Grid track computation duplicated NO
-Card-specific subdivision after cell Rect  YES — intentional adapter concern
+Card-specific subdivision after cell Rect      YES — intentional adapter concern
 
-styling / rounded corners                   NOT TOUCHED
-Typography                                  NOT TOUCHED
-platform/input transport                    NOT TOUCHED
-Taffy / DOM / CSS / markup                  NOT INTRODUCED
-consumer migration                          NOT STARTED
-public v1 API freeze                        NOT STARTED
-```
-
-PR #79 Rust scope remains limited to:
-
-```text
-src/ui/experimental.rs
-src/ui/experimental_spatial.rs
-src/ui/layout.rs
-src/ui/mod.rs
+styling / rounded corners                       NOT TOUCHED
+Typography                                      NOT TOUCHED
+platform/input transport                        NOT TOUCHED
+Taffy / DOM / CSS / markup                      NOT INTRODUCED
+consumer migration                              NOT STARTED
+public v1 API freeze                            NOT STARTED
 ```
 
 ---
@@ -141,30 +132,24 @@ src/ui/mod.rs
 CI #668 on implementation head `2170c3c2656fb247ae682f439986c34e2ddfb104` completed successfully.
 
 ```text
-cargo fmt --check                                      PASS
-cargo test                                             PASS
+cargo fmt --check                                         PASS
+cargo test                                                PASS
 cargo clippy --all-targets --all-features -- -D warnings PASS
-cargo build --release --examples                      PASS
-Web targets                                            PASS
-Web packaging                                          PASS
-Conventional Commits                                   PASS
+cargo build --release --examples                         PASS
+Web targets                                               PASS
+Web packaging                                             PASS
+Conventional Commits                                      PASS
 ```
 
-The preceding #667 run stopped on a rustfmt import-order diff only; commit `2170c3c2656fb247ae682f439986c34e2ddfb104` applies exactly that formatter output. The commit diff contains no functional change.
+The preceding #667 run stopped on a rustfmt import-order diff only; commit `2170c3c2656fb247ae682f439986c34e2ddfb104` applies exactly that formatter output and contains no functional change.
 
 ---
 
-# 6. Remaining human gate
+# 6. Human Native runtime
 
-Because P2 changes resolved geometry, the existing MFE-001B Native probe must be run once.
+The required MFE-001B Native smoke test was executed after the geometry convergence.
 
-Required command:
-
-```powershell
-cargo run --release --example gpe_ui_mfe_001b_probe
-```
-
-Verify:
+Verified by the human runtime gate:
 
 ```text
 responsive wide / medium / small layout
@@ -175,20 +160,23 @@ gamepad navigation/activation
 no obvious clipping/overlap regression
 ```
 
-A browser runtime rerun is not required because P2 does not change platform/render/input transport semantics; Web build/package is already PASS.
-
----
-
-# 7. Finalization rule
-
-If the human gate passes, update this document to:
+Result:
 
 ```text
 P2 NATIVE RUNTIME = PASS
+```
+
+A browser runtime rerun was not required because P2 did not change platform/render/input transport semantics; Web build/package is PASS.
+
+---
+
+# 7. STOP
+
+```text
 GPE.UI PRODUCTIONIZATION P2 = PASS
 STOP
 ```
 
-Then run final CI for the closing documentation commit and only after that merge PR #79.
+PR #79 may be merged only after the final CI on the closing documentation head is green.
 
-If the human gate exposes a geometry regression, P2 remains open and the smallest falsifiable correction is required before final PASS.
+P3 must start separately from the merged `main` baseline.
