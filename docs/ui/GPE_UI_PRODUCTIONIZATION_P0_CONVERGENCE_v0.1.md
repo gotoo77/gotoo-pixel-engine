@@ -149,18 +149,23 @@ Pointer hit-testing and spatial navigation operate on resolved targets, not Card
 
 ## 2.5 Output
 
-One canonical `UiOutput` owns:
+One canonical semantic output owns:
 
 ```text
 focused id
 hovered id when pointer input exists
 activated ids
 ActionId intentions
-typed proposed value changes
 cancel request
+```
+
+Transactional `UiOutput` additionally owns:
+
+```text
+typed proposed value changes
 diagnostics
 metrics
-optional/debug trace data
+transaction/debug trace data
 ```
 
 Grid-specific geometry observations may remain widget/layout-specific data returned to a probe, but activation/focus/action state must not require a second `SpatialOutput` authority.
@@ -329,16 +334,22 @@ The adapters are temporary evidence-preservation surfaces, not proposed v1 names
 - retain compatibility aliases for `PointerInput` / `SpatialInput`;
 - zero behavior change.
 
+Status: **IMPLEMENTED / CI PASS at checkpoint**.
+
 ## P0.2 — shared interaction state primitives
 
 - move focus/pointer/touch capture authority toward one state representation;
 - keep keyed-kind/generation bookkeeping intact;
 - headless tests prove reorder/removal/capture behavior.
 
+Status: **IMPLEMENTED / CI PASS at checkpoint**.
+
 ## P0.3 — resolved generic interaction targets
 
 - extract Card-specific hit-test/navigation mechanics into generic resolved-target helpers;
 - preserve exact deterministic spatial ranking.
+
+Status: **IMPLEMENTED / CI PASS at checkpoint**.
 
 ## P0.4 — output convergence
 
@@ -346,10 +357,33 @@ The adapters are temporary evidence-preservation surfaces, not proposed v1 names
 - Card/Grid-specific output retains geometry only where useful;
 - avoid two competing semantic output authorities.
 
+Status: **IMPLEMENTED — validation pending on current head**.
+
+Current implementation:
+
+```text
+kernel::UiInteractionOutput
+    focused
+    hovered
+    activated ids
+    ActionId intentions
+    cancel request
+
+experimental::UiOutput
+    delegates semantic queries to UiInteractionOutput
+    retains generation + typed proposals + diagnostics + metrics + dump
+
+experimental_spatial::SpatialOutput
+    delegates semantic queries to UiInteractionOutput
+    retains Grid geometry + dump only
+```
+
 ## P0.5 — adapter closure
 
 - existing MFE probes exercise the converged internals;
 - no second independent runtime remains underneath the compatibility API.
+
+Status: **NOT STARTED**.
 
 ---
 
