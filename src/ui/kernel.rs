@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{ActionId, Rect, Touch};
+use crate::{ActionId, Rect, Touch, TouchPhase};
 
 pub(crate) use super::experimental::{UiId, UiNavInput};
 
@@ -28,15 +28,18 @@ pub struct UiInput<'a> {
     pub touches: &'a [Touch],
 }
 
-/// Frame-local resolved target contract consumed by generic hit-testing and
-/// spatial navigation.
+/// Frame-local resolved target contract consumed by generic interaction.
 ///
-/// The target itself may be a widget/layout-specific record such as the
-/// MFE-001B `CardLayout`; the interaction kernel only requires stable identity
-/// and final integer geometry.
+/// Targets are transient resolved geometry, not retained widgets. Focusability
+/// is represented by membership in the target slice. Activation is separate:
+/// e.g. a Slider can accept focus without treating Confirm/click as activation.
 pub(crate) trait UiResolvedTarget {
     fn ui_id(&self) -> UiId;
     fn ui_rect(&self) -> Rect;
+
+    fn ui_accepts_activation(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +60,16 @@ impl UiNavDirection {
             _ => None,
         }
     }
+}
+
+/// Navigation policy applied by the shared interaction pass.
+///
+/// This is deliberately a policy choice over one focus authority rather than
+/// a second state/runtime model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UiNavigationPolicy {
+    Linear,
+    Spatial,
 }
 
 /// Returns the top-most resolved target at `position` using stable resolved
@@ -105,6 +118,129 @@ pub(crate) fn spatial_candidate<T: UiResolvedTarget>(
         })
         .min_by_key(|(score, _)| *score)
         .map(|(_, id)| id)
+}
+
+/// Runs one generic interaction transaction over already-resolved targets.
+///
+/// Layout/widget adapters provide the transient target geometry and semantic
+/// `ActionId` lookup. The kernel owns focus repair, navigation, hover,
+/// pointer/touch capture, activation, cancel and order finalization.
+pub(crate) fn run_interaction_pass<T, F>(
+    state: &mut UiInteractionState,
+    input: UiInput<'_>,
+    targets: &[T],
+    navigation: UiNavigationPolicy,
+    action_for: F,
+) -> UiInteractionOutput
+where
+    T: UiResolvedTarget,
+    F: Fn(UiId) -> Option<ActionId>,
+{
+    let current_order = targets
+        .iter()
+        .map(UiResolvedTarget::ui_id)
+        .collect::<Vec<_>>();
+    state.repair_for_current_order(&current_order);
+
+    match navigation {
+        UiNavigationPolicy::Linear => state.navigate_linear(input.nav, &current_order),
+        UiNavigationPolicy::Spatial => {
+            if let Some(direction) = UiNavDirection::from_nav(input.nav)
+                && let Some(focused) = state.focused_id()
+                && let Some(next) = spatial_candidate(focused, direction, targets)
+            {
+                state.set_focused_id(Some(next));
+            }
+        }
+    }
+
+    let hovered = input
+        .pointer
+        .position
+        .and_then(|position| hit_test_resolved(position, targets));
+    let mut output = UiInteractionOutput::new(None, hovered, input.nav.cancel);
+
+    if input.pointer.pressed {
+        state.set_pointer_capture(hovered);
+        if hovered.is_some() {
+            state.set_focused_id(hovered);
+        }
+    }
+
+    if input.pointer.released {
+        if let Some(captured) = state.pointer_capture_id()
+            && hovered == Some(captured)
+        {
+            activate_target(captured, targets, &action_for, &mut output);
+        }
+        state.set_pointer_capture(None);
+    }
+
+    for touch in input.touches {
+        match touch.phase {
+            TouchPhase::Started => {
+                if let Some(position) = touch.position
+                    && let Some(target) = hit_test_resolved(position, targets)
+                {
+                    state.set_touch_capture(touch.id, target);
+                    state.set_focused_id(Some(target));
+                }
+            }
+            TouchPhase::Moved => {
+                let Some(captured) = state.touch_capture_id(touch.id) else {
+                    continue;
+                };
+                if !touch
+                    .position
+                    .and_then(|position| hit_test_resolved(position, targets))
+                    .is_some_and(|target| target == captured)
+                {
+                    state.clear_touch_capture(touch.id);
+                }
+            }
+            TouchPhase::Ended => {
+                if let Some(captured) = state.remove_touch_capture(touch.id)
+                    && touch
+                        .position
+                        .and_then(|position| hit_test_resolved(position, targets))
+                        == Some(captured)
+                {
+                    activate_target(captured, targets, &action_for, &mut output);
+                }
+            }
+            TouchPhase::Cancelled => {
+                state.clear_touch_capture(touch.id);
+            }
+        }
+    }
+
+    if input.nav.confirm
+        && let Some(focused) = state.focused_id()
+    {
+        activate_target(focused, targets, &action_for, &mut output);
+    }
+
+    state.commit_order(&current_order);
+    output.set_focused_id(state.focused_id());
+    output
+}
+
+fn activate_target<T, F>(
+    id: UiId,
+    targets: &[T],
+    action_for: &F,
+    output: &mut UiInteractionOutput,
+) where
+    T: UiResolvedTarget,
+    F: Fn(UiId) -> Option<ActionId>,
+{
+    if targets
+        .iter()
+        .find(|target| target.ui_id() == id)
+        .is_some_and(UiResolvedTarget::ui_accepts_activation)
+    {
+        output.activate(id, action_for(id));
+    }
 }
 
 fn rect_contains(rect: Rect, position: (i32, i32)) -> bool {
@@ -365,6 +501,23 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Clone, Copy)]
+    struct PassiveTarget(TestTarget);
+
+    impl UiResolvedTarget for PassiveTarget {
+        fn ui_id(&self) -> UiId {
+            self.0.id
+        }
+
+        fn ui_rect(&self) -> Rect {
+            self.0.rect
+        }
+
+        fn ui_accepts_activation(&self) -> bool {
+            false
+        }
+    }
+
     fn ids() -> Vec<UiId> {
         let mut state = UiStateStore::default();
         let (_, ids) = run_headless(
@@ -383,6 +536,21 @@ mod tests {
             },
         );
         ids
+    }
+
+    fn row_targets(ids: &[UiId]) -> Vec<TestTarget> {
+        ids.iter()
+            .enumerate()
+            .map(|(index, id)| TestTarget {
+                id: *id,
+                rect: Rect {
+                    x: (index as i32) * 30,
+                    y: 0,
+                    width: 20,
+                    height: 20,
+                },
+            })
+            .collect()
     }
 
     #[test]
@@ -477,6 +645,147 @@ mod tests {
             spatial_candidate(ids[0], UiNavDirection::Down, &targets),
             Some(ids[2])
         );
+    }
+
+    #[test]
+    fn interaction_pass_linear_navigation_uses_shared_state() {
+        let ids = ids();
+        let targets = row_targets(&ids);
+        let mut state = UiInteractionState::default();
+
+        let output = run_interaction_pass(
+            &mut state,
+            UiInput {
+                nav: UiNavInput {
+                    down: true,
+                    ..UiNavInput::default()
+                },
+                ..UiInput::default()
+            },
+            &targets,
+            UiNavigationPolicy::Linear,
+            |_| None,
+        );
+
+        assert_eq!(output.focused_id(), Some(ids[1]));
+    }
+
+    #[test]
+    fn interaction_pass_pointer_release_activates_captured_target() {
+        let ids = ids();
+        let targets = row_targets(&ids);
+        let mut state = UiInteractionState::default();
+
+        let pressed = run_interaction_pass(
+            &mut state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some((35, 5)),
+                    pressed: true,
+                    released: false,
+                },
+                ..UiInput::default()
+            },
+            &targets,
+            UiNavigationPolicy::Linear,
+            |_| Some(ACTION),
+        );
+        assert_eq!(pressed.focused_id(), Some(ids[1]));
+        assert_eq!(state.pointer_capture_id(), Some(ids[1]));
+        assert!(!pressed.activated(ids[1]));
+
+        let released = run_interaction_pass(
+            &mut state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some((35, 5)),
+                    pressed: false,
+                    released: true,
+                },
+                ..UiInput::default()
+            },
+            &targets,
+            UiNavigationPolicy::Linear,
+            |_| Some(ACTION),
+        );
+        assert!(released.activated(ids[1]));
+        assert!(released.action_pressed(ACTION));
+        assert_eq!(state.pointer_capture_id(), None);
+    }
+
+    #[test]
+    fn interaction_pass_touch_move_off_cancels_capture() {
+        let ids = ids();
+        let targets = row_targets(&ids);
+        let mut state = UiInteractionState::default();
+        let started = [Touch {
+            id: 7,
+            phase: TouchPhase::Started,
+            position: Some((5, 5)),
+        }];
+        let moved = [Touch {
+            id: 7,
+            phase: TouchPhase::Moved,
+            position: Some((200, 200)),
+        }];
+
+        let _ = run_interaction_pass(
+            &mut state,
+            UiInput {
+                touches: &started,
+                ..UiInput::default()
+            },
+            &targets,
+            UiNavigationPolicy::Linear,
+            |_| Some(ACTION),
+        );
+        assert_eq!(state.touch_capture_id(7), Some(ids[0]));
+
+        let output = run_interaction_pass(
+            &mut state,
+            UiInput {
+                touches: &moved,
+                ..UiInput::default()
+            },
+            &targets,
+            UiNavigationPolicy::Linear,
+            |_| Some(ACTION),
+        );
+        assert_eq!(state.touch_capture_id(7), None);
+        assert!(!output.activated(ids[0]));
+    }
+
+    #[test]
+    fn interaction_pass_does_not_activate_passive_target() {
+        let ids = ids();
+        let targets = [PassiveTarget(TestTarget {
+            id: ids[0],
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 20,
+                height: 20,
+            },
+        })];
+        let mut state = UiInteractionState::default();
+
+        let output = run_interaction_pass(
+            &mut state,
+            UiInput {
+                nav: UiNavInput {
+                    confirm: true,
+                    ..UiNavInput::default()
+                },
+                ..UiInput::default()
+            },
+            &targets,
+            UiNavigationPolicy::Linear,
+            |_| Some(ACTION),
+        );
+
+        assert_eq!(output.focused_id(), Some(ids[0]));
+        assert!(!output.activated(ids[0]));
+        assert!(!output.action_pressed(ACTION));
     }
 
     #[test]
