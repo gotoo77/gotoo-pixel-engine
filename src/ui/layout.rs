@@ -35,6 +35,32 @@ pub(crate) fn inset_rect(rect: Rect, inset: u32) -> Rect {
     }
 }
 
+pub(crate) fn layout_vertical_children(
+    bounds: Rect,
+    padding: u32,
+    gap: u32,
+    child_heights: &[u32],
+) -> Vec<Rect> {
+    let x = bounds.x.saturating_add(u32_to_i32(padding));
+    let width = bounds.width.saturating_sub(padding.saturating_mul(2));
+    let mut y = bounds.y.saturating_add(u32_to_i32(padding));
+    let mut rects = Vec::with_capacity(child_heights.len());
+
+    for &height in child_heights {
+        rects.push(Rect {
+            x,
+            y,
+            width,
+            height,
+        });
+        y = y
+            .saturating_add(u32_to_i32(height))
+            .saturating_add(u32_to_i32(gap));
+    }
+
+    rects
+}
+
 pub(crate) fn layout_responsive_grid(
     bounds: Rect,
     spec: UiGridSpec,
@@ -188,6 +214,39 @@ mod tests {
             1,
         );
         assert!(unusable.rects.is_empty());
+    }
+
+    #[test]
+    fn vertical_layout_preserves_padding_gap_and_child_heights() {
+        let rects = layout_vertical_children(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 100,
+                height: 200,
+            },
+            8,
+            4,
+            &[10, 20],
+        );
+
+        assert_eq!(
+            rects,
+            vec![
+                Rect {
+                    x: 18,
+                    y: 28,
+                    width: 84,
+                    height: 10,
+                },
+                Rect {
+                    x: 18,
+                    y: 42,
+                    width: 84,
+                    height: 20,
+                },
+            ]
+        );
     }
 
     #[test]
