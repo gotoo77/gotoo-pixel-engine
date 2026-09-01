@@ -5,10 +5,6 @@ use std::ops::RangeInclusive;
 
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
-pub use super::{
-    kernel::{UiInput, UiPointerInput},
-    layout::UiGridSpec,
-};
 use super::{
     UiTheme,
     kernel::{
@@ -16,6 +12,10 @@ use super::{
         run_interaction_pass,
     },
     layout::{layout_responsive_grid, layout_vertical_children},
+};
+pub use super::{
+    kernel::{UiInput, UiPointerInput},
+    layout::UiGridSpec,
 };
 
 const ROOT_ID: u64 = 0xcbf29ce484222325;
