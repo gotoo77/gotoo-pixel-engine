@@ -82,9 +82,8 @@ impl Game for Mfe001aProbe {
                     ));
 
                     ui.column(|ui| {
-                        let enabled = ui.keyed("enabled", |ui| {
-                            ui.toggle("ENABLED", snapshot.enabled)
-                        });
+                        let enabled =
+                            ui.keyed("enabled", |ui| ui.toggle("ENABLED", snapshot.enabled));
                         let volume = ui.keyed("volume", |ui| {
                             ui.slider_f32("VOLUME", snapshot.volume, 0.0..=1.0, 0.05)
                         });
