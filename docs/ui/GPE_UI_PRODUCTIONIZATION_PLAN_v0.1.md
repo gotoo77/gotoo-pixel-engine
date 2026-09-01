@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN — P0/P1 COMPLETE, P2 HUMAN GATE PENDING**
+Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE**
 
 Baseline:
 
@@ -16,8 +16,7 @@ MFE-001C       PASS WITH CONDITIONS
 Architecture B GO
 P0             PASS
 P1             PASS
-P2 automated   PASS
-P2 human       PENDING
+P2             PASS
 ```
 
 ## Mission
@@ -41,7 +40,7 @@ Productionization must preserve the strategic direction validated by the MFE seq
 
 ## 0. Productionization convergence checkpoint
 
-P0 and P1 removed the experimental split at the interaction-kernel level. P2 has now converged the proven layout algorithms at implementation level, pending the final human Native runtime gate.
+P0 and P1 removed the experimental split at the interaction-kernel level. P2 has now converged the proven layout algorithms and passed its Native human runtime gate.
 
 The productionization checkpoint is:
 
@@ -58,7 +57,7 @@ one generic vertical child-placement algorithm
 
 The compatibility modules still exist as evidence/migration surfaces, but they no longer justify separate interaction or layout runtimes.
 
-Therefore the original prohibition remains in force:
+The original prohibition remains in force:
 
 ```text
 DO NOT simply rename experimental.rs -> core.rs and call it production.
@@ -74,9 +73,9 @@ P1 result:
 
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P1_RESULT_v0.1.md`
 
-P2 contract:
+P2 result:
 
-`docs/ui/GPE_UI_PRODUCTIONIZATION_P2_LAYOUT_v0.1.md`
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P2_RESULT_v0.1.md`
 
 ---
 
@@ -136,13 +135,15 @@ P1 did not change platform/input transport semantics.
 
 ## P2 — Consumer-grade layout composition
 
-Status: **IMPLEMENTATION + AUTOMATED GATES PASS — HUMAN NATIVE GATE PENDING**.
+Status: **PASS / STOP**.
 
 Validated implementation head:
 
 `2170c3c2656fb247ae682f439986c34e2ddfb104`
 
 CI #668: PASS.
+
+Human Native runtime: PASS.
 
 Converged:
 
@@ -155,7 +156,7 @@ transactional UiBuilder::grid composes arbitrary widgets
 Root/Column/Panel final vertical placement uses shared primitive
 ```
 
-P2 remains under STOP until the required MFE-001B Native smoke test passes and the formal P2 result is finalized.
+P2 changed resolved geometry but did not change platform/render/input transport semantics. Web build/package passed; a browser runtime rerun was therefore not required.
 
 ## P3 — Styling / theming / customization
 
@@ -190,6 +191,8 @@ sprite / nine-slice where consumer evidence supports it
 ```
 
 Do not turn this into CSS.
+
+P3 is **not started by the P2 closure**. It must begin explicitly from the merged P2 `main` baseline on its own implementation branch.
 
 ## P4 — Typography follow-up
 
@@ -258,6 +261,8 @@ Reviews and checkpoints are commits/PR state on that branch, not branch prolifer
 
 CI green proves build/test/package gates only; human runtime gates remain explicit where required.
 
+Rust changes must be formatter-clean before commit/push; CI is a validator, not the primary rustfmt detector.
+
 ---
 
 # 5. Current STOP
@@ -265,10 +270,10 @@ CI green proves build/test/package gates only; human runtime gates remain explic
 ```text
 P0 = PASS
 P1 = PASS
-P2 AUTOMATED = PASS
-P2 CLOSURE REVIEW = PASS
-P2 HUMAN NATIVE RUNTIME = PENDING
-STOP BEFORE P3 / STOP BEFORE MERGE
+P2 = PASS
+STOP
 ```
 
-Do not begin P3 until P2 is formally closed and merged.
+Merge P2 only after the final closing-documentation CI is green.
+
+Do not begin P3 until P2 is merged and P3 is explicitly started from the resulting `main` baseline.
