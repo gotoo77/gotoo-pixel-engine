@@ -1,14 +1,23 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer, Touch,
-    TouchPhase,
+    ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer, TouchPhase,
 };
+#[cfg(test)]
+use crate::Touch;
 
 use super::{
     UiTheme,
-    experimental::{UiId, UiNavInput},
+    kernel::{UiId, UiInput, UiNavInput, UiPointerInput},
 };
+
+/// Compatibility name retained while the MFE-001B spatial adapter converges
+/// into the production kernel.
+pub type PointerInput = UiPointerInput;
+
+/// Compatibility name retained while the MFE-001B spatial adapter converges
+/// into the production kernel.
+pub type SpatialInput<'a> = UiInput<'a>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridSpec {
@@ -27,20 +36,6 @@ impl Default for GridSpec {
             padding: 8,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct PointerInput {
-    pub position: Option<(i32, i32)>,
-    pub pressed: bool,
-    pub released: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SpatialInput<'a> {
-    pub nav: UiNavInput,
-    pub pointer: PointerInput,
-    pub touches: &'a [Touch],
 }
 
 #[derive(Debug, Clone, Copy)]
