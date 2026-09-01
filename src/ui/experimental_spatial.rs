@@ -1,14 +1,26 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
+#[cfg(test)]
+use crate::Touch;
 use crate::{
-    ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer, Touch,
-    TouchPhase,
+    ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, TextRenderer, TouchPhase,
 };
 
 use super::{
     UiTheme,
-    experimental::{UiId, UiNavInput},
+    kernel::{
+        UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavDirection, UiPointerInput,
+        UiResolvedTarget, hit_test_resolved, spatial_candidate as resolved_spatial_candidate,
+    },
 };
+
+/// Compatibility name retained while the MFE-001B spatial adapter converges
+/// into the production kernel.
+pub type PointerInput = UiPointerInput;
+
+/// Compatibility name retained while the MFE-001B spatial adapter converges
+/// into the production kernel.
+pub type SpatialInput<'a> = UiInput<'a>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GridSpec {
@@ -29,20 +41,6 @@ impl Default for GridSpec {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct PointerInput {
-    pub position: Option<(i32, i32)>,
-    pub pressed: bool,
-    pub released: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SpatialInput<'a> {
-    pub nav: UiNavInput,
-    pub pointer: PointerInput,
-    pub touches: &'a [Touch],
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct SpatialCard<'a> {
     pub id: UiId,
@@ -58,6 +56,16 @@ pub struct CardLayout {
     pub rect: Rect,
     pub image_rect: Rect,
     pub text_rect: Rect,
+}
+
+impl UiResolvedTarget for CardLayout {
+    fn ui_id(&self) -> UiId {
+        self.id
+    }
+
+    fn ui_rect(&self) -> Rect {
+        self.rect
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -172,32 +180,30 @@ impl CardPainter for DefaultCardPainter {
 
 #[derive(Debug, Default)]
 pub struct SpatialState {
-    focused: Option<UiId>,
-    pointer_capture: Option<UiId>,
-    touch_capture: HashMap<u64, UiId>,
-    previous_order: Vec<UiId>,
+    interaction: UiInteractionState,
 }
 
 impl SpatialState {
     pub const fn focused_id(&self) -> Option<UiId> {
-        self.focused
+        self.interaction.focused_id()
     }
 
     pub const fn pointer_capture_id(&self) -> Option<UiId> {
-        self.pointer_capture
+        self.interaction.pointer_capture_id()
     }
 
     pub fn touch_capture_count(&self) -> usize {
-        self.touch_capture.len()
+        self.interaction.touch_capture_count()
     }
 }
 
+/// Compatibility wrapper retained for the MFE-001B probes.
+///
+/// Semantic interaction state is owned by the shared kernel output. This type
+/// only adds Grid-specific geometry and the deterministic textual dump.
 #[derive(Debug, Clone)]
 pub struct SpatialOutput {
-    focused: Option<UiId>,
-    hovered: Option<UiId>,
-    activated: HashSet<UiId>,
-    actions: Vec<ActionId>,
+    interaction: UiInteractionOutput,
     columns: usize,
     rows: usize,
     layouts: Vec<CardLayout>,
@@ -206,19 +212,23 @@ pub struct SpatialOutput {
 
 impl SpatialOutput {
     pub const fn focused_id(&self) -> Option<UiId> {
-        self.focused
+        self.interaction.focused_id()
     }
 
     pub const fn hovered_id(&self) -> Option<UiId> {
-        self.hovered
+        self.interaction.hovered_id()
     }
 
     pub fn activated(&self, id: UiId) -> bool {
-        self.activated.contains(&id)
+        self.interaction.activated(id)
     }
 
     pub fn action_pressed(&self, action: ActionId) -> bool {
-        self.actions.contains(&action)
+        self.interaction.action_pressed(action)
+    }
+
+    pub const fn cancel_requested(&self) -> bool {
+        self.interaction.cancel_requested()
     }
 
     pub const fn columns(&self) -> usize {
@@ -257,10 +267,9 @@ pub fn run_card_grid<P: CardPainter>(
 
     for (card, layout) in cards.iter().zip(output.layouts.iter().copied()) {
         let visual = CardVisualState {
-            focused: output.focused == Some(card.id),
-            hovered: output.hovered == Some(card.id),
-            active: state.pointer_capture == Some(card.id)
-                || state.touch_capture.values().any(|id| *id == card.id),
+            focused: output.focused_id() == Some(card.id),
+            hovered: output.hovered_id() == Some(card.id),
+            active: state.interaction.is_active(card.id),
         };
         painter.paint(framebuffer, card, layout, visual, theme);
     }
@@ -287,178 +296,104 @@ fn resolve_card_grid(
 ) -> SpatialOutput {
     let (columns, rows, layouts) = layout_cards(bounds, spec, cards);
     let current_order = cards.iter().map(|card| card.id).collect::<Vec<_>>();
-    repair_state_for_current_cards(state, &current_order);
+    state.interaction.repair_for_current_order(&current_order);
 
-    if let Some(direction) = nav_direction(input.nav)
-        && let Some(focused) = state.focused
-        && let Some(next) = spatial_candidate(focused, direction, &layouts)
+    if let Some(direction) = UiNavDirection::from_nav(input.nav)
+        && let Some(focused) = state.interaction.focused_id()
+        && let Some(next) = resolved_spatial_candidate(focused, direction, &layouts)
     {
-        state.focused = Some(next);
+        state.interaction.set_focused_id(Some(next));
     }
 
     let hovered = input
         .pointer
         .position
-        .and_then(|position| hit_test(position, &layouts));
-
-    let mut activated = HashSet::new();
-    let mut actions = Vec::new();
+        .and_then(|position| hit_test_resolved(position, &layouts));
+    let mut interaction = UiInteractionOutput::new(None, hovered, input.nav.cancel);
 
     if input.pointer.pressed {
-        state.pointer_capture = hovered;
+        state.interaction.set_pointer_capture(hovered);
         if hovered.is_some() {
-            state.focused = hovered;
+            state.interaction.set_focused_id(hovered);
         }
     }
 
     if input.pointer.released {
-        if let Some(captured) = state.pointer_capture
+        if let Some(captured) = state.interaction.pointer_capture_id()
             && hovered == Some(captured)
         {
-            activate(captured, cards, &mut activated, &mut actions);
+            activate(captured, cards, &mut interaction);
         }
-        state.pointer_capture = None;
+        state.interaction.set_pointer_capture(None);
     }
 
     for touch in input.touches {
         match touch.phase {
             TouchPhase::Started => {
                 if let Some(position) = touch.position
-                    && let Some(target) = hit_test(position, &layouts)
+                    && let Some(target) = hit_test_resolved(position, &layouts)
                 {
-                    state.touch_capture.insert(touch.id, target);
-                    state.focused = Some(target);
+                    state.interaction.set_touch_capture(touch.id, target);
+                    state.interaction.set_focused_id(Some(target));
                 }
             }
             TouchPhase::Moved => {
-                let Some(captured) = state.touch_capture.get(&touch.id).copied() else {
+                let Some(captured) = state.interaction.touch_capture_id(touch.id) else {
                     continue;
                 };
                 if !touch
                     .position
-                    .and_then(|position| hit_test(position, &layouts))
+                    .and_then(|position| hit_test_resolved(position, &layouts))
                     .is_some_and(|target| target == captured)
                 {
-                    state.touch_capture.remove(&touch.id);
+                    state.interaction.clear_touch_capture(touch.id);
                 }
             }
             TouchPhase::Ended => {
-                if let Some(captured) = state.touch_capture.remove(&touch.id)
+                if let Some(captured) = state.interaction.remove_touch_capture(touch.id)
                     && touch
                         .position
-                        .and_then(|position| hit_test(position, &layouts))
+                        .and_then(|position| hit_test_resolved(position, &layouts))
                         == Some(captured)
                 {
-                    activate(captured, cards, &mut activated, &mut actions);
+                    activate(captured, cards, &mut interaction);
                 }
             }
             TouchPhase::Cancelled => {
-                state.touch_capture.remove(&touch.id);
+                state.interaction.clear_touch_capture(touch.id);
             }
         }
     }
 
     if input.nav.confirm
-        && let Some(focused) = state.focused
+        && let Some(focused) = state.interaction.focused_id()
     {
-        activate(focused, cards, &mut activated, &mut actions);
+        activate(focused, cards, &mut interaction);
     }
 
-    state.previous_order = current_order;
+    state.interaction.commit_order(&current_order);
 
+    let focused = state.interaction.focused_id();
+    interaction.set_focused_id(focused);
     let dump = dump_layout(
         bounds,
         columns,
         rows,
         &layouts,
-        state.focused,
+        focused,
         hovered,
-        state.pointer_capture,
-        &state.touch_capture,
-        &activated,
+        state.interaction.pointer_capture_id(),
+        state.interaction.touch_captures(),
+        interaction.activated_ids(),
     );
 
     SpatialOutput {
-        focused: state.focused,
-        hovered,
-        activated,
-        actions,
+        interaction,
         columns,
         rows,
         layouts,
         dump,
     }
-}
-
-fn repair_state_for_current_cards(state: &mut SpatialState, current_order: &[UiId]) {
-    if current_order.is_empty() {
-        state.focused = None;
-        state.pointer_capture = None;
-        state.touch_capture.clear();
-        state.previous_order.clear();
-        return;
-    }
-
-    let current = current_order.iter().copied().collect::<HashSet<_>>();
-    state.pointer_capture = state.pointer_capture.filter(|id| current.contains(id));
-    state.touch_capture.retain(|_, id| current.contains(id));
-
-    if state.focused.is_some_and(|id| current.contains(&id)) {
-        return;
-    }
-
-    let fallback_index = state
-        .focused
-        .and_then(|id| {
-            state
-                .previous_order
-                .iter()
-                .position(|previous| *previous == id)
-        })
-        .unwrap_or(0)
-        .min(current_order.len() - 1);
-    state.focused = Some(current_order[fallback_index]);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
-fn nav_direction(nav: UiNavInput) -> Option<Direction> {
-    match (nav.up, nav.down, nav.left, nav.right) {
-        (true, false, false, false) => Some(Direction::Up),
-        (false, true, false, false) => Some(Direction::Down),
-        (false, false, true, false) => Some(Direction::Left),
-        (false, false, false, true) => Some(Direction::Right),
-        _ => None,
-    }
-}
-
-fn spatial_candidate(focused: UiId, direction: Direction, layouts: &[CardLayout]) -> Option<UiId> {
-    let focused_layout = layouts.iter().find(|layout| layout.id == focused)?;
-    let (fx, fy) = rect_center(focused_layout.rect);
-
-    layouts
-        .iter()
-        .enumerate()
-        .filter(|(_, candidate)| candidate.id != focused)
-        .filter_map(|(index, candidate)| {
-            let (cx, cy) = rect_center(candidate.rect);
-            let (primary, secondary) = match direction {
-                Direction::Up if cy < fy => (fy - cy, (cx - fx).abs()),
-                Direction::Down if cy > fy => (cy - fy, (cx - fx).abs()),
-                Direction::Left if cx < fx => (fx - cx, (cy - fy).abs()),
-                Direction::Right if cx > fx => (cx - fx, (cy - fy).abs()),
-                _ => return None,
-            };
-            Some(((primary, secondary, index), candidate.id))
-        })
-        .min_by_key(|(score, _)| *score)
-        .map(|(_, id)| id)
 }
 
 fn layout_cards(
@@ -559,46 +494,12 @@ fn layout_cards(
     (columns, rows, layouts)
 }
 
-fn activate(
-    id: UiId,
-    cards: &[SpatialCard<'_>],
-    activated: &mut HashSet<UiId>,
-    actions: &mut Vec<ActionId>,
-) {
-    if !activated.insert(id) {
-        return;
-    }
-    if let Some(card) = cards.iter().find(|card| card.id == id) {
-        actions.push(card.action);
-    }
-}
-
-fn hit_test(position: (i32, i32), layouts: &[CardLayout]) -> Option<UiId> {
-    layouts
+fn activate(id: UiId, cards: &[SpatialCard<'_>], output: &mut UiInteractionOutput) {
+    let action = cards
         .iter()
-        .rev()
-        .find(|layout| rect_contains(layout.rect, position))
-        .map(|layout| layout.id)
-}
-
-fn rect_contains(rect: Rect, position: (i32, i32)) -> bool {
-    if rect.width == 0 || rect.height == 0 {
-        return false;
-    }
-    let px = i64::from(position.0);
-    let py = i64::from(position.1);
-    let left = i64::from(rect.x);
-    let top = i64::from(rect.y);
-    let right = left + i64::from(rect.width);
-    let bottom = top + i64::from(rect.height);
-    px >= left && px < right && py >= top && py < bottom
-}
-
-fn rect_center(rect: Rect) -> (i64, i64) {
-    (
-        i64::from(rect.x) + i64::from(rect.width) / 2,
-        i64::from(rect.y) + i64::from(rect.height) / 2,
-    )
+        .find(|card| card.id == id)
+        .map(|card| card.action);
+    output.activate(id, action);
 }
 
 fn inset_rect(rect: Rect, inset: u32) -> Rect {
@@ -648,7 +549,7 @@ fn dump_layout(
     hovered: Option<UiId>,
     pointer_capture: Option<UiId>,
     touch_capture: &HashMap<u64, UiId>,
-    activated: &HashSet<UiId>,
+    activated: &std::collections::HashSet<UiId>,
 ) -> String {
     use std::fmt::Write as _;
 
@@ -706,6 +607,7 @@ mod tests {
 
     use super::*;
     use crate::ui::experimental::{UiStateStore, run_headless};
+    use crate::ui::kernel::UiNavInput;
 
     const ACTION_A: ActionId = ActionId::new("mfe001b.a");
     const ACTION_B: ActionId = ActionId::new("mfe001b.b");
@@ -966,6 +868,25 @@ mod tests {
         assert!(released.activated(ids[0]));
         assert!(released.action_pressed(ACTION_A));
         assert_eq!(state.pointer_capture_id(), None);
+    }
+
+    #[test]
+    fn cancel_flows_through_shared_semantic_output() {
+        let ids = ids();
+        let cards = cards(&ids);
+        let mut state = SpatialState::default();
+        let output = run_card_grid_headless(
+            bounds(360),
+            &mut state,
+            input(UiNavInput {
+                cancel: true,
+                ..UiNavInput::default()
+            }),
+            GridSpec::default(),
+            &cards,
+        );
+
+        assert!(output.cancel_requested());
     }
 
     #[test]
