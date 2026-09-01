@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{Rect, Touch};
+use crate::{ActionId, Rect, Touch};
 
 pub(crate) use super::experimental::{UiId, UiNavInput};
 
@@ -225,6 +225,77 @@ impl UiInteractionState {
     }
 }
 
+/// Canonical frame-local semantic interaction result.
+///
+/// Widget/layout adapters may attach their own geometry and debug data, but
+/// focus, hover, activation, semantic actions and cancellation live here so
+/// they cannot diverge into Card-specific or widget-specific authorities.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct UiInteractionOutput {
+    focused: Option<UiId>,
+    hovered: Option<UiId>,
+    activated: HashSet<UiId>,
+    actions: Vec<ActionId>,
+    cancelled: bool,
+}
+
+impl UiInteractionOutput {
+    pub(crate) const fn new(
+        focused: Option<UiId>,
+        hovered: Option<UiId>,
+        cancelled: bool,
+    ) -> Self {
+        Self {
+            focused,
+            hovered,
+            activated: HashSet::new(),
+            actions: Vec::new(),
+            cancelled,
+        }
+    }
+
+    pub(crate) const fn focused_id(&self) -> Option<UiId> {
+        self.focused
+    }
+
+    pub(crate) fn set_focused_id(&mut self, focused: Option<UiId>) {
+        self.focused = focused;
+    }
+
+    pub(crate) const fn hovered_id(&self) -> Option<UiId> {
+        self.hovered
+    }
+
+    pub(crate) fn activated(&self, id: UiId) -> bool {
+        self.activated.contains(&id)
+    }
+
+    pub(crate) fn activated_ids(&self) -> &HashSet<UiId> {
+        &self.activated
+    }
+
+    pub(crate) fn activate(&mut self, id: UiId, action: Option<ActionId>) {
+        if !self.activated.insert(id) {
+            return;
+        }
+        if let Some(action) = action {
+            self.actions.push(action);
+        }
+    }
+
+    pub(crate) fn action_pressed(&self, action: ActionId) -> bool {
+        self.actions.contains(&action)
+    }
+
+    pub(crate) const fn cancel_requested(&self) -> bool {
+        self.cancelled
+    }
+
+    pub(crate) fn activation_count(&self) -> usize {
+        self.activated.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{ActionId, Size};
@@ -446,5 +517,23 @@ mod tests {
         state.clear_touch_capture(11);
         assert_eq!(state.touch_capture_id(11), None);
         assert!(state.touch_captures().is_empty());
+    }
+
+    #[test]
+    fn interaction_output_owns_semantic_result_without_duplicate_actions() {
+        let ids = ids();
+        let mut output = UiInteractionOutput::new(Some(ids[0]), Some(ids[1]), true);
+
+        output.activate(ids[1], Some(ACTION));
+        output.activate(ids[1], Some(ACTION));
+        output.set_focused_id(Some(ids[1]));
+
+        assert_eq!(output.focused_id(), Some(ids[1]));
+        assert_eq!(output.hovered_id(), Some(ids[1]));
+        assert!(output.activated(ids[1]));
+        assert!(output.action_pressed(ACTION));
+        assert!(output.cancel_requested());
+        assert_eq!(output.activation_count(), 1);
+        assert_eq!(output.activated_ids().len(), 1);
     }
 }
