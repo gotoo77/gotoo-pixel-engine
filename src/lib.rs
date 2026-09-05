@@ -17,6 +17,7 @@ mod input;
 #[cfg(feature = "outline-fonts")]
 pub mod outline_text;
 mod pixel;
+mod pixel_game_host;
 mod platform;
 mod presentation;
 mod renderer;
@@ -65,6 +66,7 @@ pub use input::{
     MouseButton, TextInputEvent, Touch, TouchPhase,
 };
 pub use pixel::Pixel;
+pub use pixel_game_host::PixelGameHost;
 #[cfg(feature = "diagnostics")]
 pub use platform::run_with_diagnostics;
 pub use platform::{
