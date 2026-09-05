@@ -21,10 +21,8 @@ impl HighResPresentationMfe {
         Self {
             game: Framebuffer::new(GAME_WIDTH, GAME_HEIGHT),
             #[cfg(feature = "outline-fonts")]
-            font: OutlineFont::from_bytes(include_bytes!(
-                "../assets/fonts/p4/unbounded/font.ttf"
-            ))
-            .ok(),
+            font: OutlineFont::from_bytes(include_bytes!("../assets/fonts/p4/unbounded/font.ttf"))
+                .ok(),
         }
     }
 
@@ -48,9 +46,12 @@ impl HighResPresentationMfe {
             }
         }
 
-        self.game.fill_rect(42, 54, 74, 52, Pixel::rgb(255, 205, 76));
-        self.game.fill_rect(204, 84, 48, 48, Pixel::rgb(255, 103, 145));
-        self.game.draw_rect(12, 12, 296, 156, Pixel::rgb(111, 238, 184));
+        self.game
+            .fill_rect(42, 54, 74, 52, Pixel::rgb(255, 205, 76));
+        self.game
+            .fill_rect(204, 84, 48, 48, Pixel::rgb(255, 103, 145));
+        self.game
+            .draw_rect(12, 12, 296, 156, Pixel::rgb(111, 238, 184));
     }
 
     fn render_high_res_ui(&mut self, frame: &mut Frame<'_>) {
@@ -60,9 +61,13 @@ impl HighResPresentationMfe {
             width: 1168,
             height: 128,
         };
-        frame
-            .framebuffer
-            .fill_rect(header.x, header.y, header.width, header.height, Pixel::rgb(4, 10, 17));
+        frame.framebuffer.fill_rect(
+            header.x,
+            header.y,
+            header.width,
+            header.height,
+            Pixel::rgb(4, 10, 17),
+        );
         frame.framebuffer.draw_rect(
             header.x,
             header.y,
@@ -127,13 +132,9 @@ impl HighResPresentationMfe {
         } else {
             Pixel::rgb(13, 38, 48)
         };
-        frame.framebuffer.fill_rect(
-            button.x,
-            button.y,
-            button.width,
-            button.height,
-            button_bg,
-        );
+        frame
+            .framebuffer
+            .fill_rect(button.x, button.y, button.width, button.height, button_bg);
         frame.framebuffer.draw_rect(
             button.x,
             button.y,
@@ -146,7 +147,11 @@ impl HighResPresentationMfe {
         if let Some(font) = self.font.as_mut() {
             let _ = font.draw(
                 frame.framebuffer,
-                if hovered { "POINTER: HIT" } else { "POINTER: MOVE HERE" },
+                if hovered {
+                    "POINTER: HIT"
+                } else {
+                    "POINTER: MOVE HERE"
+                },
                 22.0,
                 Rect {
                     x: button.x + 22,
