@@ -249,9 +249,9 @@ impl CatalogSearch {
     fn display(&self) -> String {
         if self.query.is_empty() {
             return if self.active {
-                "|  SEARCH GAMES".to_owned()
+                "| SEARCH".to_owned()
             } else {
-                "SEARCH GAMES   CTRL+F".to_owned()
+                "SEARCH / CTRL+F".to_owned()
             };
         }
         let before = &self.query[..self.cursor];
@@ -774,7 +774,7 @@ impl ArcadeApp {
         draw_text_centered(
             framebuffer,
             self.layout.footer,
-            "CTRL+F SEARCH  |  TAB FILTER  |  ARROWS/PAD  |  SPACE/SOUTH  |  MOUSE/TOUCH",
+            "CTRL+F SEARCH  |  TAB FILTER  |  ARROWS/PAD  |  SPACE/ENTER/SOUTH  |  MOUSE/TOUCH",
             1,
             MUTED,
         );
@@ -855,12 +855,12 @@ impl ArcadeApp {
             let _ = font.draw(
                 framebuffer,
                 &search_label,
-                13.5,
+                11.5,
                 Rect {
                     x: self.layout.search.x.saturating_add(10),
-                    y: self.layout.search.y.saturating_add(6),
+                    y: self.layout.search.y.saturating_add(8),
                     width: self.layout.search.width.saturating_sub(44),
-                    height: self.layout.search.height.saturating_sub(8),
+                    height: self.layout.search.height.saturating_sub(14),
                 },
                 if self.search.query.is_empty() && !self.search.active {
                     MUTED
@@ -869,11 +869,11 @@ impl ArcadeApp {
                 },
             );
             if visible.is_empty() {
-                let _ = font.draw(
+                draw_text_centered(
                     framebuffer,
-                    "NO GAMES MATCH",
-                    25.0,
                     self.layout.game_list,
+                    "NO GAMES MATCH",
+                    2,
                     MUTED,
                 );
                 return;
@@ -887,34 +887,35 @@ impl ArcadeApp {
                     5_u32.min(layout.rect.height),
                     accent,
                 );
-                let focused = output.focused_id() == Some(layout.id);
-                let title_color = if focused { ACCENT } else { FG };
-                let title_px = if output.columns() >= 3 { 15.0 } else { 18.0 };
-                let _ = font.draw(
+                draw_text_centered(
                     framebuffer,
-                    GAME_LABELS[game_index],
-                    title_px,
                     Rect {
-                        x: layout.text_rect.x.saturating_add(8),
-                        y: layout.text_rect.y.saturating_add(8),
-                        width: layout.text_rect.width.saturating_sub(16),
-                        height: layout.text_rect.height.saturating_sub(26),
+                        x: layout.rect.x.saturating_add(8),
+                        y: layout.rect.y.saturating_add(8),
+                        width: layout.rect.width.saturating_sub(16),
+                        height: layout.rect.height.saturating_sub(30),
                     },
-                    title_color,
+                    GAME_LABELS[game_index],
+                    1,
+                    if output.focused_id() == Some(layout.id) {
+                        ACCENT
+                    } else {
+                        FG
+                    },
                 );
-                let _ = font.draw(
+                draw_text_centered(
                     framebuffer,
-                    GAME_TAGS[game_index],
-                    if output.columns() >= 3 { 9.0 } else { 10.5 },
                     Rect {
-                        x: layout.text_rect.x.saturating_add(8),
-                        y: layout.text_rect.y.saturating_add(
-                            i32::try_from(layout.text_rect.height.saturating_sub(22))
+                        x: layout.rect.x.saturating_add(8),
+                        y: layout.rect.y.saturating_add(
+                            i32::try_from(layout.rect.height.saturating_sub(20))
                                 .unwrap_or(i32::MAX),
                         ),
-                        width: layout.text_rect.width.saturating_sub(16),
-                        height: 18,
+                        width: layout.rect.width.saturating_sub(16),
+                        height: 14,
                     },
+                    GAME_TAGS[game_index],
+                    1,
                     accent,
                 );
             }
@@ -1080,6 +1081,7 @@ fn catalog_controls() -> ControlMap {
         CATALOG_SELECT,
         &[
             ControlBinding::Key(Key::Space),
+            ControlBinding::Key(Key::Enter),
             ControlBinding::Gamepad(GamepadButton::South),
         ],
     );
