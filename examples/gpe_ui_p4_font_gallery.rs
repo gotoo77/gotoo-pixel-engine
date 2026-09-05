@@ -707,7 +707,7 @@ mod tests {
             UiInput {
                 nav: UiNavInput {
                     left: true,
-                    ..UiInput::default()
+                    ..UiNavInput::default()
                 },
                 ..UiInput::default()
             },
