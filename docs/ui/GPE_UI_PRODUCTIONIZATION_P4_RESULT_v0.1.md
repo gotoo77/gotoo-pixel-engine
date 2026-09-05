@@ -1,6 +1,6 @@
 # GPE.UI - P4 Typography: First Slice
 
-Status: P4 ACTIVE / BITMAP + 52-FONT OUTLINE GALLERY IMPLEMENTED / NATIVE HUMAN RUNTIME PASS / WEB HUMAN RUNTIME PENDING
+Status: P4 ACTIVE / BITMAP + 52-FONT OUTLINE GALLERY IMPLEMENTED / NATIVE + WEB HUMAN RUNTIME PASS / ARCHITECTURE CLOSURE PENDING
 
 Start authorized by maintainer: "go P4", 2026-09-05.
 This records authorization to proceed locally, not a P3 merge or a CI result.
@@ -62,7 +62,7 @@ human-validated the current Native interaction/rendering behavior on 2026-09-05.
 - Slider rendering exposes a distinct current-value thumb.
 - Focused slider keyboard left/right uses deterministic repeat: immediate step,
   300 ms initial delay, then 60 ms repeat cadence based on `delta_time`.
-- GPE input now exposes frame-scoped mouse-wheel steps. In the gallery, wheel
+- GPE input exposes frame-scoped mouse-wheel steps. In the gallery, wheel
   changes the slider only when that slider is both hovered and focused.
 - `assets/fonts/p4` contains font files, individual OFL licences and provenance.
   No system font installation or runtime download is required.
@@ -77,7 +77,7 @@ hover+focus wheel rule.
 
 ## Web Runtime Probe
 
-A dedicated Web wrapper now reuses the same gallery implementation:
+A dedicated Web wrapper reuses the same gallery implementation:
 
 - `examples/gpe_ui_p4_font_gallery_web.rs`
 - `web/gpe_ui_p4_font_gallery.html`
@@ -87,27 +87,32 @@ Build and run from PowerShell:
 
 ```powershell
 .\scripts\build_p4_font_gallery_web.ps1
-python .\scripts\dev.py serve-web
+python .\scripts\dev.py serve-web --bind 127.0.0.1 --port 8765
 ```
 
 Then open:
 
 ```text
-http://127.0.0.1:8000/gpe_ui_p4_font_gallery.html
+http://127.0.0.1:8765/gpe_ui_p4_font_gallery.html
 ```
 
-Web human-runtime acceptance must verify at least:
+Browser runtime gate: **PASS (maintainer, 2026-09-05)**.
 
-1. the same outline fonts render legibly;
-2. fuzzy search and previous/next navigation work;
-3. the slider is pointer-editable;
-4. focused left/right repeat behaves as on Native;
-5. wheel changes the slider only while it is both hovered and focused;
-6. moving keyboard focus away while leaving the pointer over the slider disables
-   wheel changes.
+Human validation was performed successfully in:
 
-**Browser runtime is still PENDING until the maintainer executes this probe.**
-Web compilation alone is not a browser-rendering gate.
+- Google Chrome;
+- the integrated VS Code browser;
+- Mozilla Firefox.
+
+The maintainer reported no observed divergence from the validated Native
+behavior. The tested interaction contract includes readable outline rendering,
+search/navigation, pointer slider editing, deterministic held-key repeat,
+hover+focus wheel editing, and wheel suppression after keyboard focus leaves the
+slider while the pointer remains over it.
+
+This is stronger evidence than Web compilation alone: the same P4 gallery has
+now passed direct human runtime inspection on Native and multiple browser
+surfaces.
 
 ## Validation Commands
 
@@ -122,15 +127,25 @@ rtk cargo clippy --features outline-fonts --lib --example gpe_ui_p4_font_gallery
 
 ## Current P4 Boundary
 
-P4 is not complete yet.
+The typography capability experiment has now passed its principal rendering and
+interaction runtime gates on Native and Web. P4 remains ACTIVE only for an
+explicit architecture-closure decision; additional speculative text features
+are not required to prove the current capability.
 
-Open decisions after the browser runtime gate:
+Closure decisions:
 
-- whether/how outline font selection becomes component-wide styling rather than
-  gallery-local custom painting;
-- the smallest explicit fallback policy across bitmap/outline paths;
-- whether browser/native metric or performance differences justify further work;
-- dependency/binary-size/runtime-cost evidence before any public API freeze.
+- whether outline font selection should become component-wide styling now, or be
+  deferred until P6 provides two unlike real consumers;
+- keep automatic cross-font fallback deferred unless a real consumer proves it
+  necessary;
+- attribute binary/runtime/allocation cost in P5 rather than optimizing P4
+  prematurely;
+- do not freeze a public typography API before P7.
+
+Recommended closure direction follows the project rule that abstractions require
+consumer evidence: preserve the optional outline capability and its proven
+measure/paint primitive, but defer broad component-wide font plumbing until real
+consumer evidence exists.
 
 Non-goals remain browser-grade shaping, CSS typography, a global font manager,
 or SDF/MSDF by default.
