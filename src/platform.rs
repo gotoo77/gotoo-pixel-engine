@@ -831,6 +831,11 @@ impl<G: Game> PlatformApp<G> {
                     ElementState::Released => state.input.release_mouse_button(button),
                 }
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                state
+                    .input
+                    .add_mouse_wheel_steps(mouse_wheel_steps_from_winit(delta));
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 let viewport = current_viewport(
                     state.window.inner_size(),
@@ -983,6 +988,18 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                     ElementState::Pressed => self.input.press_mouse_button(button),
                     ElementState::Released => self.input.release_mouse_button(button),
                 }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if self
+                    .tool_window
+                    .as_ref()
+                    .is_some_and(|tool| tool.config.mode == ToolWindowMode::Modal)
+                {
+                    return;
+                }
+                self.input
+                    .add_mouse_wheel_steps(mouse_wheel_steps_from_winit(delta));
             }
             WindowEvent::CursorMoved { position, .. } => self.update_mouse_position(position),
             WindowEvent::CursorLeft { .. } => self.input.set_mouse_position(None),
@@ -1154,6 +1171,28 @@ fn mouse_button_from_winit(button: winit::event::MouseButton) -> Option<MouseBut
     }
 }
 
+fn mouse_wheel_steps_from_winit(delta: winit::event::MouseScrollDelta) -> i32 {
+    match delta {
+        winit::event::MouseScrollDelta::LineDelta(_, y) => {
+            if !y.is_finite() || y == 0.0 {
+                0
+            } else {
+                let magnitude = y.abs().round().max(1.0).min(i32::MAX as f32) as i32;
+                if y > 0.0 { magnitude } else { -magnitude }
+            }
+        }
+        winit::event::MouseScrollDelta::PixelDelta(position) => {
+            if !position.y.is_finite() || position.y == 0.0 {
+                0
+            } else if position.y > 0.0 {
+                1
+            } else {
+                -1
+            }
+        }
+    }
+}
+
 fn touch_phase_from_winit(phase: winit::event::TouchPhase) -> TouchPhase {
     match phase {
         winit::event::TouchPhase::Started => TouchPhase::Started,
@@ -1258,9 +1297,10 @@ mod tests {
     use super::{
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
         TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
-        mouse_button_from_winit, remember_non_zero_size, simulation_delta_time,
-        surface_to_framebuffer_position, tool_mode_blocks_primary, tool_window_surface_matches,
-        touch_from_winit, touch_phase_from_winit, validate_config, validate_tool_window_config,
+        mouse_button_from_winit, mouse_wheel_steps_from_winit, remember_non_zero_size,
+        simulation_delta_time, surface_to_framebuffer_position, tool_mode_blocks_primary,
+        tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
+        validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -1370,6 +1410,30 @@ mod tests {
         assert_eq!(
             mouse_button_from_winit(winit::event::MouseButton::Other(4)),
             None
+        );
+    }
+
+    #[test]
+    fn maps_mouse_wheel_to_signed_steps() {
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::LineDelta(0.0, 1.0)),
+            1
+        );
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::LineDelta(0.0, -2.0)),
+            -2
+        );
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::PixelDelta(
+                PhysicalPosition::new(0.0, 120.0),
+            )),
+            1
+        );
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::PixelDelta(
+                PhysicalPosition::new(0.0, -0.5),
+            )),
+            -1
         );
     }
 
