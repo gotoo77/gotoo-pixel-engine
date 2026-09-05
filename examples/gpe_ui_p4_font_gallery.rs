@@ -271,7 +271,10 @@ impl Gallery {
         if let Some(px) = out.changed(size) {
             self.px = px;
         }
-        if self.pending_wheel_steps != 0 && out.hovered_id() == Some(size.id()) {
+        if self.pending_wheel_steps != 0
+            && out.hovered_id() == Some(size.id())
+            && out.focused_id() == Some(size.id())
+        {
             let before = self.px;
             self.px = (self.px + self.pending_wheel_steps as f32).clamp(16.0, 56.0);
             if self.px != before {
@@ -704,7 +707,7 @@ mod tests {
             UiInput {
                 nav: UiNavInput {
                     left: true,
-                    ..UiNavInput::default()
+                    ..UiInput::default()
                 },
                 ..UiInput::default()
             },
