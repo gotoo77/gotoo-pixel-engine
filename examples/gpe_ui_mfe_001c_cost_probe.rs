@@ -109,7 +109,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "allocation_bytes = cumulative bytes requested by alloc/alloc_zeroed/realloc while one transaction is counted"
     );
-    println!("capture OFF/ON uses identical logical workloads and separate persistent state instances");
+    println!(
+        "capture OFF/ON uses identical logical workloads and separate persistent state instances"
+    );
     println!();
 
     let theme = UiTheme::default();
