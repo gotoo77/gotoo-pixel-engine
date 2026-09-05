@@ -1,12 +1,16 @@
-use crate::{Frame, Framebuffer, Game, GameResult, PixelPresentation, Rect, Size, Viewport, present_pixel_surface};
+use crate::{
+    Frame, Framebuffer, Game, GameResult, PixelPresentation, Rect, Size, Viewport,
+    present_pixel_surface,
+};
 
 /// Provisional P6 helper for hosting one low-resolution `Game` inside a
 /// high-resolution parent frame.
 ///
-/// This intentionally solves only the Native/keyboard+gamepad case proven by
-/// Arcade. Pointer, wheel and touch input are suppressed for the child rather
-/// than forwarded with incorrect host-space coordinates. A mapped pointer/touch
-/// contract remains a separate P6/P7 concern.
+/// This intentionally solves only the Native keyboard/gamepad case proven by
+/// Arcade. The child currently receives the parent's `Input` snapshot unchanged,
+/// so pointer/touch coordinates remain host-space and are therefore outside this
+/// helper's validated contract. A mapped pointer/touch contract remains a
+/// separate P6/P7 concern.
 pub struct PixelGameHost {
     game: Box<dyn Game>,
     framebuffer: Framebuffer,
@@ -34,22 +38,20 @@ impl PixelGameHost {
         &self.framebuffer
     }
 
-    /// Updates the child with keyboard/gamepad/text input and presents the
-    /// resulting low-resolution framebuffer into `bounds` using integer-nearest
-    /// composition.
+    /// Updates a keyboard/gamepad-oriented child and presents its low-resolution
+    /// framebuffer into `bounds` using integer-nearest composition.
     ///
-    /// Pointer, wheel and touch state are intentionally hidden from the child
-    /// until the mapped-input contract is introduced.
-    pub fn update_and_present(
+    /// Pointer/touch consumers must not use this provisional method until the
+    /// mapped-input contract is implemented.
+    pub fn update_and_present_shared_input(
         &mut self,
         host: &mut Frame<'_>,
         bounds: Rect,
     ) -> (GameResult, Option<PixelPresentation>) {
-        let child_input = host.input.without_pointer_and_touch();
         let result = {
             let mut child = Frame {
                 framebuffer: &mut self.framebuffer,
-                input: &child_input,
+                input: host.input,
                 delta_time: host.delta_time,
                 storage: &mut *host.storage,
                 audio: &mut *host.audio,
