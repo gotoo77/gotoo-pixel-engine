@@ -1410,12 +1410,13 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
                 style.text,
             );
             let track = slider_track_rect(node.rect);
+            let static_style = resolved_static_style(node, context.theme, context.stylesheet);
             context.framebuffer.fill_rect(
                 track.x,
                 track.y,
                 track.width,
                 track.height,
-                style.border,
+                static_style.border,
             );
             let ratio = if *max > *min {
                 ((*effective - *min) / (*max - *min)).clamp(0.0, 1.0)
@@ -1432,6 +1433,14 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
                     style.accent,
                 );
             }
+            let thumb = slider_thumb_rect(track, ratio);
+            context.framebuffer.fill_rect(
+                thumb.x,
+                thumb.y,
+                thumb.width,
+                thumb.height,
+                style.accent,
+            );
         }
     }
 
@@ -1710,6 +1719,27 @@ fn slider_track_rect(rect: Rect) -> Rect {
     }
 }
 
+fn slider_thumb_rect(track: Rect, ratio: f32) -> Rect {
+    let width = 3_u32.min(track.width.max(1));
+    let height = track.height.saturating_add(4);
+    let center_offset = ((track.width.saturating_sub(1) as f32) * ratio.clamp(0.0, 1.0)).round()
+        as u32;
+    let center_x = track.x.saturating_add(u32_to_i32(center_offset));
+    let min_x = track.x;
+    let max_x = track
+        .x
+        .saturating_add(u32_to_i32(track.width.saturating_sub(width)));
+    let x = center_x
+        .saturating_sub(u32_to_i32(width / 2))
+        .clamp(min_x, max_x);
+    Rect {
+        x,
+        y: centered_coordinate(track.y, track.height, height),
+        width,
+        height,
+    }
+}
+
 fn slider_value_text(value: f32, min: f32, max: f32, step: f32) -> String {
     let precision = if step > 0.0 {
         (0..=9)
@@ -1803,6 +1833,62 @@ mod tests {
         assert_eq!(slider_value_text(0.001, 0.0, 1.0, 0.001), "0.001");
         assert_eq!(slider_value_text(42.0, 0.0, 100.0, 1.0), "42");
         assert_eq!(slider_value_text(0.000001, 0.0, 1.0, 0.000001), "0.000001");
+    }
+
+    #[test]
+    fn slider_focused_track_does_not_look_full_at_minimum_and_thumb_marks_position() {
+        let theme = UiTheme {
+            border: color(73),
+            accent: color(211),
+            row_height: 32,
+            ..theme()
+        };
+        let mut state = UiStateStore::default();
+        let mut framebuffer = Framebuffer::new(240, 80);
+        let (output, slider) = run(
+            &mut framebuffer,
+            &mut state,
+            UiNavInput::default(),
+            theme,
+            |ui| ui.slider_f32("SIZE", 16.0, 16.0..=56.0, 1.0),
+        );
+
+        assert_eq!(output.focused_id(), Some(slider.id()));
+        let slider_rect = rect_for_label(output.dump(), "SIZE");
+        let track = slider_track_rect(slider_rect);
+        let thumb = slider_thumb_rect(track, 0.0);
+
+        assert_eq!(
+            framebuffer.pixel(track.x + track.width as i32 - 2, track.y + 1),
+            Some(theme.border)
+        );
+        assert_eq!(
+            framebuffer.pixel(thumb.x + 1, thumb.y + 1),
+            Some(theme.accent)
+        );
+        assert_eq!(thumb.x, track.x);
+    }
+
+    #[test]
+    fn slider_thumb_tracks_minimum_middle_and_maximum() {
+        let track = Rect {
+            x: 20,
+            y: 10,
+            width: 101,
+            height: 5,
+        };
+        let min = slider_thumb_rect(track, 0.0);
+        let mid = slider_thumb_rect(track, 0.5);
+        let max = slider_thumb_rect(track, 1.0);
+
+        assert_eq!(min.x, track.x);
+        assert!(mid.x > min.x);
+        assert!(max.x > mid.x);
+        assert_eq!(
+            max.x + max.width as i32,
+            track.x + track.width as i32
+        );
+        assert!(min.height > track.height);
     }
 
     #[test]
