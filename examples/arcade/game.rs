@@ -20,12 +20,13 @@ mod tetris;
 use breakout::BreakoutGame;
 use gotoo_pixel_engine::{
     ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, MouseButton, Pixel, Rect, Size,
+    TextRenderer,
     ui::{
         PauseConfig, PauseGame, UiTheme, VirtualButton, VirtualPad, draw_panel, draw_text_centered,
         experimental::{self, UiId, UiNavInput, UiStateStore},
         experimental_spatial::{
-            GridSpec, PointerInput, SpatialCard, SpatialInput, SpatialState, run_card_grid,
-            run_card_grid_headless,
+            CardLayout, CardPainter, CardVisualState, GridSpec, PointerInput, SpatialCard,
+            SpatialInput, SpatialState, run_card_grid,
         },
         standard_menu_controls,
     },
@@ -63,6 +64,10 @@ const FG: Pixel = Pixel::rgb(224, 234, 220);
 const BORDER: Pixel = Pixel::rgb(80, 150, 220);
 const ACCENT: Pixel = Pixel::rgb(120, 235, 180);
 const TOUCH_ACCENT: Pixel = Pixel::rgb(245, 190, 90);
+const CATALOG_ROW_HOVER: Pixel = Pixel::rgb(15, 25, 32);
+const CATALOG_ROW_FOCUSED: Pixel = Pixel::rgb(18, 34, 40);
+const CATALOG_ROW_ACTIVE: Pixel = Pixel::rgb(24, 46, 48);
+const CATALOG_SEPARATOR: Pixel = Pixel::rgb(32, 50, 64);
 
 const TOUCH_UP: Rect = Rect {
     x: 378,
@@ -182,6 +187,109 @@ impl ArcadeLayout {
                     height: 184,
                 }),
             },
+        }
+    }
+}
+
+struct ArcadeCatalogPainter;
+
+impl CardPainter for ArcadeCatalogPainter {
+    fn paint(
+        &self,
+        framebuffer: &mut Framebuffer,
+        card: &SpatialCard<'_>,
+        layout: CardLayout,
+        visual: CardVisualState,
+        theme: UiTheme,
+    ) {
+        let background = if visual.active {
+            CATALOG_ROW_ACTIVE
+        } else if visual.focused {
+            CATALOG_ROW_FOCUSED
+        } else if visual.hovered {
+            CATALOG_ROW_HOVER
+        } else {
+            PANEL
+        };
+        framebuffer.fill_rect(
+            layout.rect.x,
+            layout.rect.y,
+            layout.rect.width,
+            layout.rect.height,
+            background,
+        );
+
+        let separator_y = layout
+            .rect
+            .y
+            .saturating_add(i32::try_from(layout.rect.height.saturating_sub(1)).unwrap_or(i32::MAX));
+        framebuffer.fill_rect(
+            layout.rect.x,
+            separator_y,
+            layout.rect.width,
+            1,
+            CATALOG_SEPARATOR,
+        );
+
+        if visual.focused {
+            framebuffer.fill_rect(
+                layout.rect.x,
+                layout.rect.y,
+                4_u32.min(layout.rect.width),
+                layout.rect.height,
+                theme.accent,
+            );
+        } else if visual.hovered {
+            framebuffer.fill_rect(
+                layout.rect.x,
+                layout.rect.y,
+                2_u32.min(layout.rect.width),
+                layout.rect.height,
+                theme.border,
+            );
+        }
+
+        let text = TextRenderer::new(theme.font);
+        let scale = theme.text_scale.max(1);
+        let (_, text_height) = text.text_size(card.title, scale);
+        let text_y = layout.rect.y.saturating_add(
+            i32::try_from(layout.rect.height.saturating_sub(text_height) / 2).unwrap_or(i32::MAX),
+        );
+        let text_x = layout.rect.x.saturating_add(12);
+        text.draw_scaled(
+            framebuffer,
+            text_x,
+            text_y,
+            card.title,
+            scale,
+            theme.text,
+        );
+
+        if visual.focused {
+            let marker = ">";
+            let (marker_width, marker_height) = text.text_size(marker, scale);
+            let marker_x = layout.rect.x.saturating_add(
+                i32::try_from(
+                    layout
+                        .rect
+                        .width
+                        .saturating_sub(marker_width)
+                        .saturating_sub(10),
+                )
+                .unwrap_or(i32::MAX),
+            );
+            let marker_y = layout.rect.y.saturating_add(
+                i32::try_from(layout.rect.height.saturating_sub(marker_height) / 2)
+                    .unwrap_or(i32::MAX),
+            );
+            text.draw_scaled(
+                framebuffer,
+                marker_x,
+                marker_y,
+                marker,
+                scale,
+                theme.accent,
+            );
         }
     }
 }
@@ -325,7 +433,7 @@ impl ArcadeApp {
             catalog_grid_spec(self.layout.game_list),
             catalog_theme(),
             &cards,
-            &gotoo_pixel_engine::ui::experimental_spatial::DefaultCardPainter,
+            &ArcadeCatalogPainter,
         );
         let activated = cards.iter().position(|card| output.activated(card.id));
 
@@ -468,7 +576,9 @@ fn pause_game<G: Game + 'static>(game: G, mode: ArcadeInteractionMode) -> Box<dy
 
 #[cfg(test)]
 mod tests {
-    use gotoo_pixel_engine::{Touch, TouchPhase};
+    use gotoo_pixel_engine::{
+        Touch, TouchPhase, ui::experimental_spatial::run_card_grid_headless,
+    };
 
     use super::*;
 
