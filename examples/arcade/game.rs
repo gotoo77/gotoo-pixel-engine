@@ -18,6 +18,8 @@ mod space_invaders;
 mod tetris;
 
 use breakout::BreakoutGame;
+#[cfg(feature = "outline-fonts")]
+use gotoo_pixel_engine::outline_text::OutlineFont;
 use gotoo_pixel_engine::{
     ActionId, ControlBinding, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key,
     MouseButton, Pixel, Rect, Size,
@@ -31,8 +33,6 @@ use gotoo_pixel_engine::{
         },
     },
 };
-#[cfg(feature = "outline-fonts")]
-use gotoo_pixel_engine::outline_text::OutlineFont;
 use pong::PongGame;
 use smart_boy_hero::SmartBoyHeroGame;
 use snake::{SnakeGame, SnakeInteractionMode};
