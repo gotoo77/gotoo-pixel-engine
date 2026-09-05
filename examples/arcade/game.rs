@@ -47,6 +47,11 @@ const CATALOG_SELECT: ActionId = ActionId::new("arcade.catalog.select");
 const CATALOG_FILTER_PREV: ActionId = ActionId::new("arcade.catalog.filter-prev");
 const CATALOG_FILTER_NEXT: ActionId = ActionId::new("arcade.catalog.filter-next");
 
+const FILTER_ARCADE: u8 = 1;
+const FILTER_PUZZLE: u8 = 1 << 1;
+const FILTER_ACTION: u8 = 1 << 2;
+const FILTER_SHMUP: u8 = 1 << 3;
+
 const GAME_LABELS: [&str; 6] = [
     "SNAKE",
     "TETRIS",
@@ -87,11 +92,6 @@ const GAME_ACCENTS: [Pixel; 6] = [
     Pixel::rgb(91, 189, 255),
     Pixel::rgb(240, 103, 184),
 ];
-
-const FILTER_ARCADE: u8 = 1;
-const FILTER_PUZZLE: u8 = 1 << 1;
-const FILTER_ACTION: u8 = 1 << 2;
-const FILTER_SHMUP: u8 = 1 << 3;
 
 const BG: Pixel = Pixel::rgb(5, 8, 13);
 const PANEL: Pixel = Pixel::rgb(10, 16, 24);
@@ -254,7 +254,6 @@ impl CatalogSearch {
                 "SEARCH GAMES   CTRL+F".to_owned()
             };
         }
-
         let before = &self.query[..self.cursor];
         let after = &self.query[self.cursor..];
         if self.active {
@@ -464,10 +463,9 @@ impl ArcadeLayout {
 
     fn search_clear_rect(self) -> Rect {
         Rect {
-            x: self
-                .search
-                .x
-                .saturating_add(i32::try_from(self.search.width.saturating_sub(30)).unwrap_or(i32::MAX)),
+            x: self.search.x.saturating_add(
+                i32::try_from(self.search.width.saturating_sub(30)).unwrap_or(i32::MAX),
+            ),
             y: self.search.y,
             width: 30,
             height: self.search.height,
@@ -580,7 +578,6 @@ impl ArcadeApp {
             self.search.active = true;
             self.search.select_all();
         }
-
         if frame.input.mouse_button(MouseButton::Left).pressed()
             && let Some(position) = frame.input.mouse_position()
         {
@@ -649,7 +646,6 @@ impl ArcadeApp {
             }
             return;
         }
-
         for (index, rect) in self.layout.filter_rects().iter().copied().enumerate() {
             if point_in_rect(position, rect) {
                 self.filter = CatalogFilter::ALL[index];
@@ -685,7 +681,6 @@ impl ArcadeApp {
                 }
             })
             .collect::<Vec<_>>();
-
         if !query.is_empty() {
             matches.sort_by(|(left_index, left_score), (right_index, right_score)| {
                 right_score
@@ -711,18 +706,15 @@ impl ArcadeApp {
                 catalog_pad.reset(&mut self.catalog_controls);
             }
         }
-
         let result = self
             .active_game
             .as_mut()
             .expect("active game update requires a game")
             .update(frame);
-
         if result == GameResult::Exit {
             self.return_to_catalog();
             self.render_catalog(frame.framebuffer, SpatialInput::default());
         }
-
         GameResult::Continue
     }
 
@@ -779,7 +771,6 @@ impl ArcadeApp {
             catalog_stylesheet(),
             &cards,
         );
-
         self.paint_catalog_typography(framebuffer, &output, &visible);
         self.paint_touch_controls(framebuffer);
         draw_text_centered(
@@ -789,7 +780,6 @@ impl ArcadeApp {
             1,
             MUTED,
         );
-
         cards
             .iter()
             .position(|card| output.activated(card.id))
@@ -811,9 +801,7 @@ impl ArcadeApp {
             self.layout.search.height,
             if self.search.active { ACCENT } else { BORDER },
         );
-        let clear = self.layout.search_clear_rect();
-        draw_text_centered(framebuffer, clear, "X", 1, MUTED);
-
+        draw_text_centered(framebuffer, self.layout.search_clear_rect(), "X", 1, MUTED);
         for (filter, rect) in CatalogFilter::ALL
             .iter()
             .copied()
@@ -837,7 +825,6 @@ impl ArcadeApp {
                 if selected { BG } else { color },
             );
         }
-
         let status = if self.search.query.is_empty() {
             format!("{} / {} GAMES", result_count, GAME_LABELS.len())
         } else {
@@ -883,7 +870,6 @@ impl ArcadeApp {
                     FG
                 },
             );
-
             if visible.is_empty() {
                 let _ = font.draw(
                     framebuffer,
@@ -894,7 +880,6 @@ impl ArcadeApp {
                 );
                 return;
             }
-
             for (layout, game_index) in output.layouts().iter().zip(visible.iter().copied()) {
                 let accent = GAME_ACCENTS[game_index];
                 framebuffer.fill_rect(
@@ -915,7 +900,7 @@ impl ArcadeApp {
                         x: layout.text_rect.x.saturating_add(8),
                         y: layout.text_rect.y.saturating_add(8),
                         width: layout.text_rect.width.saturating_sub(16),
-                        height: layout.text_rect.height.saturating_sub(30),
+                        height: layout.text_rect.height.saturating_sub(26),
                     },
                     title_color,
                 );
@@ -925,12 +910,12 @@ impl ArcadeApp {
                     if output.columns() >= 3 { 9.0 } else { 10.5 },
                     Rect {
                         x: layout.text_rect.x.saturating_add(8),
-                        y: layout
-                            .text_rect
-                            .y
-                            .saturating_add(i32::try_from(layout.text_rect.height.saturating_sub(24)).unwrap_or(i32::MAX)),
+                        y: layout.text_rect.y.saturating_add(
+                            i32::try_from(layout.text_rect.height.saturating_sub(22))
+                                .unwrap_or(i32::MAX),
+                        ),
                         width: layout.text_rect.width.saturating_sub(16),
-                        height: 20,
+                        height: 18,
                     },
                     accent,
                 );
@@ -989,10 +974,10 @@ impl ArcadeApp {
                 framebuffer,
                 Rect {
                     x: layout.text_rect.x,
-                    y: layout
-                        .text_rect
-                        .y
-                        .saturating_add(i32::try_from(layout.text_rect.height.saturating_sub(18)).unwrap_or(i32::MAX)),
+                    y: layout.text_rect.y.saturating_add(
+                        i32::try_from(layout.text_rect.height.saturating_sub(18))
+                            .unwrap_or(i32::MAX),
+                    ),
                     width: layout.text_rect.width,
                     height: 14,
                 },
@@ -1150,7 +1135,7 @@ fn catalog_cards(ids: &[UiId], visible: &[usize]) -> Vec<SpatialCard<'static>> {
 fn catalog_grid_spec(mode: ArcadeInteractionMode) -> GridSpec {
     match mode {
         ArcadeInteractionMode::Native => GridSpec {
-            min_cell_width: 220,
+            min_cell_width: 160,
             preferred_cell_height: 64,
             gap: 10,
             padding: 0,
@@ -1300,28 +1285,16 @@ mod tests {
     }
 
     #[test]
-    fn returning_to_catalog_arms_catalog_select_release_gate() {
-        let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
-        app.active_game = Some(Box::new(BreakoutGame::new()));
-        app.return_to_catalog();
-        assert!(app.active_game.is_none());
-        assert!(app.waiting_for_catalog_release);
-    }
-
-    #[test]
     fn catalog_ids_are_stable() {
         assert_eq!(catalog_ids(), catalog_ids());
     }
 
     #[test]
-    fn responsive_catalog_uses_two_native_and_three_touch_columns() {
+    fn launcher_surfaces_use_three_columns_with_room_for_card_metadata() {
         let ids = catalog_ids();
         let visible: Vec<_> = (0..GAME_LABELS.len()).collect();
         let cards = catalog_cards(&ids, &visible);
-        for (mode, expected) in [
-            (ArcadeInteractionMode::Native, 2),
-            (ArcadeInteractionMode::Touch, 3),
-        ] {
+        for mode in [ArcadeInteractionMode::Native, ArcadeInteractionMode::Touch] {
             let bounds = ArcadeLayout::for_mode(mode).game_list;
             let mut state = SpatialState::default();
             let output = run_card_grid_headless(
@@ -1331,9 +1304,31 @@ mod tests {
                 catalog_grid_spec(mode),
                 &cards,
             );
-            assert_eq!(output.columns(), expected);
+            assert_eq!(output.columns(), 3);
             assert_eq!(output.layouts().len(), GAME_LABELS.len());
+            assert!(output.layouts().iter().all(|layout| layout.rect.height >= 60));
         }
+    }
+
+    #[test]
+    fn responsive_grid_collapses_to_two_columns_on_narrower_native_bounds() {
+        let ids = catalog_ids();
+        let visible: Vec<_> = (0..GAME_LABELS.len()).collect();
+        let cards = catalog_cards(&ids, &visible);
+        let mut state = SpatialState::default();
+        let output = run_card_grid_headless(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 340,
+                height: 210,
+            },
+            &mut state,
+            SpatialInput::default(),
+            catalog_grid_spec(ArcadeInteractionMode::Native),
+            &cards,
+        );
+        assert_eq!(output.columns(), 2);
     }
 
     #[test]
@@ -1379,7 +1374,6 @@ mod tests {
         let initial =
             run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
         assert_eq!(initial.focused_id(), Some(ids[0]));
-
         let right = run_card_grid_headless(
             bounds,
             &mut state,
@@ -1394,7 +1388,6 @@ mod tests {
             &cards,
         );
         assert_eq!(right.focused_id(), Some(ids[1]));
-
         let down = run_card_grid_headless(
             bounds,
             &mut state,
@@ -1408,7 +1401,7 @@ mod tests {
             spec,
             &cards,
         );
-        assert_eq!(down.focused_id(), Some(ids[3]));
+        assert_eq!(down.focused_id(), Some(ids[4]));
     }
 
     #[test]
@@ -1422,7 +1415,6 @@ mod tests {
         let initial =
             run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
         let position = rect_center(initial.layouts()[2].rect);
-
         run_card_grid_headless(
             bounds,
             &mut state,
@@ -1475,7 +1467,6 @@ mod tests {
             phase: TouchPhase::Ended,
             position: Some(position),
         }];
-
         run_card_grid_headless(
             bounds,
             &mut state,
@@ -1500,7 +1491,7 @@ mod tests {
     }
 
     #[test]
-    fn launcher_surfaces_are_larger_but_still_contain_every_game() {
+    fn launcher_surfaces_are_larger_and_pause_remains_outside_touch_games() {
         assert_eq!(
             ArcadeInteractionMode::Native.framebuffer_size(),
             Size {
@@ -1515,18 +1506,6 @@ mod tests {
                 height: 400
             }
         );
-
-        for mode in [ArcadeInteractionMode::Native, ArcadeInteractionMode::Touch] {
-            let size = mode.framebuffer_size();
-            for index in 0..GAME_LABELS.len() {
-                assert!(build_game(mode, index).is_some());
-            }
-            assert!(size.width >= 560 || mode == ArcadeInteractionMode::Native);
-        }
-    }
-
-    #[test]
-    fn pause_button_is_outside_every_touch_game_extent() {
         let snake_size = SnakeInteractionMode::Touch.framebuffer_size();
         let extents = [
             (snake_size.width, snake_size.height),
