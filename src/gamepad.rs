@@ -113,7 +113,8 @@ fn sync_cached_state(
         .gamepads()
         .map(|(raw_id, gamepad)| {
             let id = GamepadId::new(usize::from(raw_id));
-            let buttons = GILRS_BUTTONS.map(|(source, target)| (target, gamepad.is_pressed(source)));
+            let buttons =
+                GILRS_BUTTONS.map(|(source, target)| (target, gamepad.is_pressed(source)));
             let axes = GILRS_AXES.map(|(source, _)| {
                 (
                     source,
