@@ -5,9 +5,7 @@ use gotoo_pixel_engine::{
     run,
     ui::{
         UiTheme,
-        experimental::{
-            self, UiGridSpec, UiId, UiInput, UiNavInput, UiPointerInput, UiStateStore,
-        },
+        experimental::{self, UiGridSpec, UiId, UiInput, UiNavInput, UiPointerInput, UiStateStore},
     },
 };
 

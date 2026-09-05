@@ -1735,8 +1735,8 @@ fn slider_track_rect(rect: Rect) -> Rect {
 fn slider_thumb_rect(track: Rect, ratio: f32) -> Rect {
     let width = 3_u32.min(track.width.max(1));
     let height = track.height.saturating_add(4);
-    let center_offset = ((track.width.saturating_sub(1) as f32) * ratio.clamp(0.0, 1.0)).round()
-        as u32;
+    let center_offset =
+        ((track.width.saturating_sub(1) as f32) * ratio.clamp(0.0, 1.0)).round() as u32;
     let center_x = track.x.saturating_add(u32_to_i32(center_offset));
     let min_x = track.x;
     let max_x = track
@@ -1903,10 +1903,7 @@ mod tests {
         assert_eq!(min.x, track.x);
         assert!(mid.x > min.x);
         assert!(max.x > mid.x);
-        assert_eq!(
-            max.x + max.width as i32,
-            track.x + track.width as i32
-        );
+        assert_eq!(max.x + max.width as i32, track.x + track.width as i32);
         assert!(min.height > track.height);
     }
 
