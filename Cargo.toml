@@ -8,10 +8,12 @@ repository = "https://github.com/gotoo77/gotoo-pixel-engine"
 
 [features]
 default = []
+outline-fonts = ["dep:fontdue"]
 diagnostics = []
 diagnostics-fault-injection = ["diagnostics"]
 
 [dependencies]
+fontdue = { version = "0.9.4", optional = true }
 hound = "3.5.1"
 include_dir = "0.7.4"
 png = "=0.18.1"
@@ -22,6 +24,7 @@ wgpu = "30.0.0"
 winit = "0.30.13"
 
 [dev-dependencies]
+nucleo-matcher = "0.3.1"
 wasm-bindgen = "=0.2.127"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -89,6 +92,10 @@ crate-type = ["cdylib"]
 [[bench]]
 name = "primitives"
 harness = false
+
+[[example]]
+name = "gpe_ui_p4_font_gallery"
+required-features = ["outline-fonts"]
 
 [[bin]]
 name = "diagnostics_fault_probe"

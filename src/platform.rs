@@ -807,6 +807,7 @@ impl<G: Game> PlatformApp<G> {
                 if !state.window.has_focus() {
                     return;
                 }
+                forward_text_event(&mut state.input, &event);
                 let Some(key) = key_from_winit(event.physical_key) else {
                     return;
                 };
@@ -946,6 +947,7 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                     return;
                 }
 
+                forward_text_event(&mut self.input, &event);
                 let Some(key) = key_from_winit(event.physical_key) else {
                     return;
                 };
@@ -1090,9 +1092,34 @@ fn toggle_fullscreen(window: &Window) {
     window.request_redraw();
 }
 
+fn forward_text_event(input: &mut Input, event: &winit::event::KeyEvent) {
+    if event.state != ElementState::Pressed {
+        return;
+    }
+    use crate::TextInputEvent as Edit;
+    use winit::keyboard::{Key as LogicalKey, NamedKey};
+    let edit = match &event.logical_key {
+        LogicalKey::Named(NamedKey::Backspace) => Some(Edit::Backspace),
+        LogicalKey::Named(NamedKey::Delete) => Some(Edit::Delete),
+        LogicalKey::Named(NamedKey::ArrowLeft) => Some(Edit::Left),
+        LogicalKey::Named(NamedKey::ArrowRight) => Some(Edit::Right),
+        LogicalKey::Named(NamedKey::Home) => Some(Edit::Home),
+        LogicalKey::Named(NamedKey::End) => Some(Edit::End),
+        _ => event.text.as_ref().and_then(|text| {
+            let text: String = text.chars().filter(|c| !c.is_control()).collect();
+            (!text.is_empty()).then_some(Edit::Insert(text))
+        }),
+    };
+    if let Some(edit) = edit {
+        input.push_text_event(edit);
+    }
+}
+
 fn key_from_winit(key: PhysicalKey) -> Option<Key> {
     match key {
         PhysicalKey::Code(KeyCode::Escape) => Some(Key::Escape),
+        PhysicalKey::Code(KeyCode::Enter) => Some(Key::Enter),
+        PhysicalKey::Code(KeyCode::Tab) => Some(Key::Tab),
         PhysicalKey::Code(KeyCode::Space) => Some(Key::Space),
         PhysicalKey::Code(KeyCode::ArrowUp) => Some(Key::Up),
         PhysicalKey::Code(KeyCode::ArrowDown) => Some(Key::Down),

@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE**
+Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE, P3 PASS WITH CONDITIONS, P4 ACTIVE**
 
 Baseline:
 
@@ -17,6 +17,7 @@ Architecture B GO
 P0             PASS
 P1             PASS
 P2             PASS
+P3             PASS WITH CONDITIONS
 ```
 
 ## Mission
@@ -76,6 +77,10 @@ P1 result:
 P2 result:
 
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P2_RESULT_v0.1.md`
+
+P3 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P3_RESULT_v0.1.md`
 
 ---
 
@@ -160,6 +165,28 @@ P2 changed resolved geometry but did not change platform/render/input transport 
 
 ## P3 — Styling / theming / customization
 
+Status: **PASS WITH CONDITIONS / HUMAN RUNTIME PENDING**.
+
+Implemented:
+
+```text
+typed style vocabulary
+UiTheme compatibility defaults
+component style
+explicit local override
+focus / hover / active visual overlays
+transactional styled entry points
+Spatial DefaultCardPainter style alignment
+dedicated Native visual probe
+```
+
+Remaining conditions:
+
+```text
+Final Native runtime confirmation for the revised P3 probe (layout, toggle, slider)
+all-target Clippy allocator conflict outside P3 UI changes
+```
+
 Strategic requirement, not speculative polish.
 
 Target precedence:
@@ -195,6 +222,14 @@ Do not turn this into CSS.
 P3 is **not started by the P2 closure**. It must begin explicitly from the merged P2 `main` baseline on its own implementation branch.
 
 ## P4 — Typography follow-up
+
+Status: **ACTIVE / BITMAP AND EXPERIMENTAL 20-FONT GALLERY IMPLEMENTED**.
+
+The maintainer explicitly authorized local P4 work on 2026-09-05 ("go P4").
+This does not assert that P3 was merged or that its outstanding gates passed.
+
+Audit, implementation evidence and remaining outline-font decision:
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P4_RESULT_v0.1.md`.
 
 Track issue #69 separately.
 
@@ -271,9 +306,15 @@ Rust changes must be formatter-clean before commit/push; CI is a validator, not 
 P0 = PASS
 P1 = PASS
 P2 = PASS
+P3 = PASS WITH CONDITIONS (local implementation and probe follow-ups)
 STOP
 ```
 
-Merge P2 only after the final closing-documentation CI is green.
+Active implementation slice: P4 typography, tracked by issue #69 and
+`docs/ui/phase0-v03/TEXT_RENDERING_FOLLOWUP.md`.
 
-Do not begin P3 until P2 is merged and P3 is explicitly started from the resulting `main` baseline.
+The maintainer's explicit P4 start supersedes the local sequencing hold.
+P3 closure/merge evidence remains outstanding and is not manufactured here.
+P4 bitmap audit and the explicitly requested twenty-font outline gallery are
+implemented. Component-wide font styling, automatic fallback and browser runtime
+validation remain open; see the P4 result for the experimental integration.

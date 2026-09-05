@@ -6,12 +6,13 @@ use std::ops::RangeInclusive;
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
 use super::{
-    UiTheme,
+    UiComponentStyle, UiStyleOverride, UiStyleSheet, UiTheme, UiVisualState,
     kernel::{
         UiInteractionOutput, UiInteractionState, UiNavigationPolicy, UiResolvedTarget,
         run_interaction_pass,
     },
     layout::{layout_responsive_grid, layout_vertical_children},
+    style::{UiResolvedStyle, resolve_style},
 };
 pub use super::{
     kernel::{UiInput, UiPointerInput},
@@ -312,18 +313,26 @@ struct Node<'a> {
     parent: Option<usize>,
     children: Vec<usize>,
     content: NodeContent<'a>,
+    style: UiStyleOverride,
     measured: Size,
     rect: Rect,
 }
 
 impl<'a> Node<'a> {
-    fn new(id: UiId, kind: WidgetKind, parent: Option<usize>, content: NodeContent<'a>) -> Self {
+    fn new(
+        id: UiId,
+        kind: WidgetKind,
+        parent: Option<usize>,
+        content: NodeContent<'a>,
+        style: UiStyleOverride,
+    ) -> Self {
         Self {
             id,
             kind,
             parent,
             children: Vec::new(),
             content,
+            style,
             measured: Size {
                 width: 0,
                 height: 0,
@@ -387,7 +396,13 @@ pub struct UiBuilder<'a> {
 
 impl<'a> UiBuilder<'a> {
     fn new(generation: u64) -> Self {
-        let root = Node::new(UiId::ROOT, WidgetKind::Root, None, NodeContent::Root);
+        let root = Node::new(
+            UiId::ROOT,
+            WidgetKind::Root,
+            None,
+            NodeContent::Root,
+            UiStyleOverride::default(),
+        );
         Self {
             generation,
             nodes: vec![root],
@@ -419,29 +434,52 @@ impl<'a> UiBuilder<'a> {
     }
 
     pub fn column<R>(&mut self, build: impl FnOnce(&mut Self) -> R) -> R {
-        self.container(WidgetKind::Column, NodeContent::Column, build)
+        self.container(
+            WidgetKind::Column,
+            NodeContent::Column,
+            UiStyleOverride::default(),
+            build,
+        )
     }
 
     pub fn panel<R>(&mut self, build: impl FnOnce(&mut Self) -> R) -> R {
-        self.container(WidgetKind::Panel, NodeContent::Panel, build)
+        self.panel_styled(UiStyleOverride::default(), build)
+    }
+
+    pub fn panel_styled<R>(
+        &mut self,
+        style: UiStyleOverride,
+        build: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        self.container(WidgetKind::Panel, NodeContent::Panel, style, build)
     }
 
     pub fn grid<R>(&mut self, spec: UiGridSpec, build: impl FnOnce(&mut Self) -> R) -> R {
-        self.container(WidgetKind::Grid, NodeContent::Grid { spec }, build)
+        self.container(
+            WidgetKind::Grid,
+            NodeContent::Grid { spec },
+            UiStyleOverride::default(),
+            build,
+        )
     }
 
     pub fn text(&mut self, text: impl Into<Cow<'a, str>>) -> UiId {
+        self.text_styled(text, UiStyleOverride::default())
+    }
+
+    pub fn text_styled(&mut self, text: impl Into<Cow<'a, str>>, style: UiStyleOverride) -> UiId {
         let id = self.allocate_implicit_id();
         self.push_leaf(
             id,
             WidgetKind::Text,
             NodeContent::Text { text: text.into() },
+            style,
         );
         id
     }
 
     pub fn button(&mut self, label: impl Into<Cow<'a, str>>) -> WidgetRef<()> {
-        self.button_internal(label.into(), None)
+        self.button_internal(label.into(), None, UiStyleOverride::default())
     }
 
     pub fn button_action(
@@ -449,10 +487,36 @@ impl<'a> UiBuilder<'a> {
         label: impl Into<Cow<'a, str>>,
         action: ActionId,
     ) -> WidgetRef<()> {
-        self.button_internal(label.into(), Some(action))
+        self.button_internal(label.into(), Some(action), UiStyleOverride::default())
+    }
+
+    pub fn button_styled(
+        &mut self,
+        label: impl Into<Cow<'a, str>>,
+        style: UiStyleOverride,
+    ) -> WidgetRef<()> {
+        self.button_internal(label.into(), None, style)
+    }
+
+    pub fn button_action_styled(
+        &mut self,
+        label: impl Into<Cow<'a, str>>,
+        action: ActionId,
+        style: UiStyleOverride,
+    ) -> WidgetRef<()> {
+        self.button_internal(label.into(), Some(action), style)
     }
 
     pub fn toggle(&mut self, label: impl Into<Cow<'a, str>>, value: bool) -> WidgetRef<bool> {
+        self.toggle_styled(label, value, UiStyleOverride::default())
+    }
+
+    pub fn toggle_styled(
+        &mut self,
+        label: impl Into<Cow<'a, str>>,
+        value: bool,
+        style: UiStyleOverride,
+    ) -> WidgetRef<bool> {
         let id = self.allocate_implicit_id();
         self.push_leaf(
             id,
@@ -462,6 +526,7 @@ impl<'a> UiBuilder<'a> {
                 input: value,
                 effective: value,
             },
+            style,
         );
         WidgetRef::new(id, self.generation)
     }
@@ -472,6 +537,17 @@ impl<'a> UiBuilder<'a> {
         value: f32,
         range: RangeInclusive<f32>,
         step: f32,
+    ) -> WidgetRef<f32> {
+        self.slider_f32_styled(label, value, range, step, UiStyleOverride::default())
+    }
+
+    pub fn slider_f32_styled(
+        &mut self,
+        label: impl Into<Cow<'a, str>>,
+        value: f32,
+        range: RangeInclusive<f32>,
+        step: f32,
+        style: UiStyleOverride,
     ) -> WidgetRef<f32> {
         let (min, max) = ordered_range(&range);
         let effective = snap_to_step(value, min, max, step);
@@ -487,16 +563,23 @@ impl<'a> UiBuilder<'a> {
                 max,
                 step: step.abs(),
             },
+            style,
         );
         WidgetRef::new(id, self.generation)
     }
 
-    fn button_internal(&mut self, label: Cow<'a, str>, action: Option<ActionId>) -> WidgetRef<()> {
+    fn button_internal(
+        &mut self,
+        label: Cow<'a, str>,
+        action: Option<ActionId>,
+        style: UiStyleOverride,
+    ) -> WidgetRef<()> {
         let id = self.allocate_implicit_id();
         self.push_leaf(
             id,
             WidgetKind::Button,
             NodeContent::Button { label, action },
+            style,
         );
         WidgetRef::new(id, self.generation)
     }
@@ -505,12 +588,14 @@ impl<'a> UiBuilder<'a> {
         &mut self,
         kind: WidgetKind,
         content: NodeContent<'a>,
+        style: UiStyleOverride,
         build: impl FnOnce(&mut Self) -> R,
     ) -> R {
         let id = self.allocate_implicit_id();
         let parent = *self.parent_stack.last().expect("root parent");
         let index = self.nodes.len();
-        self.nodes.push(Node::new(id, kind, Some(parent), content));
+        self.nodes
+            .push(Node::new(id, kind, Some(parent), content, style));
         self.nodes[parent].children.push(index);
 
         self.parent_stack.push(index);
@@ -521,10 +606,17 @@ impl<'a> UiBuilder<'a> {
         result
     }
 
-    fn push_leaf(&mut self, id: UiId, kind: WidgetKind, content: NodeContent<'a>) {
+    fn push_leaf(
+        &mut self,
+        id: UiId,
+        kind: WidgetKind,
+        content: NodeContent<'a>,
+        style: UiStyleOverride,
+    ) {
         let parent = *self.parent_stack.last().expect("root parent");
         let index = self.nodes.len();
-        self.nodes.push(Node::new(id, kind, Some(parent), content));
+        self.nodes
+            .push(Node::new(id, kind, Some(parent), content, style));
         self.nodes[parent].children.push(index);
     }
 
@@ -543,7 +635,7 @@ pub fn run<'a, R>(
     theme: UiTheme,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
-    run_with_input(
+    run_with_input_styled(
         framebuffer,
         state,
         UiInput {
@@ -551,6 +643,7 @@ pub fn run<'a, R>(
             ..UiInput::default()
         },
         theme,
+        UiStyleSheet::default(),
         build,
     )
 }
@@ -562,11 +655,58 @@ pub fn run_with_input<'a, R>(
     theme: UiTheme,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
+    run_with_input_styled(
+        framebuffer,
+        state,
+        input,
+        theme,
+        UiStyleSheet::default(),
+        build,
+    )
+}
+
+pub fn run_styled<'a, R>(
+    framebuffer: &mut Framebuffer,
+    state: &mut UiStateStore,
+    nav: UiNavInput,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
+    run_with_input_styled(
+        framebuffer,
+        state,
+        UiInput {
+            nav,
+            ..UiInput::default()
+        },
+        theme,
+        stylesheet,
+        build,
+    )
+}
+
+pub fn run_with_input_styled<'a, R>(
+    framebuffer: &mut Framebuffer,
+    state: &mut UiStateStore,
+    input: UiInput<'_>,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
     let surface = Size {
         width: framebuffer.width(),
         height: framebuffer.height(),
     };
-    run_impl(surface, Some(framebuffer), state, input, theme, build)
+    run_impl(
+        surface,
+        Some(framebuffer),
+        state,
+        input,
+        theme,
+        stylesheet,
+        build,
+    )
 }
 
 pub fn run_headless<'a, R>(
@@ -576,7 +716,7 @@ pub fn run_headless<'a, R>(
     theme: UiTheme,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
-    run_headless_with_input(
+    run_headless_with_input_styled(
         surface,
         state,
         UiInput {
@@ -584,6 +724,7 @@ pub fn run_headless<'a, R>(
             ..UiInput::default()
         },
         theme,
+        UiStyleSheet::default(),
         build,
     )
 }
@@ -595,7 +736,39 @@ pub fn run_headless_with_input<'a, R>(
     theme: UiTheme,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
-    run_impl(surface, None, state, input, theme, build)
+    run_headless_with_input_styled(surface, state, input, theme, UiStyleSheet::default(), build)
+}
+
+pub fn run_headless_styled<'a, R>(
+    surface: Size,
+    state: &mut UiStateStore,
+    nav: UiNavInput,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
+    run_headless_with_input_styled(
+        surface,
+        state,
+        UiInput {
+            nav,
+            ..UiInput::default()
+        },
+        theme,
+        stylesheet,
+        build,
+    )
+}
+
+pub fn run_headless_with_input_styled<'a, R>(
+    surface: Size,
+    state: &mut UiStateStore,
+    input: UiInput<'_>,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
+    run_impl(surface, None, state, input, theme, stylesheet, build)
 }
 
 fn run_impl<'a, R>(
@@ -604,6 +777,7 @@ fn run_impl<'a, R>(
     state: &mut UiStateStore,
     input: UiInput<'_>,
     theme: UiTheme,
+    stylesheet: UiStyleSheet,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
     state.generation = state.generation.saturating_add(1).max(1);
@@ -617,7 +791,14 @@ fn run_impl<'a, R>(
     let text_renderer = TextRenderer::new(theme.font);
 
     let root_constraints = Constraints::tight(surface);
-    measure_node(&mut nodes, 0, root_constraints, theme, text_renderer);
+    measure_node(
+        &mut nodes,
+        0,
+        root_constraints,
+        theme,
+        stylesheet,
+        text_renderer,
+    );
     arrange_node(
         &mut nodes,
         0,
@@ -628,6 +809,7 @@ fn run_impl<'a, R>(
             height: surface.height,
         },
         theme,
+        stylesheet,
     );
 
     let mut targets = Vec::new();
@@ -685,6 +867,7 @@ fn run_impl<'a, R>(
         .interaction
         .repair_for_current_order_excluding(&current_focus_order, &incompatible_ids);
 
+    let previous_pointer_capture = state.interaction.pointer_capture_id();
     let interaction = run_interaction_pass(
         &mut state.interaction,
         input,
@@ -734,8 +917,46 @@ fn run_impl<'a, R>(
         }
     }
 
+    let pointer_capture = state.interaction.pointer_capture_id().or_else(|| {
+        (input.pointer.released && !input.pointer.pressed)
+            .then_some(previous_pointer_capture)
+            .flatten()
+    });
+    if let (Some(captured), Some((x, _))) = (pointer_capture, input.pointer.position)
+        && let Some(node) = nodes.iter_mut().find(|node| node.id == captured)
+    {
+        let track = slider_track_rect(node.rect);
+        if let NodeContent::SliderF32 {
+            input,
+            effective,
+            min,
+            max,
+            step,
+            ..
+        } = &mut node.content
+        {
+            let ratio = ((i64::from(x) - i64::from(track.x)) as f32
+                / track.width.saturating_sub(1).max(1) as f32)
+                .clamp(0.0, 1.0);
+            *effective = snap_to_step(*min + ratio * (*max - *min), *min, *max, *step);
+            if *effective != *input {
+                changed_values.insert(captured, UiValue::F32(*effective));
+            } else {
+                changed_values.remove(&captured);
+            }
+        }
+    }
+
     if let Some(framebuffer) = framebuffer {
-        paint_node(&nodes, 0, framebuffer, theme, text_renderer, focused);
+        let mut context = PaintContext {
+            framebuffer,
+            theme,
+            stylesheet,
+            text_renderer,
+            interaction: &interaction,
+            interaction_state: &state.interaction,
+        };
+        paint_node(&nodes, 0, &mut context);
     }
 
     let dump = dump_nodes(
@@ -776,6 +997,7 @@ fn measure_node(
     index: usize,
     constraints: Constraints,
     theme: UiTheme,
+    stylesheet: UiStyleSheet,
     text_renderer: TextRenderer,
 ) -> Size {
     let kind = nodes[index].kind;
@@ -799,6 +1021,7 @@ fn measure_node(
                         height: inner_max_height,
                     }),
                     theme,
+                    stylesheet,
                     text_renderer,
                 );
                 content_width = content_width.max(child_size.width);
@@ -813,30 +1036,26 @@ fn measure_node(
                 height: content_height.saturating_add(theme.padding.saturating_mul(2)),
             })
         }
-        WidgetKind::Column => measure_linear_container(
-            nodes,
-            index,
-            constraints,
-            0,
-            theme.row_spacing,
-            theme,
-            text_renderer,
-        ),
-        WidgetKind::Panel => measure_linear_container(
-            nodes,
-            index,
-            constraints,
-            theme.padding,
-            theme.row_spacing,
-            theme,
-            text_renderer,
-        ),
+        WidgetKind::Column => {
+            measure_linear_container(nodes, index, constraints, theme, stylesheet, text_renderer)
+        }
+        WidgetKind::Panel => {
+            measure_linear_container(nodes, index, constraints, theme, stylesheet, text_renderer)
+        }
         WidgetKind::Grid => {
             let spec = match &nodes[index].content {
                 NodeContent::Grid { spec } => *spec,
                 _ => unreachable!(),
             };
-            measure_grid_container(nodes, index, constraints, spec, theme, text_renderer)
+            measure_grid_container(
+                nodes,
+                index,
+                constraints,
+                spec,
+                theme,
+                stylesheet,
+                text_renderer,
+            )
         }
         WidgetKind::Text => {
             let NodeContent::Text { text } = &nodes[index].content else {
@@ -859,11 +1078,15 @@ fn measure_linear_container(
     nodes: &mut [Node<'_>],
     index: usize,
     constraints: Constraints,
-    padding: u32,
-    gap: u32,
     theme: UiTheme,
+    stylesheet: UiStyleSheet,
     text_renderer: TextRenderer,
 ) -> Size {
+    let style = resolved_static_style(&nodes[index], theme, stylesheet);
+    let (padding, gap) = match nodes[index].kind {
+        WidgetKind::Column => (0, theme.row_spacing),
+        _ => (style.padding, style.vertical_gap),
+    };
     let children = std::mem::take(&mut nodes[index].children);
     let inner_max_width = constraints
         .max_width
@@ -883,6 +1106,7 @@ fn measure_linear_container(
                 height: inner_max_height,
             }),
             theme,
+            stylesheet,
             text_renderer,
         );
         width = width.max(child_size.width);
@@ -905,6 +1129,7 @@ fn measure_grid_container(
     constraints: Constraints,
     spec: UiGridSpec,
     theme: UiTheme,
+    stylesheet: UiStyleSheet,
     text_renderer: TextRenderer,
 ) -> Size {
     let constraints = constraints.normalized();
@@ -935,6 +1160,7 @@ fn measure_grid_container(
                 height: cell.height,
             }),
             theme,
+            stylesheet,
             text_renderer,
         );
     }
@@ -962,24 +1188,45 @@ fn measure_grid_container(
     })
 }
 
-fn arrange_node(nodes: &mut [Node<'_>], index: usize, rect: Rect, theme: UiTheme) {
+fn arrange_node(
+    nodes: &mut [Node<'_>],
+    index: usize,
+    rect: Rect,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+) {
     nodes[index].rect = rect;
     match nodes[index].kind {
-        WidgetKind::Root => {
-            arrange_linear_children(nodes, index, rect, theme.padding, theme.row_spacing, theme)
-        }
+        WidgetKind::Root => arrange_linear_children(
+            nodes,
+            index,
+            rect,
+            theme.padding,
+            theme.row_spacing,
+            theme,
+            stylesheet,
+        ),
         WidgetKind::Column => {
-            arrange_linear_children(nodes, index, rect, 0, theme.row_spacing, theme)
+            arrange_linear_children(nodes, index, rect, 0, theme.row_spacing, theme, stylesheet)
         }
         WidgetKind::Panel => {
-            arrange_linear_children(nodes, index, rect, theme.padding, theme.row_spacing, theme)
+            let style = resolved_static_style(&nodes[index], theme, stylesheet);
+            arrange_linear_children(
+                nodes,
+                index,
+                rect,
+                style.padding,
+                style.vertical_gap,
+                theme,
+                stylesheet,
+            )
         }
         WidgetKind::Grid => {
             let spec = match &nodes[index].content {
                 NodeContent::Grid { spec } => *spec,
                 _ => unreachable!(),
             };
-            arrange_grid_children(nodes, index, rect, spec, theme);
+            arrange_grid_children(nodes, index, rect, spec, theme, stylesheet);
         }
         _ => {}
     }
@@ -992,6 +1239,7 @@ fn arrange_linear_children(
     padding: u32,
     gap: u32,
     theme: UiTheme,
+    stylesheet: UiStyleSheet,
 ) {
     let children = std::mem::take(&mut nodes[index].children);
     let child_heights = children
@@ -1001,7 +1249,7 @@ fn arrange_linear_children(
     let child_rects = layout_vertical_children(rect, padding, gap, &child_heights);
 
     for (child, child_rect) in children.iter().copied().zip(child_rects) {
-        arrange_node(nodes, child, child_rect, theme);
+        arrange_node(nodes, child, child_rect, theme, stylesheet);
     }
 
     nodes[index].children = children;
@@ -1013,79 +1261,125 @@ fn arrange_grid_children(
     rect: Rect,
     spec: UiGridSpec,
     theme: UiTheme,
+    stylesheet: UiStyleSheet,
 ) {
     let children = std::mem::take(&mut nodes[index].children);
     let layout = layout_responsive_grid(rect, spec, children.len());
 
     for (child, child_rect) in children.iter().copied().zip(layout.rects) {
-        arrange_node(nodes, child, child_rect, theme);
+        arrange_node(nodes, child, child_rect, theme, stylesheet);
     }
 
     nodes[index].children = children;
 }
 
-fn paint_node(
-    nodes: &[Node<'_>],
-    index: usize,
-    framebuffer: &mut Framebuffer,
+struct PaintContext<'a> {
+    framebuffer: &'a mut Framebuffer,
     theme: UiTheme,
+    stylesheet: UiStyleSheet,
     text_renderer: TextRenderer,
-    focused: Option<UiId>,
-) {
+    interaction: &'a UiInteractionOutput,
+    interaction_state: &'a UiInteractionState,
+}
+
+fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) {
     let node = &nodes[index];
+    let style = resolved_visual_style(
+        node,
+        context.theme,
+        context.stylesheet,
+        context.interaction,
+        context.interaction_state,
+    );
 
     match &node.content {
         NodeContent::Root | NodeContent::Column | NodeContent::Grid { .. } => {}
         NodeContent::Panel => {
-            framebuffer.fill_rect(
+            context.framebuffer.fill_rect(
                 node.rect.x,
                 node.rect.y,
                 node.rect.width,
                 node.rect.height,
-                theme.control_background,
+                style.background,
             );
-            framebuffer.draw_rect(
-                node.rect.x,
-                node.rect.y,
-                node.rect.width,
-                node.rect.height,
-                theme.border,
+            draw_border(
+                context.framebuffer,
+                node.rect,
+                style.border,
+                style.border_width,
             );
         }
         NodeContent::Text { text } => {
             draw_text_left(
-                framebuffer,
-                text_renderer,
+                context.framebuffer,
+                context.text_renderer,
                 node.rect,
                 text.as_ref(),
-                theme.text_scale,
-                theme.text,
+                context.theme.text_scale,
+                style.text,
             );
         }
         NodeContent::Button { label, .. } => {
-            draw_control_frame(framebuffer, node.rect, theme, focused == Some(node.id));
+            draw_control_frame(context.framebuffer, node.rect, style);
             draw_text_centered(
-                framebuffer,
-                text_renderer,
+                context.framebuffer,
+                context.text_renderer,
                 node.rect,
                 label.as_ref(),
-                theme.text_scale,
-                theme.text,
+                context.theme.text_scale,
+                style.text,
             );
         }
         NodeContent::ToggleBool {
             label, effective, ..
         } => {
-            draw_control_frame(framebuffer, node.rect, theme, focused == Some(node.id));
+            draw_control_frame(context.framebuffer, node.rect, style);
             let suffix = if *effective { "ON" } else { "OFF" };
             let text = format!("{}: {}", label, suffix);
+            let mut label_rect = node.rect;
+            let inset = style.border_width.max(1).saturating_add(4);
+            let (label_width, _) = context
+                .text_renderer
+                .text_size(&format!("{}: OFF", label), context.theme.text_scale.max(1));
+            // Reserve the same space in both states; compact rows keep the text-only form.
+            if node.rect.width
+                >= label_width
+                    .saturating_add(40)
+                    .saturating_add(inset.saturating_mul(2))
+                && node.rect.height >= 14_u32.saturating_add(inset.saturating_mul(2))
+            {
+                label_rect.width = label_rect.width.saturating_sub(40 + inset);
+                let x = node
+                    .rect
+                    .x
+                    .saturating_add(node.rect.width.saturating_sub(32 + inset) as i32);
+                let y = centered_coordinate(node.rect.y, node.rect.height, 14);
+                context.framebuffer.fill_rect(
+                    x,
+                    y,
+                    32,
+                    14,
+                    if *effective {
+                        style.accent
+                    } else {
+                        style.muted_text
+                    },
+                );
+                context.framebuffer.fill_rect(
+                    x.saturating_add(if *effective { 20 } else { 2 }),
+                    y.saturating_add(2),
+                    10,
+                    10,
+                    style.background,
+                );
+            }
             draw_text_centered(
-                framebuffer,
-                text_renderer,
-                node.rect,
+                context.framebuffer,
+                context.text_renderer,
+                label_rect,
                 &text,
-                theme.text_scale,
-                theme.text,
+                context.theme.text_scale,
+                style.text,
             );
         }
         NodeContent::SliderF32 {
@@ -1093,9 +1387,10 @@ fn paint_node(
             effective,
             min,
             max,
+            step,
             ..
         } => {
-            draw_control_frame(framebuffer, node.rect, theme, focused == Some(node.id));
+            draw_control_frame(context.framebuffer, node.rect, style);
             let label_rect = Rect {
                 x: node.rect.x.saturating_add(4),
                 y: node.rect.y,
@@ -1103,15 +1398,25 @@ fn paint_node(
                 height: node.rect.height,
             };
             draw_text_left(
-                framebuffer,
-                text_renderer,
+                context.framebuffer,
+                context.text_renderer,
                 label_rect,
-                label.as_ref(),
-                theme.text_scale,
-                theme.text,
+                &format!(
+                    "{}: {}",
+                    label,
+                    slider_value_text(*effective, *min, *max, *step)
+                ),
+                context.theme.text_scale,
+                style.text,
             );
             let track = slider_track_rect(node.rect);
-            framebuffer.fill_rect(track.x, track.y, track.width, track.height, theme.border);
+            context.framebuffer.fill_rect(
+                track.x,
+                track.y,
+                track.width,
+                track.height,
+                style.border,
+            );
             let ratio = if *max > *min {
                 ((*effective - *min) / (*max - *min)).clamp(0.0, 1.0)
             } else {
@@ -1119,37 +1424,83 @@ fn paint_node(
             };
             let fill = ((track.width as f32) * ratio).round() as u32;
             if fill > 0 {
-                framebuffer.fill_rect(
+                context.framebuffer.fill_rect(
                     track.x,
                     track.y,
                     fill.min(track.width),
                     track.height,
-                    theme.accent,
+                    style.accent,
                 );
             }
         }
     }
 
     for child in &node.children {
-        paint_node(nodes, *child, framebuffer, theme, text_renderer, focused);
+        paint_node(nodes, *child, context);
     }
 }
 
-fn draw_control_frame(framebuffer: &mut Framebuffer, rect: Rect, theme: UiTheme, focused: bool) {
-    framebuffer.fill_rect(
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
-        theme.control_background,
-    );
-    framebuffer.draw_rect(
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
-        if focused { theme.accent } else { theme.border },
-    );
+fn draw_control_frame(framebuffer: &mut Framebuffer, rect: Rect, style: UiResolvedStyle) {
+    framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, style.background);
+    draw_border(framebuffer, rect, style.border, style.border_width);
+}
+
+fn draw_border(framebuffer: &mut Framebuffer, rect: Rect, color: Pixel, width: u32) {
+    for inset in 0..width.max(1) {
+        let rect = super::layout::inset_rect(rect, inset);
+        if rect.width == 0 || rect.height == 0 {
+            break;
+        }
+        framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
+    }
+}
+
+fn resolved_static_style(
+    node: &Node<'_>,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+) -> UiResolvedStyle {
+    resolve_style(
+        theme,
+        component_style(stylesheet, node.kind),
+        node.style,
+        UiVisualState::default(),
+    )
+}
+
+fn resolved_visual_style(
+    node: &Node<'_>,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    interaction: &UiInteractionOutput,
+    interaction_state: &UiInteractionState,
+) -> UiResolvedStyle {
+    let component = component_style(stylesheet, node.kind);
+    let visual = UiVisualState {
+        focused: interaction.focused_id() == Some(node.id),
+        hovered: interaction.hovered_id() == Some(node.id),
+        active: interaction_state.is_active(node.id),
+    };
+    let mut resolved = resolve_style(theme, component, node.style, visual);
+
+    let later_border = (visual.hovered && component.hovered.border.is_some())
+        || (visual.active && component.active.border.is_some());
+    if visual.focused && component.focused.border.is_none() && !later_border {
+        resolved.border = resolved.accent;
+    }
+
+    resolved
+}
+
+fn component_style(stylesheet: UiStyleSheet, kind: WidgetKind) -> UiComponentStyle {
+    match kind {
+        WidgetKind::Panel => stylesheet.panel,
+        WidgetKind::Text => stylesheet.text,
+        WidgetKind::Button => stylesheet.button,
+        WidgetKind::ToggleBool => stylesheet.toggle_bool,
+        WidgetKind::SliderF32 => stylesheet.slider_f32,
+        WidgetKind::Root | WidgetKind::Column | WidgetKind::Grid => UiComponentStyle::default(),
+    }
 }
 
 fn draw_text_left(
@@ -1359,6 +1710,25 @@ fn slider_track_rect(rect: Rect) -> Rect {
     }
 }
 
+fn slider_value_text(value: f32, min: f32, max: f32, step: f32) -> String {
+    let precision = if step > 0.0 {
+        (0..=9)
+            .find(|digits| {
+                let scaled = f64::from(step) * 10_f64.powi(*digits);
+                let origin = f64::from(min) * 10_f64.powi(*digits);
+                let end = f64::from(max) * 10_f64.powi(*digits);
+                scaled >= 1.0 - 0.00001
+                    && (scaled - scaled.round()).abs() < 0.00001
+                    && (origin - origin.round()).abs() < 0.00001
+                    && (end - end.round()).abs() < 0.00001
+            })
+            .unwrap_or(9) as usize
+    } else {
+        return value.to_string();
+    };
+    format!("{value:.precision$}")
+}
+
 fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
     let coordinate = i64::from(origin) + (i64::from(extent) - i64::from(content_extent)) / 2;
     coordinate.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
@@ -1385,6 +1755,107 @@ mod tests {
 
     fn theme() -> UiTheme {
         UiTheme::default()
+    }
+
+    fn color(value: u8) -> Pixel {
+        Pixel::rgb(value, value, value)
+    }
+
+    #[test]
+    fn slider_mouse_click_drag_release_and_hover() {
+        let mut state = UiStateStore::default();
+        let (initial, _) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
+            ui.slider_f32("VOLUME", 0.0, 0.0..=1.0, 0.05)
+        });
+        let track = slider_track_rect(rect_for_label(initial.dump(), "VOLUME"));
+        let mut value = 0.0;
+        for (x, pressed, released, expected) in [
+            (track.x + (track.width / 2) as i32, true, false, Some(0.5)),
+            (track.x + track.width as i32 + 50, false, false, Some(1.0)),
+            (track.x - 50, false, true, Some(0.0)),
+            (track.x + track.width as i32, false, false, None),
+        ] {
+            let (output, slider) = run_headless_with_input(
+                size(),
+                &mut state,
+                UiInput {
+                    pointer: UiPointerInput {
+                        position: Some((x, track.y)),
+                        pressed,
+                        released,
+                    },
+                    ..UiInput::default()
+                },
+                theme(),
+                |ui| ui.slider_f32("VOLUME", value, 0.0..=1.0, 0.05),
+            );
+            assert_eq!(output.changed(slider), expected);
+            if let Some(next) = output.changed(slider) {
+                value = next;
+            }
+        }
+    }
+
+    #[test]
+    fn slider_value_display_respects_step_and_range_origin() {
+        assert_eq!(slider_value_text(0.65000004, 0.0, 1.0, 0.05), "0.65");
+        assert_eq!(slider_value_text(1.25, 0.25, 2.0, 1.0), "1.25");
+        assert_eq!(slider_value_text(0.001, 0.0, 1.0, 0.001), "0.001");
+        assert_eq!(slider_value_text(42.0, 0.0, 100.0, 1.0), "42");
+        assert_eq!(slider_value_text(0.000001, 0.0, 1.0, 0.000001), "0.000001");
+    }
+
+    #[test]
+    fn toggle_indicator_tracks_effective_value_in_the_activation_frame() {
+        let theme = UiTheme {
+            row_height: 32,
+            ..theme()
+        };
+        for (input, confirm, expected) in [
+            (false, false, false),
+            (true, false, true),
+            (false, true, true),
+            (true, true, false),
+        ] {
+            let mut state = UiStateStore::default();
+            let mut framebuffer = Framebuffer::new(240, 80);
+            let (output, toggle) = run(
+                &mut framebuffer,
+                &mut state,
+                UiNavInput {
+                    confirm,
+                    ..UiNavInput::default()
+                },
+                theme,
+                |ui| ui.toggle("ENABLED", input),
+            );
+            assert_eq!(output.changed(toggle), confirm.then_some(expected));
+            let rect = rect_for_label(output.dump(), "ENABLED");
+            let x = rect.x + rect.width as i32 - 37;
+            let y = centered_coordinate(rect.y, rect.height, 14) + 6;
+            let track = if expected {
+                theme.accent
+            } else {
+                theme.muted_text
+            };
+            assert_eq!(framebuffer.pixel(x, y), Some(track));
+            assert_eq!(
+                framebuffer.pixel(x + 6, y),
+                Some(if expected {
+                    track
+                } else {
+                    theme.control_background
+                })
+            );
+            assert_eq!(
+                framebuffer.pixel(x + 24, y),
+                Some(if expected {
+                    theme.control_background
+                } else {
+                    track
+                })
+            );
+        }
     }
 
     fn first_control_position() -> (i32, i32) {
@@ -1893,5 +2364,254 @@ mod tests {
                 .chunks_exact(4)
                 .any(|pixel| pixel.iter().any(|channel| *channel != 0))
         );
+    }
+
+    #[test]
+    fn styled_run_applies_component_and_local_paint_without_changing_interaction() {
+        let mut state = UiStateStore::default();
+        let mut framebuffer = Framebuffer::new(220, 140);
+        let local_button_background = color(61);
+        let toggle_background = color(91);
+        let slider_background = color(121);
+        let slider_accent = color(151);
+        let panel_background = color(181);
+        let stylesheet = UiStyleSheet {
+            panel: UiComponentStyle {
+                base: UiStyleOverride {
+                    background: Some(panel_background),
+                    ..UiStyleOverride::default()
+                },
+                ..UiComponentStyle::default()
+            },
+            button: UiComponentStyle {
+                base: UiStyleOverride {
+                    background: Some(color(31)),
+                    ..UiStyleOverride::default()
+                },
+                ..UiComponentStyle::default()
+            },
+            toggle_bool: UiComponentStyle {
+                base: UiStyleOverride {
+                    background: Some(toggle_background),
+                    ..UiStyleOverride::default()
+                },
+                ..UiComponentStyle::default()
+            },
+            slider_f32: UiComponentStyle {
+                base: UiStyleOverride {
+                    background: Some(slider_background),
+                    accent: Some(slider_accent),
+                    ..UiStyleOverride::default()
+                },
+                ..UiComponentStyle::default()
+            },
+            ..UiStyleSheet::default()
+        };
+
+        let (output, button) = run_styled(
+            &mut framebuffer,
+            &mut state,
+            UiNavInput::default(),
+            theme(),
+            stylesheet,
+            |ui| {
+                ui.panel(|ui| {
+                    let button = ui.button_styled(
+                        "ACTION",
+                        UiStyleOverride {
+                            background: Some(local_button_background),
+                            ..UiStyleOverride::default()
+                        },
+                    );
+                    ui.toggle("ENABLED", false);
+                    ui.slider_f32("VOLUME", 0.5, 0.0..=1.0, 0.1);
+                    button
+                })
+            },
+        );
+
+        assert_eq!(output.focused_id(), Some(button.id()));
+        assert!(!output.activated(button));
+
+        let panel_rect = rect_for_kind(output.dump(), "Panel");
+        assert_eq!(
+            framebuffer.pixel(panel_rect.x + 2, panel_rect.y + 2),
+            Some(panel_background)
+        );
+
+        let button_rect = rect_for_label(output.dump(), "ACTION");
+        assert_eq!(
+            framebuffer.pixel(button_rect.x + 2, button_rect.y + 2),
+            Some(local_button_background)
+        );
+
+        let toggle_rect = rect_for_label(output.dump(), "ENABLED");
+        assert_eq!(
+            framebuffer.pixel(toggle_rect.x + 2, toggle_rect.y + 2),
+            Some(toggle_background)
+        );
+
+        let slider_rect = rect_for_label(output.dump(), "VOLUME");
+        assert_eq!(
+            framebuffer.pixel(slider_rect.x + 2, slider_rect.y + 2),
+            Some(slider_background)
+        );
+        let track = slider_track_rect(slider_rect);
+        assert_eq!(
+            framebuffer.pixel(track.x + 1, track.y + 1),
+            Some(slider_accent)
+        );
+    }
+
+    #[test]
+    fn styled_panel_padding_and_gap_affect_arranged_child_geometry() {
+        let mut state = UiStateStore::default();
+        let stylesheet = UiStyleSheet {
+            panel: UiComponentStyle {
+                base: UiStyleOverride {
+                    padding: Some(16),
+                    vertical_gap: Some(9),
+                    ..UiStyleOverride::default()
+                },
+                ..UiComponentStyle::default()
+            },
+            ..UiStyleSheet::default()
+        };
+
+        let (output, _) = run_headless_styled(
+            size(),
+            &mut state,
+            UiNavInput::default(),
+            theme(),
+            stylesheet,
+            |ui| {
+                ui.panel(|ui| {
+                    ui.button("A");
+                    ui.button("B");
+                });
+            },
+        );
+
+        let panel_rect = rect_for_kind(output.dump(), "Panel");
+        let first = rect_for_label(output.dump(), "A");
+        let second = rect_for_label(output.dump(), "B");
+
+        assert_eq!(first.x, panel_rect.x + 16);
+        assert_eq!(first.y, panel_rect.y + 16);
+        assert_eq!(second.y, first.y + first.height as i32 + 9);
+    }
+
+    #[test]
+    fn visual_style_state_precedence_is_focused_then_hovered_then_active() {
+        let stylesheet = UiStyleSheet {
+            button: UiComponentStyle {
+                focused: UiStyleOverride {
+                    background: Some(color(30)),
+                    ..UiStyleOverride::default()
+                },
+                hovered: UiStyleOverride {
+                    background: Some(color(60)),
+                    ..UiStyleOverride::default()
+                },
+                active: UiStyleOverride {
+                    background: Some(color(90)),
+                    ..UiStyleOverride::default()
+                },
+                ..UiComponentStyle::default()
+            },
+            ..UiStyleSheet::default()
+        };
+
+        let mut focused_state = UiStateStore::default();
+        let mut focused_framebuffer = Framebuffer::new(140, 80);
+        let (focused_output, _) = run_styled(
+            &mut focused_framebuffer,
+            &mut focused_state,
+            UiNavInput::default(),
+            theme(),
+            stylesheet,
+            |ui| ui.button("BUTTON"),
+        );
+        let focused_rect = rect_for_label(focused_output.dump(), "BUTTON");
+        assert_eq!(
+            focused_framebuffer.pixel(focused_rect.x + 2, focused_rect.y + 2),
+            Some(color(30))
+        );
+
+        let mut hovered_state = UiStateStore::default();
+        let mut hovered_framebuffer = Framebuffer::new(140, 80);
+        let (hovered_output, _) = run_with_input_styled(
+            &mut hovered_framebuffer,
+            &mut hovered_state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some(first_control_position()),
+                    ..UiPointerInput::default()
+                },
+                ..UiInput::default()
+            },
+            theme(),
+            stylesheet,
+            |ui| ui.button("BUTTON"),
+        );
+        let hovered_rect = rect_for_label(hovered_output.dump(), "BUTTON");
+        assert_eq!(hovered_output.hovered_id(), hovered_output.focused_id());
+        assert_eq!(
+            hovered_framebuffer.pixel(hovered_rect.x + 2, hovered_rect.y + 2),
+            Some(color(60))
+        );
+
+        let mut active_state = UiStateStore::default();
+        let mut active_framebuffer = Framebuffer::new(140, 80);
+        let (active_output, button) = run_with_input_styled(
+            &mut active_framebuffer,
+            &mut active_state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: Some(first_control_position()),
+                    pressed: true,
+                    released: false,
+                },
+                ..UiInput::default()
+            },
+            theme(),
+            stylesheet,
+            |ui| ui.button("BUTTON"),
+        );
+        let active_rect = rect_for_label(active_output.dump(), "BUTTON");
+        assert_eq!(active_output.hovered_id(), Some(button.id()));
+        assert_eq!(active_output.focused_id(), Some(button.id()));
+        assert!(!active_output.activated(button));
+        assert_eq!(
+            active_framebuffer.pixel(active_rect.x + 2, active_rect.y + 2),
+            Some(color(90))
+        );
+    }
+
+    fn rect_for_kind(dump: &str, kind: &str) -> Rect {
+        let line = dump
+            .lines()
+            .find(|line| line.contains(kind))
+            .expect("kind in dump");
+        let rect_text = line
+            .split_once("rect=[")
+            .expect("rect prefix")
+            .1
+            .split_once(']')
+            .expect("rect suffix")
+            .0;
+        parse_rect_text(rect_text)
+    }
+
+    fn parse_rect_text(rect_text: &str) -> Rect {
+        let (coordinates, size) = rect_text.split_once(' ').expect("rect separator");
+        let (x, y) = coordinates.split_once(',').expect("coordinate separator");
+        let (width, height) = size.split_once('x').expect("size separator");
+        Rect {
+            x: x.parse().expect("x"),
+            y: y.parse().expect("y"),
+            width: width.parse().expect("width"),
+            height: height.parse().expect("height"),
+        }
     }
 }

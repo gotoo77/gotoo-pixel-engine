@@ -27,6 +27,8 @@ pub enum Key {
     L,
     M,
     H,
+    Enter,
+    Tab,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -300,8 +302,21 @@ impl PartialEq for GamepadState {
 
 impl Eq for GamepadState {}
 
+/// Committed text and editing commands, separate from physical game keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextInputEvent {
+    Insert(String),
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Home,
+    End,
+}
+
 #[derive(Debug, Clone)]
 pub struct Input {
+    text_events: Vec<TextInputEvent>,
     keys: [ButtonState; KEY_COUNT],
     mouse_buttons: [ButtonState; MOUSE_BUTTON_COUNT],
     mouse_position: Option<(i32, i32)>,
@@ -314,6 +329,7 @@ pub struct Input {
 impl PartialEq for Input {
     fn eq(&self, other: &Self) -> bool {
         self.keys == other.keys
+            && self.text_events == other.text_events
             && self.mouse_buttons == other.mouse_buttons
             && self.mouse_position == other.mouse_position
             && self.touches == other.touches
@@ -325,6 +341,14 @@ impl PartialEq for Input {
 impl Eq for Input {}
 
 impl Input {
+    /// Ordered text edits received this frame, using the active keyboard layout.
+    pub fn text_events(&self) -> &[TextInputEvent] {
+        &self.text_events
+    }
+
+    pub(crate) fn push_text_event(&mut self, event: TextInputEvent) {
+        self.text_events.push(event);
+    }
     pub fn key(&self, key: Key) -> ButtonState {
         self.keys[key_index(key)]
     }
@@ -486,6 +510,7 @@ impl Input {
     }
 
     pub(crate) fn reset_window_devices(&mut self) {
+        self.text_events.clear();
         self.keys = [ButtonState::default(); KEY_COUNT];
         self.mouse_buttons = [ButtonState::default(); MOUSE_BUTTON_COUNT];
         self.mouse_position = None;
@@ -493,6 +518,7 @@ impl Input {
     }
 
     pub(crate) fn advance_frame(&mut self) {
+        self.text_events.clear();
         for key in &mut self.keys {
             key.advance_frame();
         }
@@ -512,6 +538,7 @@ impl Input {
 impl Default for Input {
     fn default() -> Self {
         Self {
+            text_events: Vec::new(),
             keys: [ButtonState::default(); KEY_COUNT],
             mouse_buttons: [ButtonState::default(); MOUSE_BUTTON_COUNT],
             mouse_position: None,
@@ -523,7 +550,7 @@ impl Default for Input {
     }
 }
 
-const KEY_COUNT: usize = 22;
+const KEY_COUNT: usize = 24;
 const MOUSE_BUTTON_COUNT: usize = 3;
 const GAMEPAD_BUTTON_COUNT: usize = 25;
 const GAMEPAD_AXIS_COUNT: usize = 6;
@@ -552,6 +579,8 @@ fn key_index(key: Key) -> usize {
         Key::L => 19,
         Key::M => 20,
         Key::H => 21,
+        Key::Enter => 22,
+        Key::Tab => 23,
     }
 }
 

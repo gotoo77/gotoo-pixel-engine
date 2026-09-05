@@ -14,6 +14,8 @@ mod gamepad_profile;
 mod image;
 mod image_fit;
 mod input;
+#[cfg(feature = "outline-fonts")]
+pub mod outline_text;
 mod pixel;
 mod platform;
 mod renderer;
@@ -59,7 +61,7 @@ pub use image_fit::{ImageFilter, ImageFit};
 pub use input::{
     ButtonState, GamepadAxis, GamepadButton, GamepadCapabilities, GamepadCapability,
     GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, GamepadMappingSource, Input, Key,
-    MouseButton, Touch, TouchPhase,
+    MouseButton, TextInputEvent, Touch, TouchPhase,
 };
 pub use pixel::Pixel;
 #[cfg(feature = "diagnostics")]

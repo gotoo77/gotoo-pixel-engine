@@ -5,12 +5,13 @@ use crate::{ActionId, Framebuffer, Image, ImageFilter, ImageFit, Pixel, Rect, Te
 use crate::{Touch, TouchPhase};
 
 use super::{
-    UiTheme,
+    UiStyleOverride, UiStyleSheet, UiTheme,
     kernel::{
         UiId, UiInput, UiInteractionOutput, UiInteractionState, UiNavigationPolicy, UiPointerInput,
         UiResolvedTarget, run_interaction_pass,
     },
     layout::{UiGridSpec, inset_rect, layout_responsive_grid},
+    style::{UiResolvedStyle, resolve_style},
 };
 
 /// Compatibility name retained while the MFE-001B spatial adapter converges
@@ -88,34 +89,25 @@ pub trait CardPainter {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DefaultCardPainter;
 
-impl CardPainter for DefaultCardPainter {
-    fn paint(
+impl DefaultCardPainter {
+    pub fn paint_styled(
         &self,
         framebuffer: &mut Framebuffer,
         card: &SpatialCard<'_>,
         layout: CardLayout,
         visual: CardVisualState,
         theme: UiTheme,
+        stylesheet: UiStyleSheet,
     ) {
-        let border = if visual.focused || visual.hovered {
-            theme.accent
-        } else {
-            theme.border
-        };
+        let style = resolve_card_style(theme, stylesheet, visual);
         framebuffer.fill_rect(
             layout.rect.x,
             layout.rect.y,
             layout.rect.width,
             layout.rect.height,
-            theme.control_background,
+            style.background,
         );
-        framebuffer.draw_rect(
-            layout.rect.x,
-            layout.rect.y,
-            layout.rect.width,
-            layout.rect.height,
-            border,
-        );
+        draw_border(framebuffer, layout.rect, style.border, style.border_width);
 
         if let Some(image) = card.image
             && layout.image_rect.width > 0
@@ -135,7 +127,7 @@ impl CardPainter for DefaultCardPainter {
                 layout.rect.y,
                 layout.rect.width,
                 3_u32.min(layout.rect.height),
-                theme.accent,
+                style.accent,
             );
         }
 
@@ -151,7 +143,7 @@ impl CardPainter for DefaultCardPainter {
             },
             card.title,
             theme.text_scale.max(1),
-            theme.text,
+            style.text,
         );
         if !card.subtitle.is_empty() {
             draw_centered(
@@ -171,9 +163,29 @@ impl CardPainter for DefaultCardPainter {
                 },
                 card.subtitle,
                 theme.text_scale.max(1),
-                theme.muted_text,
+                style.muted_text,
             );
         }
+    }
+}
+
+impl CardPainter for DefaultCardPainter {
+    fn paint(
+        &self,
+        framebuffer: &mut Framebuffer,
+        card: &SpatialCard<'_>,
+        layout: CardLayout,
+        visual: CardVisualState,
+        theme: UiTheme,
+    ) {
+        self.paint_styled(
+            framebuffer,
+            card,
+            layout,
+            visual,
+            theme,
+            UiStyleSheet::default(),
+        );
     }
 }
 
@@ -271,6 +283,32 @@ pub fn run_card_grid<P: CardPainter>(
             active: state.interaction.is_active(card.id),
         };
         painter.paint(framebuffer, card, layout, visual, theme);
+    }
+
+    output
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_default_card_grid_styled(
+    framebuffer: &mut Framebuffer,
+    bounds: Rect,
+    state: &mut SpatialState,
+    input: SpatialInput<'_>,
+    spec: GridSpec,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    cards: &[SpatialCard<'_>],
+) -> SpatialOutput {
+    let output = resolve_card_grid(bounds, state, input, spec, cards);
+    let painter = DefaultCardPainter;
+
+    for (card, layout) in cards.iter().zip(output.layouts.iter().copied()) {
+        let visual = CardVisualState {
+            focused: output.focused_id() == Some(card.id),
+            hovered: output.hovered_id() == Some(card.id),
+            active: state.interaction.is_active(card.id),
+        };
+        painter.paint_styled(framebuffer, card, layout, visual, theme, stylesheet);
     }
 
     output
@@ -395,6 +433,42 @@ fn draw_centered(
         scale,
         color,
     );
+}
+
+fn resolve_card_style(
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    visual: CardVisualState,
+) -> UiResolvedStyle {
+    let visual_state = super::UiVisualState {
+        focused: visual.focused,
+        hovered: visual.hovered,
+        active: visual.active,
+    };
+    let mut resolved = resolve_style(
+        theme,
+        stylesheet.button,
+        UiStyleOverride::default(),
+        visual_state,
+    );
+
+    let later_border = (visual.hovered && stylesheet.button.hovered.border.is_some())
+        || (visual.active && stylesheet.button.active.border.is_some());
+    if (visual.focused || visual.hovered) && !later_border {
+        resolved.border = resolved.accent;
+    }
+
+    resolved
+}
+
+fn draw_border(framebuffer: &mut Framebuffer, rect: Rect, color: Pixel, width: u32) {
+    for inset in 0..width.max(1) {
+        let rect = inset_rect(rect, inset);
+        if rect.width == 0 || rect.height == 0 {
+            break;
+        }
+        framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
+    }
 }
 
 fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
@@ -533,6 +607,10 @@ mod tests {
             pointer: PointerInput::default(),
             touches: &[],
         }
+    }
+
+    fn color(value: u8) -> Pixel {
+        Pixel::rgb(value, value, value)
     }
 
     #[test]
@@ -919,6 +997,137 @@ mod tests {
             framebuffer.pixel(center.0, center.1),
             Some(Pixel::rgb(220, 20, 20))
         );
+    }
+
+    #[test]
+    fn styled_default_card_painter_uses_button_style_semantics() {
+        let ids = ids();
+        let cards = cards(&ids[..2]);
+        let mut state = SpatialState::default();
+        let mut framebuffer = Framebuffer::new(220, 120);
+        let background = color(41);
+        let border = color(51);
+        let accent = color(61);
+        let stylesheet = UiStyleSheet {
+            button: super::super::UiComponentStyle {
+                base: UiStyleOverride {
+                    background: Some(background),
+                    border: Some(border),
+                    accent: Some(accent),
+                    border_width: Some(2),
+                    ..UiStyleOverride::default()
+                },
+                ..super::super::UiComponentStyle::default()
+            },
+            ..UiStyleSheet::default()
+        };
+
+        let output = run_default_card_grid_styled(
+            &mut framebuffer,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 220,
+                height: 120,
+            },
+            &mut state,
+            SpatialInput::default(),
+            GridSpec {
+                min_cell_width: 90,
+                preferred_cell_height: 80,
+                gap: 8,
+                padding: 8,
+            },
+            UiTheme::default(),
+            stylesheet,
+            &cards,
+        );
+
+        let focused = output.layout_for(ids[0]).expect("focused card layout").rect;
+        let unfocused = output
+            .layout_for(ids[1])
+            .expect("unfocused card layout")
+            .rect;
+        assert_eq!(output.focused_id(), Some(ids[0]));
+        assert_eq!(
+            framebuffer.pixel(focused.x + 2, focused.y + 2),
+            Some(background)
+        );
+        assert_eq!(framebuffer.pixel(focused.x, focused.y), Some(accent));
+        assert_eq!(
+            framebuffer.pixel(unfocused.x + 1, unfocused.y + 1),
+            Some(border)
+        );
+    }
+
+    #[test]
+    fn styled_default_card_painter_applies_active_over_hovered_over_focused() {
+        let ids = ids();
+        let cards = cards(&ids[..1]);
+        let mut state = SpatialState::default();
+        let baseline = run_card_grid_headless(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 180,
+                height: 120,
+            },
+            &mut state,
+            SpatialInput::default(),
+            GridSpec::default(),
+            &cards,
+        );
+        let position = center_i32(baseline.layouts()[0].rect);
+        let mut framebuffer = Framebuffer::new(180, 120);
+        let stylesheet = UiStyleSheet {
+            button: super::super::UiComponentStyle {
+                focused: UiStyleOverride {
+                    background: Some(color(30)),
+                    ..UiStyleOverride::default()
+                },
+                hovered: UiStyleOverride {
+                    background: Some(color(60)),
+                    ..UiStyleOverride::default()
+                },
+                active: UiStyleOverride {
+                    background: Some(color(90)),
+                    accent: Some(color(120)),
+                    ..UiStyleOverride::default()
+                },
+                ..super::super::UiComponentStyle::default()
+            },
+            ..UiStyleSheet::default()
+        };
+
+        let output = run_default_card_grid_styled(
+            &mut framebuffer,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 180,
+                height: 120,
+            },
+            &mut state,
+            SpatialInput {
+                pointer: PointerInput {
+                    position: Some(position),
+                    pressed: true,
+                    released: false,
+                },
+                ..SpatialInput::default()
+            },
+            GridSpec::default(),
+            UiTheme::default(),
+            stylesheet,
+            &cards,
+        );
+
+        let rect = output.layouts()[0].rect;
+        assert_eq!(output.focused_id(), Some(ids[0]));
+        assert_eq!(output.hovered_id(), Some(ids[0]));
+        assert!(!output.activated(ids[0]));
+        assert_eq!(framebuffer.pixel(rect.x + 2, rect.y + 4), Some(color(90)));
+        assert_eq!(framebuffer.pixel(rect.x + 2, rect.y + 1), Some(color(120)));
     }
 
     fn center_i32(rect: Rect) -> (i32, i32) {

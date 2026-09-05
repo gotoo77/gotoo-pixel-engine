@@ -136,6 +136,13 @@ fn managed_glyph(font: Font, character: char) -> Option<&'static [u8]> {
 
     match font {
         Font::Pixel5x7 => match character {
+            '\u{2013}' => Some(&[0, 0, 0, 0b01110, 0, 0, 0]),
+            '\u{2014}' => Some(&[0, 0, 0, 0b11111, 0, 0, 0]),
+            '\u{2022}' => Some(&[0, 0, 0b01110, 0b01110, 0b01110, 0, 0]),
+            '\u{2190}' => Some(&[0, 0b00100, 0b01000, 0b11111, 0b01000, 0b00100, 0]),
+            '\u{2192}' => Some(&[0, 0b00100, 0b00010, 0b11111, 0b00010, 0b00100, 0]),
+            '\u{2191}' => Some(&[0b00100, 0b01110, 0b10101, 0b00100, 0b00100, 0b00100, 0]),
+            '\u{2193}' => Some(&[0, 0b00100, 0b00100, 0b00100, 0b10101, 0b01110, 0b00100]),
             '%' => Some(&[
                 0b11001, 0b11010, 0b00100, 0b01011, 0b10011, 0b00000, 0b00000,
             ]),
@@ -178,6 +185,12 @@ fn managed_glyph(font: Font, character: char) -> Option<&'static [u8]> {
             _ => None,
         },
         Font::Mini3x5 => match character {
+            '\u{2013}' | '\u{2014}' => Some(&[0, 0, 0b111, 0, 0]),
+            '\u{2022}' => Some(&[0, 0, 0b010, 0, 0]),
+            '\u{2190}' => Some(&[0b001, 0b010, 0b111, 0b010, 0b001]),
+            '\u{2192}' => Some(&[0b100, 0b010, 0b111, 0b010, 0b100]),
+            '\u{2191}' => Some(&[0b010, 0b111, 0b010, 0b010, 0]),
+            '\u{2193}' => Some(&[0, 0b010, 0b010, 0b111, 0b010]),
             '%' => Some(&[0b101, 0b001, 0b010, 0b100, 0b101]),
             '*' => Some(&[0b000, 0b101, 0b010, 0b101, 0b000]),
             '=' => Some(&[0b000, 0b111, 0b000, 0b111, 0b000]),
@@ -211,8 +224,11 @@ mod tests {
     #[test]
     fn managed_renderer_covers_ui_punctuation_without_placeholder() {
         for font in [Font::Pixel5x7, Font::Mini3x5] {
-            let placeholder = rendered(font, "?");
-            for character in ["%", "*", "=", "'"] {
+            let placeholder = rendered(font, "\u{10ffff}");
+            for character in [
+                "%", "*", "=", "'", "\u{2013}", "\u{2014}", "\u{2022}", "\u{2190}", "\u{2191}",
+                "\u{2192}", "\u{2193}",
+            ] {
                 assert_ne!(
                     rendered(font, character),
                     placeholder,
@@ -225,7 +241,7 @@ mod tests {
     #[test]
     fn managed_renderer_preserves_common_french_diacritics() {
         for font in [Font::Pixel5x7, Font::Mini3x5] {
-            let placeholder = rendered(font, "?");
+            let placeholder = rendered(font, "\u{10ffff}");
             assert_ne!(rendered(font, "É"), placeholder);
             assert_ne!(rendered(font, "È"), placeholder);
             assert_ne!(rendered(font, "Ç"), placeholder);
@@ -238,6 +254,17 @@ mod tests {
         for font in [Font::Pixel5x7, Font::Mini3x5] {
             assert_eq!(rendered(font, "Ï"), rendered(font, "I"));
             assert_eq!(rendered(font, "Ö"), rendered(font, "O"));
+        }
+    }
+
+    #[test]
+    fn managed_missing_glyph_is_visible_and_distinct_from_question_mark() {
+        for font in [Font::Pixel5x7, Font::Mini3x5] {
+            let missing = rendered(font, "\u{10ffff}");
+            assert_ne!(missing, rendered(font, "?"));
+            assert_ne!(missing, rendered(font, " "));
+            assert_eq!(missing, rendered(font, "\u{1f680}"));
+            assert_ne!(rendered(font, "\u{2190}"), rendered(font, "\u{2192}"));
         }
     }
 
