@@ -38,57 +38,64 @@ impl Game for ArcadeWithGamepadProbe {
 }
 
 fn draw_gamepad_probe(frame: &mut Frame<'_>) {
-    let first = frame.input.gamepad_ids().next();
-    let (info_label, state_label) = if let Some(id) = first {
-        let up = frame.input.gamepad_button(id, GamepadButton::DPadUp).held();
-        let down = frame
-            .input
-            .gamepad_button(id, GamepadButton::DPadDown)
-            .held();
-        let left = frame
-            .input
-            .gamepad_button(id, GamepadButton::DPadLeft)
-            .held();
-        let right = frame
-            .input
-            .gamepad_button(id, GamepadButton::DPadRight)
-            .held();
-        let south = frame.input.gamepad_button(id, GamepadButton::South).held();
-        let x = frame.input.gamepad_axis(id, GamepadAxis::LeftStickX);
-        let y = frame.input.gamepad_axis(id, GamepadAxis::LeftStickY);
-        let info = frame.input.gamepad_info(id);
-        let info_label = if let Some(info) = info {
-            format!(
-                "PAD {} {}  MAP:{:?}  CAPS A:{:?} D:{:?} LSX:{:?}",
-                id.as_usize(),
-                info.name,
-                info.mapping_source,
-                info.capabilities.button(GamepadButton::South),
-                info.capabilities.button(GamepadButton::DPadUp),
-                info.capabilities.axis(GamepadAxis::LeftStickX),
-            )
-        } else {
-            format!("PAD {} (NO DEVICE INFO)", id.as_usize())
-        };
-        let state_label = format!(
-            "STATE D:{}{}{}{}  LS:{:+.2},{:+.2}  A:{}",
-            if up { 'U' } else { '-' },
-            if down { 'D' } else { '-' },
-            if left { 'L' } else { '-' },
-            if right { 'R' } else { '-' },
-            x,
-            y,
-            if south { '1' } else { '0' },
-        );
-        (info_label, state_label)
-    } else {
-        (
-            "PAD: NONE (GILRS DID NOT DETECT A CONTROLLER)".to_owned(),
-            String::new(),
-        )
-    };
+    let mut ids = frame.input.gamepad_ids().collect::<Vec<_>>();
+    ids.sort_by_key(|id| id.as_usize());
 
-    let height = 26_u32.min(frame.framebuffer.height());
+    let mut labels = Vec::new();
+    if ids.is_empty() {
+        labels.push("PAD: NONE (GILRS DID NOT DETECT A CONTROLLER)".to_owned());
+    } else {
+        for id in ids {
+            let up = frame.input.gamepad_button(id, GamepadButton::DPadUp).held();
+            let down = frame
+                .input
+                .gamepad_button(id, GamepadButton::DPadDown)
+                .held();
+            let left = frame
+                .input
+                .gamepad_button(id, GamepadButton::DPadLeft)
+                .held();
+            let right = frame
+                .input
+                .gamepad_button(id, GamepadButton::DPadRight)
+                .held();
+            let south = frame.input.gamepad_button(id, GamepadButton::South).held();
+            let x = frame.input.gamepad_axis(id, GamepadAxis::LeftStickX);
+            let y = frame.input.gamepad_axis(id, GamepadAxis::LeftStickY);
+
+            if let Some(info) = frame.input.gamepad_info(id) {
+                labels.push(format!(
+                    "PAD {} {}  MAP:{:?}  CAPS A:{:?} D:{:?} LSX:{:?}",
+                    id.as_usize(),
+                    info.name,
+                    info.mapping_source,
+                    info.capabilities.button(GamepadButton::South),
+                    info.capabilities.button(GamepadButton::DPadUp),
+                    info.capabilities.axis(GamepadAxis::LeftStickX),
+                ));
+            } else {
+                labels.push(format!("PAD {} (NO DEVICE INFO)", id.as_usize()));
+            }
+
+            labels.push(format!(
+                "  STATE D:{}{}{}{}  LS:{:+.2},{:+.2}  A:{}",
+                if up { 'U' } else { '-' },
+                if down { 'D' } else { '-' },
+                if left { 'L' } else { '-' },
+                if right { 'R' } else { '-' },
+                x,
+                y,
+                if south { '1' } else { '0' },
+            ));
+        }
+    }
+
+    const LINE_HEIGHT: u32 = 11;
+    let requested_height = u32::try_from(labels.len())
+        .unwrap_or(u32::MAX)
+        .saturating_mul(LINE_HEIGHT)
+        .saturating_add(2);
+    let height = requested_height.min(frame.framebuffer.height());
     let y = i32::try_from(frame.framebuffer.height().saturating_sub(height)).unwrap_or(0);
     let bounds = Rect {
         x: 0,
@@ -103,30 +110,28 @@ fn draw_gamepad_probe(frame: &mut Frame<'_>) {
         bounds.height,
         Pixel::rgb(3, 7, 11),
     );
-    draw_text_centered(
-        frame.framebuffer,
-        Rect {
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: 12,
-        },
-        &info_label,
-        1,
-        Pixel::rgb(111, 238, 184),
-    );
-    if !state_label.is_empty() {
+
+    for (index, label) in labels.iter().enumerate() {
+        let line_y = bounds.y.saturating_add(
+            i32::try_from(index)
+                .unwrap_or(i32::MAX)
+                .saturating_mul(i32::try_from(LINE_HEIGHT).unwrap_or(i32::MAX)),
+        );
         draw_text_centered(
             frame.framebuffer,
             Rect {
                 x: bounds.x,
-                y: bounds.y.saturating_add(13),
+                y: line_y,
                 width: bounds.width,
-                height: 12,
+                height: LINE_HEIGHT,
             },
-            &state_label,
+            label,
             1,
-            Pixel::rgb(230, 238, 235),
+            if index % 2 == 0 {
+                Pixel::rgb(111, 238, 184)
+            } else {
+                Pixel::rgb(230, 238, 235)
+            },
         );
     }
 }
