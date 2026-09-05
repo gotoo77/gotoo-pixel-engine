@@ -3,8 +3,8 @@ mod arcade;
 
 use arcade::{ArcadeApp, ArcadeInteractionMode};
 use gotoo_pixel_engine::{
-    EngineConfig, Frame, Game, GameResult, GamepadAxis, GamepadButton, Pixel, Rect,
-    ui::draw_text_centered, run,
+    EngineConfig, Frame, Game, GameResult, GamepadAxis, GamepadButton, Pixel, Rect, run,
+    ui::draw_text_centered,
 };
 
 fn window_size(framebuffer_width: u32, framebuffer_height: u32) -> (u32, u32) {
@@ -41,9 +41,18 @@ fn draw_gamepad_probe(frame: &mut Frame<'_>) {
     let first = frame.input.gamepad_ids().next();
     let label = if let Some(id) = first {
         let up = frame.input.gamepad_button(id, GamepadButton::DPadUp).held();
-        let down = frame.input.gamepad_button(id, GamepadButton::DPadDown).held();
-        let left = frame.input.gamepad_button(id, GamepadButton::DPadLeft).held();
-        let right = frame.input.gamepad_button(id, GamepadButton::DPadRight).held();
+        let down = frame
+            .input
+            .gamepad_button(id, GamepadButton::DPadDown)
+            .held();
+        let left = frame
+            .input
+            .gamepad_button(id, GamepadButton::DPadLeft)
+            .held();
+        let right = frame
+            .input
+            .gamepad_button(id, GamepadButton::DPadRight)
+            .held();
         let south = frame.input.gamepad_button(id, GamepadButton::South).held();
         let x = frame.input.gamepad_axis(id, GamepadAxis::LeftStickX);
         let y = frame.input.gamepad_axis(id, GamepadAxis::LeftStickY);
@@ -70,10 +79,20 @@ fn draw_gamepad_probe(frame: &mut Frame<'_>) {
         width: frame.framebuffer.width(),
         height,
     };
-    frame
-        .framebuffer
-        .fill_rect(bounds.x, bounds.y, bounds.width, bounds.height, Pixel::rgb(3, 7, 11));
-    draw_text_centered(frame.framebuffer, bounds, &label, 1, Pixel::rgb(111, 238, 184));
+    frame.framebuffer.fill_rect(
+        bounds.x,
+        bounds.y,
+        bounds.width,
+        bounds.height,
+        Pixel::rgb(3, 7, 11),
+    );
+    draw_text_centered(
+        frame.framebuffer,
+        bounds,
+        &label,
+        1,
+        Pixel::rgb(111, 238, 184),
+    );
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
