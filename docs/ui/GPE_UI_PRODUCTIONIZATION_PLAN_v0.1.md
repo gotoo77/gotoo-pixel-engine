@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE, P3 PASS WITH CONDITIONS, P4 ACTIVE / RUNTIME GATES PASS**
+Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE, P3 PASS WITH CONDITIONS, P4 PASS, P5 ACTIVE**
 
 Baseline:
 
@@ -18,6 +18,7 @@ P0             PASS
 P1             PASS
 P2             PASS
 P3             PASS WITH CONDITIONS
+P4             PASS
 ```
 
 ## Mission
@@ -81,6 +82,10 @@ P2 result:
 P3 result:
 
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P3_RESULT_v0.1.md`
+
+P4 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P4_RESULT_v0.1.md`
 
 ---
 
@@ -223,34 +228,40 @@ P3 is **not started by the P2 closure**. It must begin explicitly from the merge
 
 ## P4 — Typography follow-up
 
-Status: **ACTIVE / NATIVE + WEB HUMAN RUNTIME GATES PASS / ARCHITECTURE CLOSURE PENDING**.
-
-The maintainer explicitly authorized local P4 work on 2026-09-05 ("go P4").
-This does not assert that P3 was merged or that its outstanding gates passed.
-
-Audit, implementation evidence and closure direction:
-`docs/ui/GPE_UI_PRODUCTIONIZATION_P4_RESULT_v0.1.md`.
-
-Track issue #69 separately.
+Status: **PASS / STOP**.
 
 Validated capability:
 
 - explicit missing-glyph behavior;
 - bitmap pixel font option preserved;
-- improved typography via optional `fontdue` outline path;
-- 52-font gallery with search/navigation and interactive size control;
+- optional `fontdue` outline path;
+- 52-font searchable/navigable gallery;
+- interactive size slider with pointer, held-key repeat and guarded wheel input;
 - Native human runtime PASS;
 - Web human runtime PASS in Chrome, VS Code integrated browser and Firefox.
 
-Remaining P4 work is a deliberate closure decision, not more speculative typography features. Broad component-wide font plumbing should not be generalized without consumer evidence; cost attribution belongs in P5 and public API freeze belongs in P7.
+Closure decision: preserve the capability but defer broad component-wide outline-font plumbing and automatic fallback until P6 consumer evidence. Cost attribution belongs in P5 and public API freeze belongs in P7.
+
+See `docs/ui/GPE_UI_PRODUCTIONIZATION_P4_RESULT_v0.1.md`.
 
 ## P5 — Cost attribution / debug boundary
 
-MFE-001C found no CPU red flag but allocation attribution remains a productionization condition.
+Status: **ACTIVE**.
 
-- distinguish mandatory runtime output from opt-in debug dump;
-- remeasure allocation calls/bytes after convergence;
-- no optimization before attribution.
+MFE-001C found no CPU red flag but its allocation counts included deterministic textual/headless debug dumps. P5 must establish the real production boundary before any optimization claim.
+
+Required work:
+
+- distinguish mandatory transaction/runtime output from opt-in debug dump construction;
+- keep deterministic dumps available for tests and diagnostics without charging every production transaction for them;
+- remeasure allocation calls/bytes and transaction timing after P0–P4 convergence;
+- compare debug-capture ON versus OFF using the same workload/toolchain;
+- report binary/artifact observations separately from per-transaction allocations;
+- preserve behavior and determinism; do not optimize before attribution.
+
+P5 mission and gates:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P5_COST_v0.1.md`.
 
 ## P6 — First real consumers
 
@@ -313,13 +324,11 @@ P0 = PASS
 P1 = PASS
 P2 = PASS
 P3 = PASS WITH CONDITIONS (local implementation and probe follow-ups)
-P4 = ACTIVE (Native + Web human runtime PASS; architecture closure pending)
+P4 = PASS / STOP
+P5 = ACTIVE
 STOP
 ```
 
-Active implementation slice: P4 typography, tracked by issue #69 and
-`docs/ui/phase0-v03/TEXT_RENDERING_FOLLOWUP.md`.
+Active implementation slice: P5 cost attribution / debug boundary.
 
-The maintainer's explicit P4 start supersedes the local sequencing hold.
-P3 closure/merge evidence remains outstanding and is not manufactured here.
-P4 bitmap audit and optional outline capability are implemented and human-validated on Native and Web. Component-wide font styling is intentionally not generalized yet; automatic fallback remains deferred pending consumer evidence. The next P4 action is an explicit closure decision, after which P5 cost attribution can start.
+P3 closure/merge evidence remains outstanding and is not manufactured here. P4 has closed without broadening typography beyond the evidence. P5 now owns the unresolved MFE-001C allocation-attribution condition: separate mandatory transaction work from opt-in diagnostic dump work, then remeasure before deciding whether any optimization is justified.
