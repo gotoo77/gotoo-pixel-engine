@@ -1,6 +1,6 @@
 # GPE.UI — P6.1f Developer Experience / Composition-Cost Audit v0.1
 
-Status: **PASS WITH FOLLOW-UP HELPERS / P6.2 BLOCKED UNTIL SMALL EXTRACTION**
+Status: **PASS / STOP — FOLLOW-UP HELPER VALIDATED, P6.2 AUTHORIZED**
 
 ## Scope
 
@@ -18,6 +18,7 @@ Primary implementation:
 examples/arcade/high_res.rs
 examples/arcade.rs
 src/presentation.rs
+src/pixel_game_host.rs
 ```
 
 Historical/compatibility comparison:
@@ -26,7 +27,7 @@ Historical/compatibility comparison:
 examples/arcade/game.rs
 ```
 
-Validated runtime facts entering this audit:
+Validated runtime facts entering and closing this audit:
 
 ```text
 high-resolution outline typography is visually crisp
@@ -36,6 +37,8 @@ multi-gamepad navigation works
 search and category filtering work
 release runtime remains near 60 FPS on the validated machine
 low-resolution gameplay can be integer-nearest composited into a high-resolution host
+launch -> child game -> return-to-launcher runtime path passes after PixelGameHost refactor
+cargo fmt / test / compile gates pass on the validated branch
 ```
 
 ## Classification
@@ -99,13 +102,13 @@ center
 paint
 ```
 
-Verdict: **shared helper justified by repetition**.
+Verdict: **shared helper justified by repetition, but not required to unblock P6.2**.
 
-The helper should remain small and typography-focused; do not create a text widget framework merely to remove this function.
+The helper should remain small and typography-focused; do not create a text widget framework merely to remove this function. Its final public shape remains a P7 concern unless P6.2 independently repeats the same need.
 
-### E. Engine/UI responsibilities reconstructed by the consumer — MUST EXTRACT
+### E. Engine/UI responsibilities reconstructed by the consumer — EXTRACTED
 
-The high-resolution Arcade host currently performs a nested-game mini-runtime manually:
+The original high-resolution Arcade host performed a nested-game mini-runtime manually:
 
 ```text
 own a low-resolution gameplay Framebuffer
@@ -117,17 +120,25 @@ present_pixel_surface(...) into the high-resolution host
 manage the child presentation boundary
 ```
 
-This is the strongest DX failure found by P6.1.
+This was the strongest DX failure found by P6.1.
 
-A tutorial should not teach application code to construct an internal `Frame` merely to host a pixel game beneath high-resolution UI. This is engine responsibility reconstructed by the consumer.
+The mandatory extraction is now implemented as the provisional `PixelGameHost` helper. The Arcade consumer no longer owns the child framebuffer, constructs the child `Frame`, builds the child `Viewport`, or manually sequences child update + presentation.
 
-Verdict: **extract one small reusable nested pixel-game host abstraction before P6.2**.
+The resulting consumer boundary is intentionally narrow:
+
+```text
+active_game: Option<PixelGameHost>
+...
+host.update_and_present(frame, HOST_BOUNDS)
+```
+
+The helper name and exact public status remain provisional until P7.1.
 
 ## Input-coordinate boundary
 
 Keyboard and gamepad state can be forwarded unchanged to a nested pixel game.
 
-Pointer/touch coordinates cannot be silently forwarded from the host framebuffer because they are expressed in host coordinates. `PixelPresentation::map_point(...)` already proves the geometric mapping primitive, but the nested-game abstraction must make the policy explicit.
+Pointer/touch coordinates cannot be silently forwarded from the host framebuffer because they are expressed in host coordinates. `PixelPresentation::map_point(...)` proves the geometric mapping primitive, but the nested-game abstraction must make the policy explicit.
 
 For the current Native Arcade slice, launched games use their Native/keyboard-oriented constructors, so host-pointer forwarding is not required for the validated gameplay path. This is an explicit scope boundary, not evidence that coordinate mapping can be ignored.
 
@@ -163,56 +174,35 @@ P7 may improve theme declaration ergonomics, but P6.1 does not justify a `NeonAr
 
 ## High-resolution presentation decision
 
-`present_pixel_surface(...)` is a valid low-level primitive and should remain small.
+`present_pixel_surface(...)` remains a valid low-level primitive.
 
-However, the current consumer experience around it is incomplete. The primitive handles pixels; the consumer still manually hosts the nested `Game` runtime.
+`PixelGameHost` now covers the specific repeated integration mechanics exposed by Arcade without introducing a render graph, compositor framework, global game manager or hidden state.
 
-Required follow-up is not a compositor or render graph. It is a narrow convenience abstraction around:
-
-```text
-low-res framebuffer ownership
-child Frame construction
-child update
-integer presentation
-explicit input-coordinate policy
-```
-
-Possible naming is deliberately not frozen in P6. Candidate concepts include:
-
-```text
-PixelGameHost
-PixelSurfaceHost
-NestedGameSurface
-```
-
-The final name belongs to P7.1 unless implementation requires a temporary internal name.
+This is the desired P6 outcome: extract only the responsibility proven to belong below the consumer.
 
 ## Tutorial test
 
-Current Arcade high-res architecture is explainable conceptually:
+The high-resolution architecture is now explainable at tutorial level as:
 
 ```text
 high-res host UI
-+ low-res game surface
-+ integer nearest presentation
++ PixelGameHost for low-res child gameplay
++ integer-nearest presentation
 ```
 
-But the implementation currently exposes too much plumbing for a beginner-facing tutorial because application code manually constructs the child `Frame`.
+The consumer no longer needs to learn internal `Frame` construction in order to use this model. The tutorial ergonomics blocker found by the first audit is therefore removed for the Native keyboard/gamepad scope.
 
-Therefore the current implementation **fails the tutorial ergonomics sub-gate** until the narrow host helper is extracted.
+## Follow-up status
 
-## Follow-up before P6.2
-
-Only the following extractions are authorized:
-
-1. **Nested pixel-game host helper** — mandatory.
-2. **Outline shrink-to-fit/center helper** — allowed and recommended because repetition is already observed.
-3. No generic launcher DSL.
-4. No generic search/filter framework.
-5. No generic GPU compositor/render graph.
-6. No Arcade-specific core widgets/theme.
-
-After these small extractions, re-evaluate Arcade consumer code. P6.2 may begin if the nested-game mini-runtime disappears from consumer code and no new architectural regression is introduced.
+```text
+Nested pixel-game host helper     IMPLEMENTED / VALIDATED
+Outline fit/center helper         DEFERRED — still justified, not a P6.2 blocker
+Generic launcher DSL              REJECTED
+Generic search/filter framework   REJECTED
+Generic GPU compositor            REJECTED
+Arcade-specific core widgets      REJECTED
+Pointer/touch nested mapping      OPEN BOUNDARY FOR LATER WEB/TOUCH WORK
+```
 
 ## Verdict
 
@@ -222,14 +212,16 @@ consumer product ownership         PASS
 shared spatial/style reuse         PASS
 screen composition                 PASS
 high-res pixel primitive           PASS
-nested child-game DX               FAIL -> mandatory helper
-outline text-fit DX                FOLLOW-UP HELPER JUSTIFIED
+nested child-game DX               PASS AFTER PixelGameHost EXTRACTION
+outline text-fit DX                FOLLOW-UP HELPER JUSTIFIED / NON-BLOCKING
 search/filter abstraction          KEEP CONSUMER-LOCAL
 launcher-specific abstraction      REJECT
 ```
 
 Overall:
 
-> **PASS WITH FOLLOW-UP HELPERS**
+> **PASS / STOP**
 
-P6.1 has successfully discovered an abstraction gap rather than hiding it. P6.2 remains blocked until the narrow nested pixel-game host extraction is implemented and reviewed.
+P6.1 successfully exposed a real abstraction gap, extracted a narrow helper, and revalidated the runtime path without broadening GPE into a speculative framework.
+
+**P6.2 is now authorized.** The next consumer must be structurally unlike Arcade and must not inherit Arcade-specific abstractions by default.
