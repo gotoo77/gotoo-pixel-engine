@@ -18,6 +18,7 @@ mod input;
 pub mod outline_text;
 mod pixel;
 mod platform;
+mod presentation;
 mod renderer;
 mod sfx_manifest;
 mod sprite;
@@ -70,6 +71,7 @@ pub use platform::{
     EngineConfig, EngineError, Frame, Game, GameResult, ToolFrame, ToolWindowConfig,
     ToolWindowMode, run, tool_window_supported,
 };
+pub use presentation::{PixelPresentation, present_pixel_surface};
 pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
