@@ -1,6 +1,6 @@
 # GPE.UI - P4 Typography: First Slice
 
-Status: P4 ACTIVE / BITMAP AND EXPERIMENTAL 20-FONT GALLERY IMPLEMENTED
+Status: P4 ACTIVE / BITMAP + 52-FONT OUTLINE GALLERY IMPLEMENTED / NATIVE HUMAN RUNTIME PASS / WEB HUMAN RUNTIME PENDING
 
 Start authorized by maintainer: "go P4", 2026-09-05.
 This records authorization to proceed locally, not a P3 merge or a CI result.
@@ -19,18 +19,17 @@ Source: https://github.com/gotoo77/gotoo-pixel-engine/issues/69
   actual missing glyph. They now use unsupported U+10FFFF as their reference.
 - `src/bitmap_font.rs`: custom bitmap fonts retain their declared fallback.
   This slice does not replace consumer-authored fallback policy.
-- Searches of src, tests, examples and Cargo.toml found no TTF/OTF renderer or
-  outline-font dependency in this checkout. Older follow-up wording about an
-  existing/evolving outline path must not be treated as implementation evidence.
+- The outline path is optional and remains isolated behind the `outline-fonts`
+  feature; the default bitmap path does not pull `fontdue`.
 
-## Implemented
+## Implemented Bitmap Follow-up
 
 TextRenderer supports U+2013/U+2014 dashes, U+2022 bullet, and U+2190 through
 U+2193 arrows in both built-in fonts. The 3x5 font intentionally uses the same
 three-pixel stroke for both dashes. Left/right arrows remain distinct.
 
 The legacy Framebuffer glyph tables, custom bitmap font fallback, font metrics,
-public API and dependency set remain unchanged.
+public API and default dependency set remain unchanged.
 
 `examples/gpe_ui_p4_typography_probe.rs` renders a comparison of both fonts at
 integer scales 1 and 2, with UI text, French accents, punctuation, literal `?`
@@ -41,36 +40,76 @@ rtk cargo run --example gpe_ui_p4_typography_probe
 rtk cargo run --example gpe_ui_p4_typography_probe -- target/p4-typography.png
 ```
 
-## Validation
+Recorded validation for that slice:
 
 - `rtk cargo test text::tests --lib`: 5 passed.
 - `rtk cargo check --target wasm32-unknown-unknown --lib`: PASS.
 - `rtk cargo clippy --example gpe_ui_p4_typography_probe -- -D warnings`: PASS.
-- PNG export command above: PASS; export visually inspected, text nonblank,
-  columns separate, missing symbol distinguishable from question mark.
+- PNG export: PASS; export visually inspected.
 
-Native window readability and browser runtime have not been human-validated.
-Web compilation is not a browser rendering gate. P4 is not complete.
+## Outline Gallery
 
-## Outline Gallery Follow-up
+The maintainer explicitly requested a broad navigable font gallery and then
+human-validated the current Native interaction/rendering behavior on 2026-09-05.
 
-The maintainer explicitly requested at least twenty distinct fonts navigable
-through GPE.UI, authorizing the implementation beyond the initial small slice.
-The previous dependency/integration hold is superseded for this experiment.
-
-- Optional `outline-fonts` feature uses fontdue 0.9.4; default builds keep the
-  bitmap path without this dependency.
+- Optional `outline-fonts` feature uses `fontdue 0.9.4`.
 - `src/outline_text.rs` owns each loaded font, reusable layout and a bounded
   glyph cache. Measurement and painting use the same layout; coverage is alpha
   blended and clipped to the caller's rectangle and framebuffer.
-- `examples/gpe_ui_p4_font_gallery.rs` loads twenty separate TTF families at
-  once. Its GPE.UI menu shows font-authored labels, paginates in groups of ten,
-  cycles via previous/next and keyboard, and exposes a mouse-editable size slider.
-- `assets/fonts/p4` contains the original fonts, individual OFL licences and
-  revision/hash provenance. No system font installation or runtime download.
-- This is not yet a font field in every UiStyleSheet/component. The gallery
-  composes existing GPE.UI interactions with outline painting. Automatic font
-  fallback, complex-script shaping and variable-axis controls remain deferred.
+- `examples/gpe_ui_p4_font_gallery.rs` currently embeds **52 distinct TTF
+  families**, with fuzzy search, paginated navigation, previous/next controls
+  and a size slider.
+- Slider rendering exposes a distinct current-value thumb.
+- Focused slider keyboard left/right uses deterministic repeat: immediate step,
+  300 ms initial delay, then 60 ms repeat cadence based on `delta_time`.
+- GPE input now exposes frame-scoped mouse-wheel steps. In the gallery, wheel
+  changes the slider only when that slider is both hovered and focused.
+- `assets/fonts/p4` contains font files, individual OFL licences and provenance.
+  No system font installation or runtime download is required.
+- This is still an experimental integration surface, not yet a font field in
+  every `UiStyleSheet`/component.
+- Automatic font fallback, complex-script shaping and variable-axis controls
+  remain deferred.
+
+Native runtime gate: **PASS (maintainer, 2026-09-05)** for gallery navigation,
+font rendering, slider value marker, pointer editing, keyboard repeat and the
+hover+focus wheel rule.
+
+## Web Runtime Probe
+
+A dedicated Web wrapper now reuses the same gallery implementation:
+
+- `examples/gpe_ui_p4_font_gallery_web.rs`
+- `web/gpe_ui_p4_font_gallery.html`
+- `scripts/build_p4_font_gallery_web.ps1`
+
+Build and run from PowerShell:
+
+```powershell
+.\scripts\build_p4_font_gallery_web.ps1
+python .\scripts\dev.py serve-web
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000/gpe_ui_p4_font_gallery.html
+```
+
+Web human-runtime acceptance must verify at least:
+
+1. the same outline fonts render legibly;
+2. fuzzy search and previous/next navigation work;
+3. the slider is pointer-editable;
+4. focused left/right repeat behaves as on Native;
+5. wheel changes the slider only while it is both hovered and focused;
+6. moving keyboard focus away while leaving the pointer over the slider disables
+   wheel changes.
+
+**Browser runtime is still PENDING until the maintainer executes this probe.**
+Web compilation alone is not a browser-rendering gate.
+
+## Validation Commands
 
 ```powershell
 rtk cargo run --features outline-fonts --example gpe_ui_p4_font_gallery
@@ -78,26 +117,20 @@ rtk cargo test --features outline-fonts --example gpe_ui_p4_font_gallery
 rtk cargo test --features outline-fonts --lib
 rtk cargo check --target wasm32-unknown-unknown --features outline-fonts --lib
 rtk cargo clippy --features outline-fonts --lib --example gpe_ui_p4_font_gallery -- -D warnings
+.\scripts\build_p4_font_gallery_web.ps1
 ```
 
-The gallery tests check twenty distinct antialiased outputs, measurement/paint
-agreement, clipping, control characters, selection wrap, mouse traversal of all
-twenty entries, size editing and maximum-size preview fit. PNGs are exported for
-all families; representative output is inspected visually. Library tests: 319
-passed. Web compilation passed; browser runtime is still not verified.
+## Current P4 Boundary
 
-Primary implementation references:
-https://docs.rs/fontdue/0.9.4/fontdue/layout/index.html
-https://docs.rs/fontdue/0.9.4/fontdue/struct.Font.html
+P4 is not complete yet.
 
-## Initial Decision Record (Superseded for the Gallery)
+Open decisions after the browser runtime gate:
 
-P4 outline typography requires architecture review under
-`docs/agents/SWE_SMALL_TASK_DELEGATION_CONTRACT.md` (new dependency strategy and
-public text measurement/painting integration exceed a small local fix).
+- whether/how outline font selection becomes component-wide styling rather than
+  gallery-local custom painting;
+- the smallest explicit fallback policy across bitmap/outline paths;
+- whether browser/native metric or performance differences justify further work;
+- dependency/binary-size/runtime-cost evidence before any public API freeze.
 
-The concrete decision is which optional outline rasterizer and font asset to
-evaluate, and how to route its matching measurement and painting into the UI.
-The comparison must preserve the bitmap option and measure readability,
-Native/Web behavior, binary size and runtime cost before generalizing the API.
-No rasterizer or new text abstraction is selected by this slice.
+Non-goals remain browser-grade shaping, CSS typography, a global font manager,
+or SDF/MSDF by default.
