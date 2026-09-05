@@ -19,10 +19,15 @@ mod tetris;
 
 use breakout::BreakoutGame;
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, Pixel, Rect, Size,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, MouseButton, Pixel, Rect, Size,
     ui::{
-        MenuState, PauseConfig, PauseGame, VirtualButton, VirtualPad, draw_menu_item, draw_panel,
-        draw_text_centered, standard_menu_controls,
+        PauseConfig, PauseGame, UiTheme, VirtualButton, VirtualPad, draw_panel, draw_text_centered,
+        experimental::{self, UiId, UiNavInput, UiStateStore},
+        experimental_spatial::{
+            GridSpec, PointerInput, SpatialCard, SpatialInput, SpatialState, run_card_grid,
+            run_card_grid_headless,
+        },
+        standard_menu_controls,
     },
 };
 use pong::PongGame;
@@ -42,6 +47,14 @@ const GAME_LABELS: [&str; 6] = [
     "SMART BOY HERO",
     "PONG",
     "BREAKOUT",
+];
+const GAME_KEYS: [&str; 6] = [
+    "snake",
+    "tetris",
+    "space-invaders",
+    "smart-boy-hero",
+    "pong",
+    "breakout",
 ];
 
 const BG: Pixel = Pixel::rgb(7, 10, 14);
@@ -103,7 +116,6 @@ struct ArcadeLayout {
     catalog_panel: Rect,
     title: Rect,
     game_list: Rect,
-    item_step: i32,
     footer: Rect,
     touch_panel: Option<Rect>,
 }
@@ -130,7 +142,6 @@ impl ArcadeLayout {
                     width: 264,
                     height: 124,
                 },
-                item_step: 24,
                 footer: Rect {
                     x: 28,
                     y: 194,
@@ -158,7 +169,6 @@ impl ArcadeLayout {
                     width: 316,
                     height: 152,
                 },
-                item_step: 29,
                 footer: Rect {
                     x: 34,
                     y: 224,
@@ -179,7 +189,8 @@ impl ArcadeLayout {
 pub struct ArcadeApp {
     mode: ArcadeInteractionMode,
     layout: ArcadeLayout,
-    catalog_menu: MenuState,
+    catalog_ids: Vec<UiId>,
+    catalog_state: SpatialState,
     catalog_controls: ControlMap,
     catalog_pad: Option<VirtualPad>,
     active_game: Option<Box<dyn Game>>,
@@ -193,7 +204,8 @@ impl ArcadeApp {
         Self {
             mode,
             layout: ArcadeLayout::for_mode(mode),
-            catalog_menu: MenuState::new(GAME_LABELS.len()),
+            catalog_ids: catalog_ids(),
+            catalog_state: SpatialState::default(),
             catalog_controls: catalog_controls(),
             catalog_pad: touch.then(|| {
                 VirtualPad::new([
@@ -216,7 +228,7 @@ impl ArcadeApp {
 
         if self.waiting_for_catalog_release {
             if self.catalog_controls.action(CATALOG_SELECT).held() {
-                self.render_catalog(frame.framebuffer);
+                self.render_catalog(frame.framebuffer, SpatialInput::default());
                 return GameResult::Continue;
             }
             self.waiting_for_catalog_release = false;
@@ -225,21 +237,25 @@ impl ArcadeApp {
             }
         }
 
-        if self.catalog_controls.action(CATALOG_UP).pressed() {
-            self.catalog_menu.select_previous();
-        }
-        if self.catalog_controls.action(CATALOG_DOWN).pressed() {
-            self.catalog_menu.select_next();
-        }
-        if self.catalog_controls.action(CATALOG_SELECT).pressed()
-            && let Some(index) = self.catalog_menu.selected()
-        {
-            self.launch(index);
-            self.render_catalog(frame.framebuffer);
-            return GameResult::Continue;
-        }
+        let input = SpatialInput {
+            nav: UiNavInput {
+                up: self.catalog_controls.action(CATALOG_UP).pressed(),
+                down: self.catalog_controls.action(CATALOG_DOWN).pressed(),
+                confirm: self.catalog_controls.action(CATALOG_SELECT).pressed(),
+                ..UiNavInput::default()
+            },
+            pointer: PointerInput {
+                position: frame.input.mouse_position(),
+                pressed: frame.input.mouse_button(MouseButton::Left).pressed(),
+                released: frame.input.mouse_button(MouseButton::Left).released(),
+            },
+            touches: frame.input.touches(),
+        };
 
-        self.render_catalog(frame.framebuffer);
+        if let Some(index) = self.render_catalog(frame.framebuffer, input) {
+            self.launch(index);
+            self.render_catalog(frame.framebuffer, SpatialInput::default());
+        }
         GameResult::Continue
     }
 
@@ -250,7 +266,7 @@ impl ArcadeApp {
             }
             self.catalog_controls.update(frame.input);
             if self.catalog_controls.action(CATALOG_SELECT).held() {
-                self.render_catalog(frame.framebuffer);
+                self.render_catalog(frame.framebuffer, SpatialInput::default());
                 return GameResult::Continue;
             }
             self.waiting_for_launch_release = false;
@@ -267,7 +283,7 @@ impl ArcadeApp {
 
         if result == GameResult::Exit {
             self.return_to_catalog();
-            self.render_catalog(frame.framebuffer);
+            self.render_catalog(frame.framebuffer, SpatialInput::default());
         }
 
         GameResult::Continue
@@ -291,27 +307,29 @@ impl ArcadeApp {
         self.waiting_for_catalog_release = true;
     }
 
-    fn render_catalog(&self, framebuffer: &mut Framebuffer) {
+    fn render_catalog(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        input: SpatialInput<'_>,
+    ) -> Option<usize> {
         framebuffer.clear(BG);
         draw_panel(framebuffer, self.layout.catalog_panel, PANEL, BORDER);
         draw_text_centered(framebuffer, self.layout.title, "GPE ARCADE", 2, ACCENT);
 
-        for (index, label) in GAME_LABELS.iter().enumerate() {
-            draw_menu_item(
-                framebuffer,
-                Rect {
-                    x: self.layout.game_list.x,
-                    y: self.layout.game_list.y + index as i32 * self.layout.item_step,
-                    width: self.layout.game_list.width,
-                    height: 20,
-                },
-                label,
-                self.catalog_menu.selected() == Some(index),
-                1,
-                FG,
-                ACCENT,
-            );
-        }
+        let cards = catalog_cards(&self.catalog_ids);
+        let output = run_card_grid(
+            framebuffer,
+            self.layout.game_list,
+            &mut self.catalog_state,
+            input,
+            catalog_grid_spec(self.layout.game_list),
+            catalog_theme(),
+            &cards,
+            &gotoo_pixel_engine::ui::experimental_spatial::DefaultCardPainter,
+        );
+        let activated = cards
+            .iter()
+            .position(|card| output.activated(card.id));
 
         if let Some(touch_panel) = self.layout.touch_panel {
             draw_panel(framebuffer, touch_panel, BG, BORDER);
@@ -332,6 +350,7 @@ impl ArcadeApp {
             1,
             FG,
         );
+        activated
     }
 }
 
@@ -347,6 +366,73 @@ impl Game for ArcadeApp {
 
 fn catalog_controls() -> ControlMap {
     standard_menu_controls(CATALOG_UP, CATALOG_DOWN, CATALOG_SELECT)
+}
+
+fn catalog_ids() -> Vec<UiId> {
+    let mut state = UiStateStore::default();
+    let (_, ids) = experimental::run_headless(
+        Size {
+            width: 320,
+            height: 224,
+        },
+        &mut state,
+        UiNavInput::default(),
+        UiTheme::default(),
+        |ui| {
+            GAME_LABELS
+                .iter()
+                .zip(GAME_KEYS.iter())
+                .map(|(label, key)| ui.keyed(key, |ui| ui.button(*label).id()))
+                .collect::<Vec<_>>()
+        },
+    );
+    ids
+}
+
+fn catalog_cards(ids: &[UiId]) -> Vec<SpatialCard<'static>> {
+    GAME_LABELS
+        .iter()
+        .zip(ids.iter().copied())
+        .map(|(label, id)| SpatialCard {
+            id,
+            title: label,
+            subtitle: "",
+            image: None,
+            action: CATALOG_SELECT,
+        })
+        .collect()
+}
+
+fn catalog_grid_spec(bounds: Rect) -> GridSpec {
+    if bounds.height >= 140 {
+        GridSpec {
+            min_cell_width: bounds.width,
+            preferred_cell_height: 22,
+            gap: 4,
+            padding: 0,
+        }
+    } else {
+        GridSpec {
+            min_cell_width: bounds.width,
+            preferred_cell_height: 19,
+            gap: 2,
+            padding: 0,
+        }
+    }
+}
+
+fn catalog_theme() -> UiTheme {
+    UiTheme {
+        padding: 4,
+        row_height: 20,
+        row_spacing: 2,
+        text: FG,
+        muted_text: FG,
+        control_background: PANEL,
+        border: BORDER,
+        accent: ACCENT,
+        ..UiTheme::default()
+    }
 }
 
 fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>> {
@@ -384,10 +470,19 @@ fn pause_game<G: Game + 'static>(game: G, mode: ArcadeInteractionMode) -> Box<dy
 
 #[cfg(test)]
 mod tests {
+    use gotoo_pixel_engine::{Touch, TouchPhase};
+
     use super::*;
 
     fn outside_extent(rect: Rect, width: u32, height: u32) -> bool {
         rect.x >= width as i32 || rect.y >= height as i32
+    }
+
+    fn rect_center(rect: Rect) -> (i32, i32) {
+        (
+            rect.x + i32::try_from(rect.width / 2).unwrap_or(i32::MAX),
+            rect.y + i32::try_from(rect.height / 2).unwrap_or(i32::MAX),
+        )
     }
 
     #[test]
@@ -399,6 +494,173 @@ mod tests {
 
         assert!(app.active_game.is_none());
         assert!(app.waiting_for_catalog_release);
+    }
+
+    #[test]
+    fn catalog_ids_are_stable() {
+        assert_eq!(catalog_ids(), catalog_ids());
+    }
+
+    #[test]
+    fn catalog_headless_initial_focus_and_down_navigation_are_linear() {
+        let ids = catalog_ids();
+        let cards = catalog_cards(&ids);
+        let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Native).game_list;
+        let spec = catalog_grid_spec(bounds);
+        let mut state = SpatialState::default();
+
+        let initial = run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
+        assert_eq!(initial.focused_id(), Some(ids[0]));
+
+        let down = run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput {
+                nav: UiNavInput {
+                    down: true,
+                    ..UiNavInput::default()
+                },
+                ..SpatialInput::default()
+            },
+            spec,
+            &cards,
+        );
+        assert_eq!(down.focused_id(), Some(ids[1]));
+    }
+
+    #[test]
+    fn catalog_pointer_click_activates_the_hit_card() {
+        let ids = catalog_ids();
+        let cards = catalog_cards(&ids);
+        let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Native).game_list;
+        let spec = catalog_grid_spec(bounds);
+        let mut state = SpatialState::default();
+        let initial = run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
+        let position = rect_center(initial.layouts()[2].rect);
+
+        run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput {
+                pointer: PointerInput {
+                    position: Some(position),
+                    pressed: true,
+                    released: false,
+                },
+                ..SpatialInput::default()
+            },
+            spec,
+            &cards,
+        );
+        let released = run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput {
+                pointer: PointerInput {
+                    position: Some(position),
+                    pressed: false,
+                    released: true,
+                },
+                ..SpatialInput::default()
+            },
+            spec,
+            &cards,
+        );
+
+        assert!(released.activated(ids[2]));
+    }
+
+    #[test]
+    fn catalog_touch_tap_activates_the_hit_card() {
+        let ids = catalog_ids();
+        let cards = catalog_cards(&ids);
+        let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Touch).game_list;
+        let spec = catalog_grid_spec(bounds);
+        let mut state = SpatialState::default();
+        let initial = run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
+        let position = rect_center(initial.layouts()[4].rect);
+        let started = [Touch {
+            id: 7,
+            phase: TouchPhase::Started,
+            position: Some(position),
+        }];
+        let ended = [Touch {
+            id: 7,
+            phase: TouchPhase::Ended,
+            position: Some(position),
+        }];
+
+        run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput {
+                touches: &started,
+                ..SpatialInput::default()
+            },
+            spec,
+            &cards,
+        );
+        let output = run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput {
+                touches: &ended,
+                ..SpatialInput::default()
+            },
+            spec,
+            &cards,
+        );
+
+        assert!(output.activated(ids[4]));
+    }
+
+    #[test]
+    fn catalog_layouts_stay_inside_the_catalog_bounds() {
+        for mode in [ArcadeInteractionMode::Native, ArcadeInteractionMode::Touch] {
+            let ids = catalog_ids();
+            let cards = catalog_cards(&ids);
+            let bounds = ArcadeLayout::for_mode(mode).game_list;
+            let mut state = SpatialState::default();
+            let output = run_card_grid_headless(
+                bounds,
+                &mut state,
+                SpatialInput::default(),
+                catalog_grid_spec(bounds),
+                &cards,
+            );
+
+            assert_eq!(output.layouts().len(), GAME_LABELS.len());
+            for layout in output.layouts() {
+                assert!(layout.rect.x >= bounds.x);
+                assert!(layout.rect.y >= bounds.y);
+                assert!(
+                    i64::from(layout.rect.x) + i64::from(layout.rect.width)
+                        <= i64::from(bounds.x) + i64::from(bounds.width)
+                );
+                assert!(
+                    i64::from(layout.rect.y) + i64::from(layout.rect.height)
+                        <= i64::from(bounds.y) + i64::from(bounds.height)
+                );
+            }
+        }
     }
 
     #[test]
