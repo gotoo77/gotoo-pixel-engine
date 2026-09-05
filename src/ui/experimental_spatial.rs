@@ -192,6 +192,7 @@ impl CardPainter for DefaultCardPainter {
 #[derive(Debug, Default)]
 pub struct SpatialState {
     interaction: UiInteractionState,
+    capture_debug_dump: bool,
 }
 
 impl SpatialState {
@@ -206,12 +207,20 @@ impl SpatialState {
     pub fn touch_capture_count(&self) -> usize {
         self.interaction.touch_capture_count()
     }
+
+    pub const fn debug_capture_enabled(&self) -> bool {
+        self.capture_debug_dump
+    }
+
+    pub fn set_debug_capture(&mut self, enabled: bool) {
+        self.capture_debug_dump = enabled;
+    }
 }
 
 /// Compatibility wrapper retained for the MFE-001B probes.
 ///
 /// Semantic interaction state is owned by the shared kernel output. This type
-/// only adds Grid-specific geometry and the deterministic textual dump.
+/// only adds Grid-specific geometry and an optional deterministic textual dump.
 #[derive(Debug, Clone)]
 pub struct SpatialOutput {
     interaction: UiInteractionOutput,
@@ -347,17 +356,21 @@ fn resolve_card_grid(
 
     let focused = interaction.focused_id();
     let hovered = interaction.hovered_id();
-    let dump = dump_layout(
-        bounds,
-        columns,
-        rows,
-        &layouts,
-        focused,
-        hovered,
-        state.interaction.pointer_capture_id(),
-        state.interaction.touch_captures(),
-        interaction.activated_ids(),
-    );
+    let dump = if state.capture_debug_dump {
+        dump_layout(
+            bounds,
+            columns,
+            rows,
+            &layouts,
+            focused,
+            hovered,
+            state.interaction.pointer_capture_id(),
+            state.interaction.touch_captures(),
+            interaction.activated_ids(),
+        )
+    } else {
+        String::new()
+    };
 
     SpatialOutput {
         interaction,
@@ -613,6 +626,12 @@ mod tests {
         Pixel::rgb(value, value, value)
     }
 
+    fn debug_state() -> SpatialState {
+        let mut state = SpatialState::default();
+        state.set_debug_capture(true);
+        state
+    }
+
     #[test]
     fn responsive_grid_changes_column_count_deterministically() {
         let ids = ids();
@@ -640,7 +659,7 @@ mod tests {
             spec,
             &cards,
         );
-        let mut wide_state = SpatialState::default();
+        let mut wide_state = debug_state();
         let wide = run_card_grid_headless(
             bounds(360),
             &mut wide_state,
@@ -653,8 +672,9 @@ mod tests {
         assert_eq!(medium.columns(), 2);
         assert_eq!(wide.columns(), 3);
         assert_eq!(wide.rows(), 2);
+        assert!(wide.dump().contains("Grid bounds="));
 
-        let mut replay_state = SpatialState::default();
+        let mut replay_state = debug_state();
         let replay = run_card_grid_headless(
             bounds(360),
             &mut replay_state,
@@ -663,6 +683,40 @@ mod tests {
             &cards,
         );
         assert_eq!(wide.dump(), replay.dump());
+    }
+
+    #[test]
+    fn spatial_debug_dump_capture_is_opt_in_without_changing_semantics() {
+        let ids = ids();
+        let cards = cards(&ids);
+        let spec = GridSpec::default();
+        let mut off_state = SpatialState::default();
+        let mut on_state = debug_state();
+
+        let off = run_card_grid_headless(
+            bounds(360),
+            &mut off_state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
+        let on = run_card_grid_headless(
+            bounds(360),
+            &mut on_state,
+            SpatialInput::default(),
+            spec,
+            &cards,
+        );
+
+        assert!(!off_state.debug_capture_enabled());
+        assert!(on_state.debug_capture_enabled());
+        assert!(off.dump().is_empty());
+        assert!(on.dump().contains("Grid bounds="));
+        assert_eq!(off.columns(), on.columns());
+        assert_eq!(off.rows(), on.rows());
+        assert_eq!(off.layouts(), on.layouts());
+        assert_eq!(off.focused_id(), on.focused_id());
+        assert_eq!(off.hovered_id(), on.hovered_id());
     }
 
     #[test]
@@ -951,7 +1005,7 @@ mod tests {
         let painter = CountingPainter {
             calls: Cell::new(0),
         };
-        let _ = run_card_grid(
+        let output = run_card_grid(
             &mut framebuffer,
             bounds(360),
             &mut state,
@@ -962,6 +1016,7 @@ mod tests {
             &painter,
         );
         assert_eq!(painter.calls.get(), cards.len());
+        assert!(output.dump().is_empty());
     }
 
     #[test]
