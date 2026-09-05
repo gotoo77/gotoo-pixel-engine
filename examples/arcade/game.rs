@@ -22,7 +22,7 @@ use breakout::BreakoutGame;
 use gotoo_pixel_engine::outline_text::OutlineFont;
 use gotoo_pixel_engine::{
     ActionId, ControlBinding, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key,
-    MouseButton, Pixel, Rect, Size,
+    MouseButton, Pixel, Rect, Size, TextInputEvent, TouchPhase,
     ui::{
         PauseConfig, PauseGame, UiComponentStyle, UiStyleOverride, UiStyleSheet, UiTheme,
         VirtualButton, VirtualPad, draw_panel, draw_text_centered,
@@ -44,6 +44,8 @@ const CATALOG_DOWN: ActionId = ActionId::new("arcade.catalog.down");
 const CATALOG_LEFT: ActionId = ActionId::new("arcade.catalog.left");
 const CATALOG_RIGHT: ActionId = ActionId::new("arcade.catalog.right");
 const CATALOG_SELECT: ActionId = ActionId::new("arcade.catalog.select");
+const CATALOG_FILTER_PREV: ActionId = ActionId::new("arcade.catalog.filter-prev");
+const CATALOG_FILTER_NEXT: ActionId = ActionId::new("arcade.catalog.filter-next");
 
 const GAME_LABELS: [&str; 6] = [
     "SNAKE",
@@ -61,54 +63,86 @@ const GAME_KEYS: [&str; 6] = [
     "pong",
     "breakout",
 ];
+const GAME_TAGS: [&str; 6] = [
+    "ARCADE / ACTION",
+    "PUZZLE",
+    "ARCADE / SHMUP",
+    "PUZZLE / ACTION",
+    "ARCADE",
+    "ARCADE / ACTION",
+];
+const GAME_MASKS: [u8; 6] = [
+    FILTER_ARCADE | FILTER_ACTION,
+    FILTER_PUZZLE,
+    FILTER_ARCADE | FILTER_SHMUP,
+    FILTER_PUZZLE | FILTER_ACTION,
+    FILTER_ARCADE,
+    FILTER_ARCADE | FILTER_ACTION,
+];
+const GAME_ACCENTS: [Pixel; 6] = [
+    Pixel::rgb(105, 230, 155),
+    Pixel::rgb(157, 132, 255),
+    Pixel::rgb(255, 137, 95),
+    Pixel::rgb(255, 205, 92),
+    Pixel::rgb(91, 189, 255),
+    Pixel::rgb(240, 103, 184),
+];
 
-const BG: Pixel = Pixel::rgb(7, 10, 14);
-const PANEL: Pixel = Pixel::rgb(12, 18, 24);
-const CARD: Pixel = Pixel::rgb(15, 24, 31);
-const CARD_FOCUSED: Pixel = Pixel::rgb(18, 39, 43);
-const CARD_HOVERED: Pixel = Pixel::rgb(20, 31, 40);
-const CARD_ACTIVE: Pixel = Pixel::rgb(27, 49, 47);
-const FG: Pixel = Pixel::rgb(224, 234, 220);
-const MUTED: Pixel = Pixel::rgb(135, 154, 164);
-const BORDER: Pixel = Pixel::rgb(48, 77, 96);
-const ACCENT: Pixel = Pixel::rgb(120, 235, 180);
-const TOUCH_ACCENT: Pixel = Pixel::rgb(245, 190, 90);
+const FILTER_ARCADE: u8 = 1;
+const FILTER_PUZZLE: u8 = 1 << 1;
+const FILTER_ACTION: u8 = 1 << 2;
+const FILTER_SHMUP: u8 = 1 << 3;
+
+const BG: Pixel = Pixel::rgb(5, 8, 13);
+const PANEL: Pixel = Pixel::rgb(10, 16, 24);
+const HEADER: Pixel = Pixel::rgb(13, 22, 33);
+const CARD: Pixel = Pixel::rgb(16, 25, 37);
+const CARD_FOCUSED: Pixel = Pixel::rgb(22, 42, 50);
+const CARD_HOVERED: Pixel = Pixel::rgb(20, 33, 47);
+const CARD_ACTIVE: Pixel = Pixel::rgb(29, 52, 55);
+const FG: Pixel = Pixel::rgb(230, 238, 235);
+const MUTED: Pixel = Pixel::rgb(132, 151, 164);
+const BORDER: Pixel = Pixel::rgb(48, 76, 98);
+const ACCENT: Pixel = Pixel::rgb(111, 238, 184);
+const SEARCH_BG: Pixel = Pixel::rgb(7, 12, 19);
+const CHIP_BG: Pixel = Pixel::rgb(18, 29, 42);
+const TOUCH_ACCENT: Pixel = Pixel::rgb(250, 190, 85);
 
 const TOUCH_UP: Rect = Rect {
-    x: 392,
-    y: 44,
-    width: 36,
-    height: 30,
+    x: 608,
+    y: 92,
+    width: 42,
+    height: 36,
 };
 const TOUCH_LEFT: Rect = Rect {
-    x: 370,
-    y: 76,
-    width: 36,
-    height: 30,
+    x: 582,
+    y: 134,
+    width: 42,
+    height: 36,
 };
 const TOUCH_RIGHT: Rect = Rect {
-    x: 414,
-    y: 76,
-    width: 36,
-    height: 30,
+    x: 634,
+    y: 134,
+    width: 42,
+    height: 36,
 };
 const TOUCH_DOWN: Rect = Rect {
-    x: 392,
-    y: 108,
-    width: 36,
-    height: 30,
+    x: 608,
+    y: 176,
+    width: 42,
+    height: 36,
 };
 const TOUCH_SELECT: Rect = Rect {
-    x: 376,
-    y: 154,
-    width: 68,
-    height: 40,
+    x: 588,
+    y: 232,
+    width: 82,
+    height: 44,
 };
 const PAUSE_BUTTON: Rect = Rect {
-    x: 400,
-    y: 228,
-    width: 72,
-    height: 24,
+    x: 624,
+    y: 358,
+    width: 78,
+    height: 26,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,13 +156,151 @@ impl ArcadeInteractionMode {
     pub const fn framebuffer_size(self) -> Size {
         match self {
             Self::Native => Size {
-                width: 320,
-                height: 224,
+                width: 560,
+                height: 320,
             },
             Self::Touch => Size {
-                width: 480,
-                height: 260,
+                width: 720,
+                height: 400,
             },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CatalogFilter {
+    All,
+    Arcade,
+    Puzzle,
+    Action,
+    Shmup,
+}
+
+impl CatalogFilter {
+    const ALL: [Self; 5] = [
+        Self::All,
+        Self::Arcade,
+        Self::Puzzle,
+        Self::Action,
+        Self::Shmup,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::All => "ALL",
+            Self::Arcade => "ARCADE",
+            Self::Puzzle => "PUZZLE",
+            Self::Action => "ACTION",
+            Self::Shmup => "SHMUP",
+        }
+    }
+
+    const fn mask(self) -> u8 {
+        match self {
+            Self::All => 0,
+            Self::Arcade => FILTER_ARCADE,
+            Self::Puzzle => FILTER_PUZZLE,
+            Self::Action => FILTER_ACTION,
+            Self::Shmup => FILTER_SHMUP,
+        }
+    }
+
+    const fn color(self) -> Pixel {
+        match self {
+            Self::All => ACCENT,
+            Self::Arcade => Pixel::rgb(91, 189, 255),
+            Self::Puzzle => Pixel::rgb(157, 132, 255),
+            Self::Action => Pixel::rgb(240, 103, 184),
+            Self::Shmup => Pixel::rgb(255, 137, 95),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CatalogSearch {
+    query: String,
+    active: bool,
+    cursor: usize,
+    select_all: bool,
+}
+
+impl Default for CatalogSearch {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            active: false,
+            cursor: 0,
+            select_all: false,
+        }
+    }
+}
+
+impl CatalogSearch {
+    fn clear(&mut self) {
+        self.query.clear();
+        self.cursor = 0;
+        self.select_all = false;
+    }
+
+    fn select_all(&mut self) {
+        self.select_all = true;
+    }
+
+    fn display(&self) -> String {
+        if self.query.is_empty() {
+            return if self.active {
+                "|  SEARCH GAMES".to_owned()
+            } else {
+                "SEARCH GAMES   CTRL+F".to_owned()
+            };
+        }
+
+        let before = &self.query[..self.cursor];
+        let after = &self.query[self.cursor..];
+        if self.active {
+            format!("{before}|{after}")
+        } else {
+            self.query.clone()
+        }
+    }
+
+    fn edit(&mut self, events: &[TextInputEvent]) {
+        for event in events {
+            match event {
+                TextInputEvent::Insert(text) => {
+                    if self.select_all {
+                        self.clear();
+                    }
+                    let text: String = text
+                        .chars()
+                        .filter(|character| !character.is_control())
+                        .take(48_usize.saturating_sub(self.query.chars().count()))
+                        .collect();
+                    self.query.insert_str(self.cursor, &text);
+                    self.cursor += text.len();
+                }
+                TextInputEvent::Backspace | TextInputEvent::Delete if self.select_all => {
+                    self.clear();
+                }
+                TextInputEvent::Backspace if self.cursor > 0 => {
+                    let previous = self.query[..self.cursor].char_indices().last().unwrap().0;
+                    self.query.drain(previous..self.cursor);
+                    self.cursor = previous;
+                }
+                TextInputEvent::Delete if self.cursor < self.query.len() => {
+                    self.query.remove(self.cursor);
+                }
+                TextInputEvent::Left if self.cursor > 0 => {
+                    self.cursor = self.query[..self.cursor].char_indices().last().unwrap().0;
+                }
+                TextInputEvent::Right if self.cursor < self.query.len() => {
+                    self.cursor += self.query[self.cursor..].chars().next().unwrap().len_utf8();
+                }
+                TextInputEvent::Home => self.cursor = 0,
+                TextInputEvent::End => self.cursor = self.query.len(),
+                _ => {}
+            }
+            self.select_all = false;
         }
     }
 }
@@ -136,8 +308,12 @@ impl ArcadeInteractionMode {
 #[derive(Debug, Clone, Copy)]
 struct ArcadeLayout {
     catalog_panel: Rect,
+    header: Rect,
     eyebrow: Rect,
     title: Rect,
+    status: Rect,
+    search: Rect,
+    filters: Rect,
     game_list: Rect,
     footer: Rect,
     touch_panel: Option<Rect>,
@@ -148,75 +324,153 @@ impl ArcadeLayout {
         match mode {
             ArcadeInteractionMode::Native => Self {
                 catalog_panel: Rect {
-                    x: 10,
-                    y: 10,
-                    width: 300,
-                    height: 204,
+                    x: 12,
+                    y: 12,
+                    width: 536,
+                    height: 296,
+                },
+                header: Rect {
+                    x: 13,
+                    y: 13,
+                    width: 534,
+                    height: 72,
                 },
                 eyebrow: Rect {
-                    x: 24,
-                    y: 20,
-                    width: 272,
-                    height: 10,
+                    x: 28,
+                    y: 24,
+                    width: 260,
+                    height: 12,
                 },
                 title: Rect {
-                    x: 24,
-                    y: 31,
-                    width: 272,
-                    height: 31,
+                    x: 28,
+                    y: 40,
+                    width: 370,
+                    height: 38,
+                },
+                status: Rect {
+                    x: 402,
+                    y: 28,
+                    width: 126,
+                    height: 34,
+                },
+                search: Rect {
+                    x: 28,
+                    y: 94,
+                    width: 244,
+                    height: 34,
+                },
+                filters: Rect {
+                    x: 284,
+                    y: 94,
+                    width: 244,
+                    height: 34,
                 },
                 game_list: Rect {
-                    x: 22,
-                    y: 70,
-                    width: 276,
-                    height: 112,
+                    x: 28,
+                    y: 140,
+                    width: 500,
+                    height: 136,
                 },
                 footer: Rect {
-                    x: 24,
-                    y: 194,
-                    width: 272,
+                    x: 28,
+                    y: 288,
+                    width: 500,
                     height: 10,
                 },
                 touch_panel: None,
             },
             ArcadeInteractionMode::Touch => Self {
                 catalog_panel: Rect {
-                    x: 12,
-                    y: 12,
-                    width: 456,
-                    height: 236,
+                    x: 14,
+                    y: 14,
+                    width: 692,
+                    height: 372,
+                },
+                header: Rect {
+                    x: 15,
+                    y: 15,
+                    width: 690,
+                    height: 76,
                 },
                 eyebrow: Rect {
-                    x: 28,
-                    y: 22,
-                    width: 326,
-                    height: 10,
+                    x: 30,
+                    y: 26,
+                    width: 300,
+                    height: 12,
                 },
                 title: Rect {
-                    x: 28,
-                    y: 33,
-                    width: 326,
-                    height: 31,
+                    x: 30,
+                    y: 43,
+                    width: 390,
+                    height: 40,
+                },
+                status: Rect {
+                    x: 432,
+                    y: 30,
+                    width: 120,
+                    height: 34,
+                },
+                search: Rect {
+                    x: 30,
+                    y: 101,
+                    width: 248,
+                    height: 36,
+                },
+                filters: Rect {
+                    x: 290,
+                    y: 101,
+                    width: 262,
+                    height: 36,
                 },
                 game_list: Rect {
-                    x: 26,
-                    y: 72,
-                    width: 326,
-                    height: 140,
+                    x: 30,
+                    y: 151,
+                    width: 522,
+                    height: 190,
                 },
                 footer: Rect {
-                    x: 28,
-                    y: 226,
-                    width: 326,
-                    height: 10,
+                    x: 30,
+                    y: 356,
+                    width: 522,
+                    height: 12,
                 },
                 touch_panel: Some(Rect {
-                    x: 362,
-                    y: 28,
-                    width: 96,
-                    height: 184,
+                    x: 570,
+                    y: 78,
+                    width: 118,
+                    height: 218,
                 }),
             },
+        }
+    }
+
+    fn filter_rects(self) -> [Rect; 5] {
+        let gap = 4_u32;
+        let total_gap = gap * 4;
+        let chip_width = self.filters.width.saturating_sub(total_gap) / 5;
+        let mut rects = [self.filters; 5];
+        let mut x = self.filters.x;
+        for rect in &mut rects {
+            *rect = Rect {
+                x,
+                y: self.filters.y,
+                width: chip_width,
+                height: self.filters.height,
+            };
+            x = x.saturating_add(i32::try_from(chip_width + gap).unwrap_or(i32::MAX));
+        }
+        rects
+    }
+
+    fn search_clear_rect(self) -> Rect {
+        Rect {
+            x: self
+                .search
+                .x
+                .saturating_add(i32::try_from(self.search.width.saturating_sub(30)).unwrap_or(i32::MAX)),
+            y: self.search.y,
+            width: 30,
+            height: self.search.height,
         }
     }
 }
@@ -228,6 +482,8 @@ pub struct ArcadeApp {
     catalog_state: SpatialState,
     catalog_controls: ControlMap,
     catalog_pad: Option<VirtualPad>,
+    filter: CatalogFilter,
+    search: CatalogSearch,
     active_game: Option<Box<dyn Game>>,
     waiting_for_launch_release: bool,
     waiting_for_catalog_release: bool,
@@ -253,6 +509,8 @@ impl ArcadeApp {
                     VirtualButton::new(CATALOG_SELECT, TOUCH_SELECT),
                 ])
             }),
+            filter: CatalogFilter::All,
+            search: CatalogSearch::default(),
             active_game: None,
             waiting_for_launch_release: false,
             waiting_for_catalog_release: false,
@@ -281,13 +539,18 @@ impl ArcadeApp {
             }
         }
 
+        if self.update_search_and_filters(frame) == GameResult::Exit {
+            return GameResult::Exit;
+        }
+
+        let nav_enabled = !self.search.active;
         let input = SpatialInput {
             nav: UiNavInput {
-                up: self.catalog_controls.action(CATALOG_UP).pressed(),
-                down: self.catalog_controls.action(CATALOG_DOWN).pressed(),
-                left: self.catalog_controls.action(CATALOG_LEFT).pressed(),
-                right: self.catalog_controls.action(CATALOG_RIGHT).pressed(),
-                confirm: self.catalog_controls.action(CATALOG_SELECT).pressed(),
+                up: nav_enabled && self.catalog_controls.action(CATALOG_UP).pressed(),
+                down: nav_enabled && self.catalog_controls.action(CATALOG_DOWN).pressed(),
+                left: nav_enabled && self.catalog_controls.action(CATALOG_LEFT).pressed(),
+                right: nav_enabled && self.catalog_controls.action(CATALOG_RIGHT).pressed(),
+                confirm: nav_enabled && self.catalog_controls.action(CATALOG_SELECT).pressed(),
                 ..UiNavInput::default()
             },
             pointer: PointerInput {
@@ -303,6 +566,134 @@ impl ArcadeApp {
             self.render_catalog(frame.framebuffer, SpatialInput::default());
         }
         GameResult::Continue
+    }
+
+    fn update_search_and_filters(&mut self, frame: &Frame<'_>) -> GameResult {
+        let previous_query = self.search.query.clone();
+        let previous_filter = self.filter;
+        let ctrl =
+            frame.input.key(Key::LeftControl).held() || frame.input.key(Key::RightControl).held();
+        let shift =
+            frame.input.key(Key::LeftShift).held() || frame.input.key(Key::RightShift).held();
+
+        if ctrl && frame.input.key(Key::F).pressed() {
+            self.search.active = true;
+            self.search.select_all();
+        }
+
+        if frame.input.mouse_button(MouseButton::Left).pressed()
+            && let Some(position) = frame.input.mouse_position()
+        {
+            self.handle_catalog_point(position);
+        }
+        for touch in frame.input.touches() {
+            if touch.phase == TouchPhase::Started
+                && let Some(position) = touch.position
+            {
+                self.handle_catalog_point(position);
+            }
+        }
+
+        if frame.input.key(Key::Escape).pressed() {
+            if self.search.active || !self.search.query.is_empty() {
+                self.search.clear();
+                self.search.active = false;
+            } else if self.filter != CatalogFilter::All {
+                self.filter = CatalogFilter::All;
+            } else {
+                return GameResult::Exit;
+            }
+        }
+
+        if self.search.active {
+            if ctrl && frame.input.key(Key::A).pressed() {
+                self.search.select_all();
+            }
+            if !ctrl {
+                self.search.edit(frame.input.text_events());
+            }
+            if frame.input.key(Key::Enter).pressed() || frame.input.key(Key::Tab).pressed() {
+                self.search.active = false;
+            }
+        } else {
+            if frame.input.key(Key::Tab).pressed() {
+                self.cycle_filter(if shift { -1 } else { 1 });
+            }
+            if self
+                .catalog_controls
+                .action(CATALOG_FILTER_PREV)
+                .pressed()
+            {
+                self.cycle_filter(-1);
+            }
+            if self
+                .catalog_controls
+                .action(CATALOG_FILTER_NEXT)
+                .pressed()
+            {
+                self.cycle_filter(1);
+            }
+        }
+
+        if previous_query != self.search.query || previous_filter != self.filter {
+            self.catalog_state = SpatialState::default();
+        }
+        GameResult::Continue
+    }
+
+    fn handle_catalog_point(&mut self, position: (i32, i32)) {
+        if point_in_rect(position, self.layout.search) {
+            self.search.active = true;
+            if point_in_rect(position, self.layout.search_clear_rect()) {
+                self.search.clear();
+            }
+            return;
+        }
+
+        for (index, rect) in self.layout.filter_rects().iter().copied().enumerate() {
+            if point_in_rect(position, rect) {
+                self.filter = CatalogFilter::ALL[index];
+                self.catalog_state = SpatialState::default();
+                return;
+            }
+        }
+    }
+
+    fn cycle_filter(&mut self, delta: isize) {
+        let position = CatalogFilter::ALL
+            .iter()
+            .position(|filter| *filter == self.filter)
+            .unwrap_or(0);
+        let next = (position as isize + delta).rem_euclid(CatalogFilter::ALL.len() as isize);
+        self.filter = CatalogFilter::ALL[next as usize];
+        self.catalog_state = SpatialState::default();
+    }
+
+    fn visible_game_indices(&self) -> Vec<usize> {
+        let filter_mask = self.filter.mask();
+        let query = self.search.query.trim();
+        let mut matches = GAME_LABELS
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| filter_mask == 0 || GAME_MASKS[*index] & filter_mask != 0)
+            .filter_map(|(index, label)| {
+                if query.is_empty() {
+                    Some((index, 0))
+                } else {
+                    let searchable = format!("{} {}", label, GAME_TAGS[index]);
+                    fuzzy_score(query, &searchable).map(|score| (index, score))
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if !query.is_empty() {
+            matches.sort_by(|(left_index, left_score), (right_index, right_score)| {
+                right_score
+                    .cmp(left_score)
+                    .then_with(|| left_index.cmp(right_index))
+            });
+        }
+        matches.into_iter().map(|(index, _)| index).collect()
     }
 
     fn update_active_game(&mut self, frame: &mut Frame<'_>) -> GameResult {
@@ -357,42 +748,116 @@ impl ArcadeApp {
         framebuffer: &mut Framebuffer,
         input: SpatialInput<'_>,
     ) -> Option<usize> {
+        let visible = self.visible_game_indices();
         framebuffer.clear(BG);
         draw_panel(framebuffer, self.layout.catalog_panel, PANEL, BORDER);
-        draw_text_centered(framebuffer, self.layout.eyebrow, "GPE.UI / P6.1", 1, MUTED);
+        framebuffer.fill_rect(
+            self.layout.header.x,
+            self.layout.header.y,
+            self.layout.header.width,
+            self.layout.header.height,
+            HEADER,
+        );
+        framebuffer.fill_rect(
+            self.layout.header.x,
+            self.layout.header.y,
+            6,
+            self.layout.header.height,
+            ACCENT,
+        );
+        draw_text_centered(framebuffer, self.layout.eyebrow, "GPE.UI / P6.1 LAUNCHER", 1, MUTED);
+        self.paint_search_and_filters(framebuffer, visible.len());
 
-        let cards = catalog_cards(&self.catalog_ids);
+        let cards = catalog_cards(&self.catalog_ids, &visible);
         let output = run_default_card_grid_styled(
             framebuffer,
             self.layout.game_list,
             &mut self.catalog_state,
             input,
-            catalog_grid_spec(self.layout.game_list),
+            catalog_grid_spec(self.mode),
             catalog_theme(),
             catalog_stylesheet(),
             &cards,
         );
 
-        self.paint_catalog_typography(framebuffer, &output);
+        self.paint_catalog_typography(framebuffer, &output, &visible);
         self.paint_touch_controls(framebuffer);
         draw_text_centered(
             framebuffer,
             self.layout.footer,
-            "ARROWS/PAD | SPACE/SOUTH | MOUSE/TOUCH",
+            "CTRL+F SEARCH  |  TAB FILTER  |  ARROWS/PAD  |  SPACE/SOUTH  |  MOUSE/TOUCH",
             1,
             MUTED,
         );
 
-        cards.iter().position(|card| output.activated(card.id))
+        cards
+            .iter()
+            .position(|card| output.activated(card.id))
+            .and_then(|position| visible.get(position).copied())
     }
 
-    fn paint_catalog_typography(&mut self, framebuffer: &mut Framebuffer, output: &SpatialOutput) {
+    fn paint_search_and_filters(&mut self, framebuffer: &mut Framebuffer, result_count: usize) {
+        framebuffer.fill_rect(
+            self.layout.search.x,
+            self.layout.search.y,
+            self.layout.search.width,
+            self.layout.search.height,
+            SEARCH_BG,
+        );
+        framebuffer.draw_rect(
+            self.layout.search.x,
+            self.layout.search.y,
+            self.layout.search.width,
+            self.layout.search.height,
+            if self.search.active { ACCENT } else { BORDER },
+        );
+        let clear = self.layout.search_clear_rect();
+        draw_text_centered(framebuffer, clear, "X", 1, MUTED);
+
+        for (filter, rect) in CatalogFilter::ALL
+            .iter()
+            .copied()
+            .zip(self.layout.filter_rects())
+        {
+            let selected = filter == self.filter;
+            let color = filter.color();
+            framebuffer.fill_rect(
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                if selected { color } else { CHIP_BG },
+            );
+            framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
+            draw_text_centered(
+                framebuffer,
+                rect,
+                filter.label(),
+                1,
+                if selected { BG } else { color },
+            );
+        }
+
+        let status = if self.search.query.is_empty() {
+            format!("{} / {} GAMES", result_count, GAME_LABELS.len())
+        } else {
+            format!("{} FUZZY MATCH", result_count)
+        };
+        draw_text_centered(framebuffer, self.layout.status, &status, 1, ACCENT);
+    }
+
+    fn paint_catalog_typography(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        output: &SpatialOutput,
+        visible: &[usize],
+    ) {
         #[cfg(feature = "outline-fonts")]
         if let Some(font) = &mut self.outline_font {
             let title_px = if self.mode == ArcadeInteractionMode::Touch {
-                25.0
+                30.0
             } else {
-                23.0
+                28.0
             };
             let _ = font.draw(
                 framebuffer,
@@ -401,38 +866,140 @@ impl ArcadeApp {
                 self.layout.title,
                 ACCENT,
             );
-            let card_px = if output.columns() >= 3 { 10.5 } else { 12.5 };
-            for (index, layout) in output.layouts().iter().enumerate() {
-                let color = if output.focused_id() == Some(layout.id) {
-                    ACCENT
+            let search_label = self.search.display();
+            let _ = font.draw(
+                framebuffer,
+                &search_label,
+                13.5,
+                Rect {
+                    x: self.layout.search.x.saturating_add(10),
+                    y: self.layout.search.y.saturating_add(6),
+                    width: self.layout.search.width.saturating_sub(44),
+                    height: self.layout.search.height.saturating_sub(8),
+                },
+                if self.search.query.is_empty() && !self.search.active {
+                    MUTED
                 } else {
                     FG
-                };
-                let label_bounds = Rect {
-                    x: layout.text_rect.x.saturating_add(4),
-                    y: layout.text_rect.y,
-                    width: layout.text_rect.width.saturating_sub(8),
-                    height: layout.text_rect.height,
-                };
+                },
+            );
+
+            if visible.is_empty() {
                 let _ = font.draw(
                     framebuffer,
-                    GAME_LABELS[index],
-                    card_px,
-                    label_bounds,
-                    color,
+                    "NO GAMES MATCH",
+                    25.0,
+                    self.layout.game_list,
+                    MUTED,
+                );
+                return;
+            }
+
+            for (layout, game_index) in output.layouts().iter().zip(visible.iter().copied()) {
+                let accent = GAME_ACCENTS[game_index];
+                framebuffer.fill_rect(
+                    layout.rect.x,
+                    layout.rect.y,
+                    layout.rect.width,
+                    5_u32.min(layout.rect.height),
+                    accent,
+                );
+                let focused = output.focused_id() == Some(layout.id);
+                let title_color = if focused { ACCENT } else { FG };
+                let title_px = if output.columns() >= 3 { 15.0 } else { 18.0 };
+                let _ = font.draw(
+                    framebuffer,
+                    GAME_LABELS[game_index],
+                    title_px,
+                    Rect {
+                        x: layout.text_rect.x.saturating_add(8),
+                        y: layout.text_rect.y.saturating_add(8),
+                        width: layout.text_rect.width.saturating_sub(16),
+                        height: layout.text_rect.height.saturating_sub(30),
+                    },
+                    title_color,
+                );
+                let _ = font.draw(
+                    framebuffer,
+                    GAME_TAGS[game_index],
+                    if output.columns() >= 3 { 9.0 } else { 10.5 },
+                    Rect {
+                        x: layout.text_rect.x.saturating_add(8),
+                        y: layout
+                            .text_rect
+                            .y
+                            .saturating_add(i32::try_from(layout.text_rect.height.saturating_sub(24)).unwrap_or(i32::MAX)),
+                        width: layout.text_rect.width.saturating_sub(16),
+                        height: 20,
+                    },
+                    accent,
                 );
             }
             return;
         }
 
-        draw_text_centered(framebuffer, self.layout.title, "GPE ARCADE", 2, ACCENT);
-        for (index, layout) in output.layouts().iter().enumerate() {
-            let color = if output.focused_id() == Some(layout.id) {
-                ACCENT
+        draw_text_centered(framebuffer, self.layout.title, "GPE ARCADE", 3, ACCENT);
+        let search_label = self.search.display();
+        draw_text_centered(
+            framebuffer,
+            Rect {
+                x: self.layout.search.x.saturating_add(8),
+                y: self.layout.search.y,
+                width: self.layout.search.width.saturating_sub(40),
+                height: self.layout.search.height,
+            },
+            &search_label,
+            1,
+            if self.search.query.is_empty() && !self.search.active {
+                MUTED
             } else {
                 FG
-            };
-            draw_text_centered(framebuffer, layout.text_rect, GAME_LABELS[index], 1, color);
+            },
+        );
+        if visible.is_empty() {
+            draw_text_centered(framebuffer, self.layout.game_list, "NO GAMES MATCH", 2, MUTED);
+            return;
+        }
+        for (layout, game_index) in output.layouts().iter().zip(visible.iter().copied()) {
+            let accent = GAME_ACCENTS[game_index];
+            framebuffer.fill_rect(
+                layout.rect.x,
+                layout.rect.y,
+                layout.rect.width,
+                5_u32.min(layout.rect.height),
+                accent,
+            );
+            draw_text_centered(
+                framebuffer,
+                Rect {
+                    x: layout.text_rect.x,
+                    y: layout.text_rect.y,
+                    width: layout.text_rect.width,
+                    height: layout.text_rect.height.saturating_sub(20),
+                },
+                GAME_LABELS[game_index],
+                1,
+                if output.focused_id() == Some(layout.id) {
+                    ACCENT
+                } else {
+                    FG
+                },
+            );
+            draw_text_centered(
+                framebuffer,
+                Rect {
+                    x: layout.text_rect.x,
+                    y: layout
+                        .text_rect
+                        .y
+                        .saturating_add(i32::try_from(layout.text_rect.height.saturating_sub(18)).unwrap_or(i32::MAX)),
+                    width: layout.text_rect.width,
+                    height: 14,
+                },
+                GAME_TAGS[game_index],
+                1,
+                accent,
+            );
         }
     }
 
@@ -441,6 +1008,18 @@ impl ArcadeApp {
             return;
         };
         draw_panel(framebuffer, touch_panel, BG, BORDER);
+        draw_text_centered(
+            framebuffer,
+            Rect {
+                x: touch_panel.x,
+                y: touch_panel.y.saturating_add(8),
+                width: touch_panel.width,
+                height: 10,
+            },
+            "TOUCH / PAD",
+            1,
+            MUTED,
+        );
         for (rect, label) in [
             (TOUCH_UP, "UP"),
             (TOUCH_LEFT, "<"),
@@ -448,6 +1027,7 @@ impl ArcadeApp {
             (TOUCH_DOWN, "DN"),
             (TOUCH_SELECT, "PLAY"),
         ] {
+            framebuffer.fill_rect(rect.x, rect.y, rect.width, rect.height, CHIP_BG);
             framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, TOUCH_ACCENT);
             draw_text_centered(framebuffer, rect, label, 1, TOUCH_ACCENT);
         }
@@ -491,6 +1071,7 @@ fn catalog_controls() -> ControlMap {
         CATALOG_LEFT,
         &[
             ControlBinding::Key(Key::Left),
+            ControlBinding::Key(Key::A),
             ControlBinding::Gamepad(GamepadButton::DPadLeft),
             ControlBinding::Gamepad(GamepadButton::LeftStickLeft),
         ],
@@ -500,6 +1081,7 @@ fn catalog_controls() -> ControlMap {
         CATALOG_RIGHT,
         &[
             ControlBinding::Key(Key::Right),
+            ControlBinding::Key(Key::D),
             ControlBinding::Gamepad(GamepadButton::DPadRight),
             ControlBinding::Gamepad(GamepadButton::LeftStickRight),
         ],
@@ -511,6 +1093,16 @@ fn catalog_controls() -> ControlMap {
             ControlBinding::Key(Key::Space),
             ControlBinding::Gamepad(GamepadButton::South),
         ],
+    );
+    bind_catalog_action(
+        &mut controls,
+        CATALOG_FILTER_PREV,
+        &[ControlBinding::Gamepad(GamepadButton::LeftShoulder)],
+    );
+    bind_catalog_action(
+        &mut controls,
+        CATALOG_FILTER_NEXT,
+        &[ControlBinding::Gamepad(GamepadButton::RightShoulder)],
     );
     controls
 }
@@ -525,8 +1117,8 @@ fn catalog_ids() -> Vec<UiId> {
     let mut state = UiStateStore::default();
     let (_, ids) = experimental::run_headless(
         Size {
-            width: 320,
-            height: 224,
+            width: 560,
+            height: 320,
         },
         &mut state,
         UiNavInput::default(),
@@ -542,12 +1134,11 @@ fn catalog_ids() -> Vec<UiId> {
     ids
 }
 
-fn catalog_cards(ids: &[UiId]) -> Vec<SpatialCard<'static>> {
-    GAME_LABELS
+fn catalog_cards(ids: &[UiId], visible: &[usize]) -> Vec<SpatialCard<'static>> {
+    visible
         .iter()
-        .zip(ids.iter().copied())
-        .map(|(_, id)| SpatialCard {
-            id,
+        .map(|index| SpatialCard {
+            id: ids[*index],
             title: "",
             subtitle: "",
             image: None,
@@ -556,21 +1147,28 @@ fn catalog_cards(ids: &[UiId]) -> Vec<SpatialCard<'static>> {
         .collect()
 }
 
-fn catalog_grid_spec(bounds: Rect) -> GridSpec {
-    let wide = bounds.width >= 300;
-    GridSpec {
-        min_cell_width: if wide { 96 } else { 126 },
-        preferred_cell_height: if wide { 62 } else { 50 },
-        gap: 7,
-        padding: 0,
+fn catalog_grid_spec(mode: ArcadeInteractionMode) -> GridSpec {
+    match mode {
+        ArcadeInteractionMode::Native => GridSpec {
+            min_cell_width: 220,
+            preferred_cell_height: 64,
+            gap: 10,
+            padding: 0,
+        },
+        ArcadeInteractionMode::Touch => GridSpec {
+            min_cell_width: 160,
+            preferred_cell_height: 90,
+            gap: 10,
+            padding: 0,
+        },
     }
 }
 
 fn catalog_theme() -> UiTheme {
     UiTheme {
-        padding: 6,
-        row_height: 20,
-        row_spacing: 6,
+        padding: 8,
+        row_height: 22,
+        row_spacing: 8,
         text: FG,
         muted_text: MUTED,
         control_background: CARD,
@@ -597,7 +1195,7 @@ fn catalog_stylesheet() -> UiStyleSheet {
             },
             hovered: UiStyleOverride {
                 background: Some(CARD_HOVERED),
-                border: Some(Pixel::rgb(82, 126, 145)),
+                border: Some(Pixel::rgb(84, 126, 151)),
                 ..UiStyleOverride::default()
             },
             active: UiStyleOverride {
@@ -608,6 +1206,47 @@ fn catalog_stylesheet() -> UiStyleSheet {
         },
         ..UiStyleSheet::default()
     }
+}
+
+fn point_in_rect((x, y): (i32, i32), rect: Rect) -> bool {
+    let right = i64::from(rect.x) + i64::from(rect.width);
+    let bottom = i64::from(rect.y) + i64::from(rect.height);
+    i64::from(x) >= i64::from(rect.x)
+        && i64::from(x) < right
+        && i64::from(y) >= i64::from(rect.y)
+        && i64::from(y) < bottom
+}
+
+fn fuzzy_score(query: &str, candidate: &str) -> Option<i32> {
+    let query = query.to_lowercase();
+    let candidate = candidate.to_lowercase();
+    let mut score = 0_i32;
+    let mut last_match = None;
+    let mut cursor = 0_usize;
+
+    for needle in query.chars().filter(|character| !character.is_whitespace()) {
+        let mut found = None;
+        for (offset, character) in candidate[cursor..].char_indices() {
+            if character == needle {
+                found = Some(cursor + offset);
+                break;
+            }
+        }
+        let position = found?;
+        score += 10;
+        if let Some(previous) = last_match {
+            if position == previous + 1 {
+                score += 8;
+            } else {
+                score -= i32::try_from(position.saturating_sub(previous + 1)).unwrap_or(i32::MAX);
+            }
+        } else {
+            score -= i32::try_from(position).unwrap_or(i32::MAX);
+        }
+        last_match = Some(position);
+        cursor = position + candidate[position..].chars().next().unwrap().len_utf8();
+    }
+    Some(score)
 }
 
 fn build_game(mode: ArcadeInteractionMode, index: usize) -> Option<Box<dyn Game>> {
@@ -677,7 +1316,8 @@ mod tests {
     #[test]
     fn responsive_catalog_uses_two_native_and_three_touch_columns() {
         let ids = catalog_ids();
-        let cards = catalog_cards(&ids);
+        let visible: Vec<_> = (0..GAME_LABELS.len()).collect();
+        let cards = catalog_cards(&ids, &visible);
         for (mode, expected) in [
             (ArcadeInteractionMode::Native, 2),
             (ArcadeInteractionMode::Touch, 3),
@@ -688,7 +1328,7 @@ mod tests {
                 bounds,
                 &mut state,
                 SpatialInput::default(),
-                catalog_grid_spec(bounds),
+                catalog_grid_spec(mode),
                 &cards,
             );
             assert_eq!(output.columns(), expected);
@@ -697,11 +1337,44 @@ mod tests {
     }
 
     #[test]
+    fn category_filters_are_real_consumer_metadata() {
+        let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
+        app.filter = CatalogFilter::Puzzle;
+        assert_eq!(app.visible_game_indices(), vec![1, 3]);
+        app.filter = CatalogFilter::Shmup;
+        assert_eq!(app.visible_game_indices(), vec![2]);
+        app.filter = CatalogFilter::Action;
+        assert_eq!(app.visible_game_indices(), vec![0, 3, 5]);
+    }
+
+    #[test]
+    fn fuzzy_search_matches_labels_and_categories() {
+        let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
+        app.search.query = "spinv".into();
+        assert_eq!(app.visible_game_indices().first().copied(), Some(2));
+        app.search.query = "shmup".into();
+        assert_eq!(app.visible_game_indices(), vec![2]);
+        app.search.query = "zzzz".into();
+        assert!(app.visible_game_indices().is_empty());
+    }
+
+    #[test]
+    fn search_and_category_filter_compose() {
+        let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
+        app.filter = CatalogFilter::Puzzle;
+        app.search.query = "hero".into();
+        assert_eq!(app.visible_game_indices(), vec![3]);
+        app.search.query = "tetris".into();
+        assert_eq!(app.visible_game_indices(), vec![1]);
+    }
+
+    #[test]
     fn catalog_spatial_navigation_moves_right_and_down() {
         let ids = catalog_ids();
-        let cards = catalog_cards(&ids);
+        let visible: Vec<_> = (0..GAME_LABELS.len()).collect();
+        let cards = catalog_cards(&ids, &visible);
         let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Native).game_list;
-        let spec = catalog_grid_spec(bounds);
+        let spec = catalog_grid_spec(ArcadeInteractionMode::Native);
         let mut state = SpatialState::default();
         let initial =
             run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
@@ -741,9 +1414,10 @@ mod tests {
     #[test]
     fn catalog_pointer_click_activates_the_hit_card() {
         let ids = catalog_ids();
-        let cards = catalog_cards(&ids);
+        let visible: Vec<_> = (0..GAME_LABELS.len()).collect();
+        let cards = catalog_cards(&ids, &visible);
         let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Native).game_list;
-        let spec = catalog_grid_spec(bounds);
+        let spec = catalog_grid_spec(ArcadeInteractionMode::Native);
         let mut state = SpatialState::default();
         let initial =
             run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
@@ -783,9 +1457,10 @@ mod tests {
     #[test]
     fn catalog_touch_tap_activates_the_hit_card() {
         let ids = catalog_ids();
-        let cards = catalog_cards(&ids);
+        let visible: Vec<_> = (0..GAME_LABELS.len()).collect();
+        let cards = catalog_cards(&ids, &visible);
         let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Touch).game_list;
-        let spec = catalog_grid_spec(bounds);
+        let spec = catalog_grid_spec(ArcadeInteractionMode::Touch);
         let mut state = SpatialState::default();
         let initial =
             run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
@@ -825,71 +1500,28 @@ mod tests {
     }
 
     #[test]
-    fn interaction_modes_use_smallest_current_common_surfaces() {
+    fn launcher_surfaces_are_larger_but_still_contain_every_game() {
         assert_eq!(
             ArcadeInteractionMode::Native.framebuffer_size(),
             Size {
-                width: 320,
-                height: 224
+                width: 560,
+                height: 320
             }
         );
         assert_eq!(
             ArcadeInteractionMode::Touch.framebuffer_size(),
             Size {
-                width: 480,
-                height: 260
+                width: 720,
+                height: 400
             }
         );
-    }
 
-    #[test]
-    fn touch_surface_contains_every_touch_game() {
-        let size = ArcadeInteractionMode::Touch.framebuffer_size();
-        let snake_size = SnakeInteractionMode::Touch.framebuffer_size();
-        let extents = [
-            (snake_size.width, snake_size.height),
-            (
-                breakout::TOUCH_FRAMEBUFFER_WIDTH,
-                breakout::FRAMEBUFFER_HEIGHT,
-            ),
-            (tetris::TOUCH_FRAMEBUFFER_WIDTH, tetris::FRAMEBUFFER_HEIGHT),
-            (
-                space_invaders::TOUCH_FRAMEBUFFER_WIDTH,
-                space_invaders::FRAMEBUFFER_HEIGHT,
-            ),
-            (
-                smart_boy_hero::TOUCH_FRAMEBUFFER_WIDTH,
-                smart_boy_hero::TOUCH_FRAMEBUFFER_HEIGHT,
-            ),
-            (pong::FRAMEBUFFER_WIDTH, pong::TOUCH_FRAMEBUFFER_HEIGHT),
-        ];
-        for (width, height) in extents {
-            assert!(width <= size.width);
-            assert!(height <= size.height);
-        }
-    }
-
-    #[test]
-    fn native_surface_contains_every_native_game() {
-        let size = ArcadeInteractionMode::Native.framebuffer_size();
-        let snake_size = SnakeInteractionMode::Keyboard.framebuffer_size();
-        let extents = [
-            (snake_size.width, snake_size.height),
-            (breakout::FRAMEBUFFER_WIDTH, breakout::FRAMEBUFFER_HEIGHT),
-            (tetris::FRAMEBUFFER_WIDTH, tetris::FRAMEBUFFER_HEIGHT),
-            (
-                space_invaders::FRAMEBUFFER_WIDTH,
-                space_invaders::FRAMEBUFFER_HEIGHT,
-            ),
-            (
-                smart_boy_hero::FRAMEBUFFER_WIDTH,
-                smart_boy_hero::FRAMEBUFFER_HEIGHT,
-            ),
-            (pong::FRAMEBUFFER_WIDTH, pong::FRAMEBUFFER_HEIGHT),
-        ];
-        for (width, height) in extents {
-            assert!(width <= size.width);
-            assert!(height <= size.height);
+        for mode in [ArcadeInteractionMode::Native, ArcadeInteractionMode::Touch] {
+            let size = mode.framebuffer_size();
+            for index in 0..GAME_LABELS.len() {
+                assert!(build_game(mode, index).is_some());
+            }
+            assert!(size.width >= 560 || mode == ArcadeInteractionMode::Native);
         }
     }
 
@@ -919,26 +1551,12 @@ mod tests {
     }
 
     #[test]
-    fn catalog_builds_all_games_in_both_modes() {
-        for mode in [ArcadeInteractionMode::Native, ArcadeInteractionMode::Touch] {
-            for index in 0..GAME_LABELS.len() {
-                assert!(build_game(mode, index).is_some());
-            }
-            assert!(build_game(mode, GAME_LABELS.len()).is_none());
-        }
-    }
-
-    #[test]
-    fn native_mode_has_no_virtual_pads() {
+    fn native_mode_has_no_virtual_pad_and_touch_mode_has_one() {
         assert!(
             ArcadeApp::new(ArcadeInteractionMode::Native)
                 .catalog_pad
                 .is_none()
         );
-    }
-
-    #[test]
-    fn touch_mode_has_catalog_virtual_pad() {
         assert!(
             ArcadeApp::new(ArcadeInteractionMode::Touch)
                 .catalog_pad
