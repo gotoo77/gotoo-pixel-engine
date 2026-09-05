@@ -219,10 +219,9 @@ impl CardPainter for ArcadeCatalogPainter {
             background,
         );
 
-        let separator_y = layout
-            .rect
-            .y
-            .saturating_add(i32::try_from(layout.rect.height.saturating_sub(1)).unwrap_or(i32::MAX));
+        let separator_y = layout.rect.y.saturating_add(
+            i32::try_from(layout.rect.height.saturating_sub(1)).unwrap_or(i32::MAX),
+        );
         framebuffer.fill_rect(
             layout.rect.x,
             separator_y,
@@ -256,14 +255,7 @@ impl CardPainter for ArcadeCatalogPainter {
             i32::try_from(layout.rect.height.saturating_sub(text_height) / 2).unwrap_or(i32::MAX),
         );
         let text_x = layout.rect.x.saturating_add(12);
-        text.draw_scaled(
-            framebuffer,
-            text_x,
-            text_y,
-            card.title,
-            scale,
-            theme.text,
-        );
+        text.draw_scaled(framebuffer, text_x, text_y, card.title, scale, theme.text);
 
         if visual.focused {
             let marker = ">";
@@ -282,14 +274,7 @@ impl CardPainter for ArcadeCatalogPainter {
                 i32::try_from(layout.rect.height.saturating_sub(marker_height) / 2)
                     .unwrap_or(i32::MAX),
             );
-            text.draw_scaled(
-                framebuffer,
-                marker_x,
-                marker_y,
-                marker,
-                scale,
-                theme.accent,
-            );
+            text.draw_scaled(framebuffer, marker_x, marker_y, marker, scale, theme.accent);
         }
     }
 }
@@ -576,9 +561,7 @@ fn pause_game<G: Game + 'static>(game: G, mode: ArcadeInteractionMode) -> Box<dy
 
 #[cfg(test)]
 mod tests {
-    use gotoo_pixel_engine::{
-        Touch, TouchPhase, ui::experimental_spatial::run_card_grid_headless,
-    };
+    use gotoo_pixel_engine::{Touch, TouchPhase, ui::experimental_spatial::run_card_grid_headless};
 
     use super::*;
 
