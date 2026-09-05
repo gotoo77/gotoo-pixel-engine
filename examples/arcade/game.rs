@@ -616,18 +616,10 @@ impl ArcadeApp {
             if frame.input.key(Key::Tab).pressed() {
                 self.cycle_filter(if shift { -1 } else { 1 });
             }
-            if self
-                .catalog_controls
-                .action(CATALOG_FILTER_PREV)
-                .pressed()
-            {
+            if self.catalog_controls.action(CATALOG_FILTER_PREV).pressed() {
                 self.cycle_filter(-1);
             }
-            if self
-                .catalog_controls
-                .action(CATALOG_FILTER_NEXT)
-                .pressed()
-            {
+            if self.catalog_controls.action(CATALOG_FILTER_NEXT).pressed() {
                 self.cycle_filter(1);
             }
         }
@@ -757,7 +749,13 @@ impl ArcadeApp {
             self.layout.header.height,
             ACCENT,
         );
-        draw_text_centered(framebuffer, self.layout.eyebrow, "GPE.UI / P6.1 LAUNCHER", 1, MUTED);
+        draw_text_centered(
+            framebuffer,
+            self.layout.eyebrow,
+            "GPE.UI / P6.1 LAUNCHER",
+            1,
+            MUTED,
+        );
         self.paint_search_and_filters(framebuffer, visible.len());
 
         let cards = catalog_cards(&self.catalog_ids, &visible);
@@ -942,7 +940,13 @@ impl ArcadeApp {
             },
         );
         if visible.is_empty() {
-            draw_text_centered(framebuffer, self.layout.game_list, "NO GAMES MATCH", 2, MUTED);
+            draw_text_centered(
+                framebuffer,
+                self.layout.game_list,
+                "NO GAMES MATCH",
+                2,
+                MUTED,
+            );
             return;
         }
         for (layout, game_index) in output.layouts().iter().zip(visible.iter().copied()) {
@@ -1306,7 +1310,12 @@ mod tests {
             );
             assert_eq!(output.columns(), 3);
             assert_eq!(output.layouts().len(), GAME_LABELS.len());
-            assert!(output.layouts().iter().all(|layout| layout.rect.height >= 60));
+            assert!(
+                output
+                    .layouts()
+                    .iter()
+                    .all(|layout| layout.rect.height >= 60)
+            );
         }
     }
 
