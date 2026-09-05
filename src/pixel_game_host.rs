@@ -43,7 +43,7 @@ impl PixelGameHost {
     ///
     /// Pointer/touch consumers must not use this provisional method until the
     /// mapped-input contract is implemented.
-    pub fn update_and_present_shared_input(
+    pub fn update_and_present(
         &mut self,
         host: &mut Frame<'_>,
         bounds: Rect,
@@ -63,6 +63,15 @@ impl PixelGameHost {
 
         let presentation = present_pixel_surface(host.framebuffer, &self.framebuffer, bounds);
         (result, presentation)
+    }
+
+    /// Compatibility alias kept during the P6 API-shape audit.
+    pub fn update_and_present_shared_input(
+        &mut self,
+        host: &mut Frame<'_>,
+        bounds: Rect,
+    ) -> (GameResult, Option<PixelPresentation>) {
+        self.update_and_present(host, bounds)
     }
 
     pub fn present(&self, host: &mut Framebuffer, bounds: Rect) -> Option<PixelPresentation> {
