@@ -21,8 +21,8 @@ use breakout::BreakoutGame;
 #[cfg(feature = "outline-fonts")]
 use gotoo_pixel_engine::outline_text::OutlineFont;
 use gotoo_pixel_engine::{
-    ActionId, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, MouseButton, Pixel,
-    Rect, Size, TextInputEvent, Viewport, present_pixel_surface,
+    ActionId, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, MouseButton,
+    Pixel, PixelGameHost, Rect, Size, TextInputEvent,
     ui::{
         PauseConfig, PauseGame, UiComponentStyle, UiStyleOverride, UiStyleSheet, UiTheme,
         draw_panel, draw_text_centered,
@@ -46,6 +46,12 @@ pub const HOST_SIZE: Size = Size {
 const GAME_SIZE: Size = Size {
     width: 560,
     height: 320,
+};
+const HOST_BOUNDS: Rect = Rect {
+    x: 0,
+    y: 0,
+    width: HOST_SIZE.width,
+    height: HOST_SIZE.height,
 };
 
 const SELECT: ActionId = ActionId::new("arcade.high-res.select");
@@ -355,8 +361,7 @@ pub struct ArcadeHighResApp {
     spatial: SpatialState,
     filter: CatalogFilter,
     search: CatalogSearch,
-    active_game: Option<Box<dyn Game>>,
-    game_surface: Framebuffer,
+    active_game: Option<PixelGameHost>,
     waiting_for_launch_release: bool,
     waiting_for_catalog_release: bool,
     #[cfg(feature = "outline-fonts")]
@@ -374,7 +379,6 @@ impl ArcadeHighResApp {
             filter: CatalogFilter::All,
             search: CatalogSearch::default(),
             active_game: None,
-            game_surface: Framebuffer::new(GAME_SIZE.width, GAME_SIZE.height),
             waiting_for_launch_release: false,
             waiting_for_catalog_release: false,
             #[cfg(feature = "outline-fonts")]
@@ -429,44 +433,25 @@ impl ArcadeHighResApp {
             self.waiting_for_launch_release = false;
         }
 
-        let result = {
-            let input = frame.input;
-            let mut child = Frame {
-                framebuffer: &mut self.game_surface,
-                input,
-                delta_time: frame.delta_time,
-                storage: &mut *frame.storage,
-                audio: &mut *frame.audio,
-                surface_size: GAME_SIZE,
-                viewport: Viewport::new(GAME_SIZE, GAME_SIZE),
-            };
-            self.active_game
-                .as_mut()
-                .expect("active game update requires a game")
-                .update(&mut child)
-        };
+        frame.framebuffer.clear(BG);
+        let (result, _) = self
+            .active_game
+            .as_mut()
+            .expect("active game update requires a game")
+            .update_and_present(frame, HOST_BOUNDS);
 
         if result == GameResult::Exit {
             self.return_to_catalog();
             self.render_catalog(frame.framebuffer, SpatialInput::default());
-        } else {
-            self.present_game(frame.framebuffer);
         }
         GameResult::Continue
     }
 
-    fn present_game(&mut self, host: &mut Framebuffer) {
+    fn present_game(&self, host: &mut Framebuffer) {
         host.clear(BG);
-        let _ = present_pixel_surface(
-            host,
-            &self.game_surface,
-            Rect {
-                x: 0,
-                y: 0,
-                width: HOST_SIZE.width,
-                height: HOST_SIZE.height,
-            },
-        );
+        if let Some(game) = &self.active_game {
+            let _ = game.present(host, HOST_BOUNDS);
+        }
     }
 
     fn update_search_and_filters(&mut self, frame: &Frame<'_>) -> GameResult {
@@ -856,8 +841,7 @@ impl ArcadeHighResApp {
         let Some(game) = build_game(index) else {
             return;
         };
-        self.game_surface.clear(Pixel::BLACK);
-        self.active_game = Some(game);
+        self.active_game = Some(PixelGameHost::from_boxed(game, GAME_SIZE));
         self.waiting_for_launch_release = true;
     }
 
