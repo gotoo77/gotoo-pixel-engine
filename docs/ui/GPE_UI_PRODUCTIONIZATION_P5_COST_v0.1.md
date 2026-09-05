@@ -1,6 +1,6 @@
 # GPE.UI — P5 Cost Attribution / Debug Boundary v0.1
 
-Status: **MEASUREMENT PASS — FINAL HYGIENE / WASM GATE PENDING**
+Status: **PASS / STOP**
 
 ## Why P5 exists
 
@@ -203,29 +203,28 @@ Current shape:
 6. no second interaction/layout runtime is introduced.
 
 The exact final public naming and whether capture policy remains state-owned are
-deferred to P7 API cleanup. P5 only needs a falsifiable attribution boundary.
+deferred to P7 API cleanup. P5 only needed a falsifiable attribution boundary.
 
 ## Validation evidence
 
-Local Native test execution after the P5 boundary:
+Final P5 closure gates were verified manually on the repository-wide worktree:
 
 ```text
-cargo test
-325 library tests passed
-2 main tests passed
-integration suites passed
-36 snake tests passed
-doc tests passed
-0 failures
+cargo fmt --check                         PASS
+cargo test                                PASS
+cargo check --target wasm32-unknown-unknown PASS
+release-mode MFE-001C OFF/ON measurement PASS
 ```
 
-`cargo fmt --check` did not pass yet, but only reported rustfmt-only diffs in the
-P5 probe plus previously touched P4/P5 UI files; no semantic compiler/test failure
-was reported. The P5 probe formatting diff has been corrected in-repository.
+The repository-wide rustfmt gate is therefore **PASS**.
+The Web/WASM compilation gate is **PASS**.
+
+No human visual runtime gate is required because P5 changes only capture and
+measurement boundaries; rendering and input semantics are unchanged.
 
 ## Acceptance gates
 
-P5 can PASS only when all of the following are true:
+P5 is closed with all acceptance gates satisfied:
 
 - [x] normal production transaction paths do not construct textual dumps by default;
 - [x] debug/headless tests can still obtain deterministic dumps explicitly;
@@ -233,11 +232,8 @@ P5 can PASS only when all of the following are true:
 - [x] release-mode cost probe reports capture OFF and ON separately;
 - [x] allocation attribution is materially clearer than MFE-001C;
 - [x] optimization conclusions follow the new evidence rather than a zero-allocation ideology;
-- [ ] repository-wide `cargo fmt --check` is clean;
-- [ ] Web/WASM compilation remains valid for the affected UI code.
-
-No human visual runtime gate is required because P5 changes only capture and
-measurement boundaries; rendering and input semantics are unchanged.
+- [x] repository-wide `cargo fmt --check` is clean;
+- [x] Web/WASM compilation remains valid for the affected UI code.
 
 ## Explicit non-goals
 
@@ -251,13 +247,21 @@ unsafe optimization
 new UI architecture
 removal of deterministic debug dumps
 public API freeze
-P6 consumer migration
 ```
 
-## Current STOP condition
+P5 also does not authorize further optimization of the remaining capture-OFF
+allocations. Any such work requires future consumer or profiler evidence outside
+this phase.
 
-The cost-attribution experiment is complete and reviewed. Do not optimize the
-remaining OFF-path allocations in P5.
+## Closure / STOP
 
-Finish only the hygiene and Web compilation gates, then mark P5 PASS / STOP and
-advance to P6 consumer migration.
+```text
+GPE.UI PRODUCTIONIZATION P5 = PASS / STOP
+P5 CLOSED
+NEXT PHASE = P6 CONSUMER MIGRATION
+```
+
+The cost-attribution experiment is complete. Do not reopen P5 architecture and
+do not optimize the remaining capture-OFF allocations as part of P5.
+
+The next authorized phase is P6 consumer migration.
