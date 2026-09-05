@@ -259,6 +259,7 @@ struct StateEntry {
 pub struct UiStateStore {
     generation: u64,
     interaction: UiInteractionState,
+    capture_debug_dump: bool,
     entries: HashMap<UiId, StateEntry>,
 }
 
@@ -273,6 +274,14 @@ impl UiStateStore {
 
     pub const fn generation(&self) -> u64 {
         self.generation
+    }
+
+    pub const fn debug_capture_enabled(&self) -> bool {
+        self.capture_debug_dump
+    }
+
+    pub fn set_debug_capture(&mut self, enabled: bool) {
+        self.capture_debug_dump = enabled;
     }
 }
 
@@ -959,12 +968,16 @@ fn run_impl<'a, R>(
         paint_node(&nodes, 0, &mut context);
     }
 
-    let dump = dump_nodes(
-        &nodes,
-        focused,
-        &changed_values,
-        interaction.activated_ids(),
-    );
+    let dump = if state.capture_debug_dump {
+        dump_nodes(
+            &nodes,
+            focused,
+            &changed_values,
+            interaction.activated_ids(),
+        )
+    } else {
+        String::new()
+    };
 
     state
         .entries
@@ -1791,9 +1804,15 @@ mod tests {
         Pixel::rgb(value, value, value)
     }
 
+    fn debug_state() -> UiStateStore {
+        let mut state = UiStateStore::default();
+        state.set_debug_capture(true);
+        state
+    }
+
     #[test]
     fn slider_mouse_click_drag_release_and_hover() {
-        let mut state = UiStateStore::default();
+        let mut state = debug_state();
         let (initial, _) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
             ui.slider_f32("VOLUME", 0.0, 0.0..=1.0, 0.05)
         });
@@ -1843,7 +1862,7 @@ mod tests {
             row_height: 32,
             ..theme()
         };
-        let mut state = UiStateStore::default();
+        let mut state = debug_state();
         let mut framebuffer = Framebuffer::new(240, 80);
         let (output, slider) = run(
             &mut framebuffer,
@@ -1903,7 +1922,7 @@ mod tests {
             (false, true, true),
             (true, true, false),
         ] {
-            let mut state = UiStateStore::default();
+            let mut state = debug_state();
             let mut framebuffer = Framebuffer::new(240, 80);
             let (output, toggle) = run(
                 &mut framebuffer,
@@ -1973,8 +1992,38 @@ mod tests {
     }
 
     #[test]
+    fn debug_dump_capture_is_opt_in_without_changing_semantics() {
+        let mut off_state = UiStateStore::default();
+        let mut on_state = debug_state();
+
+        let (off, off_button) = run_headless(
+            size(),
+            &mut off_state,
+            UiNavInput::default(),
+            theme(),
+            |ui| ui.button_action("RESUME", RESUME),
+        );
+        let (on, on_button) = run_headless(
+            size(),
+            &mut on_state,
+            UiNavInput::default(),
+            theme(),
+            |ui| ui.button_action("RESUME", RESUME),
+        );
+
+        assert!(!off_state.debug_capture_enabled());
+        assert!(on_state.debug_capture_enabled());
+        assert!(off.dump().is_empty());
+        assert!(on.dump().contains("RESUME"));
+        assert_eq!(off.metrics(), on.metrics());
+        assert_eq!(off.focused_id(), Some(off_button.id()));
+        assert_eq!(on.focused_id(), Some(on_button.id()));
+        assert_eq!(off_button.id(), on_button.id());
+    }
+
+    #[test]
     fn tiny_ui_builds_headlessly_with_small_concept_surface() {
-        let mut state = UiStateStore::default();
+        let mut state = debug_state();
         let (output, resume) =
             run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
                 ui.panel(|ui| {
@@ -2135,7 +2184,7 @@ mod tests {
 
     #[test]
     fn toggle_returns_typed_proposal_without_mutating_consumer_state() {
-        let mut state = UiStateStore::default();
+        let mut state = debug_state();
         let enabled = false;
 
         let (output, toggle) = run_headless(
@@ -2156,7 +2205,7 @@ mod tests {
 
     #[test]
     fn slider_effective_value_updates_same_frame_but_dependent_text_uses_input_snapshot() {
-        let mut state = UiStateStore::default();
+        let mut state = debug_state();
         let volume = 0.65_f32;
 
         let (_, _) = run_headless(size(), &mut state, UiNavInput::default(), theme(), |ui| {
@@ -2210,7 +2259,7 @@ mod tests {
             padding: 8,
         };
 
-        let mut wide_state = UiStateStore::default();
+        let mut wide_state = debug_state();
         let (wide, (button_a, _, _, _)) = run_headless(
             Size {
                 width: 360,
@@ -2241,7 +2290,7 @@ mod tests {
         let wide_b = rect_for_label(wide.dump(), "B");
         assert!(wide_b.x > wide_a.x);
 
-        let mut small_state = UiStateStore::default();
+        let mut small_state = debug_state();
         let (small, _) = run_headless(
             Size {
                 width: 120,
@@ -2444,6 +2493,7 @@ mod tests {
         );
 
         assert_eq!(output.metrics().interactive_count, 1);
+        assert!(output.dump().is_empty());
         assert!(
             framebuffer
                 .as_rgba8()
@@ -2454,7 +2504,7 @@ mod tests {
 
     #[test]
     fn styled_run_applies_component_and_local_paint_without_changing_interaction() {
-        let mut state = UiStateStore::default();
+        let mut state = debug_state();
         let mut framebuffer = Framebuffer::new(220, 140);
         let local_button_background = color(61);
         let toggle_background = color(91);
@@ -2551,7 +2601,7 @@ mod tests {
 
     #[test]
     fn styled_panel_padding_and_gap_affect_arranged_child_geometry() {
-        let mut state = UiStateStore::default();
+        let mut state = debug_state();
         let stylesheet = UiStyleSheet {
             panel: UiComponentStyle {
                 base: UiStyleOverride {
@@ -2608,7 +2658,7 @@ mod tests {
             ..UiStyleSheet::default()
         };
 
-        let mut focused_state = UiStateStore::default();
+        let mut focused_state = debug_state();
         let mut focused_framebuffer = Framebuffer::new(140, 80);
         let (focused_output, _) = run_styled(
             &mut focused_framebuffer,
@@ -2624,7 +2674,7 @@ mod tests {
             Some(color(30))
         );
 
-        let mut hovered_state = UiStateStore::default();
+        let mut hovered_state = debug_state();
         let mut hovered_framebuffer = Framebuffer::new(140, 80);
         let (hovered_output, _) = run_with_input_styled(
             &mut hovered_framebuffer,
@@ -2647,7 +2697,7 @@ mod tests {
             Some(color(60))
         );
 
-        let mut active_state = UiStateStore::default();
+        let mut active_state = debug_state();
         let mut active_framebuffer = Framebuffer::new(140, 80);
         let (active_output, button) = run_with_input_styled(
             &mut active_framebuffer,
