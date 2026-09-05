@@ -1,6 +1,6 @@
 # GPE.UI - P4 Typography: First Slice
 
-Status: P4 ACTIVE / BITMAP + 52-FONT OUTLINE GALLERY IMPLEMENTED / NATIVE + WEB HUMAN RUNTIME PASS / ARCHITECTURE CLOSURE PENDING
+Status: **P4 PASS / STOP — BITMAP + 52-FONT OUTLINE CAPABILITY VALIDATED ON NATIVE + WEB**
 
 Start authorized by maintainer: "go P4", 2026-09-05.
 This records authorization to proceed locally, not a P3 merge or a CI result.
@@ -66,8 +66,8 @@ human-validated the current Native interaction/rendering behavior on 2026-09-05.
   changes the slider only when that slider is both hovered and focused.
 - `assets/fonts/p4` contains font files, individual OFL licences and provenance.
   No system font installation or runtime download is required.
-- This is still an experimental integration surface, not yet a font field in
-  every `UiStyleSheet`/component.
+- This remains an experimental integration surface, not a font field in every
+  `UiStyleSheet`/component.
 - Automatic font fallback, complex-script shaping and variable-axis controls
   remain deferred.
 
@@ -110,10 +110,6 @@ search/navigation, pointer slider editing, deterministic held-key repeat,
 hover+focus wheel editing, and wheel suppression after keyboard focus leaves the
 slider while the pointer remains over it.
 
-This is stronger evidence than Web compilation alone: the same P4 gallery has
-now passed direct human runtime inspection on Native and multiple browser
-surfaces.
-
 ## Validation Commands
 
 ```powershell
@@ -125,27 +121,24 @@ rtk cargo clippy --features outline-fonts --lib --example gpe_ui_p4_font_gallery
 .\scripts\build_p4_font_gallery_web.ps1
 ```
 
-## Current P4 Boundary
+## P4 Closure Decision
 
-The typography capability experiment has now passed its principal rendering and
-interaction runtime gates on Native and Web. P4 remains ACTIVE only for an
-explicit architecture-closure decision; additional speculative text features
-are not required to prove the current capability.
+P4 is closed **PASS / STOP**. The capability has been demonstrated strongly
+enough to move on without inventing a broader typography framework.
 
-Closure decisions:
+The closure boundary is deliberate:
 
-- whether outline font selection should become component-wide styling now, or be
-  deferred until P6 provides two unlike real consumers;
-- keep automatic cross-font fallback deferred unless a real consumer proves it
-  necessary;
-- attribute binary/runtime/allocation cost in P5 rather than optimizing P4
-  prematurely;
+- preserve bitmap text as the lightweight/default option;
+- preserve the optional outline-font capability and the proven measure/paint
+  primitive;
+- defer component-wide outline-font plumbing until P6 supplies two unlike real
+  consumers;
+- defer automatic cross-font fallback until consumer evidence requires it;
+- move binary/runtime/allocation attribution to P5;
 - do not freeze a public typography API before P7.
 
-Recommended closure direction follows the project rule that abstractions require
-consumer evidence: preserve the optional outline capability and its proven
-measure/paint primitive, but defer broad component-wide font plumbing until real
-consumer evidence exists.
+This follows the project rule that abstractions require consumer evidence.
+Additional speculative typography work is not part of P4 completion.
 
 Non-goals remain browser-grade shaping, CSS typography, a global font manager,
 or SDF/MSDF by default.
