@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("WARNING: run this probe with --release for reportable timing data.");
     }
 
-    println!("GPE.UI MFE-001C COST PROBE");
+    println!("GPE.UI MFE-001C / P5 COST ATTRIBUTION PROBE");
     println!(
         "os={} arch={}",
         std::env::consts::OS,
@@ -109,17 +109,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "allocation_bytes = cumulative bytes requested by alloc/alloc_zeroed/realloc while one transaction is counted"
     );
+    println!("capture OFF/ON uses identical logical workloads and separate persistent state instances");
     println!();
 
     let theme = UiTheme::default();
-    let mut tiny_state = UiStateStore::default();
-    let tiny = measure("tiny", || {
+
+    let mut tiny_off_state = UiStateStore::default();
+    let tiny_off = measure("tiny_capture_off", || {
         let (output, ()) = experimental::run_headless(
             Size {
                 width: 320,
                 height: 180,
             },
-            &mut tiny_state,
+            &mut tiny_off_state,
+            UiNavInput::default(),
+            theme,
+            |ui| {
+                ui.panel(|ui| {
+                    ui.text("PAUSED");
+                    let _ = ui.button("RESUME");
+                });
+            },
+        );
+        black_box(output.dump().len());
+        let metrics = output.metrics();
+        Observation {
+            logical_items: metrics.node_count,
+            persistent_entries: metrics.persistent_state_entries,
+        }
+    });
+
+    let mut tiny_on_state = UiStateStore::default();
+    tiny_on_state.set_debug_capture(true);
+    let tiny_on = measure("tiny_capture_on", || {
+        let (output, ()) = experimental::run_headless(
+            Size {
+                width: 320,
+                height: 180,
+            },
+            &mut tiny_on_state,
             UiNavInput::default(),
             theme,
             |ui| {
@@ -146,8 +174,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         card(ids[4], "ECHO", ACTION_E),
         card(ids[5], "FOXTROT", ACTION_F),
     ];
-    let mut spatial_state = SpatialState::default();
-    let spatial = measure("spatial_grid_6", || {
+
+    let mut spatial_off_state = SpatialState::default();
+    let spatial_off = measure("spatial_grid_6_capture_off", || {
         let output = run_card_grid_headless(
             Rect {
                 x: 0,
@@ -155,7 +184,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 width: 464,
                 height: 174,
             },
-            &mut spatial_state,
+            &mut spatial_off_state,
             SpatialInput::default(),
             GridSpec {
                 min_cell_width: 118,
@@ -168,14 +197,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         black_box(output.dump().len());
         Observation {
             logical_items: output.layouts().len(),
-            persistent_entries: usize::from(spatial_state.focused_id().is_some())
-                + usize::from(spatial_state.pointer_capture_id().is_some())
-                + spatial_state.touch_capture_count(),
+            persistent_entries: usize::from(spatial_off_state.focused_id().is_some())
+                + usize::from(spatial_off_state.pointer_capture_id().is_some())
+                + spatial_off_state.touch_capture_count(),
         }
     });
 
-    print_stats(&tiny);
-    print_stats(&spatial);
+    let mut spatial_on_state = SpatialState::default();
+    spatial_on_state.set_debug_capture(true);
+    let spatial_on = measure("spatial_grid_6_capture_on", || {
+        let output = run_card_grid_headless(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 464,
+                height: 174,
+            },
+            &mut spatial_on_state,
+            SpatialInput::default(),
+            GridSpec {
+                min_cell_width: 118,
+                preferred_cell_height: 78,
+                gap: 8,
+                padding: 6,
+            },
+            &cards,
+        );
+        black_box(output.dump().len());
+        Observation {
+            logical_items: output.layouts().len(),
+            persistent_entries: usize::from(spatial_on_state.focused_id().is_some())
+                + usize::from(spatial_on_state.pointer_capture_id().is_some())
+                + spatial_on_state.touch_capture_count(),
+        }
+    });
+
+    print_stats(&tiny_off);
+    print_stats(&tiny_on);
+    print_stats(&spatial_off);
+    print_stats(&spatial_on);
 
     println!("TYPE SIZES (inline only; heap capacity excluded)");
     println!("UiStateStore={} bytes", size_of::<UiStateStore>());
