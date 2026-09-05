@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE, P3 PASS WITH CONDITIONS, P4 ACTIVE**
+Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE, P3 PASS WITH CONDITIONS, P4 ACTIVE / RUNTIME GATES PASS**
 
 Baseline:
 
@@ -223,20 +223,26 @@ P3 is **not started by the P2 closure**. It must begin explicitly from the merge
 
 ## P4 — Typography follow-up
 
-Status: **ACTIVE / BITMAP AND EXPERIMENTAL 20-FONT GALLERY IMPLEMENTED**.
+Status: **ACTIVE / NATIVE + WEB HUMAN RUNTIME GATES PASS / ARCHITECTURE CLOSURE PENDING**.
 
 The maintainer explicitly authorized local P4 work on 2026-09-05 ("go P4").
 This does not assert that P3 was merged or that its outstanding gates passed.
 
-Audit, implementation evidence and remaining outline-font decision:
+Audit, implementation evidence and closure direction:
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P4_RESULT_v0.1.md`.
 
 Track issue #69 separately.
 
+Validated capability:
+
 - explicit missing-glyph behavior;
-- preserve bitmap pixel font option;
-- improve typography quality;
-- assess TTF/OTF path without forcing a giant text stack.
+- bitmap pixel font option preserved;
+- improved typography via optional `fontdue` outline path;
+- 52-font gallery with search/navigation and interactive size control;
+- Native human runtime PASS;
+- Web human runtime PASS in Chrome, VS Code integrated browser and Firefox.
+
+Remaining P4 work is a deliberate closure decision, not more speculative typography features. Broad component-wide font plumbing should not be generalized without consumer evidence; cost attribution belongs in P5 and public API freeze belongs in P7.
 
 ## P5 — Cost attribution / debug boundary
 
@@ -307,6 +313,7 @@ P0 = PASS
 P1 = PASS
 P2 = PASS
 P3 = PASS WITH CONDITIONS (local implementation and probe follow-ups)
+P4 = ACTIVE (Native + Web human runtime PASS; architecture closure pending)
 STOP
 ```
 
@@ -315,6 +322,4 @@ Active implementation slice: P4 typography, tracked by issue #69 and
 
 The maintainer's explicit P4 start supersedes the local sequencing hold.
 P3 closure/merge evidence remains outstanding and is not manufactured here.
-P4 bitmap audit and the explicitly requested twenty-font outline gallery are
-implemented. Component-wide font styling, automatic fallback and browser runtime
-validation remain open; see the P4 result for the experimental integration.
+P4 bitmap audit and optional outline capability are implemented and human-validated on Native and Web. Component-wide font styling is intentionally not generalized yet; automatic fallback remains deferred pending consumer evidence. The next P4 action is an explicit closure decision, after which P5 cost attribution can start.
