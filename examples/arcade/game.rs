@@ -327,9 +327,7 @@ impl ArcadeApp {
             &cards,
             &gotoo_pixel_engine::ui::experimental_spatial::DefaultCardPainter,
         );
-        let activated = cards
-            .iter()
-            .position(|card| output.activated(card.id));
+        let activated = cards.iter().position(|card| output.activated(card.id));
 
         if let Some(touch_panel) = self.layout.touch_panel {
             draw_panel(framebuffer, touch_panel, BG, BORDER);
@@ -509,13 +507,8 @@ mod tests {
         let spec = catalog_grid_spec(bounds);
         let mut state = SpatialState::default();
 
-        let initial = run_card_grid_headless(
-            bounds,
-            &mut state,
-            SpatialInput::default(),
-            spec,
-            &cards,
-        );
+        let initial =
+            run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
         assert_eq!(initial.focused_id(), Some(ids[0]));
 
         let down = run_card_grid_headless(
@@ -541,13 +534,8 @@ mod tests {
         let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Native).game_list;
         let spec = catalog_grid_spec(bounds);
         let mut state = SpatialState::default();
-        let initial = run_card_grid_headless(
-            bounds,
-            &mut state,
-            SpatialInput::default(),
-            spec,
-            &cards,
-        );
+        let initial =
+            run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
         let position = rect_center(initial.layouts()[2].rect);
 
         run_card_grid_headless(
@@ -589,13 +577,8 @@ mod tests {
         let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Touch).game_list;
         let spec = catalog_grid_spec(bounds);
         let mut state = SpatialState::default();
-        let initial = run_card_grid_headless(
-            bounds,
-            &mut state,
-            SpatialInput::default(),
-            spec,
-            &cards,
-        );
+        let initial =
+            run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
         let position = rect_center(initial.layouts()[4].rect);
         let started = [Touch {
             id: 7,
