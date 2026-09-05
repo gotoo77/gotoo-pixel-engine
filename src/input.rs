@@ -320,6 +320,7 @@ pub struct Input {
     keys: [ButtonState; KEY_COUNT],
     mouse_buttons: [ButtonState; MOUSE_BUTTON_COUNT],
     mouse_position: Option<(i32, i32)>,
+    mouse_wheel_steps: i32,
     touches: Vec<Touch>,
     gamepads: HashMap<GamepadId, GamepadState>,
     gamepad_connection_events: Vec<GamepadConnectionEvent>,
@@ -332,6 +333,7 @@ impl PartialEq for Input {
             && self.text_events == other.text_events
             && self.mouse_buttons == other.mouse_buttons
             && self.mouse_position == other.mouse_position
+            && self.mouse_wheel_steps == other.mouse_wheel_steps
             && self.touches == other.touches
             && self.gamepads == other.gamepads
             && self.gamepad_connection_events == other.gamepad_connection_events
@@ -359,6 +361,12 @@ impl Input {
 
     pub fn mouse_position(&self) -> Option<(i32, i32)> {
         self.mouse_position
+    }
+
+    /// Signed wheel notches accumulated during the current frame.
+    /// Positive values mean wheel-up; negative values mean wheel-down.
+    pub const fn mouse_wheel_steps(&self) -> i32 {
+        self.mouse_wheel_steps
     }
 
     pub fn touches(&self) -> &[Touch] {
@@ -452,6 +460,10 @@ impl Input {
         self.mouse_position = position;
     }
 
+    pub(crate) fn add_mouse_wheel_steps(&mut self, steps: i32) {
+        self.mouse_wheel_steps = self.mouse_wheel_steps.saturating_add(steps);
+    }
+
     pub(crate) fn push_touch(&mut self, touch: Touch) {
         self.touches.push(touch);
     }
@@ -514,6 +526,7 @@ impl Input {
         self.keys = [ButtonState::default(); KEY_COUNT];
         self.mouse_buttons = [ButtonState::default(); MOUSE_BUTTON_COUNT];
         self.mouse_position = None;
+        self.mouse_wheel_steps = 0;
         self.touches.clear();
     }
 
@@ -530,6 +543,7 @@ impl Input {
                 button.advance_frame();
             }
         }
+        self.mouse_wheel_steps = 0;
         self.touches.clear();
         self.gamepad_connection_events.clear();
     }
@@ -542,6 +556,7 @@ impl Default for Input {
             keys: [ButtonState::default(); KEY_COUNT],
             mouse_buttons: [ButtonState::default(); MOUSE_BUTTON_COUNT],
             mouse_position: None,
+            mouse_wheel_steps: 0,
             touches: Vec::new(),
             gamepads: HashMap::new(),
             gamepad_connection_events: Vec::new(),
@@ -750,6 +765,18 @@ mod tests {
 
         input.set_mouse_position(None);
         assert_eq!(input.mouse_position(), None);
+    }
+
+    #[test]
+    fn mouse_wheel_steps_accumulate_and_are_frame_scoped() {
+        let mut input = Input::default();
+        input.add_mouse_wheel_steps(1);
+        input.add_mouse_wheel_steps(2);
+        input.add_mouse_wheel_steps(-1);
+        assert_eq!(input.mouse_wheel_steps(), 2);
+
+        input.advance_frame();
+        assert_eq!(input.mouse_wheel_steps(), 0);
     }
 
     #[test]
