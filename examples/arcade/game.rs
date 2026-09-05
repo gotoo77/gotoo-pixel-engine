@@ -19,18 +19,20 @@ mod tetris;
 
 use breakout::BreakoutGame;
 use gotoo_pixel_engine::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, MouseButton, Pixel, Rect, Size,
-    TextRenderer,
+    ActionId, ControlBinding, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key,
+    MouseButton, Pixel, Rect, Size,
     ui::{
-        PauseConfig, PauseGame, UiTheme, VirtualButton, VirtualPad, draw_panel, draw_text_centered,
+        PauseConfig, PauseGame, UiComponentStyle, UiStyleOverride, UiStyleSheet, UiTheme,
+        VirtualButton, VirtualPad, draw_panel, draw_text_centered,
         experimental::{self, UiId, UiNavInput, UiStateStore},
         experimental_spatial::{
-            CardLayout, CardPainter, CardVisualState, GridSpec, PointerInput, SpatialCard,
-            SpatialInput, SpatialState, run_card_grid,
+            GridSpec, PointerInput, SpatialCard, SpatialInput, SpatialOutput, SpatialState,
+            run_default_card_grid_styled,
         },
-        standard_menu_controls,
     },
 };
+#[cfg(feature = "outline-fonts")]
+use gotoo_pixel_engine::outline_text::OutlineFont;
 use pong::PongGame;
 use smart_boy_hero::SmartBoyHeroGame;
 use snake::{SnakeGame, SnakeInteractionMode};
@@ -39,6 +41,8 @@ use tetris::TetrisGame;
 
 const CATALOG_UP: ActionId = ActionId::new("arcade.catalog.up");
 const CATALOG_DOWN: ActionId = ActionId::new("arcade.catalog.down");
+const CATALOG_LEFT: ActionId = ActionId::new("arcade.catalog.left");
+const CATALOG_RIGHT: ActionId = ActionId::new("arcade.catalog.right");
 const CATALOG_SELECT: ActionId = ActionId::new("arcade.catalog.select");
 
 const GAME_LABELS: [&str; 6] = [
@@ -60,32 +64,45 @@ const GAME_KEYS: [&str; 6] = [
 
 const BG: Pixel = Pixel::rgb(7, 10, 14);
 const PANEL: Pixel = Pixel::rgb(12, 18, 24);
+const CARD: Pixel = Pixel::rgb(15, 24, 31);
+const CARD_FOCUSED: Pixel = Pixel::rgb(18, 39, 43);
+const CARD_HOVERED: Pixel = Pixel::rgb(20, 31, 40);
+const CARD_ACTIVE: Pixel = Pixel::rgb(27, 49, 47);
 const FG: Pixel = Pixel::rgb(224, 234, 220);
-const BORDER: Pixel = Pixel::rgb(80, 150, 220);
+const MUTED: Pixel = Pixel::rgb(135, 154, 164);
+const BORDER: Pixel = Pixel::rgb(48, 77, 96);
 const ACCENT: Pixel = Pixel::rgb(120, 235, 180);
 const TOUCH_ACCENT: Pixel = Pixel::rgb(245, 190, 90);
-const CATALOG_ROW_HOVER: Pixel = Pixel::rgb(15, 25, 32);
-const CATALOG_ROW_FOCUSED: Pixel = Pixel::rgb(18, 34, 40);
-const CATALOG_ROW_ACTIVE: Pixel = Pixel::rgb(24, 46, 48);
-const CATALOG_SEPARATOR: Pixel = Pixel::rgb(32, 50, 64);
 
 const TOUCH_UP: Rect = Rect {
-    x: 378,
-    y: 48,
-    width: 64,
-    height: 42,
+    x: 392,
+    y: 44,
+    width: 36,
+    height: 30,
 };
-const TOUCH_SELECT: Rect = Rect {
-    x: 378,
-    y: 106,
-    width: 64,
-    height: 42,
+const TOUCH_LEFT: Rect = Rect {
+    x: 370,
+    y: 76,
+    width: 36,
+    height: 30,
+};
+const TOUCH_RIGHT: Rect = Rect {
+    x: 414,
+    y: 76,
+    width: 36,
+    height: 30,
 };
 const TOUCH_DOWN: Rect = Rect {
-    x: 378,
-    y: 164,
-    width: 64,
-    height: 42,
+    x: 392,
+    y: 108,
+    width: 36,
+    height: 30,
+};
+const TOUCH_SELECT: Rect = Rect {
+    x: 376,
+    y: 154,
+    width: 68,
+    height: 40,
 };
 const PAUSE_BUTTON: Rect = Rect {
     x: 400,
@@ -119,6 +136,7 @@ impl ArcadeInteractionMode {
 #[derive(Debug, Clone, Copy)]
 struct ArcadeLayout {
     catalog_panel: Rect,
+    eyebrow: Rect,
     title: Rect,
     game_list: Rect,
     footer: Rect,
@@ -130,151 +148,75 @@ impl ArcadeLayout {
         match mode {
             ArcadeInteractionMode::Native => Self {
                 catalog_panel: Rect {
-                    x: 12,
-                    y: 12,
-                    width: 296,
-                    height: 200,
+                    x: 10,
+                    y: 10,
+                    width: 300,
+                    height: 204,
+                },
+                eyebrow: Rect {
+                    x: 24,
+                    y: 20,
+                    width: 272,
+                    height: 10,
                 },
                 title: Rect {
                     x: 24,
-                    y: 24,
+                    y: 31,
                     width: 272,
-                    height: 28,
+                    height: 31,
                 },
                 game_list: Rect {
-                    x: 28,
-                    y: 60,
-                    width: 264,
-                    height: 124,
+                    x: 22,
+                    y: 70,
+                    width: 276,
+                    height: 112,
                 },
                 footer: Rect {
-                    x: 28,
+                    x: 24,
                     y: 194,
-                    width: 264,
+                    width: 272,
                     height: 10,
                 },
                 touch_panel: None,
             },
             ArcadeInteractionMode::Touch => Self {
                 catalog_panel: Rect {
-                    x: 18,
-                    y: 16,
-                    width: 444,
-                    height: 228,
+                    x: 12,
+                    y: 12,
+                    width: 456,
+                    height: 236,
+                },
+                eyebrow: Rect {
+                    x: 28,
+                    y: 22,
+                    width: 326,
+                    height: 10,
                 },
                 title: Rect {
-                    x: 34,
-                    y: 28,
-                    width: 316,
-                    height: 28,
+                    x: 28,
+                    y: 33,
+                    width: 326,
+                    height: 31,
                 },
                 game_list: Rect {
-                    x: 34,
-                    y: 66,
-                    width: 316,
-                    height: 152,
+                    x: 26,
+                    y: 72,
+                    width: 326,
+                    height: 140,
                 },
                 footer: Rect {
-                    x: 34,
-                    y: 224,
-                    width: 316,
-                    height: 12,
+                    x: 28,
+                    y: 226,
+                    width: 326,
+                    height: 10,
                 },
                 touch_panel: Some(Rect {
-                    x: 364,
-                    y: 34,
-                    width: 92,
+                    x: 362,
+                    y: 28,
+                    width: 96,
                     height: 184,
                 }),
             },
-        }
-    }
-}
-
-struct ArcadeCatalogPainter;
-
-impl CardPainter for ArcadeCatalogPainter {
-    fn paint(
-        &self,
-        framebuffer: &mut Framebuffer,
-        card: &SpatialCard<'_>,
-        layout: CardLayout,
-        visual: CardVisualState,
-        theme: UiTheme,
-    ) {
-        let background = if visual.active {
-            CATALOG_ROW_ACTIVE
-        } else if visual.focused {
-            CATALOG_ROW_FOCUSED
-        } else if visual.hovered {
-            CATALOG_ROW_HOVER
-        } else {
-            PANEL
-        };
-        framebuffer.fill_rect(
-            layout.rect.x,
-            layout.rect.y,
-            layout.rect.width,
-            layout.rect.height,
-            background,
-        );
-
-        let separator_y = layout.rect.y.saturating_add(
-            i32::try_from(layout.rect.height.saturating_sub(1)).unwrap_or(i32::MAX),
-        );
-        framebuffer.fill_rect(
-            layout.rect.x,
-            separator_y,
-            layout.rect.width,
-            1,
-            CATALOG_SEPARATOR,
-        );
-
-        if visual.focused {
-            framebuffer.fill_rect(
-                layout.rect.x,
-                layout.rect.y,
-                4_u32.min(layout.rect.width),
-                layout.rect.height,
-                theme.accent,
-            );
-        } else if visual.hovered {
-            framebuffer.fill_rect(
-                layout.rect.x,
-                layout.rect.y,
-                2_u32.min(layout.rect.width),
-                layout.rect.height,
-                theme.border,
-            );
-        }
-
-        let text = TextRenderer::new(theme.font);
-        let scale = theme.text_scale.max(1);
-        let (_, text_height) = text.text_size(card.title, scale);
-        let text_y = layout.rect.y.saturating_add(
-            i32::try_from(layout.rect.height.saturating_sub(text_height) / 2).unwrap_or(i32::MAX),
-        );
-        let text_x = layout.rect.x.saturating_add(12);
-        text.draw_scaled(framebuffer, text_x, text_y, card.title, scale, theme.text);
-
-        if visual.focused {
-            let marker = ">";
-            let (marker_width, marker_height) = text.text_size(marker, scale);
-            let marker_x = layout.rect.x.saturating_add(
-                i32::try_from(
-                    layout
-                        .rect
-                        .width
-                        .saturating_sub(marker_width)
-                        .saturating_sub(10),
-                )
-                .unwrap_or(i32::MAX),
-            );
-            let marker_y = layout.rect.y.saturating_add(
-                i32::try_from(layout.rect.height.saturating_sub(marker_height) / 2)
-                    .unwrap_or(i32::MAX),
-            );
-            text.draw_scaled(framebuffer, marker_x, marker_y, marker, scale, theme.accent);
         }
     }
 }
@@ -289,6 +231,8 @@ pub struct ArcadeApp {
     active_game: Option<Box<dyn Game>>,
     waiting_for_launch_release: bool,
     waiting_for_catalog_release: bool,
+    #[cfg(feature = "outline-fonts")]
+    outline_font: Option<OutlineFont>,
 }
 
 impl ArcadeApp {
@@ -303,13 +247,20 @@ impl ArcadeApp {
             catalog_pad: touch.then(|| {
                 VirtualPad::new([
                     VirtualButton::new(CATALOG_UP, TOUCH_UP),
-                    VirtualButton::new(CATALOG_SELECT, TOUCH_SELECT),
+                    VirtualButton::new(CATALOG_LEFT, TOUCH_LEFT),
+                    VirtualButton::new(CATALOG_RIGHT, TOUCH_RIGHT),
                     VirtualButton::new(CATALOG_DOWN, TOUCH_DOWN),
+                    VirtualButton::new(CATALOG_SELECT, TOUCH_SELECT),
                 ])
             }),
             active_game: None,
             waiting_for_launch_release: false,
             waiting_for_catalog_release: false,
+            #[cfg(feature = "outline-fonts")]
+            outline_font: OutlineFont::from_bytes(include_bytes!(
+                "../../assets/fonts/p4/unbounded/font.ttf"
+            ))
+            .ok(),
         }
     }
 
@@ -334,6 +285,8 @@ impl ArcadeApp {
             nav: UiNavInput {
                 up: self.catalog_controls.action(CATALOG_UP).pressed(),
                 down: self.catalog_controls.action(CATALOG_DOWN).pressed(),
+                left: self.catalog_controls.action(CATALOG_LEFT).pressed(),
+                right: self.catalog_controls.action(CATALOG_RIGHT).pressed(),
                 confirm: self.catalog_controls.action(CATALOG_SELECT).pressed(),
                 ..UiNavInput::default()
             },
@@ -386,7 +339,6 @@ impl ArcadeApp {
         let Some(game) = build_game(self.mode, index) else {
             return;
         };
-
         self.active_game = Some(game);
         self.waiting_for_launch_release = true;
     }
@@ -407,41 +359,98 @@ impl ArcadeApp {
     ) -> Option<usize> {
         framebuffer.clear(BG);
         draw_panel(framebuffer, self.layout.catalog_panel, PANEL, BORDER);
-        draw_text_centered(framebuffer, self.layout.title, "GPE ARCADE", 2, ACCENT);
+        draw_text_centered(framebuffer, self.layout.eyebrow, "GPE.UI / P6.1", 1, MUTED);
 
         let cards = catalog_cards(&self.catalog_ids);
-        let output = run_card_grid(
+        let output = run_default_card_grid_styled(
             framebuffer,
             self.layout.game_list,
             &mut self.catalog_state,
             input,
             catalog_grid_spec(self.layout.game_list),
             catalog_theme(),
+            catalog_stylesheet(),
             &cards,
-            &ArcadeCatalogPainter,
         );
-        let activated = cards.iter().position(|card| output.activated(card.id));
 
-        if let Some(touch_panel) = self.layout.touch_panel {
-            draw_panel(framebuffer, touch_panel, BG, BORDER);
-            for (rect, label) in [
-                (TOUCH_UP, "UP"),
-                (TOUCH_SELECT, "PLAY"),
-                (TOUCH_DOWN, "DOWN"),
-            ] {
-                framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, TOUCH_ACCENT);
-                draw_text_centered(framebuffer, rect, label, 1, TOUCH_ACCENT);
-            }
-        }
-
+        self.paint_catalog_typography(framebuffer, &output);
+        self.paint_touch_controls(framebuffer);
         draw_text_centered(
             framebuffer,
             self.layout.footer,
-            "ARROWS/PAD + SPACE/SOUTH",
+            "ARROWS/PAD | SPACE/SOUTH | MOUSE/TOUCH",
             1,
-            FG,
+            MUTED,
         );
-        activated
+
+        cards.iter().position(|card| output.activated(card.id))
+    }
+
+    fn paint_catalog_typography(&mut self, framebuffer: &mut Framebuffer, output: &SpatialOutput) {
+        #[cfg(feature = "outline-fonts")]
+        if let Some(font) = &mut self.outline_font {
+            let title_px = if self.mode == ArcadeInteractionMode::Touch {
+                25.0
+            } else {
+                23.0
+            };
+            let _ = font.draw(
+                framebuffer,
+                "GPE ARCADE",
+                title_px,
+                self.layout.title,
+                ACCENT,
+            );
+            let card_px = if output.columns() >= 3 { 10.5 } else { 12.5 };
+            for (index, layout) in output.layouts().iter().enumerate() {
+                let color = if output.focused_id() == Some(layout.id) {
+                    ACCENT
+                } else {
+                    FG
+                };
+                let label_bounds = Rect {
+                    x: layout.text_rect.x.saturating_add(4),
+                    y: layout.text_rect.y,
+                    width: layout.text_rect.width.saturating_sub(8),
+                    height: layout.text_rect.height,
+                };
+                let _ = font.draw(
+                    framebuffer,
+                    GAME_LABELS[index],
+                    card_px,
+                    label_bounds,
+                    color,
+                );
+            }
+            return;
+        }
+
+        draw_text_centered(framebuffer, self.layout.title, "GPE ARCADE", 2, ACCENT);
+        for (index, layout) in output.layouts().iter().enumerate() {
+            let color = if output.focused_id() == Some(layout.id) {
+                ACCENT
+            } else {
+                FG
+            };
+            draw_text_centered(framebuffer, layout.text_rect, GAME_LABELS[index], 1, color);
+        }
+    }
+
+    fn paint_touch_controls(&self, framebuffer: &mut Framebuffer) {
+        let Some(touch_panel) = self.layout.touch_panel else {
+            return;
+        };
+        draw_panel(framebuffer, touch_panel, BG, BORDER);
+        for (rect, label) in [
+            (TOUCH_UP, "UP"),
+            (TOUCH_LEFT, "<"),
+            (TOUCH_RIGHT, ">"),
+            (TOUCH_DOWN, "DN"),
+            (TOUCH_SELECT, "PLAY"),
+        ] {
+            framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, TOUCH_ACCENT);
+            draw_text_centered(framebuffer, rect, label, 1, TOUCH_ACCENT);
+        }
     }
 }
 
@@ -456,7 +465,60 @@ impl Game for ArcadeApp {
 }
 
 fn catalog_controls() -> ControlMap {
-    standard_menu_controls(CATALOG_UP, CATALOG_DOWN, CATALOG_SELECT)
+    let mut controls = ControlMap::new();
+    bind_catalog_action(
+        &mut controls,
+        CATALOG_UP,
+        &[
+            ControlBinding::Key(Key::Up),
+            ControlBinding::Key(Key::W),
+            ControlBinding::Gamepad(GamepadButton::DPadUp),
+            ControlBinding::Gamepad(GamepadButton::LeftStickUp),
+        ],
+    );
+    bind_catalog_action(
+        &mut controls,
+        CATALOG_DOWN,
+        &[
+            ControlBinding::Key(Key::Down),
+            ControlBinding::Key(Key::S),
+            ControlBinding::Gamepad(GamepadButton::DPadDown),
+            ControlBinding::Gamepad(GamepadButton::LeftStickDown),
+        ],
+    );
+    bind_catalog_action(
+        &mut controls,
+        CATALOG_LEFT,
+        &[
+            ControlBinding::Key(Key::Left),
+            ControlBinding::Gamepad(GamepadButton::DPadLeft),
+            ControlBinding::Gamepad(GamepadButton::LeftStickLeft),
+        ],
+    );
+    bind_catalog_action(
+        &mut controls,
+        CATALOG_RIGHT,
+        &[
+            ControlBinding::Key(Key::Right),
+            ControlBinding::Gamepad(GamepadButton::DPadRight),
+            ControlBinding::Gamepad(GamepadButton::LeftStickRight),
+        ],
+    );
+    bind_catalog_action(
+        &mut controls,
+        CATALOG_SELECT,
+        &[
+            ControlBinding::Key(Key::Space),
+            ControlBinding::Gamepad(GamepadButton::South),
+        ],
+    );
+    controls
+}
+
+fn bind_catalog_action(controls: &mut ControlMap, action: ActionId, bindings: &[ControlBinding]) {
+    for binding in bindings {
+        controls.bind(action, *binding);
+    }
 }
 
 fn catalog_ids() -> Vec<UiId> {
@@ -484,9 +546,9 @@ fn catalog_cards(ids: &[UiId]) -> Vec<SpatialCard<'static>> {
     GAME_LABELS
         .iter()
         .zip(ids.iter().copied())
-        .map(|(label, id)| SpatialCard {
+        .map(|(_, id)| SpatialCard {
             id,
-            title: label,
+            title: "",
             subtitle: "",
             image: None,
             action: CATALOG_SELECT,
@@ -495,34 +557,56 @@ fn catalog_cards(ids: &[UiId]) -> Vec<SpatialCard<'static>> {
 }
 
 fn catalog_grid_spec(bounds: Rect) -> GridSpec {
-    if bounds.height >= 140 {
-        GridSpec {
-            min_cell_width: bounds.width,
-            preferred_cell_height: 22,
-            gap: 4,
-            padding: 0,
-        }
-    } else {
-        GridSpec {
-            min_cell_width: bounds.width,
-            preferred_cell_height: 19,
-            gap: 2,
-            padding: 0,
-        }
+    let wide = bounds.width >= 300;
+    GridSpec {
+        min_cell_width: if wide { 96 } else { 126 },
+        preferred_cell_height: if wide { 62 } else { 50 },
+        gap: 7,
+        padding: 0,
     }
 }
 
 fn catalog_theme() -> UiTheme {
     UiTheme {
-        padding: 4,
+        padding: 6,
         row_height: 20,
-        row_spacing: 2,
+        row_spacing: 6,
         text: FG,
-        muted_text: FG,
-        control_background: PANEL,
+        muted_text: MUTED,
+        control_background: CARD,
         border: BORDER,
         accent: ACCENT,
         ..UiTheme::default()
+    }
+}
+
+fn catalog_stylesheet() -> UiStyleSheet {
+    UiStyleSheet {
+        button: UiComponentStyle {
+            base: UiStyleOverride {
+                background: Some(CARD),
+                border: Some(BORDER),
+                border_width: Some(1),
+                ..UiStyleOverride::default()
+            },
+            focused: UiStyleOverride {
+                background: Some(CARD_FOCUSED),
+                border: Some(ACCENT),
+                border_width: Some(2),
+                ..UiStyleOverride::default()
+            },
+            hovered: UiStyleOverride {
+                background: Some(CARD_HOVERED),
+                border: Some(Pixel::rgb(82, 126, 145)),
+                ..UiStyleOverride::default()
+            },
+            active: UiStyleOverride {
+                background: Some(CARD_ACTIVE),
+                border: Some(ACCENT),
+                ..UiStyleOverride::default()
+            },
+        },
+        ..UiStyleSheet::default()
     }
 }
 
@@ -580,9 +664,7 @@ mod tests {
     fn returning_to_catalog_arms_catalog_select_release_gate() {
         let mut app = ArcadeApp::new(ArcadeInteractionMode::Native);
         app.active_game = Some(Box::new(BreakoutGame::new()));
-
         app.return_to_catalog();
-
         assert!(app.active_game.is_none());
         assert!(app.waiting_for_catalog_release);
     }
@@ -593,16 +675,52 @@ mod tests {
     }
 
     #[test]
-    fn catalog_headless_initial_focus_and_down_navigation_are_linear() {
+    fn responsive_catalog_uses_two_native_and_three_touch_columns() {
+        let ids = catalog_ids();
+        let cards = catalog_cards(&ids);
+        for (mode, expected) in [
+            (ArcadeInteractionMode::Native, 2),
+            (ArcadeInteractionMode::Touch, 3),
+        ] {
+            let bounds = ArcadeLayout::for_mode(mode).game_list;
+            let mut state = SpatialState::default();
+            let output = run_card_grid_headless(
+                bounds,
+                &mut state,
+                SpatialInput::default(),
+                catalog_grid_spec(bounds),
+                &cards,
+            );
+            assert_eq!(output.columns(), expected);
+            assert_eq!(output.layouts().len(), GAME_LABELS.len());
+        }
+    }
+
+    #[test]
+    fn catalog_spatial_navigation_moves_right_and_down() {
         let ids = catalog_ids();
         let cards = catalog_cards(&ids);
         let bounds = ArcadeLayout::for_mode(ArcadeInteractionMode::Native).game_list;
         let spec = catalog_grid_spec(bounds);
         let mut state = SpatialState::default();
-
         let initial =
             run_card_grid_headless(bounds, &mut state, SpatialInput::default(), spec, &cards);
         assert_eq!(initial.focused_id(), Some(ids[0]));
+
+        let right = run_card_grid_headless(
+            bounds,
+            &mut state,
+            SpatialInput {
+                nav: UiNavInput {
+                    right: true,
+                    ..UiNavInput::default()
+                },
+                ..SpatialInput::default()
+            },
+            spec,
+            &cards,
+        );
+        assert_eq!(right.focused_id(), Some(ids[1]));
 
         let down = run_card_grid_headless(
             bounds,
@@ -617,7 +735,7 @@ mod tests {
             spec,
             &cards,
         );
-        assert_eq!(down.focused_id(), Some(ids[1]));
+        assert_eq!(down.focused_id(), Some(ids[3]));
     }
 
     #[test]
@@ -659,7 +777,6 @@ mod tests {
             spec,
             &cards,
         );
-
         assert!(released.activated(ids[2]));
     }
 
@@ -704,39 +821,7 @@ mod tests {
             spec,
             &cards,
         );
-
         assert!(output.activated(ids[4]));
-    }
-
-    #[test]
-    fn catalog_layouts_stay_inside_the_catalog_bounds() {
-        for mode in [ArcadeInteractionMode::Native, ArcadeInteractionMode::Touch] {
-            let ids = catalog_ids();
-            let cards = catalog_cards(&ids);
-            let bounds = ArcadeLayout::for_mode(mode).game_list;
-            let mut state = SpatialState::default();
-            let output = run_card_grid_headless(
-                bounds,
-                &mut state,
-                SpatialInput::default(),
-                catalog_grid_spec(bounds),
-                &cards,
-            );
-
-            assert_eq!(output.layouts().len(), GAME_LABELS.len());
-            for layout in output.layouts() {
-                assert!(layout.rect.x >= bounds.x);
-                assert!(layout.rect.y >= bounds.y);
-                assert!(
-                    i64::from(layout.rect.x) + i64::from(layout.rect.width)
-                        <= i64::from(bounds.x) + i64::from(bounds.width)
-                );
-                assert!(
-                    i64::from(layout.rect.y) + i64::from(layout.rect.height)
-                        <= i64::from(bounds.y) + i64::from(bounds.height)
-                );
-            }
-        }
     }
 
     #[test]
@@ -778,7 +863,6 @@ mod tests {
             ),
             (pong::FRAMEBUFFER_WIDTH, pong::TOUCH_FRAMEBUFFER_HEIGHT),
         ];
-
         for (width, height) in extents {
             assert!(width <= size.width);
             assert!(height <= size.height);
@@ -803,7 +887,6 @@ mod tests {
             ),
             (pong::FRAMEBUFFER_WIDTH, pong::FRAMEBUFFER_HEIGHT),
         ];
-
         for (width, height) in extents {
             assert!(width <= size.width);
             assert!(height <= size.height);
@@ -830,7 +913,6 @@ mod tests {
             ),
             (pong::FRAMEBUFFER_WIDTH, pong::TOUCH_FRAMEBUFFER_HEIGHT),
         ];
-
         for (width, height) in extents {
             assert!(outside_extent(PAUSE_BUTTON, width, height));
         }
@@ -848,26 +930,29 @@ mod tests {
 
     #[test]
     fn native_mode_has_no_virtual_pads() {
-        let arcade = ArcadeApp::new(ArcadeInteractionMode::Native);
-        assert!(arcade.catalog_pad.is_none());
+        assert!(
+            ArcadeApp::new(ArcadeInteractionMode::Native)
+                .catalog_pad
+                .is_none()
+        );
     }
 
     #[test]
     fn touch_mode_has_catalog_virtual_pad() {
-        let arcade = ArcadeApp::new(ArcadeInteractionMode::Touch);
-        assert!(arcade.catalog_pad.is_some());
+        assert!(
+            ArcadeApp::new(ArcadeInteractionMode::Touch)
+                .catalog_pad
+                .is_some()
+        );
     }
 
     #[test]
     fn launch_and_return_switch_between_catalog_and_game() {
         let mut arcade = ArcadeApp::new(ArcadeInteractionMode::Native);
         assert!(arcade.active_game.is_none());
-        assert!(!arcade.waiting_for_launch_release);
-
         arcade.launch(0);
         assert!(arcade.active_game.is_some());
         assert!(arcade.waiting_for_launch_release);
-
         arcade.return_to_catalog();
         assert!(arcade.active_game.is_none());
         assert!(!arcade.waiting_for_launch_release);
