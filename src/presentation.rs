@@ -46,11 +46,7 @@ pub fn present_pixel_surface(
     source: &Framebuffer,
     bounds: Rect,
 ) -> Option<PixelPresentation> {
-    if source.width() == 0
-        || source.height() == 0
-        || bounds.width == 0
-        || bounds.height == 0
-    {
+    if source.width() == 0 || source.height() == 0 || bounds.width == 0 || bounds.height == 0 {
         return None;
     }
 
@@ -79,18 +75,13 @@ pub fn present_pixel_surface(
     let bytes = source.as_rgba8();
     for source_y in 0..source.height() {
         for source_x in 0..source.width() {
-            let index = (usize::try_from(source_y).ok()?
-                * usize::try_from(source.width()).ok()?
+            let index = (usize::try_from(source_y).ok()? * usize::try_from(source.width()).ok()?
                 + usize::try_from(source_x).ok()?)
                 * 4;
             let rgba = bytes.get(index..index + 4)?;
             let pixel = Pixel::rgba(rgba[0], rgba[1], rgba[2], rgba[3]);
-            let destination_x = x.checked_add(
-                i32::try_from(source_x.checked_mul(scale)?).ok()?,
-            )?;
-            let destination_y = y.checked_add(
-                i32::try_from(source_y.checked_mul(scale)?).ok()?,
-            )?;
+            let destination_x = x.checked_add(i32::try_from(source_x.checked_mul(scale)?).ok()?)?;
+            let destination_y = y.checked_add(i32::try_from(source_y.checked_mul(scale)?).ok()?)?;
             host.fill_rect(destination_x, destination_y, scale, scale, pixel);
         }
     }
