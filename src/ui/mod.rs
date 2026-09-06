@@ -1,5 +1,7 @@
 pub mod experimental;
 pub mod experimental_spatial;
+#[cfg(feature = "outline-fonts")]
+pub mod fonts;
 
 mod kernel;
 mod layout;
