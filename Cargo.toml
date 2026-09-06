@@ -70,21 +70,6 @@ path = "examples/space_invaders_web.rs"
 crate-type = ["cdylib"]
 
 [[example]]
-name = "smart_boy_hero_web"
-path = "examples/smart_boy_hero_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "smart_boy_hero_iso_web"
-path = "examples/smart_boy_hero_iso_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "arcade_web"
-path = "examples/arcade_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
 name = "diagnostics_environment_web"
 path = "examples/diagnostics_environment_web.rs"
 crate-type = ["cdylib"]
