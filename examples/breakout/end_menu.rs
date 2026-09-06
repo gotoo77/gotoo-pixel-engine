@@ -44,11 +44,7 @@ impl EndMenuState {
         let _ = run_end_menu(&mut self.ui, UiNavInput::default());
     }
 
-    pub(super) fn update(
-        &mut self,
-        input: &Input,
-        controls: &ControlMap,
-    ) -> Option<EndMenuAction> {
+    pub(super) fn update(&mut self, input: &Input, controls: &ControlMap) -> Option<EndMenuAction> {
         run_end_menu(
             &mut self.ui,
             UiNavInput {
@@ -70,19 +66,14 @@ impl EndMenuState {
 }
 
 fn run_end_menu(state: &mut UiStateStore, nav: UiNavInput) -> Option<EndMenuAction> {
-    let (output, (replay, quit)) = experimental::run_headless(
-        END_MENU_SURFACE,
-        state,
-        nav,
-        UiTheme::default(),
-        |ui| {
+    let (output, (replay, quit)) =
+        experimental::run_headless(END_MENU_SURFACE, state, nav, UiTheme::default(), |ui| {
             ui.column(|ui| {
                 let replay = ui.keyed("replay", |ui| ui.button("REPLAY"));
                 let quit = ui.keyed("quit", |ui| ui.button("QUIT"));
                 (replay, quit)
             })
-        },
-    );
+        });
 
     if output.activated(replay) {
         Some(EndMenuAction::Replay)
