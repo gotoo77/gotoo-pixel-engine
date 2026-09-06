@@ -2,6 +2,7 @@ pub mod experimental;
 pub mod experimental_spatial;
 #[cfg(feature = "outline-fonts")]
 pub mod fonts;
+pub mod paged_spatial;
 
 mod kernel;
 mod layout;
