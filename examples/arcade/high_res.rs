@@ -21,8 +21,8 @@ use breakout::BreakoutGame;
 #[cfg(feature = "outline-fonts")]
 use gotoo_pixel_engine::outline_text::OutlineFont;
 use gotoo_pixel_engine::{
-    ActionId, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, MouseButton,
-    Pixel, PixelGameHost, Rect, Size, TextInputEvent,
+    ActionId, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, MouseButton, Pixel,
+    PixelGameHost, Rect, Size, TextInputEvent,
     ui::{
         PauseConfig, PauseGame, UiComponentStyle, UiStyleOverride, UiStyleSheet, UiTheme,
         draw_panel, draw_text_centered,
@@ -653,6 +653,12 @@ impl ArcadeHighResApp {
             framebuffer.draw_rect(rect.x, rect.y, rect.width, rect.height, color);
         }
 
+        let status = if self.search.query.is_empty() {
+            format!("{} / {} GAMES", count, GAME_LABELS.len())
+        } else {
+            format!("{} FUZZY MATCH", count)
+        };
+
         #[cfg(feature = "outline-fonts")]
         {
             if let Some(font) = &mut self.brand_font {
@@ -666,11 +672,6 @@ impl ArcadeHighResApp {
                     ACCENT,
                 );
             }
-            let status = if self.search.query.is_empty() {
-                format!("{} / {} GAMES", count, GAME_LABELS.len())
-            } else {
-                format!("{} FUZZY MATCH", count)
-            };
             if let Some(font) = &mut self.ui_font {
                 draw_outline_fit_centered(
                     font,
@@ -716,7 +717,11 @@ impl ArcadeHighResApp {
                         22.0,
                         17.0,
                         rect,
-                        if filter == self.filter { BG } else { filter.color() },
+                        if filter == self.filter {
+                            BG
+                        } else {
+                            filter.color()
+                        },
                     );
                 }
                 draw_outline_fit_centered(
@@ -743,15 +748,50 @@ impl ArcadeHighResApp {
 
         draw_text_centered(
             framebuffer,
-            self.layout.title,
-            "GPE ARCADE",
-            5,
+            self.layout.eyebrow,
+            "GPE.UI / P6.1 HIGH-RES LAUNCHER",
+            2,
+            MUTED,
+        );
+        draw_text_centered(framebuffer, self.layout.title, "GPE ARCADE", 5, ACCENT);
+        draw_text_centered(
+            framebuffer,
+            self.layout.status,
+            &status,
+            2,
             ACCENT,
         );
         draw_text_centered(
             framebuffer,
             self.layout.search,
             &self.search.display(),
+            2,
+            MUTED,
+        );
+        draw_text_centered(
+            framebuffer,
+            self.layout.search_clear_rect(),
+            "X",
+            2,
+            MUTED,
+        );
+        for (filter, rect) in CatalogFilter::ALL.iter().copied().zip(filter_rects) {
+            draw_text_centered(
+                framebuffer,
+                rect,
+                filter.label(),
+                2,
+                if filter == self.filter {
+                    BG
+                } else {
+                    filter.color()
+                },
+            );
+        }
+        draw_text_centered(
+            framebuffer,
+            self.layout.footer,
+            "CTRL+F | TAB FILTER | ARROWS/WASD/PAD | SPACE/ENTER/A",
             2,
             MUTED,
         );
@@ -827,13 +867,7 @@ impl ArcadeHighResApp {
                 continue;
             }
 
-            draw_text_centered(
-                framebuffer,
-                layout.rect,
-                GAME_LABELS[game_index],
-                2,
-                FG,
-            );
+            draw_text_centered(framebuffer, layout.rect, GAME_LABELS[game_index], 2, FG);
         }
     }
 
