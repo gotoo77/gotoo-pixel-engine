@@ -738,6 +738,11 @@ impl ArcadeApp {
             fb.fill_rect(r.x, r.y, r.width, r.height, if s { c } else { CHIP_BG });
             fb.draw_rect(r.x, r.y, r.width, r.height, c);
         }
+        let status = if self.search.query.is_empty() {
+            format!("{} / {} GAMES", count, GAME_LABELS.len())
+        } else {
+            format!("{} FUZZY MATCH", count)
+        };
         #[cfg(feature = "outline-fonts")]
         {
             if let Some(font) = &mut self.brand_font {
@@ -752,11 +757,6 @@ impl ArcadeApp {
                 );
             }
             let search = self.search.display();
-            let status = if self.search.query.is_empty() {
-                format!("{} / {} GAMES", count, GAME_LABELS.len())
-            } else {
-                format!("{} FUZZY MATCH", count)
-            };
             if let Some(font) = &mut self.ui_font {
                 draw_outline_fit_centered(
                     font,
@@ -821,6 +821,7 @@ impl ArcadeApp {
         }
         draw_text_centered(fb, self.layout.eyebrow, "GPE.UI / P6.1 LAUNCHER", 1, MUTED);
         draw_text_centered(fb, self.layout.title, "GPE ARCADE", 3, ACCENT);
+        draw_text_centered(fb, self.layout.status, &status, 1, ACCENT);
         draw_text_centered(fb, self.layout.search, &self.search.display(), 1, MUTED);
         draw_text_centered(fb, self.layout.search_clear_rect(), "X", 1, MUTED);
         for (f, r) in CatalogFilter::ALL.iter().copied().zip(rects) {
