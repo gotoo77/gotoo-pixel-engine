@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/a7-separation-cleanup
   workflow_dispatch:
 
 permissions:
