@@ -22,6 +22,13 @@ WEB_GAME_EXAMPLES = [
     "smart_boy_hero_iso_web",
     "arcade_web",
 ]
+PAGES_GPE_EXAMPLES = [
+    "snake_web",
+    "breakout_web",
+    "tetris_web",
+    "pong_web",
+    "space_invaders_web",
+]
 PAGES_STATIC_FILES = [
     "index.html",
     "snake.html",
@@ -130,7 +137,7 @@ def prepare_pages() -> Path:
 def command_build_web(args: argparse.Namespace) -> None:
     if args.pages:
         out_dir = prepare_pages()
-        for example in WEB_GAME_EXAMPLES:
+        for example in PAGES_GPE_EXAMPLES:
             wasm_bindgen(cargo_build_web(example, release=True), out_dir)
         print(f"==> Pages artifact ready: {ROOT / 'dist'}")
         return
