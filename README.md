@@ -57,9 +57,8 @@ Le moteur est exercé par plusieurs jeux réels :
 - Space Invaders ;
 - Pong deux joueurs ;
 - Breakout ;
-- Smart Boy Hero ;
-- `GPE Arcade`, qui compose plusieurs jeux dans un même runtime et sert aussi de
-  test architectural multi-jeux.
+- [Smart Boy Hero](https://github.com/gotoo77/gpe_smartboyhero), désormais maintenu dans son dépôt standalone ;
+- [GPE Arcade](https://github.com/gotoo77/gpe_arcade), désormais maintenu dans son dépôt standalone et servant aussi de test architectural multi-jeux.
 
 Version publique de l'Arcade :
 
@@ -67,7 +66,10 @@ Version publique de l'Arcade :
 
 Les jeux Web restent également accessibles individuellement via `snake.html`,
 `tetris.html`, `space_invaders.html`, `pong.html`, `breakout.html`,
-`smart_boy_hero.html` et `smart_boy_hero_iso.html`.
+`smart_boy_hero.html` et `smart_boy_hero_iso.html`. Le site Pages reste hébergé
+par GPE, mais Arcade et Smart Boy Hero y sont construits depuis leurs dépôts
+standalone : leur code source et leurs assets ne sont plus dupliqués dans le
+dépôt moteur.
 
 ## Exemple minimal
 
@@ -128,20 +130,21 @@ Les commandes de développement sont centralisées dans `scripts/dev.py`. Elles
 sont utilisables sous Windows, Linux et macOS dès que Python 3 est disponible ;
 les scripts `.sh` restent des wrappers de compatibilité Unix.
 
-Lancer le sélecteur de jeux natif :
+Lancer le sélecteur de jeux natif appartenant encore au dépôt GPE :
 
 ```bash
 python scripts/dev.py run-game
 ```
 
-Lancer directement un jeu :
+Lancer directement un jeu local :
 
 ```bash
 python scripts/dev.py run-game snake
-python scripts/dev.py run-game smart-boy-hero --release
 ```
 
-Construire tous les entrypoints Web/WASM :
+Smart Boy Hero et GPE Arcade se lancent depuis leurs dépôts standalone respectifs.
+
+Construire tous les entrypoints Web/WASM appartenant au dépôt GPE :
 
 ```bash
 rustup target add wasm32-unknown-unknown
@@ -174,7 +177,7 @@ Validation rapide du formatage Rust :
 python scripts/dev.py fmt-check
 ```
 
-Validation de tous les entrypoints Web :
+Validation de tous les entrypoints Web du dépôt :
 
 ```bash
 python scripts/dev.py check-web
@@ -192,9 +195,9 @@ Git permet de contourner ponctuellement ces hooks avec `--no-verify`. La CI
 reste l'autorité finale.
 
 La CI GitHub utilise la même CLI Python pour les validations natives/Web et le
-packaging JavaScript/WASM. Le workflow GitHub Pages appelle également
-`scripts/dev.py build-web --pages` pour construire le bundle release et
-assembler `dist/`.
+packaging JavaScript/WASM. Pour GitHub Pages, `scripts/dev.py build-web --pages`
+assemble d'abord la partie appartenant à GPE ; le workflow Pages ajoute ensuite
+les builds Arcade et Smart Boy Hero produits depuis leurs dépôts standalone.
 
 ## Licence
 
