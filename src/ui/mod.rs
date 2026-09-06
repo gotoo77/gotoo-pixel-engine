@@ -1,9 +1,13 @@
 pub mod experimental;
 pub mod experimental_spatial;
+#[cfg(feature = "outline-fonts")]
+pub mod fonts;
+pub mod paged_spatial;
 
 mod kernel;
 mod layout;
 mod pause;
+mod style;
 mod toolkit;
 mod virtual_pad;
 
@@ -13,6 +17,7 @@ mod ordinal_identity_tests;
 mod tabs_contract_tests;
 
 pub use pause::{PauseConfig, PauseGame};
+pub use style::{UiComponentStyle, UiStyleOverride, UiStyleSheet, UiVisualState};
 pub use toolkit::{RepeatConfig, RepeatState, Ui, UiResponse, UiState, UiTheme};
 pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
 

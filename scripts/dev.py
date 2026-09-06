@@ -18,9 +18,6 @@ WEB_GAME_EXAMPLES = [
     "tetris_web",
     "pong_web",
     "space_invaders_web",
-    "smart_boy_hero_web",
-    "smart_boy_hero_iso_web",
-    "arcade_web",
 ]
 PAGES_STATIC_FILES = [
     "index.html",
@@ -36,14 +33,11 @@ PAGES_STATIC_FILES = [
     "fullscreen.js",
 ]
 GAME_CHOICES = [
-    ("Arcade", "arcade"),
     ("Snake", "snake"),
     ("Space Invaders", "space_invaders"),
     ("Tetris", "tetris"),
     ("Pong", "pong"),
     ("Breakout", "breakout"),
-    ("Smart Boy Hero", "smart_boy_hero"),
-    ("Smart Boy Hero ISO", "smart_boy_hero_iso"),
 ]
 
 

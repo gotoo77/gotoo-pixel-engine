@@ -1,6 +1,6 @@
 # GPE.UI — PRODUCTIONIZATION PLAN v0.1
 
-Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE**
+Status: **ACTIVE PLAN — P0/P1/P2 COMPLETE, P3 PASS WITH CONDITIONS, P4 PASS, P5 ACTIVE**
 
 Baseline:
 
@@ -17,6 +17,8 @@ Architecture B GO
 P0             PASS
 P1             PASS
 P2             PASS
+P3             PASS WITH CONDITIONS
+P4             PASS
 ```
 
 ## Mission
@@ -76,6 +78,14 @@ P1 result:
 P2 result:
 
 `docs/ui/GPE_UI_PRODUCTIONIZATION_P2_RESULT_v0.1.md`
+
+P3 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P3_RESULT_v0.1.md`
+
+P4 result:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P4_RESULT_v0.1.md`
 
 ---
 
@@ -160,6 +170,28 @@ P2 changed resolved geometry but did not change platform/render/input transport 
 
 ## P3 — Styling / theming / customization
 
+Status: **PASS WITH CONDITIONS / HUMAN RUNTIME PENDING**.
+
+Implemented:
+
+```text
+typed style vocabulary
+UiTheme compatibility defaults
+component style
+explicit local override
+focus / hover / active visual overlays
+transactional styled entry points
+Spatial DefaultCardPainter style alignment
+dedicated Native visual probe
+```
+
+Remaining conditions:
+
+```text
+Final Native runtime confirmation for the revised P3 probe (layout, toggle, slider)
+all-target Clippy allocator conflict outside P3 UI changes
+```
+
 Strategic requirement, not speculative polish.
 
 Target precedence:
@@ -196,20 +228,40 @@ P3 is **not started by the P2 closure**. It must begin explicitly from the merge
 
 ## P4 — Typography follow-up
 
-Track issue #69 separately.
+Status: **PASS / STOP**.
+
+Validated capability:
 
 - explicit missing-glyph behavior;
-- preserve bitmap pixel font option;
-- improve typography quality;
-- assess TTF/OTF path without forcing a giant text stack.
+- bitmap pixel font option preserved;
+- optional `fontdue` outline path;
+- 52-font searchable/navigable gallery;
+- interactive size slider with pointer, held-key repeat and guarded wheel input;
+- Native human runtime PASS;
+- Web human runtime PASS in Chrome, VS Code integrated browser and Firefox.
+
+Closure decision: preserve the capability but defer broad component-wide outline-font plumbing and automatic fallback until P6 consumer evidence. Cost attribution belongs in P5 and public API freeze belongs in P7.
+
+See `docs/ui/GPE_UI_PRODUCTIONIZATION_P4_RESULT_v0.1.md`.
 
 ## P5 — Cost attribution / debug boundary
 
-MFE-001C found no CPU red flag but allocation attribution remains a productionization condition.
+Status: **ACTIVE**.
 
-- distinguish mandatory runtime output from opt-in debug dump;
-- remeasure allocation calls/bytes after convergence;
-- no optimization before attribution.
+MFE-001C found no CPU red flag but its allocation counts included deterministic textual/headless debug dumps. P5 must establish the real production boundary before any optimization claim.
+
+Required work:
+
+- distinguish mandatory transaction/runtime output from opt-in debug dump construction;
+- keep deterministic dumps available for tests and diagnostics without charging every production transaction for them;
+- remeasure allocation calls/bytes and transaction timing after P0–P4 convergence;
+- compare debug-capture ON versus OFF using the same workload/toolchain;
+- report binary/artifact observations separately from per-transaction allocations;
+- preserve behavior and determinism; do not optimize before attribution.
+
+P5 mission and gates:
+
+`docs/ui/GPE_UI_PRODUCTIONIZATION_P5_COST_v0.1.md`.
 
 ## P6 — First real consumers
 
@@ -271,9 +323,12 @@ Rust changes must be formatter-clean before commit/push; CI is a validator, not 
 P0 = PASS
 P1 = PASS
 P2 = PASS
+P3 = PASS WITH CONDITIONS (local implementation and probe follow-ups)
+P4 = PASS / STOP
+P5 = ACTIVE
 STOP
 ```
 
-Merge P2 only after the final closing-documentation CI is green.
+Active implementation slice: P5 cost attribution / debug boundary.
 
-Do not begin P3 until P2 is merged and P3 is explicitly started from the resulting `main` baseline.
+P3 closure/merge evidence remains outstanding and is not manufactured here. P4 has closed without broadening typography beyond the evidence. P5 now owns the unresolved MFE-001C allocation-attribution condition: separate mandatory transaction work from opt-in diagnostic dump work, then remeasure before deciding whether any optimization is justified.

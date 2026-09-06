@@ -1,10 +1,10 @@
+mod end_menu;
+
+use end_menu::{EndMenuAction, EndMenuState};
 use gotoo_pixel_engine::{
     ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel, Rect,
     SoundBank, SoundId, pcm16_mono_wav,
-    ui::{
-        MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
-        menu_confirm_pressed, menu_down_pressed, menu_up_pressed,
-    },
+    ui::{VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered},
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 320;
@@ -109,7 +109,7 @@ struct BallFeedback {
 }
 
 pub struct BreakoutGame {
-    end_menu: MenuState,
+    end_menu: EndMenuState,
     round_state: RoundState,
     paddle_x: f32,
     ball_x: f32,
@@ -171,7 +171,7 @@ impl BreakoutGame {
         });
 
         let mut game = Self {
-            end_menu: MenuState::new(2),
+            end_menu: EndMenuState::new(),
             round_state: RoundState::Playing,
             paddle_x: centered_paddle_x(),
             ball_x: centered_ball_x(),
@@ -202,17 +202,10 @@ impl BreakoutGame {
         self.controls.update(frame.input);
 
         if self.round_state == RoundState::Lost {
-            if menu_up_pressed(frame.input) || self.controls.action(MOVE_LEFT).pressed() {
-                self.end_menu.select_previous();
-            }
-            if menu_down_pressed(frame.input) || self.controls.action(MOVE_RIGHT).pressed() {
-                self.end_menu.select_next();
-            }
-            if menu_confirm_pressed(frame.input) || self.controls.action(ACTION).pressed() {
-                match self.end_menu.selected() {
-                    Some(0) => self.restart_round(),
-                    Some(1) => return GameResult::Exit,
-                    _ => {}
+            if let Some(action) = self.end_menu.update(frame.input, &self.controls) {
+                let result = self.apply_end_menu_action(action);
+                if result == GameResult::Exit {
+                    return result;
                 }
             }
             self.render_game(frame.framebuffer);
@@ -245,6 +238,16 @@ impl BreakoutGame {
 
         self.render_game(frame.framebuffer);
         GameResult::Continue
+    }
+
+    fn apply_end_menu_action(&mut self, action: EndMenuAction) -> GameResult {
+        match action {
+            EndMenuAction::Replay => {
+                self.restart_round();
+                GameResult::Continue
+            }
+            EndMenuAction::Quit => GameResult::Exit,
+        }
     }
 
     fn update_paddle(&mut self, dt: f32) {
@@ -362,7 +365,7 @@ impl BreakoutGame {
         if self.lives == 0 {
             self.round_state = RoundState::Lost;
             self.ball_stuck = true;
-            self.end_menu = MenuState::new(2);
+            self.end_menu.reset();
         } else {
             self.paddle_x = centered_paddle_x();
             self.reset_ball();
@@ -395,7 +398,7 @@ impl BreakoutGame {
 
     pub(super) fn restart_round(&mut self) {
         self.round_state = RoundState::Playing;
-        self.end_menu = MenuState::new(2);
+        self.end_menu = EndMenuState::new();
         self.score = 0;
         self.lives = INITIAL_LIVES;
         self.level = 1;
@@ -505,7 +508,10 @@ impl BreakoutGame {
             FG,
         );
 
-        for (index, (label, y)) in [("REPLAY", 116), ("QUIT", 138)].into_iter().enumerate() {
+        for (action, label, y) in [
+            (EndMenuAction::Replay, "REPLAY", 116),
+            (EndMenuAction::Quit, "QUIT", 138),
+        ] {
             draw_menu_item(
                 framebuffer,
                 Rect {
@@ -515,7 +521,7 @@ impl BreakoutGame {
                     height: 16,
                 },
                 label,
-                self.end_menu.selected() == Some(index),
+                self.end_menu.focused(action),
                 1,
                 FG,
                 ACCENT,
@@ -787,7 +793,34 @@ mod tests {
         game.lose_life();
 
         assert_eq!(game.round_state, RoundState::Lost);
-        assert_eq!(game.end_menu.selected(), Some(0));
+        assert!(game.end_menu.focused(EndMenuAction::Replay));
+    }
+
+    #[test]
+    fn replay_action_preserves_restart_semantics() {
+        let mut game = BreakoutGame::new();
+        game.score = 900;
+        game.level = 4;
+        game.lives = 0;
+        game.round_state = RoundState::Lost;
+
+        assert_eq!(
+            game.apply_end_menu_action(EndMenuAction::Replay),
+            GameResult::Continue
+        );
+        assert_eq!(game.round_state, RoundState::Playing);
+        assert_eq!(game.score, 0);
+        assert_eq!(game.level, 1);
+        assert_eq!(game.lives, INITIAL_LIVES);
+    }
+
+    #[test]
+    fn quit_action_preserves_exit_semantics() {
+        let mut game = BreakoutGame::new();
+        assert_eq!(
+            game.apply_end_menu_action(EndMenuAction::Quit),
+            GameResult::Exit
+        );
     }
 
     #[test]

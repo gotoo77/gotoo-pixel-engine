@@ -1,0 +1,265 @@
+{
+    "revision":  "5e35378e6bda803962ee6fd257e444a7d459660d",
+    "fonts":  [
+                  {
+                      "family":  "abel",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/abel/Abel-Regular.ttf",
+                      "sha256":  "8809DCAD25318225052F88333E208C5AAD4ADCB7B2C934C135735EC19AA410B4"
+                  },
+                  {
+                      "family":  "abeezee",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/abeezee/ABeeZee-Regular.ttf",
+                      "sha256":  "2901C8DF256648CC2BB2E3AFB381CB8D28E65ED3DBE11DE20695AE4D5FFDEDA9"
+                  },
+                  {
+                      "family":  "abrilfatface",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/abrilfatface/AbrilFatface-Regular.ttf",
+                      "sha256":  "5971D4A3758A922A9FEDC7F6FB825A96341A2E718C45A4B2C9A6B417C8C4DBE9"
+                  },
+                  {
+                      "family":  "acme",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/acme/Acme-Regular.ttf",
+                      "sha256":  "76FDB582F54653C27274D5CD986F994C28D7FA7D323E7EB9EE14CE8875D39DC4"
+                  },
+                  {
+                      "family":  "alata",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/alata/Alata-Regular.ttf",
+                      "sha256":  "7B71432A5E2E2409A3583553BC5CE703209A8BCE9B2F136CA257AC4C2D3ADDC4"
+                  },
+                  {
+                      "family":  "aldrich",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/aldrich/Aldrich-Regular.ttf",
+                      "sha256":  "BCABD8E6DB3E8CB59242E8DBDEF30BFD9B25BE600E2E8F506618008F99138D47"
+                  },
+                  {
+                      "family":  "alice",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/alice/Alice-Regular.ttf",
+                      "sha256":  "8212C40F10B306AF9B82272AE68314DE6964522B6DABF6ABDAFF647E74AC8B58"
+                  },
+                  {
+                      "family":  "amaranth",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/amaranth/Amaranth-Regular.ttf",
+                      "sha256":  "49D60587DB044AF5158AFE373BFA6204D8DCCE647CCD4F1F1C61F560980554EC"
+                  },
+                  {
+                      "family":  "amaticsc",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/amaticsc/AmaticSC-Regular.ttf",
+                      "sha256":  "513A76F96D39A5366BD27C258674AAEA35EE51C42B8F3060387F74649EE8C8AA"
+                  },
+                  {
+                      "family":  "architectsdaughter",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/architectsdaughter/ArchitectsDaughter-Regular.ttf",
+                      "sha256":  "6159718A08898E34BC1CB7354086141A5F9A70B73E54DBEC27EAD0D59A697359"
+                  },
+                  {
+                      "family":  "arvo",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/arvo/Arvo-Regular.ttf",
+                      "sha256":  "F41BD41471EC2DB7140351BDDE614DA5341524503598FF7FE79F3C89C13B605E"
+                  },
+                  {
+                      "family":  "bangers",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/bangers/Bangers-Regular.ttf",
+                      "sha256":  "4160A7311DE9342674CCE9160CDE9FCBB30F48190397D86FF1B70B455AF65824"
+                  },
+                  {
+                      "family":  "belleza",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/belleza/Belleza-Regular.ttf",
+                      "sha256":  "A88EB0FDF4E78687A40D3478E1C90D4D3079E8C0D7D3A2452488A3BA805BFF1D"
+                  },
+                  {
+                      "family":  "bitter",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/bitter/Bitter%5Bwght%5D.ttf",
+                      "sha256":  "EF2B9A711FB02F1E5823B34DA1B7450E0FC76793B7D733A8B41006E24916D4A7"
+                  },
+                  {
+                      "family":  "cabin",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/cabin/Cabin%5Bwdth%2Cwght%5D.ttf",
+                      "sha256":  "A16576E6CEC01CF994C46838ED1C17FFDB62CF6DA8430EDFBCB011F57DD62457"
+                  },
+                  {
+                      "family":  "caveat",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/caveat/Caveat%5Bwght%5D.ttf",
+                      "sha256":  "0BDB6B660482D31531B3945849FBA5916B3EF8695DA7024A9E6B9EE3C4157988"
+                  },
+                  {
+                      "family":  "cinzel",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/cinzel/Cinzel%5Bwght%5D.ttf",
+                      "sha256":  "F4D83D34D1F6C741193E4ACF4B3DFF9531E5A67B6AA65228D00A7DB72A4E0F34"
+                  },
+                  {
+                      "family":  "comfortaa",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/comfortaa/Comfortaa%5Bwght%5D.ttf",
+                      "sha256":  "0FC3F45DC48B614DB9C39181502544B37217ECBF8BEE2FB35886992BC96C5BD3"
+                  },
+                  {
+                      "family":  "cormorantgaramond",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/cormorantgaramond/CormorantGaramond%5Bwght%5D.ttf",
+                      "sha256":  "B20B7D9626DD956B2C5E558692AD328B1F19E3275E2782DB4FA07670D83F35E0"
+                  },
+                  {
+                      "family":  "dancingscript",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/dancingscript/DancingScript%5Bwght%5D.ttf",
+                      "sha256":  "21808625578FE8D8CD10CB684BE546DCA077B27CD03A53A2F1EC11DC743C924C"
+                  },
+                  {
+                      "family":  "ebgaramond",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/ebgaramond/EBGaramond%5Bwght%5D.ttf",
+                      "sha256":  "EF9512F92F6D579E5DC75AF59A5A4B1B8B47D2EDA89E00B954D44520E5369027"
+                  },
+                  {
+                      "family":  "exo2",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/exo2/Exo2%5Bwght%5D.ttf",
+                      "sha256":  "205A448676A2586F9C57C25F3D5C58CA8DB7E6CF5EDF7506783A010C6FE2BFB5"
+                  },
+                  {
+                      "family":  "figtree",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/figtree/Figtree%5Bwght%5D.ttf",
+                      "sha256":  "26AD3DB9B31FF7DDE67A91FF515D022D2F495CD506590699CF264F0BFE6FB714"
+                  },
+                  {
+                      "family":  "fraunces",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/fraunces/Fraunces%5BSOFT%2CWONK%2Copsz%2Cwght%5D.ttf",
+                      "sha256":  "177FF6C0F14E5550A3C624247CD1189611D4EB65D000B14944C63D967958ABBB"
+                  },
+                  {
+                      "family":  "greatvibes",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/greatvibes/GreatVibes-Regular.ttf",
+                      "sha256":  "8D509802186F1B51572531ECF313E8098F9A5BFDFACA93F0C9B34467F9982D15"
+                  },
+                  {
+                      "family":  "heebo",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/heebo/Heebo%5Bwght%5D.ttf",
+                      "sha256":  "18F930B583FA8FE6B40B2F8263B7AC6AFBAC07ADC91A12467874E7467D3ACE30"
+                  },
+                  {
+                      "family":  "hind",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/hind/Hind-Regular.ttf",
+                      "sha256":  "01DE158022F53077B52303E46DE3B0AB5FB245222A7FFE25A2A57FDD9E969162"
+                  },
+                  {
+                      "family":  "inconsolata",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/inconsolata/Inconsolata%5Bwdth%2Cwght%5D.ttf",
+                      "sha256":  "23DED25B447074D00659392BF9B1123D89DF55CB07B0AD9BFEF3366D199B5FCB"
+                  },
+                  {
+                      "family":  "indieflower",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/indieflower/IndieFlower-Regular.ttf",
+                      "sha256":  "CCC94B22B156E9C5DFE50FD051F01B097600B252C24473E624BB43A143140A94"
+                  },
+                  {
+                      "family":  "josefinsans",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/josefinsans/JosefinSans%5Bwght%5D.ttf",
+                      "sha256":  "9255ABDB5F393BC51E101ABBD07A716A977FD3E15472B1B84B260F426A342BFD"
+                  },
+                  {
+                      "family":  "jost",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/jost/Jost%5Bwght%5D.ttf",
+                      "sha256":  "6343B70971000B04C5D401C96AE08CE371086135E999D5E1E1413039C0213076"
+                  },
+                  {
+                      "family":  "karla",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/karla/Karla%5Bwght%5D.ttf",
+                      "sha256":  "ED3CA4CD9BDD899C543927C30BF5FF50706B24B3F2B7328E64B25F7D2A9D23DC"
+                  },
+                  {
+                      "family":  "lato",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/lato/Lato-Regular.ttf",
+                      "sha256":  "D636E4683231F931EDA222D588E944D082BFD3BDBA02F928BEE461C0F185B251"
+                  },
+                  {
+                      "family":  "lora",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/lora/Lora%5Bwght%5D.ttf",
+                      "sha256":  "822A6621CCBE8D97D20AC88C1C41F5615C9C2C202EAA75F272CD452AAC6475A7"
+                  },
+                  {
+                      "family":  "merriweather",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/merriweather/Merriweather%5Bopsz%2Cwdth%2Cwght%5D.ttf",
+                      "sha256":  "D0ED0E359E396AF7AD05E73DFFD11A3A4C326EA0D0283C56BD9361CB2CC86A96"
+                  },
+                  {
+                      "family":  "montserrat",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/montserrat/Montserrat%5Bwght%5D.ttf",
+                      "sha256":  "0F7B311B2F3279E4EEF9B2F968BCDBAB6E28F4DAEB1F049F4F278A902BCD82F7"
+                  },
+                  {
+                      "family":  "nunito",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/nunito/Nunito%5Bwght%5D.ttf",
+                      "sha256":  "BB55A5CA5C2042335B3991AF27C4D0705D0EF41CAC6164AC737FD8F2A1E85207"
+                  },
+                  {
+                      "family":  "oswald",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/oswald/Oswald%5Bwght%5D.ttf",
+                      "sha256":  "5B38C246E255A12F5712D640D56BCCED0472466FC68983D2D0410EC0457C2817"
+                  },
+                  {
+                      "family":  "outfit",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/outfit/Outfit%5Bwght%5D.ttf",
+                      "sha256":  "FC7287273E66929776E2BA54F144FE699080BEC29F61BF649D70D871468AEADE"
+                  },
+                  {
+                      "family":  "pacifico",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/pacifico/Pacifico-Regular.ttf",
+                      "sha256":  "5B6C0D5334A7BF77DEA52B975C5A0C408878C0F7115ED5B6FB151F634B7BF701"
+                  },
+                  {
+                      "family":  "playfairdisplay",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf",
+                      "sha256":  "C40F2293766A503BC70CCE9E512EF844A4CCB7CBCDE792FE2EA31D191917D8D6"
+                  },
+                  {
+                      "family":  "quicksand",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/quicksand/Quicksand%5Bwght%5D.ttf",
+                      "sha256":  "39C9B64223561F56AAFF6062A6F04063C4FC86809AD6768722C06614D977E1CC"
+                  },
+                  {
+                      "family":  "raleway",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/raleway/Raleway%5Bwght%5D.ttf",
+                      "sha256":  "8BBCC3EB8275C388F4BCD998832F8A4B943EADBAF6A595205312774B5951AEFB"
+                  },
+                  {
+                      "family":  "rubik",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/rubik/Rubik%5Bwght%5D.ttf",
+                      "sha256":  "1B3A7437BA2AF80E465E773ED60C5036D1BA6ACE492D89046DBCF18FB31E4E88"
+                  },
+                  {
+                      "family":  "sacramento",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/sacramento/Sacramento-Regular.ttf",
+                      "sha256":  "9341FDA10ADBFEB7EFC94302B34507A3E227D7E7F5C432DF3F5AC8753FF73D24"
+                  },
+                  {
+                      "family":  "teko",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/teko/Teko%5Bwght%5D.ttf",
+                      "sha256":  "D1321889F262BBBFF632E7976349853399CD097B6F382D4B19790C915C13C1AE"
+                  },
+                  {
+                      "family":  "unbounded",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/unbounded/Unbounded%5Bwght%5D.ttf",
+                      "sha256":  "323B511BE380C8D474EF030686B71AEDDE501F8D9CD46DA558B7C40454372C3F"
+                  },
+                  {
+                      "family":  "vollkorn",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/vollkorn/Vollkorn%5Bwght%5D.ttf",
+                      "sha256":  "4EBEF434F76F80286204840354A84DB79A0DC3C87DEEEB791E015B70B2ADE49D"
+                  },
+                  {
+                      "family":  "worksans",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/worksans/WorkSans%5Bwght%5D.ttf",
+                      "sha256":  "F50F61F2BA738E239442D40BF1069ADB195C224B6A5A73A581FC2F3ED62A9F63"
+                  },
+                  {
+                      "family":  "xanhmono",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/xanhmono/XanhMono-Regular.ttf",
+                      "sha256":  "33E64B43FDCB40BD0141853601C7AAFFD5BE15EBD3CF56340D2473FF8BE8E69C"
+                  },
+                  {
+                      "family":  "yanonekaffeesatz",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/yanonekaffeesatz/YanoneKaffeesatz%5Bwght%5D.ttf",
+                      "sha256":  "17E3BD546D57D2C41200866AC310BD76B8C59C44CD738F6CA402A285F45E97B8"
+                  },
+                  {
+                      "family":  "zillaslab",
+                      "source":  "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/zillaslab/ZillaSlab-Regular.ttf",
+                      "sha256":  "41A4626844DA9216B031308D4423045C765FE4231D99862D85D7D74509D37703"
+                  }
+              ]
+}

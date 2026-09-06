@@ -98,6 +98,43 @@ impl GamepadInputBackend {
                 _ => {}
             }
         }
+
+        sync_cached_state(gilrs, input, &self.centered_dpad_axes);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn sync_cached_state(
+    gilrs: &gilrs::Gilrs,
+    input: &mut Input,
+    centered_dpad_axes: &HashMap<(GamepadId, DPadAxis), f32>,
+) {
+    let snapshots = gilrs
+        .gamepads()
+        .map(|(raw_id, gamepad)| {
+            let id = GamepadId::new(usize::from(raw_id));
+            let buttons =
+                GILRS_BUTTONS.map(|(source, target)| (target, gamepad.is_pressed(source)));
+            let axes = GILRS_AXES.map(|(source, _)| {
+                (
+                    source,
+                    gamepad.axis_code(source).map(|_| gamepad.value(source)),
+                )
+            });
+            (id, buttons, axes)
+        })
+        .collect::<Vec<_>>();
+
+    for (id, buttons, axes) in snapshots {
+        for (button, held) in buttons {
+            update_button_edge(input, centered_dpad_axes, id, button, held);
+        }
+        let profile = input.gamepad_profile(id);
+        for (axis, value) in axes {
+            if let Some(value) = value {
+                update_axis(input, id, axis, value, profile);
+            }
+        }
     }
 }
 

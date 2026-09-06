@@ -14,8 +14,12 @@ mod gamepad_profile;
 mod image;
 mod image_fit;
 mod input;
+#[cfg(feature = "outline-fonts")]
+pub mod outline_text;
 mod pixel;
+mod pixel_game_host;
 mod platform;
+mod presentation;
 mod renderer;
 mod sfx_manifest;
 mod sprite;
@@ -59,15 +63,17 @@ pub use image_fit::{ImageFilter, ImageFit};
 pub use input::{
     ButtonState, GamepadAxis, GamepadButton, GamepadCapabilities, GamepadCapability,
     GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, GamepadMappingSource, Input, Key,
-    MouseButton, Touch, TouchPhase,
+    MouseButton, TextInputEvent, Touch, TouchPhase,
 };
 pub use pixel::Pixel;
+pub use pixel_game_host::PixelGameHost;
 #[cfg(feature = "diagnostics")]
 pub use platform::run_with_diagnostics;
 pub use platform::{
     EngineConfig, EngineError, Frame, Game, GameResult, ToolFrame, ToolWindowConfig,
     ToolWindowMode, run, tool_window_supported,
 };
+pub use presentation::{PixelPresentation, present_pixel_surface};
 pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};

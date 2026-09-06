@@ -27,6 +27,8 @@ pub enum Key {
     L,
     M,
     H,
+    Enter,
+    Tab,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -300,11 +302,25 @@ impl PartialEq for GamepadState {
 
 impl Eq for GamepadState {}
 
+/// Committed text and editing commands, separate from physical game keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextInputEvent {
+    Insert(String),
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Home,
+    End,
+}
+
 #[derive(Debug, Clone)]
 pub struct Input {
+    text_events: Vec<TextInputEvent>,
     keys: [ButtonState; KEY_COUNT],
     mouse_buttons: [ButtonState; MOUSE_BUTTON_COUNT],
     mouse_position: Option<(i32, i32)>,
+    mouse_wheel_steps: i32,
     touches: Vec<Touch>,
     gamepads: HashMap<GamepadId, GamepadState>,
     gamepad_connection_events: Vec<GamepadConnectionEvent>,
@@ -314,8 +330,10 @@ pub struct Input {
 impl PartialEq for Input {
     fn eq(&self, other: &Self) -> bool {
         self.keys == other.keys
+            && self.text_events == other.text_events
             && self.mouse_buttons == other.mouse_buttons
             && self.mouse_position == other.mouse_position
+            && self.mouse_wheel_steps == other.mouse_wheel_steps
             && self.touches == other.touches
             && self.gamepads == other.gamepads
             && self.gamepad_connection_events == other.gamepad_connection_events
@@ -325,6 +343,14 @@ impl PartialEq for Input {
 impl Eq for Input {}
 
 impl Input {
+    /// Ordered text edits received this frame, using the active keyboard layout.
+    pub fn text_events(&self) -> &[TextInputEvent] {
+        &self.text_events
+    }
+
+    pub(crate) fn push_text_event(&mut self, event: TextInputEvent) {
+        self.text_events.push(event);
+    }
     pub fn key(&self, key: Key) -> ButtonState {
         self.keys[key_index(key)]
     }
@@ -335,6 +361,12 @@ impl Input {
 
     pub fn mouse_position(&self) -> Option<(i32, i32)> {
         self.mouse_position
+    }
+
+    /// Signed wheel notches accumulated during the current frame.
+    /// Positive values mean wheel-up; negative values mean wheel-down.
+    pub const fn mouse_wheel_steps(&self) -> i32 {
+        self.mouse_wheel_steps
     }
 
     pub fn touches(&self) -> &[Touch] {
@@ -428,6 +460,10 @@ impl Input {
         self.mouse_position = position;
     }
 
+    pub(crate) fn add_mouse_wheel_steps(&mut self, steps: i32) {
+        self.mouse_wheel_steps = self.mouse_wheel_steps.saturating_add(steps);
+    }
+
     pub(crate) fn push_touch(&mut self, touch: Touch) {
         self.touches.push(touch);
     }
@@ -486,13 +522,16 @@ impl Input {
     }
 
     pub(crate) fn reset_window_devices(&mut self) {
+        self.text_events.clear();
         self.keys = [ButtonState::default(); KEY_COUNT];
         self.mouse_buttons = [ButtonState::default(); MOUSE_BUTTON_COUNT];
         self.mouse_position = None;
+        self.mouse_wheel_steps = 0;
         self.touches.clear();
     }
 
     pub(crate) fn advance_frame(&mut self) {
+        self.text_events.clear();
         for key in &mut self.keys {
             key.advance_frame();
         }
@@ -504,6 +543,7 @@ impl Input {
                 button.advance_frame();
             }
         }
+        self.mouse_wheel_steps = 0;
         self.touches.clear();
         self.gamepad_connection_events.clear();
     }
@@ -512,9 +552,11 @@ impl Input {
 impl Default for Input {
     fn default() -> Self {
         Self {
+            text_events: Vec::new(),
             keys: [ButtonState::default(); KEY_COUNT],
             mouse_buttons: [ButtonState::default(); MOUSE_BUTTON_COUNT],
             mouse_position: None,
+            mouse_wheel_steps: 0,
             touches: Vec::new(),
             gamepads: HashMap::new(),
             gamepad_connection_events: Vec::new(),
@@ -523,7 +565,7 @@ impl Default for Input {
     }
 }
 
-const KEY_COUNT: usize = 22;
+const KEY_COUNT: usize = 24;
 const MOUSE_BUTTON_COUNT: usize = 3;
 const GAMEPAD_BUTTON_COUNT: usize = 25;
 const GAMEPAD_AXIS_COUNT: usize = 6;
@@ -552,6 +594,8 @@ fn key_index(key: Key) -> usize {
         Key::L => 19,
         Key::M => 20,
         Key::H => 21,
+        Key::Enter => 22,
+        Key::Tab => 23,
     }
 }
 
@@ -721,6 +765,18 @@ mod tests {
 
         input.set_mouse_position(None);
         assert_eq!(input.mouse_position(), None);
+    }
+
+    #[test]
+    fn mouse_wheel_steps_accumulate_and_are_frame_scoped() {
+        let mut input = Input::default();
+        input.add_mouse_wheel_steps(1);
+        input.add_mouse_wheel_steps(2);
+        input.add_mouse_wheel_steps(-1);
+        assert_eq!(input.mouse_wheel_steps(), 2);
+
+        input.advance_frame();
+        assert_eq!(input.mouse_wheel_steps(), 0);
     }
 
     #[test]

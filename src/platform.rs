@@ -807,6 +807,7 @@ impl<G: Game> PlatformApp<G> {
                 if !state.window.has_focus() {
                     return;
                 }
+                forward_text_event(&mut state.input, &event);
                 let Some(key) = key_from_winit(event.physical_key) else {
                     return;
                 };
@@ -829,6 +830,11 @@ impl<G: Game> PlatformApp<G> {
                     ElementState::Pressed => state.input.press_mouse_button(button),
                     ElementState::Released => state.input.release_mouse_button(button),
                 }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                state
+                    .input
+                    .add_mouse_wheel_steps(mouse_wheel_steps_from_winit(delta));
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let viewport = current_viewport(
@@ -946,6 +952,7 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                     return;
                 }
 
+                forward_text_event(&mut self.input, &event);
                 let Some(key) = key_from_winit(event.physical_key) else {
                     return;
                 };
@@ -981,6 +988,18 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
                     ElementState::Pressed => self.input.press_mouse_button(button),
                     ElementState::Released => self.input.release_mouse_button(button),
                 }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                #[cfg(not(target_arch = "wasm32"))]
+                if self
+                    .tool_window
+                    .as_ref()
+                    .is_some_and(|tool| tool.config.mode == ToolWindowMode::Modal)
+                {
+                    return;
+                }
+                self.input
+                    .add_mouse_wheel_steps(mouse_wheel_steps_from_winit(delta));
             }
             WindowEvent::CursorMoved { position, .. } => self.update_mouse_position(position),
             WindowEvent::CursorLeft { .. } => self.input.set_mouse_position(None),
@@ -1090,9 +1109,34 @@ fn toggle_fullscreen(window: &Window) {
     window.request_redraw();
 }
 
+fn forward_text_event(input: &mut Input, event: &winit::event::KeyEvent) {
+    if event.state != ElementState::Pressed {
+        return;
+    }
+    use crate::TextInputEvent as Edit;
+    use winit::keyboard::{Key as LogicalKey, NamedKey};
+    let edit = match &event.logical_key {
+        LogicalKey::Named(NamedKey::Backspace) => Some(Edit::Backspace),
+        LogicalKey::Named(NamedKey::Delete) => Some(Edit::Delete),
+        LogicalKey::Named(NamedKey::ArrowLeft) => Some(Edit::Left),
+        LogicalKey::Named(NamedKey::ArrowRight) => Some(Edit::Right),
+        LogicalKey::Named(NamedKey::Home) => Some(Edit::Home),
+        LogicalKey::Named(NamedKey::End) => Some(Edit::End),
+        _ => event.text.as_ref().and_then(|text| {
+            let text: String = text.chars().filter(|c| !c.is_control()).collect();
+            (!text.is_empty()).then_some(Edit::Insert(text))
+        }),
+    };
+    if let Some(edit) = edit {
+        input.push_text_event(edit);
+    }
+}
+
 fn key_from_winit(key: PhysicalKey) -> Option<Key> {
     match key {
         PhysicalKey::Code(KeyCode::Escape) => Some(Key::Escape),
+        PhysicalKey::Code(KeyCode::Enter) => Some(Key::Enter),
+        PhysicalKey::Code(KeyCode::Tab) => Some(Key::Tab),
         PhysicalKey::Code(KeyCode::Space) => Some(Key::Space),
         PhysicalKey::Code(KeyCode::ArrowUp) => Some(Key::Up),
         PhysicalKey::Code(KeyCode::ArrowDown) => Some(Key::Down),
@@ -1124,6 +1168,28 @@ fn mouse_button_from_winit(button: winit::event::MouseButton) -> Option<MouseBut
         winit::event::MouseButton::Right => Some(MouseButton::Right),
         winit::event::MouseButton::Middle => Some(MouseButton::Middle),
         _ => None,
+    }
+}
+
+fn mouse_wheel_steps_from_winit(delta: winit::event::MouseScrollDelta) -> i32 {
+    match delta {
+        winit::event::MouseScrollDelta::LineDelta(_, y) => {
+            if !y.is_finite() || y == 0.0 {
+                0
+            } else {
+                let magnitude = y.abs().round().max(1.0).min(i32::MAX as f32) as i32;
+                if y > 0.0 { magnitude } else { -magnitude }
+            }
+        }
+        winit::event::MouseScrollDelta::PixelDelta(position) => {
+            if !position.y.is_finite() || position.y == 0.0 {
+                0
+            } else if position.y > 0.0 {
+                1
+            } else {
+                -1
+            }
+        }
     }
 }
 
@@ -1231,9 +1297,10 @@ mod tests {
     use super::{
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
         TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
-        mouse_button_from_winit, remember_non_zero_size, simulation_delta_time,
-        surface_to_framebuffer_position, tool_mode_blocks_primary, tool_window_surface_matches,
-        touch_from_winit, touch_phase_from_winit, validate_config, validate_tool_window_config,
+        mouse_button_from_winit, mouse_wheel_steps_from_winit, remember_non_zero_size,
+        simulation_delta_time, surface_to_framebuffer_position, tool_mode_blocks_primary,
+        tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
+        validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -1343,6 +1410,30 @@ mod tests {
         assert_eq!(
             mouse_button_from_winit(winit::event::MouseButton::Other(4)),
             None
+        );
+    }
+
+    #[test]
+    fn maps_mouse_wheel_to_signed_steps() {
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::LineDelta(0.0, 1.0)),
+            1
+        );
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::LineDelta(0.0, -2.0)),
+            -2
+        );
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::PixelDelta(
+                PhysicalPosition::new(0.0, 120.0),
+            )),
+            1
+        );
+        assert_eq!(
+            mouse_wheel_steps_from_winit(winit::event::MouseScrollDelta::PixelDelta(
+                PhysicalPosition::new(0.0, -0.5),
+            )),
+            -1
         );
     }
 
