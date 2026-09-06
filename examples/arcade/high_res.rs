@@ -754,13 +754,7 @@ impl ArcadeHighResApp {
             MUTED,
         );
         draw_text_centered(framebuffer, self.layout.title, "GPE ARCADE", 5, ACCENT);
-        draw_text_centered(
-            framebuffer,
-            self.layout.status,
-            &status,
-            2,
-            ACCENT,
-        );
+        draw_text_centered(framebuffer, self.layout.status, &status, 2, ACCENT);
         draw_text_centered(
             framebuffer,
             self.layout.search,
@@ -768,13 +762,7 @@ impl ArcadeHighResApp {
             2,
             MUTED,
         );
-        draw_text_centered(
-            framebuffer,
-            self.layout.search_clear_rect(),
-            "X",
-            2,
-            MUTED,
-        );
+        draw_text_centered(framebuffer, self.layout.search_clear_rect(), "X", 2, MUTED);
         for (filter, rect) in CatalogFilter::ALL.iter().copied().zip(filter_rects) {
             draw_text_centered(
                 framebuffer,
