@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: gotoo77/gpe_arcade
-          ref: feat/a7-separation-cleanup
+          ref: main
           token: ${{ secrets.GPE_STANDALONE_REPOS_TOKEN }}
           path: _standalone/gpe_arcade
 
@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: gotoo77/gpe_smartboyhero
-          ref: feat/a6-5-canonical-entrypoints
+          ref: main
           token: ${{ secrets.GPE_STANDALONE_REPOS_TOKEN }}
           path: _standalone/gpe_smartboyhero
 
