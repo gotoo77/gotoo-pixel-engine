@@ -53,21 +53,11 @@ impl PagedSpatialState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct PagedGridInput<'a> {
     pub spatial: SpatialInput<'a>,
     pub previous_page: bool,
     pub next_page: bool,
-}
-
-impl<'a> Default for PagedGridInput<'a> {
-    fn default() -> Self {
-        Self {
-            spatial: SpatialInput::default(),
-            previous_page: false,
-            next_page: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
