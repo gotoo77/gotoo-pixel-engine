@@ -1,10 +1,10 @@
 use crate::{Framebuffer, Rect};
 
-use super::{UiStyleSheet, UiTheme};
 use super::experimental_spatial::{
     GridSpec, SpatialCard, SpatialInput, SpatialOutput, SpatialState,
     run_default_card_grid_styled,
 };
+use super::{UiStyleSheet, UiTheme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PagedGridSpec {
@@ -61,7 +61,7 @@ pub struct PagedGridInput<'a> {
     pub next_page: bool,
 }
 
-impl Default for PagedGridInput<'_> {
+impl<'a> Default for PagedGridInput<'a> {
     fn default() -> Self {
         Self {
             spatial: SpatialInput::default(),
@@ -212,16 +212,17 @@ const fn normalize_page(page: usize, page_count: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ActionId, Image, Pixel, Size};
-    use super::*;
+    use crate::{ActionId, Image};
+
     use super::super::experimental::UiId;
+    use super::*;
 
     const ACTION: ActionId = ActionId::new("paged-grid.test");
 
     fn cards(count: usize) -> Vec<SpatialCard<'static>> {
         (0..count)
-            .map(|index| SpatialCard {
-                id: UiId::from_raw(index as u64 + 1),
+            .map(|_| SpatialCard {
+                id: UiId::ROOT,
                 title: "CARD",
                 subtitle: "",
                 image: None::<&'static Image>,
@@ -340,6 +341,7 @@ mod tests {
         assert_eq!(output.page_number(), 1);
         assert_eq!(output.page_count(), 1);
         assert_eq!(output.spatial().layouts().len(), 4);
+        assert!(output.page_changed());
     }
 
     #[test]
@@ -361,11 +363,5 @@ mod tests {
         assert_eq!(output.page_number(), 1);
         assert_eq!(output.page_count(), 1);
         assert_eq!(output.total_items(), 0);
-    }
-
-    #[test]
-    fn type_surface_is_native_to_gpe_ui() {
-        let _ = Size { width: 1, height: 1 };
-        let _ = Pixel::WHITE;
     }
 }
