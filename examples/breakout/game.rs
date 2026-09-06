@@ -4,9 +4,7 @@ use end_menu::{EndMenuAction, EndMenuState};
 use gotoo_pixel_engine::{
     ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Key, Pixel, Rect,
     SoundBank, SoundId, pcm16_mono_wav,
-    ui::{
-        VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
-    },
+    ui::{VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered},
 };
 
 pub const FRAMEBUFFER_WIDTH: u32 = 320;
