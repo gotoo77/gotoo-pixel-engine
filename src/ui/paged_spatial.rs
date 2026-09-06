@@ -1,8 +1,7 @@
 use crate::{Framebuffer, Rect};
 
 use super::experimental_spatial::{
-    GridSpec, SpatialCard, SpatialInput, SpatialOutput, SpatialState,
-    run_default_card_grid_styled,
+    GridSpec, SpatialCard, SpatialInput, SpatialOutput, SpatialState, run_default_card_grid_styled,
 };
 use super::{UiStyleSheet, UiTheme};
 
