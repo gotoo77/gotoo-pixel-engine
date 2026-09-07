@@ -50,7 +50,7 @@ jobs:
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.127 --locked
 
-      - name: Build GPE-owned Pages games
+      - name: Prepare GPE Pages shell
         run: python3 scripts/dev.py build-web --pages
 
       - name: Configure Cargo access to private standalone dependencies
