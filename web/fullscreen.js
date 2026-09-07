@@ -38,7 +38,7 @@ function installStyle() {
       touch-action: manipulation;
     }
 
-    :fullscreen canvas {
+    canvas:fullscreen {
       width: 100vw !important;
       height: 100vh !important;
       max-width: none !important;
@@ -46,6 +46,10 @@ function installStyle() {
     }
   `;
   document.head.append(style);
+}
+
+function canvasElement() {
+  return document.querySelector("canvas");
 }
 
 function updateButton(button) {
@@ -56,9 +60,16 @@ async function toggleFullscreen() {
   try {
     if (document.fullscreenElement) {
       await document.exitFullscreen();
-    } else {
-      await document.documentElement.requestFullscreen();
+      return;
     }
+
+    const canvas = canvasElement();
+    if (!canvas) {
+      console.warn("GPE fullscreen request failed: game canvas not found");
+      return;
+    }
+
+    await canvas.requestFullscreen();
   } catch (error) {
     console.warn("GPE fullscreen request failed", error);
   }
@@ -74,9 +85,14 @@ async function enterFullscreenFromTouch(event) {
     return;
   }
 
+  const canvas = canvasElement();
+  if (!canvas) {
+    return;
+  }
+
   touchFullscreenAttempted = true;
   try {
-    await document.documentElement.requestFullscreen();
+    await canvas.requestFullscreen();
   } catch (_) {
     // Fullscreen is opportunistic on touch devices; keep normal play if denied.
   }
