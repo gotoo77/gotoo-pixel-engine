@@ -437,9 +437,7 @@ impl Renderer {
     fn request_window_for_framebuffer(&self, size: Size) {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if self.window.fullscreen().is_some()
-                || std::env::var_os("WSL_DISTRO_NAME").is_some()
-            {
+            if self.window.fullscreen().is_some() || std::env::var_os("WSL_DISTRO_NAME").is_some() {
                 return;
             }
         }

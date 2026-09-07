@@ -157,15 +157,14 @@ pub fn present_pixel_surface_fit(
     let bounds_width = u64::from(bounds.width);
     let bounds_height = u64::from(bounds.height);
 
-    let (width, height) = if bounds_width.checked_mul(source_height)?
-        <= bounds_height.checked_mul(source_width)?
-    {
-        let height = source_height.checked_mul(bounds_width)? / source_width;
-        (bounds_width, height.max(1))
-    } else {
-        let width = source_width.checked_mul(bounds_height)? / source_height;
-        (width.max(1), bounds_height)
-    };
+    let (width, height) =
+        if bounds_width.checked_mul(source_height)? <= bounds_height.checked_mul(source_width)? {
+            let height = source_height.checked_mul(bounds_width)? / source_width;
+            (bounds_width, height.max(1))
+        } else {
+            let width = source_width.checked_mul(bounds_height)? / source_height;
+            (width.max(1), bounds_height)
+        };
     let width = u32::try_from(width).ok()?;
     let height = u32::try_from(height).ok()?;
     let x = bounds
@@ -183,13 +182,9 @@ pub fn present_pixel_surface_fit(
 
     let bytes = source.as_rgba8();
     for destination_y in 0..height {
-        let source_y = u64::from(destination_y)
-            .checked_mul(source_height)?
-            / u64::from(height);
+        let source_y = u64::from(destination_y).checked_mul(source_height)? / u64::from(height);
         for destination_x in 0..width {
-            let source_x = u64::from(destination_x)
-                .checked_mul(source_width)?
-                / u64::from(width);
+            let source_x = u64::from(destination_x).checked_mul(source_width)? / u64::from(width);
             let index = (usize::try_from(source_y).ok()? * usize::try_from(source.width()).ok()?
                 + usize::try_from(source_x).ok()?)
                 * 4;
