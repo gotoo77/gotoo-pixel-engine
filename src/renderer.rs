@@ -9,7 +9,7 @@ use crate::diagnostics::{
     SurfaceConfiguration, SurfaceFailure, SurfaceFormat, SurfacePresentMode, WgpuErrorCategory,
 };
 use crate::{Framebuffer, Size, Viewport};
-use winit::dpi::PhysicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::window::Window;
 
 const SHADER: &str = r#"
@@ -81,9 +81,9 @@ pub enum RendererInitError {
 impl fmt::Display for RendererInitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CreateSurface(err) => write!(f, "failed to create wgpu surface: {err}"),
-            Self::RequestAdapter(err) => write!(f, "failed to request wgpu adapter: {err}"),
-            Self::RequestDevice(err) => write!(f, "failed to request wgpu device: {err}"),
+            Self::CreateSurface(err) => write!(f, "failed to create surface: {err}"),
+            Self::RequestAdapter(err) => write!(f, "failed to request adapter: {err}"),
+            Self::RequestDevice(err) => write!(f, "failed to request device: {err}"),
         }
     }
 }
@@ -91,6 +91,7 @@ impl fmt::Display for RendererInitError {
 impl std::error::Error for RendererInitError {}
 
 pub struct Renderer {
+    window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -152,7 +153,7 @@ impl Renderer {
     ) -> Result<Self, RendererInitError> {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
-        let surface = match instance.create_surface(window) {
+        let surface = match instance.create_surface(Arc::clone(&window)) {
             Ok(surface) => surface,
             Err(error) => {
                 #[cfg(feature = "diagnostics")]
@@ -397,6 +398,7 @@ impl Renderer {
         }
 
         Ok(Self {
+            window,
             surface,
             device,
             queue,
@@ -432,11 +434,88 @@ impl Renderer {
         }
     }
 
+    fn request_window_for_framebuffer(&self, size: Size) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.window.fullscreen().is_some()
+                || std::env::var_os("WSL_DISTRO_NAME").is_some()
+            {
+                return;
+            }
+        }
+
+        let _ = self.window.request_inner_size(LogicalSize::new(
+            f64::from(size.width),
+            f64::from(size.height),
+        ));
+    }
+
+    fn sync_framebuffer_size(&mut self, size: Size) {
+        if size == self.framebuffer_size || size.width == 0 || size.height == 0 {
+            return;
+        }
+
+        self.request_window_for_framebuffer(size);
+
+        let framebuffer_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("cpu-framebuffer-texture"),
+            size: wgpu_extent(size),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let framebuffer_view =
+            framebuffer_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let framebuffer_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("cpu-framebuffer-nearest-sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let bind_group_layout = self.render_pipeline.get_bind_group_layout(0);
+        let framebuffer_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("framebuffer-bind-group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&framebuffer_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&framebuffer_sampler),
+                },
+            ],
+        });
+
+        self.framebuffer_size = size;
+        self.framebuffer_texture = framebuffer_texture;
+        self.framebuffer_bind_group = framebuffer_bind_group;
+        self.viewport = Viewport::new(
+            Size {
+                width: self.config.width,
+                height: self.config.height,
+            },
+            size,
+        );
+    }
+
     pub fn viewport(&self) -> Viewport {
         self.viewport
     }
 
     pub fn render(&mut self, framebuffer: &Framebuffer) -> RenderOutcome {
+        self.sync_framebuffer_size(Size {
+            width: framebuffer.width(),
+            height: framebuffer.height(),
+        });
         debug_assert_eq!(framebuffer.width(), self.framebuffer_size.width);
         debug_assert_eq!(framebuffer.height(), self.framebuffer_size.height);
 
