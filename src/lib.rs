@@ -73,7 +73,9 @@ pub use platform::{
     EngineConfig, EngineError, Frame, Game, GameResult, ToolFrame, ToolWindowConfig,
     ToolWindowMode, run, tool_window_supported,
 };
-pub use presentation::{PixelPresentation, present_pixel_surface};
+pub use presentation::{
+    PixelFitPresentation, PixelPresentation, present_pixel_surface, present_pixel_surface_fit,
+};
 pub use sfx_manifest::SfxManifest;
 pub use sprite::{Sprite, SpriteError};
 pub use storage::{LocalStorage, NoopStorage, StorageError};
