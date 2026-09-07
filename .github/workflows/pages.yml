@@ -10,6 +10,8 @@ on:
 # start a fresh workflow run instead of re-running that build job. Re-running
 # the build in the same run creates duplicate artifacts and deploy-pages will
 # reject the run because it cannot choose between them.
+# Standalone repositories are resolved from their current `main` at the start
+# of each fresh run, so updates to Arcade/SBH/VC must be deployed via a new run.
 
 permissions:
   contents: read
