@@ -12,32 +12,13 @@ import sys
 from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
-WEB_GAME_EXAMPLES = [
-    "snake_web",
-    "breakout_web",
-    "tetris_web",
-    "pong_web",
-    "space_invaders_web",
-]
 PAGES_STATIC_FILES = [
     "index.html",
-    "snake.html",
-    "breakout.html",
-    "tetris.html",
-    "space_invaders.html",
-    "pong.html",
     "smart_boy_hero.html",
     "smart_boy_hero_iso.html",
     "favicon.svg",
     "audio-unlock.js",
     "fullscreen.js",
-]
-GAME_CHOICES = [
-    ("Snake", "snake"),
-    ("Space Invaders", "space_invaders"),
-    ("Tetris", "tetris"),
-    ("Pong", "pong"),
-    ("Breakout", "breakout"),
 ]
 
 
@@ -105,8 +86,7 @@ def command_check(args: argparse.Namespace) -> None:
 
 
 def command_check_web(_: argparse.Namespace) -> None:
-    for example in ["web_demo", *WEB_GAME_EXAMPLES]:
-        cargo_build_web(example, release=False)
+    cargo_build_web("web_demo", release=False)
     print("==> OK")
 
 
@@ -123,15 +103,10 @@ def prepare_pages() -> Path:
 
 def command_build_web(args: argparse.Namespace) -> None:
     if args.pages:
-        out_dir = prepare_pages()
-        for example in WEB_GAME_EXAMPLES:
-            wasm_bindgen(cargo_build_web(example, release=True), out_dir)
-        print(f"==> Pages artifact ready: {ROOT / 'dist'}")
+        prepare_pages()
+        print(f"==> Pages shell ready: {ROOT / 'dist'}")
         return
 
-    out_dir = ROOT / "web" / "pkg"
-    for example in WEB_GAME_EXAMPLES:
-        wasm_bindgen(cargo_build_web(example, release=args.release), out_dir)
     cargo_build_web("web_demo", release=args.release)
     print("==> OK")
 
@@ -149,93 +124,9 @@ def command_serve_web(args: argparse.Namespace) -> None:
         server.server_close()
 
 
-def available_games() -> list[tuple[str, str]]:
-    return [
-        (label, example)
-        for label, example in GAME_CHOICES
-        if (ROOT / "examples" / f"{example}.rs").is_file()
-    ]
-
-
-def select_game_with_fzf(games: list[tuple[str, str]]) -> str | None:
-    if shutil.which("fzf") is None:
-        return None
-    labels = "\n".join(label for label, _ in games) + "\n"
-    result = subprocess.run(
-        ["fzf", "--height=40%", "--reverse", "--prompt=Game > "],
-        cwd=ROOT,
-        input=labels,
-        text=True,
-        stdout=subprocess.PIPE,
-        check=False,
-    )
-    if result.returncode != 0:
-        return ""
-    return result.stdout.strip()
-
-
-def select_game_interactively(games: list[tuple[str, str]]) -> str:
-    print("Available games:")
-    for index, (label, _) in enumerate(games, start=1):
-        print(f"  {index}. {label}")
-    try:
-        raw = input("Game > ").strip()
-    except EOFError:
-        return ""
-    if not raw:
-        return ""
-    try:
-        index = int(raw) - 1
-    except ValueError:
-        return raw
-    if 0 <= index < len(games):
-        return games[index][0]
-    return ""
-
-
-def resolve_game(requested: str | None) -> str | None:
-    games = available_games()
-    if requested:
-        normalized = requested.strip().casefold().replace("_", "-").replace(" ", "-")
-        for label, example in games:
-            aliases = {
-                label.casefold().replace(" ", "-"),
-                example.casefold().replace("_", "-"),
-            }
-            if normalized in aliases:
-                return example
-        raise ValueError(f"unknown or unavailable game: {requested}")
-
-    selected = select_game_with_fzf(games)
-    if selected is None:
-        selected = select_game_interactively(games)
-    if not selected:
-        return None
-    for label, example in games:
-        if selected == label:
-            return example
-    return resolve_game(selected)
-
-
-def command_run_game(args: argparse.Namespace) -> None:
-    example = resolve_game(args.game)
-    if example is None:
-        return
-    command = ["cargo", "run"]
-    if args.release:
-        command.append("--release")
-    command.extend(["--example", example])
-    run(command)
-
-
 def command_install_hooks(_: argparse.Namespace) -> None:
     run(["git", "config", "core.hooksPath", ".githooks"])
     print("==> Git hooks installed from .githooks")
-
-
-def command_list_web_examples(_: argparse.Namespace) -> None:
-    for example in WEB_GAME_EXAMPLES:
-        print(example)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -249,15 +140,15 @@ def parser() -> argparse.ArgumentParser:
     fmt_check = sub.add_parser("fmt-check", help="check Rust formatting")
     fmt_check.set_defaults(handler=command_fmt_check)
 
-    check_web = sub.add_parser("check-web", help="compile all Web/WASM entrypoints")
+    check_web = sub.add_parser("check-web", help="compile GPE Web/WASM engine demos")
     check_web.set_defaults(handler=command_check_web)
 
-    build_web = sub.add_parser("build-web", help="build/package Web/WASM entrypoints")
+    build_web = sub.add_parser("build-web", help="build/package GPE Web/WASM surfaces")
     build_web.add_argument("--release", action="store_true")
     build_web.add_argument(
         "--pages",
         action="store_true",
-        help="build release games and assemble the dist/ Pages artifact",
+        help="assemble the Pages shell; game artifacts come from Arcade/standalone repositories",
     )
     build_web.set_defaults(handler=command_build_web)
 
@@ -266,16 +157,8 @@ def parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8000)
     serve.set_defaults(handler=command_serve_web)
 
-    run_game = sub.add_parser("run-game", help="select or launch a native game")
-    run_game.add_argument("game", nargs="?")
-    run_game.add_argument("--release", action="store_true")
-    run_game.set_defaults(handler=command_run_game)
-
     install_hooks = sub.add_parser("install-hooks", help="configure versioned Git hooks")
     install_hooks.set_defaults(handler=command_install_hooks)
-
-    list_web = sub.add_parser("list-web-examples", help=argparse.SUPPRESS)
-    list_web.set_defaults(handler=command_list_web_examples)
     return root
 
 
@@ -285,9 +168,6 @@ def main() -> int:
         args.handler(args)
     except CommandFailed as error:
         return error.returncode
-    except ValueError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
     return 0
 
 
