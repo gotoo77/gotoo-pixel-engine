@@ -39,10 +39,10 @@ function installStyle() {
     }
 
     :fullscreen canvas {
-      width: 100vw !important;
-      height: 100vh !important;
-      max-width: none !important;
-      max-height: none !important;
+      width: auto !important;
+      height: auto !important;
+      max-width: 100vw !important;
+      max-height: 100vh !important;
     }
   `;
   document.head.append(style);
