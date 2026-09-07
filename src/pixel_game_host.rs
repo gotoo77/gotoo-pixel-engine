@@ -1,6 +1,6 @@
 use crate::{
-    Frame, Framebuffer, Game, GameResult, PixelPresentation, Rect, Size, Viewport,
-    present_pixel_surface,
+    Frame, Framebuffer, Game, GameResult, PixelFitPresentation, PixelPresentation, Rect, Size,
+    Viewport, present_pixel_surface, present_pixel_surface_fit,
 };
 
 /// Provisional P6 helper for hosting one low-resolution `Game` inside a
@@ -38,6 +38,19 @@ impl PixelGameHost {
         &self.framebuffer
     }
 
+    fn update_child(&mut self, host: &mut Frame<'_>) -> GameResult {
+        let mut child = Frame {
+            framebuffer: &mut self.framebuffer,
+            input: host.input,
+            delta_time: host.delta_time,
+            storage: &mut *host.storage,
+            audio: &mut *host.audio,
+            surface_size: self.size,
+            viewport: Viewport::new(self.size, self.size),
+        };
+        self.game.update(&mut child)
+    }
+
     /// Updates a keyboard/gamepad-oriented child and presents its low-resolution
     /// framebuffer into `bounds` using integer-nearest composition.
     ///
@@ -48,20 +61,24 @@ impl PixelGameHost {
         host: &mut Frame<'_>,
         bounds: Rect,
     ) -> (GameResult, Option<PixelPresentation>) {
-        let result = {
-            let mut child = Frame {
-                framebuffer: &mut self.framebuffer,
-                input: host.input,
-                delta_time: host.delta_time,
-                storage: &mut *host.storage,
-                audio: &mut *host.audio,
-                surface_size: self.size,
-                viewport: Viewport::new(self.size, self.size),
-            };
-            self.game.update(&mut child)
-        };
-
+        let result = self.update_child(host);
         let presentation = present_pixel_surface(host.framebuffer, &self.framebuffer, bounds);
+        (result, presentation)
+    }
+
+    /// Updates a keyboard/gamepad-oriented child and fits its framebuffer into
+    /// `bounds` using aspect-ratio preserving nearest-neighbour sampling at any scale.
+    ///
+    /// This is opt-in because it trades uniform physical pixel block sizes for better
+    /// viewport utilisation. It remains nearest-neighbour and never introduces linear
+    /// filtering.
+    pub fn update_and_present_fit(
+        &mut self,
+        host: &mut Frame<'_>,
+        bounds: Rect,
+    ) -> (GameResult, Option<PixelFitPresentation>) {
+        let result = self.update_child(host);
+        let presentation = present_pixel_surface_fit(host.framebuffer, &self.framebuffer, bounds);
         (result, presentation)
     }
 
@@ -76,5 +93,13 @@ impl PixelGameHost {
 
     pub fn present(&self, host: &mut Framebuffer, bounds: Rect) -> Option<PixelPresentation> {
         present_pixel_surface(host, &self.framebuffer, bounds)
+    }
+
+    pub fn present_fit(
+        &self,
+        host: &mut Framebuffer,
+        bounds: Rect,
+    ) -> Option<PixelFitPresentation> {
+        present_pixel_surface_fit(host, &self.framebuffer, bounds)
     }
 }
