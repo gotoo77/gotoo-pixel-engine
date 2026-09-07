@@ -45,31 +45,6 @@ path = "examples/web_demo.rs"
 crate-type = ["cdylib"]
 
 [[example]]
-name = "snake_web"
-path = "examples/snake_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "breakout_web"
-path = "examples/breakout_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "tetris_web"
-path = "examples/tetris_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "pong_web"
-path = "examples/pong_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "space_invaders_web"
-path = "examples/space_invaders_web.rs"
-crate-type = ["cdylib"]
-
-[[example]]
 name = "diagnostics_environment_web"
 path = "examples/diagnostics_environment_web.rs"
 crate-type = ["cdylib"]
