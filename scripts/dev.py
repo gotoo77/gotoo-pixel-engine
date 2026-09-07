@@ -73,6 +73,7 @@ def command_fmt_check(_: argparse.Namespace) -> None:
 
 
 def command_check(args: argparse.Namespace) -> None:
+    run([sys.executable, str(ROOT / "scripts" / "check_separation.py")])
     check_rust_format()
     run(["cargo", "test", "--lib", "--bins", "--examples", "--tests"])
     run(["cargo", "clippy", "--all-targets", "--", "-D", "warnings"])
