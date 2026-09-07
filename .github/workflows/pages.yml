@@ -6,6 +6,11 @@ on:
       - main
   workflow_dispatch:
 
+# Important: if a Pages build has already uploaded a `github-pages` artifact,
+# start a fresh workflow run instead of re-running that build job. Re-running
+# the build in the same run creates duplicate artifacts and deploy-pages will
+# reject the run because it cannot choose between them.
+
 permissions:
   contents: read
   pages: write
