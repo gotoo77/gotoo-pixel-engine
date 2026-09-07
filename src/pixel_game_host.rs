@@ -1,6 +1,6 @@
 use crate::{
     Frame, Framebuffer, Game, GameResult, PixelFitPresentation, PixelPresentation, Rect, Size,
-    Viewport, present_pixel_surface, present_pixel_surface_fit,
+    ToolFrame, ToolWindowConfig, Viewport, present_pixel_surface, present_pixel_surface_fit,
 };
 
 /// Provisional P6 helper for hosting one low-resolution `Game` inside a
@@ -36,6 +36,18 @@ impl PixelGameHost {
 
     pub fn framebuffer(&self) -> &Framebuffer {
         &self.framebuffer
+    }
+
+    pub fn tool_window_config(&self) -> Option<ToolWindowConfig> {
+        self.game.tool_window_config()
+    }
+
+    pub fn update_tool_window(&mut self, frame: &mut ToolFrame<'_>) {
+        self.game.update_tool_window(frame);
+    }
+
+    pub fn tool_window_closed(&mut self) {
+        self.game.tool_window_closed();
     }
 
     fn update_child(&mut self, host: &mut Frame<'_>) -> GameResult {
