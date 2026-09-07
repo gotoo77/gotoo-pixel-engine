@@ -9,7 +9,7 @@ use crate::diagnostics::{
     SurfaceConfiguration, SurfaceFailure, SurfaceFormat, SurfacePresentMode, WgpuErrorCategory,
 };
 use crate::{Framebuffer, Size, Viewport};
-use winit::dpi::PhysicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::window::Window;
 
 const SHADER: &str = r#"
@@ -91,6 +91,7 @@ impl fmt::Display for RendererInitError {
 impl std::error::Error for RendererInitError {}
 
 pub struct Renderer {
+    window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -152,7 +153,7 @@ impl Renderer {
     ) -> Result<Self, RendererInitError> {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
-        let surface = match instance.create_surface(window) {
+        let surface = match instance.create_surface(Arc::clone(&window)) {
             Ok(surface) => surface,
             Err(error) => {
                 #[cfg(feature = "diagnostics")]
@@ -397,6 +398,7 @@ impl Renderer {
         }
 
         Ok(Self {
+            window,
             surface,
             device,
             queue,
@@ -432,10 +434,28 @@ impl Renderer {
         }
     }
 
+    fn request_window_for_framebuffer(&self, size: Size) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.window.fullscreen().is_some()
+                || std::env::var_os("WSL_DISTRO_NAME").is_some()
+            {
+                return;
+            }
+        }
+
+        let _ = self.window.request_inner_size(LogicalSize::new(
+            f64::from(size.width),
+            f64::from(size.height),
+        ));
+    }
+
     fn sync_framebuffer_size(&mut self, size: Size) {
         if size == self.framebuffer_size || size.width == 0 || size.height == 0 {
             return;
         }
+
+        self.request_window_for_framebuffer(size);
 
         let framebuffer_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("cpu-framebuffer-texture"),
