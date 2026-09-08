@@ -2,6 +2,7 @@ pub mod experimental;
 pub mod experimental_spatial;
 pub mod flags;
 pub mod icon;
+pub mod icon_text;
 pub mod language;
 #[cfg(feature = "outline-fonts")]
 pub mod fonts;
@@ -21,6 +22,7 @@ mod tabs_contract_tests;
 
 pub use flags::FlagIcon;
 pub use icon::UiIcon;
+pub use icon_text::{IconTextLayout, icon_text_layout};
 pub use language::{
     CHINESE_SIMPLIFIED, CHINESE_TRADITIONAL, ENGLISH, FRENCH, GERMAN, ITALIAN, JAPANESE,
     KOREAN, LanguageOption, PORTUGUESE_BRAZIL, PORTUGUESE_PORTUGAL, RUSSIAN, SPANISH,
