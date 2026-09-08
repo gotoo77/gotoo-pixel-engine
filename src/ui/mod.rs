@@ -22,7 +22,7 @@ mod tabs_contract_tests;
 
 pub use flags::FlagIcon;
 pub use icon::UiIcon;
-pub use icon_text::{IconTextLayout, icon_text_layout};
+pub use icon_text::{draw_icon_text, icon_text_layout, IconTextLayout};
 pub use language::{
     CHINESE_SIMPLIFIED, CHINESE_TRADITIONAL, ENGLISH, FRENCH, GERMAN, ITALIAN, JAPANESE,
     KOREAN, LanguageOption, PORTUGUESE_BRAZIL, PORTUGUESE_PORTUGAL, RUSSIAN, SPANISH,

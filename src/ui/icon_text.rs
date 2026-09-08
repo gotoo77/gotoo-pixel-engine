@@ -1,4 +1,6 @@
-use crate::{Rect, Size};
+use crate::{Framebuffer, Pixel, Rect, Size, TextRenderer};
+
+use super::UiIcon;
 
 /// Geometry for a horizontally composed icon + text control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +74,46 @@ pub fn icon_text_layout(
     }
 }
 
+/// Draws icon + text as one centered visual group.
+///
+/// Interaction, focus and borders stay owned by the caller. This makes the
+/// primitive usable by both the immediate-mode toolkit and game-specific UI
+/// surfaces without coupling icon rendering to button semantics.
+pub fn draw_icon_text(
+    framebuffer: &mut Framebuffer,
+    icon: UiIcon,
+    renderer: TextRenderer,
+    bounds: Rect,
+    text: &str,
+    text_scale: u32,
+    gap: u32,
+    color: Pixel,
+) -> IconTextLayout {
+    let text_scale = text_scale.max(1);
+    let (text_width, text_height) = renderer.text_size(text, text_scale);
+    let preferred = icon.preferred_size();
+    let layout = icon_text_layout(
+        bounds,
+        preferred,
+        Size {
+            width: text_width,
+            height: text_height,
+        },
+        gap,
+    );
+
+    icon.draw(framebuffer, layout.icon);
+    renderer.draw_scaled(
+        framebuffer,
+        layout.text.x,
+        layout.text.y,
+        text,
+        text_scale,
+        color,
+    );
+    layout
+}
+
 fn fit_icon(preferred: Size, max_width: u32, max_height: u32) -> Size {
     if preferred.width == 0 || preferred.height == 0 || max_width == 0 || max_height == 0 {
         return Size {
@@ -113,6 +155,8 @@ fn to_i32(value: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Font;
+    use super::super::FlagIcon;
 
     #[test]
     fn common_flag_and_label_are_centered_as_one_group() {
@@ -214,5 +258,30 @@ mod tests {
         );
         assert_eq!(layout.icon.width, 0);
         assert_eq!(layout.text.width, 0);
+    }
+
+    #[test]
+    fn draw_icon_text_paints_both_flag_and_label() {
+        let mut framebuffer = Framebuffer::new(180, 32);
+        let renderer = TextRenderer::new(Font::Pixel5x7);
+        let layout = draw_icon_text(
+            &mut framebuffer,
+            UiIcon::Flag(FlagIcon::France),
+            renderer,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 180,
+                height: 32,
+            },
+            "FRANCAIS",
+            1,
+            8,
+            Pixel::WHITE,
+        );
+
+        assert!(layout.icon.width > 0);
+        assert!(layout.text.width > 0);
+        assert!(framebuffer.as_rgba8().chunks_exact(4).any(|p| p[3] != 0));
     }
 }
