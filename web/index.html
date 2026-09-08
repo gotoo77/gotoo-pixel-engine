@@ -48,15 +48,28 @@
     <div id="audio-hint">AUDIO: CLICK / TAP GAME OR PRESS KEY ONCE</div>
     <script src="./audio-unlock.js"></script>
     <script type="module">
-      import init from "./pkg/arcade-web.js";
+      import {
+        diagnosticsRequested,
+        installGpeWebDiagnostics,
+      } from "./diagnostics.js";
 
+      const diagnosticsEnabled = diagnosticsRequested();
+      const diagnostics = installGpeWebDiagnostics();
       const audioHint = document.querySelector("#audio-hint");
       const dismissAudioHint = () => audioHint?.remove();
       for (const type of ["pointerdown", "touchstart", "keydown"]) {
         document.addEventListener(type, dismissAudioHint, { once: true, capture: true });
       }
 
-      init();
+      try {
+        const arcade = await import("./pkg/arcade-web.js");
+        await arcade.default();
+        diagnostics?.setSnapshotProvider(arcade.gpe_diagnostics_snapshot);
+      } catch (error) {
+        console.error("GPE Arcade startup failed", error);
+        diagnostics?.setStartupError(error);
+        if (!diagnosticsEnabled) throw error;
+      }
     </script>
     <script type="module" src="./fullscreen.js"></script>
   </body>

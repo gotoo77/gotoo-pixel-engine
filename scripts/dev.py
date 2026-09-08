@@ -19,6 +19,7 @@ PAGES_STATIC_FILES = [
     "favicon.svg",
     "audio-unlock.js",
     "fullscreen.js",
+    "diagnostics.js",
 ]
 
 
