@@ -6,9 +6,9 @@ use gotoo_pixel_engine::{
     outline_text::OutlineFont,
     run,
     ui::{
-        CHINESE_SIMPLIFIED, CHINESE_TRADITIONAL, ENGLISH, FRENCH, GERMAN, ITALIAN, JAPANESE,
-        KOREAN, PORTUGUESE_BRAZIL, PORTUGUESE_PORTUGAL, RUSSIAN, SPANISH, FlagIcon,
-        LanguageOption, classify_text_script, recommended_raster_scale,
+        CHINESE_SIMPLIFIED, CHINESE_TRADITIONAL, ENGLISH, FRENCH, FlagIcon, GERMAN, ITALIAN,
+        JAPANESE, KOREAN, LanguageOption, PORTUGUESE_BRAZIL, PORTUGUESE_PORTUGAL, RUSSIAN, SPANISH,
+        classify_text_script, recommended_raster_scale,
     },
 };
 

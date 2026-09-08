@@ -27,24 +27,17 @@ impl LanguageOption {
 
 pub const ENGLISH: LanguageOption =
     LanguageOption::new("en", "English", Some(FlagIcon::UnitedKingdom));
-pub const FRENCH: LanguageOption =
-    LanguageOption::new("fr", "Français", Some(FlagIcon::France));
-pub const GERMAN: LanguageOption =
-    LanguageOption::new("de", "Deutsch", Some(FlagIcon::Germany));
-pub const SPANISH: LanguageOption =
-    LanguageOption::new("es", "Español", Some(FlagIcon::Spain));
-pub const ITALIAN: LanguageOption =
-    LanguageOption::new("it", "Italiano", Some(FlagIcon::Italy));
+pub const FRENCH: LanguageOption = LanguageOption::new("fr", "Français", Some(FlagIcon::France));
+pub const GERMAN: LanguageOption = LanguageOption::new("de", "Deutsch", Some(FlagIcon::Germany));
+pub const SPANISH: LanguageOption = LanguageOption::new("es", "Español", Some(FlagIcon::Spain));
+pub const ITALIAN: LanguageOption = LanguageOption::new("it", "Italiano", Some(FlagIcon::Italy));
 pub const PORTUGUESE_PORTUGAL: LanguageOption =
     LanguageOption::new("pt-PT", "Português", Some(FlagIcon::Portugal));
 pub const PORTUGUESE_BRAZIL: LanguageOption =
     LanguageOption::new("pt-BR", "Português (Brasil)", Some(FlagIcon::Brazil));
-pub const RUSSIAN: LanguageOption =
-    LanguageOption::new("ru", "Русский", Some(FlagIcon::Russia));
-pub const JAPANESE: LanguageOption =
-    LanguageOption::new("ja", "日本語", Some(FlagIcon::Japan));
-pub const KOREAN: LanguageOption =
-    LanguageOption::new("ko", "한국어", Some(FlagIcon::SouthKorea));
+pub const RUSSIAN: LanguageOption = LanguageOption::new("ru", "Русский", Some(FlagIcon::Russia));
+pub const JAPANESE: LanguageOption = LanguageOption::new("ja", "日本語", Some(FlagIcon::Japan));
+pub const KOREAN: LanguageOption = LanguageOption::new("ko", "한국어", Some(FlagIcon::SouthKorea));
 pub const CHINESE_SIMPLIFIED: LanguageOption =
     LanguageOption::new("zh-CN", "简体中文", Some(FlagIcon::China));
 pub const CHINESE_TRADITIONAL: LanguageOption =

@@ -195,12 +195,7 @@ fn draw_brazil(framebuffer: &mut Framebuffer, rect: Rect) {
             );
         }
     }
-    framebuffer.fill_circle(
-        cx,
-        cy,
-        (rect.height / 5).max(1),
-        Pixel::rgb(0, 39, 118),
-    );
+    framebuffer.fill_circle(cx, cy, (rect.height / 5).max(1), Pixel::rgb(0, 39, 118));
 }
 
 fn draw_japan(framebuffer: &mut Framebuffer, rect: Rect) {
@@ -230,7 +225,13 @@ fn draw_south_korea(framebuffer: &mut Framebuffer, rect: Rect) {
     // relying on font glyphs.
     let ink = Pixel::rgb(20, 20, 20);
     let mark_w = (rect.width / 6).max(2);
-    framebuffer.fill_rect(rect.x.saturating_add(2), rect.y.saturating_add(2), mark_w, 1, ink);
+    framebuffer.fill_rect(
+        rect.x.saturating_add(2),
+        rect.y.saturating_add(2),
+        mark_w,
+        1,
+        ink,
+    );
     framebuffer.fill_rect(
         rect.x
             .saturating_add(to_i32(rect.width.saturating_sub(mark_w + 2))),
@@ -241,8 +242,7 @@ fn draw_south_korea(framebuffer: &mut Framebuffer, rect: Rect) {
     );
     framebuffer.fill_rect(
         rect.x.saturating_add(2),
-        rect.y
-            .saturating_add(to_i32(rect.height.saturating_sub(3))),
+        rect.y.saturating_add(to_i32(rect.height.saturating_sub(3))),
         mark_w,
         1,
         ink,
@@ -250,8 +250,7 @@ fn draw_south_korea(framebuffer: &mut Framebuffer, rect: Rect) {
     framebuffer.fill_rect(
         rect.x
             .saturating_add(to_i32(rect.width.saturating_sub(mark_w + 2))),
-        rect.y
-            .saturating_add(to_i32(rect.height.saturating_sub(3))),
+        rect.y.saturating_add(to_i32(rect.height.saturating_sub(3))),
         mark_w,
         1,
         ink,
@@ -279,13 +278,7 @@ fn draw_taiwan(framebuffer: &mut Framebuffer, rect: Rect) {
     );
     let canton_w = rect.width / 2;
     let canton_h = rect.height / 2;
-    framebuffer.fill_rect(
-        rect.x,
-        rect.y,
-        canton_w,
-        canton_h,
-        Pixel::rgb(0, 0, 149),
-    );
+    framebuffer.fill_rect(rect.x, rect.y, canton_w, canton_h, Pixel::rgb(0, 0, 149));
     framebuffer.fill_circle(
         rect.x.saturating_add(to_i32(canton_w / 2)),
         rect.y.saturating_add(to_i32(canton_h / 2)),
@@ -303,8 +296,12 @@ fn draw_united_kingdom(framebuffer: &mut Framebuffer, rect: Rect) {
     // Diagonal saltire approximated by one-pixel stepped lines at tiny sizes.
     let steps = rect.width.max(rect.height);
     for i in 0..steps {
-        let x = rect.x.saturating_add(to_i32(i.saturating_mul(rect.width) / steps.max(1)));
-        let y1 = rect.y.saturating_add(to_i32(i.saturating_mul(rect.height) / steps.max(1)));
+        let x = rect
+            .x
+            .saturating_add(to_i32(i.saturating_mul(rect.width) / steps.max(1)));
+        let y1 = rect
+            .y
+            .saturating_add(to_i32(i.saturating_mul(rect.height) / steps.max(1)));
         let y2 = rect
             .y
             .saturating_add(to_i32(rect.height.saturating_sub(1)))
@@ -318,7 +315,8 @@ fn draw_united_kingdom(framebuffer: &mut Framebuffer, rect: Rect) {
     let red_vertical = (rect.width / 9).max(1);
     let red_horizontal = (rect.height / 7).max(1);
     framebuffer.fill_rect(
-        rect.x.saturating_add(to_i32((rect.width - white_vertical) / 2)),
+        rect.x
+            .saturating_add(to_i32((rect.width - white_vertical) / 2)),
         rect.y,
         white_vertical,
         rect.height,
@@ -333,7 +331,8 @@ fn draw_united_kingdom(framebuffer: &mut Framebuffer, rect: Rect) {
         white,
     );
     framebuffer.fill_rect(
-        rect.x.saturating_add(to_i32((rect.width - red_vertical) / 2)),
+        rect.x
+            .saturating_add(to_i32((rect.width - red_vertical) / 2)),
         rect.y,
         red_vertical,
         rect.height,
@@ -362,7 +361,8 @@ mod tests {
     use super::*;
 
     fn render(flag: FlagIcon) -> Framebuffer {
-        let mut framebuffer = Framebuffer::new(FlagIcon::PREFERRED_WIDTH, FlagIcon::PREFERRED_HEIGHT);
+        let mut framebuffer =
+            Framebuffer::new(FlagIcon::PREFERRED_WIDTH, FlagIcon::PREFERRED_HEIGHT);
         flag.draw(
             &mut framebuffer,
             Rect {
@@ -379,10 +379,7 @@ mod tests {
     fn japan_has_white_corner_and_red_center() {
         let framebuffer = render(FlagIcon::Japan);
         assert_eq!(framebuffer.pixel(0, 0), Some(Pixel::WHITE));
-        assert_eq!(
-            framebuffer.pixel(12, 8),
-            Some(Pixel::rgb(188, 0, 45))
-        );
+        assert_eq!(framebuffer.pixel(12, 8), Some(Pixel::rgb(188, 0, 45)));
     }
 
     #[test]
@@ -409,7 +406,12 @@ mod tests {
             FlagIcon::Taiwan,
         ] {
             let framebuffer = render(flag);
-            assert!(framebuffer.as_rgba8().chunks_exact(4).any(|pixel| pixel[3] != 0));
+            assert!(
+                framebuffer
+                    .as_rgba8()
+                    .chunks_exact(4)
+                    .any(|pixel| pixel[3] != 0)
+            );
         }
     }
 }
