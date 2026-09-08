@@ -124,45 +124,57 @@ impl Gallery {
                 );
             }
 
-            let preferred_label = format!("{}   {}", language.locale, language.native_name);
-            let resolved = self.font_stack.resolve_font_index(&preferred_label);
+            // Locale metadata and native language text are deliberately resolved
+            // independently. A compact CJK subset may contain the Japanese glyphs
+            // while omitting Latin letters such as "ja"; requiring one face to
+            // cover the composite label would therefore produce a false negative.
+            let native_face = self.font_stack.resolve_font_index(language.native_name);
             let raster_scale = recommended_raster_scale(language.native_name);
-            let label = if resolved.is_some() {
-                preferred_label
-            } else {
-                format!("{}   [fallback font required]", language.locale)
-            };
-            let label_bounds = Rect {
+
+            let locale_bounds = Rect {
                 x: x + 56,
                 y: y + 8,
-                width: row_w.saturating_sub(72),
+                width: 64,
                 height: 30,
             };
+            self.ui_font.draw(
+                framebuffer,
+                language.locale,
+                19.0,
+                locale_bounds,
+                if native_face.is_some() { TEXT } else { ACCENT },
+            );
 
-            if resolved.is_some() {
+            let native_bounds = Rect {
+                x: x + 120,
+                y: y + 8,
+                width: row_w.saturating_sub(136),
+                height: 30,
+            };
+            if native_face.is_some() {
                 let _ = self.font_stack.draw_supersampled(
                     framebuffer,
-                    &label,
+                    language.native_name,
                     19.0,
-                    label_bounds,
+                    native_bounds,
                     TEXT,
                     raster_scale,
                 );
             } else {
-                self.ui_font
-                    .draw(framebuffer, &label, 19.0, label_bounds, ACCENT);
+                self.ui_font.draw(
+                    framebuffer,
+                    "[fallback font required]",
+                    19.0,
+                    native_bounds,
+                    ACCENT,
+                );
             }
 
             let script = classify_text_script(language.native_name);
-            let face = match resolved {
+            let face = match native_face {
                 Some(0) => "primary",
-                Some(index) => {
-                    if index == 1 {
-                        "fallback#1"
-                    } else {
-                        "fallback"
-                    }
-                }
+                Some(1) => "fallback#1",
+                Some(_) => "fallback",
                 None => "missing",
             };
             let detail = format!("script={script:?}   raster={raster_scale}x   face={face}");
