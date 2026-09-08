@@ -218,7 +218,7 @@ impl OutlineFont {
 }
 
 fn div_ceil_u32(value: u32, divisor: u32) -> u32 {
-    value / divisor + u32::from(value % divisor != 0)
+    value.div_ceil(divisor)
 }
 
 #[cfg(test)]
@@ -256,14 +256,8 @@ mod tests {
         supersampled.clear(Pixel::rgba(0, 0, 0, 0));
 
         let regular_size = font.draw(&mut regular, "GPE", 14.0, bounds, Pixel::WHITE);
-        let supersampled_size = font.draw_supersampled(
-            &mut supersampled,
-            "GPE",
-            14.0,
-            bounds,
-            Pixel::WHITE,
-            1,
-        );
+        let supersampled_size =
+            font.draw_supersampled(&mut supersampled, "GPE", 14.0, bounds, Pixel::WHITE, 1);
 
         assert_eq!(regular_size, supersampled_size);
         assert_eq!(regular.as_rgba8(), supersampled.as_rgba8());
@@ -281,14 +275,7 @@ mod tests {
         let mut framebuffer = Framebuffer::new(160, 48);
         framebuffer.clear(Pixel::rgba(0, 0, 0, 0));
 
-        let size = font.draw_supersampled(
-            &mut framebuffer,
-            "GPE",
-            18.0,
-            bounds,
-            Pixel::WHITE,
-            3,
-        );
+        let size = font.draw_supersampled(&mut framebuffer, "GPE", 18.0, bounds, Pixel::WHITE, 3);
 
         assert!(size.width > 0);
         assert!(size.height > 0);
