@@ -1,5 +1,6 @@
 pub mod experimental;
 pub mod experimental_spatial;
+pub mod flags;
 #[cfg(feature = "outline-fonts")]
 pub mod fonts;
 pub mod paged_spatial;
@@ -16,6 +17,7 @@ mod ordinal_identity_tests;
 #[cfg(test)]
 mod tabs_contract_tests;
 
+pub use flags::FlagIcon;
 pub use pause::{PauseConfig, PauseGame};
 pub use style::{UiComponentStyle, UiStyleOverride, UiStyleSheet, UiVisualState};
 pub use toolkit::{RepeatConfig, RepeatState, Ui, UiResponse, UiState, UiTheme};
