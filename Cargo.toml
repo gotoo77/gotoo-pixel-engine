@@ -58,6 +58,10 @@ name = "gpe_ui_p4_font_gallery"
 required-features = ["outline-fonts"]
 
 [[example]]
+name = "gpe_ui_language_gallery"
+required-features = ["outline-fonts"]
+
+[[example]]
 name = "gpe_ui_p4_font_gallery_web"
 path = "examples/gpe_ui_p4_font_gallery_web.rs"
 crate-type = ["cdylib"]

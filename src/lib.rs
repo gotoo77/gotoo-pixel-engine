@@ -15,6 +15,8 @@ mod image;
 mod image_fit;
 mod input;
 #[cfg(feature = "outline-fonts")]
+mod outline_font_stack;
+#[cfg(feature = "outline-fonts")]
 pub mod outline_text;
 mod pixel;
 mod pixel_game_host;
@@ -65,6 +67,8 @@ pub use input::{
     GamepadConnectionEvent, GamepadDeviceInfo, GamepadId, GamepadMappingSource, Input, Key,
     MouseButton, TextInputEvent, Touch, TouchPhase,
 };
+#[cfg(feature = "outline-fonts")]
+pub use outline_font_stack::{OutlineFontRun, OutlineFontStack};
 pub use pixel::Pixel;
 pub use pixel_game_host::PixelGameHost;
 #[cfg(feature = "diagnostics")]

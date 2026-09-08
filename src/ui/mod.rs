@@ -1,7 +1,11 @@
 pub mod experimental;
 pub mod experimental_spatial;
+pub mod flags;
 #[cfg(feature = "outline-fonts")]
 pub mod fonts;
+pub mod icon;
+pub mod icon_text;
+pub mod language;
 pub mod paged_spatial;
 
 mod kernel;
@@ -16,6 +20,14 @@ mod ordinal_identity_tests;
 #[cfg(test)]
 mod tabs_contract_tests;
 
+pub use flags::FlagIcon;
+pub use icon::UiIcon;
+pub use icon_text::{IconTextLayout, draw_icon_text, icon_text_layout};
+pub use language::{
+    CHINESE_SIMPLIFIED, CHINESE_TRADITIONAL, ENGLISH, FRENCH, GERMAN, ITALIAN, JAPANESE, KOREAN,
+    LanguageOption, PORTUGUESE_BRAZIL, PORTUGUESE_PORTUGAL, RUSSIAN, SPANISH, TextScriptClass,
+    classify_text_script, recommended_raster_scale,
+};
 pub use pause::{PauseConfig, PauseGame};
 pub use style::{UiComponentStyle, UiStyleOverride, UiStyleSheet, UiVisualState};
 pub use toolkit::{RepeatConfig, RepeatState, Ui, UiResponse, UiState, UiTheme};
