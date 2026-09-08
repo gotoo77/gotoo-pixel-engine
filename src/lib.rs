@@ -68,7 +68,7 @@ pub use input::{
     MouseButton, TextInputEvent, Touch, TouchPhase,
 };
 #[cfg(feature = "outline-fonts")]
-pub use outline_font_stack::OutlineFontStack;
+pub use outline_font_stack::{OutlineFontRun, OutlineFontStack};
 pub use pixel::Pixel;
 pub use pixel_game_host::PixelGameHost;
 #[cfg(feature = "diagnostics")]
