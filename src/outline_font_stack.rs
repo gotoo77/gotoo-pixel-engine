@@ -15,7 +15,7 @@ pub struct OutlineFontRun {
 }
 
 impl OutlineFontRun {
-    pub fn text<'a>(self, source: &'a str) -> &'a str {
+    pub fn text(self, source: &str) -> &str {
         &source[self.start..self.end]
     }
 }
@@ -276,24 +276,11 @@ mod tests {
         };
 
         assert_eq!(
-            stack.draw(
-                &mut framebuffer,
-                "日本語",
-                20.0,
-                bounds,
-                Pixel::WHITE,
-            ),
+            stack.draw(&mut framebuffer, "日本語", 20.0, bounds, Pixel::WHITE,),
             None
         );
         assert_eq!(
-            stack.draw_runs(
-                &mut framebuffer,
-                "日本語",
-                20.0,
-                bounds,
-                Pixel::WHITE,
-                3,
-            ),
+            stack.draw_runs(&mut framebuffer, "日本語", 20.0, bounds, Pixel::WHITE, 3,),
             None
         );
     }
