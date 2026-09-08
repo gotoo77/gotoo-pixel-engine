@@ -79,9 +79,9 @@ pub fn icon_text_layout(
 /// Interaction, focus and borders stay owned by the caller. This makes the
 /// primitive usable by both the immediate-mode toolkit and game-specific UI
 /// surfaces without coupling icon rendering to button semantics.
-pub fn draw_icon_text(
+pub fn draw_icon_text<I: UiIcon>(
     framebuffer: &mut Framebuffer,
-    icon: UiIcon,
+    icon: &I,
     renderer: TextRenderer,
     bounds: Rect,
     text: &str,
@@ -155,8 +155,8 @@ fn to_i32(value: u32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Font;
     use super::super::FlagIcon;
+    use crate::Font;
 
     #[test]
     fn common_flag_and_label_are_centered_as_one_group() {
@@ -264,9 +264,10 @@ mod tests {
     fn draw_icon_text_paints_both_flag_and_label() {
         let mut framebuffer = Framebuffer::new(180, 32);
         let renderer = TextRenderer::new(Font::Pixel5x7);
+        let icon = FlagIcon::France;
         let layout = draw_icon_text(
             &mut framebuffer,
-            UiIcon::Flag(FlagIcon::France),
+            &icon,
             renderer,
             Rect {
                 x: 0,
