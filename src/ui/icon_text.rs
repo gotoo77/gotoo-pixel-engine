@@ -79,6 +79,11 @@ pub fn icon_text_layout(
 /// Interaction, focus and borders stay owned by the caller. This makes the
 /// primitive usable by both the immediate-mode toolkit and game-specific UI
 /// surfaces without coupling icon rendering to button semantics.
+///
+/// The explicit arguments keep this low-level drawing primitive allocation-free
+/// and make call sites readable; grouping them would add a configuration type
+/// without changing semantics.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_icon_text<I: UiIcon>(
     framebuffer: &mut Framebuffer,
     icon: &I,
@@ -154,8 +159,8 @@ fn to_i32(value: u32) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::FlagIcon;
+    use super::*;
     use crate::Font;
 
     #[test]
