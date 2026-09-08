@@ -7,6 +7,12 @@ use fontdue::{
     layout::{CoordinateSystem, GlyphRasterConfig, Layout, LayoutSettings, TextStyle},
 };
 
+/// Maximum supersampling factor accepted by [`OutlineFont::draw_supersampled`].
+///
+/// Keeping this bounded prevents accidental large temporary framebuffers while
+/// still providing enough headroom for dense glyphs such as CJK at small UI sizes.
+pub const MAX_TEXT_RASTER_SCALE: u32 = 4;
+
 /// One owned font and its bounded glyph cache. Multiple instances can coexist.
 /// Uses fontdue's basic layout, not complex-script shaping or automatic fallback.
 pub struct OutlineFont {
@@ -109,5 +115,197 @@ impl OutlineFont {
             }
         }
         measured
+    }
+
+    /// Paints outline text through a higher-resolution temporary surface and
+    /// box-downsamples it back to the logical UI size.
+    ///
+    /// This keeps layout coordinates and apparent text size unchanged while
+    /// increasing raster precision. It is primarily useful for dense glyphs
+    /// (notably CJK) that lose too much detail at small pixel sizes.
+    ///
+    /// `raster_scale` is clamped to `1..=MAX_TEXT_RASTER_SCALE`. A scale of 1 is
+    /// exactly equivalent to [`OutlineFont::draw`]. If temporary dimensions
+    /// overflow, rendering safely falls back to the normal path.
+    pub fn draw_supersampled(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        text: &str,
+        px: f32,
+        bounds: Rect,
+        color: Pixel,
+        raster_scale: u32,
+    ) -> Size {
+        let raster_scale = raster_scale.clamp(1, MAX_TEXT_RASTER_SCALE);
+        if raster_scale == 1 || bounds.width == 0 || bounds.height == 0 {
+            return self.draw(framebuffer, text, px, bounds, color);
+        }
+
+        let Some(temp_width) = bounds.width.checked_mul(raster_scale) else {
+            return self.draw(framebuffer, text, px, bounds, color);
+        };
+        let Some(temp_height) = bounds.height.checked_mul(raster_scale) else {
+            return self.draw(framebuffer, text, px, bounds, color);
+        };
+
+        let mut temp = Framebuffer::new(temp_width, temp_height);
+        temp.clear(Pixel::rgba(0, 0, 0, 0));
+        let temp_bounds = Rect {
+            x: 0,
+            y: 0,
+            width: temp_width,
+            height: temp_height,
+        };
+        let measured = self.draw(
+            &mut temp,
+            text,
+            px * raster_scale as f32,
+            temp_bounds,
+            color,
+        );
+
+        let pixels = temp.as_rgba8();
+        let samples_per_pixel = raster_scale.saturating_mul(raster_scale);
+        for logical_y in 0..bounds.height {
+            let dest_y = i64::from(bounds.y) + i64::from(logical_y);
+            if dest_y < 0 || dest_y >= i64::from(framebuffer.height()) {
+                continue;
+            }
+            for logical_x in 0..bounds.width {
+                let dest_x = i64::from(bounds.x) + i64::from(logical_x);
+                if dest_x < 0 || dest_x >= i64::from(framebuffer.width()) {
+                    continue;
+                }
+
+                let mut alpha_sum = 0_u32;
+                let source_x = logical_x * raster_scale;
+                let source_y = logical_y * raster_scale;
+                for sample_y in 0..raster_scale {
+                    for sample_x in 0..raster_scale {
+                        let x = source_x + sample_x;
+                        let y = source_y + sample_y;
+                        let index = ((y * temp_width + x) * 4 + 3) as usize;
+                        alpha_sum = alpha_sum.saturating_add(u32::from(pixels[index]));
+                    }
+                }
+
+                let alpha = ((alpha_sum + samples_per_pixel / 2) / samples_per_pixel) as u8;
+                if alpha == 0 {
+                    continue;
+                }
+                framebuffer.blend_rgba8(
+                    dest_x as u32,
+                    dest_y as u32,
+                    &[color.r, color.g, color.b, alpha],
+                );
+            }
+        }
+
+        Size {
+            width: div_ceil_u32(measured.width, raster_scale),
+            height: div_ceil_u32(measured.height, raster_scale),
+        }
+    }
+}
+
+fn div_ceil_u32(value: u32, divisor: u32) -> u32 {
+    value / divisor + u32::from(value % divisor != 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::fonts::EXO_2;
+
+    fn opaque_pixel_count(framebuffer: &Framebuffer) -> usize {
+        framebuffer
+            .as_rgba8()
+            .chunks_exact(4)
+            .filter(|pixel| pixel[3] != 0)
+            .count()
+    }
+
+    #[test]
+    fn supersampled_scale_one_matches_regular_draw() {
+        let mut font = OutlineFont::from_bytes(EXO_2).expect("bundled font");
+        let bounds = Rect {
+            x: 2,
+            y: 2,
+            width: 80,
+            height: 24,
+        };
+        let mut regular = Framebuffer::new(96, 32);
+        let mut supersampled = Framebuffer::new(96, 32);
+        regular.clear(Pixel::rgba(0, 0, 0, 0));
+        supersampled.clear(Pixel::rgba(0, 0, 0, 0));
+
+        let regular_size = font.draw(&mut regular, "GPE", 14.0, bounds, Pixel::WHITE);
+        let supersampled_size = font.draw_supersampled(
+            &mut supersampled,
+            "GPE",
+            14.0,
+            bounds,
+            Pixel::WHITE,
+            1,
+        );
+
+        assert_eq!(regular_size, supersampled_size);
+        assert_eq!(regular.as_rgba8(), supersampled.as_rgba8());
+    }
+
+    #[test]
+    fn supersampled_draw_keeps_logical_size_and_produces_coverage() {
+        let mut font = OutlineFont::from_bytes(EXO_2).expect("bundled font");
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 96,
+            height: 32,
+        };
+        let mut regular = Framebuffer::new(96, 32);
+        let mut high_quality = Framebuffer::new(96, 32);
+        regular.clear(Pixel::rgba(0, 0, 0, 0));
+        high_quality.clear(Pixel::rgba(0, 0, 0, 0));
+
+        let regular_size = font.draw(&mut regular, "PARAMETRES", 13.0, bounds, Pixel::WHITE);
+        let high_quality_size = font.draw_supersampled(
+            &mut high_quality,
+            "PARAMETRES",
+            13.0,
+            bounds,
+            Pixel::WHITE,
+            3,
+        );
+
+        assert!(opaque_pixel_count(&high_quality) > 0);
+        assert!(high_quality_size.width.abs_diff(regular_size.width) <= 1);
+        assert!(high_quality_size.height.abs_diff(regular_size.height) <= 1);
+    }
+
+    #[test]
+    fn supersampling_factor_is_bounded() {
+        let mut font = OutlineFont::from_bytes(EXO_2).expect("bundled font");
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 24,
+        };
+        let mut capped = Framebuffer::new(64, 24);
+        let mut explicit = Framebuffer::new(64, 24);
+        capped.clear(Pixel::rgba(0, 0, 0, 0));
+        explicit.clear(Pixel::rgba(0, 0, 0, 0));
+
+        font.draw_supersampled(&mut capped, "GPE", 12.0, bounds, Pixel::WHITE, 99);
+        font.draw_supersampled(
+            &mut explicit,
+            "GPE",
+            12.0,
+            bounds,
+            Pixel::WHITE,
+            MAX_TEXT_RASTER_SCALE,
+        );
+
+        assert_eq!(capped.as_rgba8(), explicit.as_rgba8());
     }
 }
