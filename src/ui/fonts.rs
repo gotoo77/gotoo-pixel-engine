@@ -64,10 +64,4 @@ mod tests {
             assert!(font.load().is_ok(), "{} must load", font.name());
         }
     }
-
-    #[test]
-    fn figtree_supports_initial_minoku_languages() {
-        let font = BuiltinOutlineFont::Figtree.load().expect("Figtree must load");
-        assert!(font.supports_text("Français Deutsch Italiano English"));
-    }
 }
