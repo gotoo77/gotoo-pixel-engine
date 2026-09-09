@@ -20,9 +20,9 @@ pub const UNBOUNDED: &[u8] = include_bytes!("../../assets/fonts/p4/unbounded/fon
 
 /// Curated outline fonts bundled with GPE.
 ///
-/// Games can depend on this catalog instead of duplicating font binaries in
-/// each standalone repository. Keep this list intentionally small: adding a
-/// face here makes it part of GPE's public asset contract.
+/// Consumers can depend on this catalog instead of duplicating font binaries
+/// or knowing internal asset paths. Keep this list intentionally small: adding
+/// a face here makes it part of GPE's public asset contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuiltinOutlineFont {
     Figtree,
