@@ -47,3 +47,13 @@ export function createBoundedTimeline({ maxEvents = 64, now = () => performance.
     },
   };
 }
+
+export function formatTimeline(events) {
+  if (!events.length) return "  no events";
+  return events
+    .map(({ ms, label, detail }) => {
+      const suffix = detail ? ` — ${detail}` : "";
+      return `  T+${Number(ms).toFixed(1).padStart(7)} ms  ${safeString(label)}${suffix}`;
+    })
+    .join("\n");
+}
