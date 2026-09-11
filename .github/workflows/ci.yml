@@ -139,8 +139,14 @@ jobs:
         if: steps.cache-wasm-bindgen-cli.outputs.cache-hit != 'true'
         run: cargo +1.97.1 install wasm-bindgen-cli --version 0.2.127 --locked
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Validate Web targets
         run: python3 scripts/dev.py check-web
+
+      - name: Validate real browser wasm/winit startup
+        run: python3 scripts/dev.py check-web-browser
 
       - name: Validate Web packaging
         run: python3 scripts/dev.py build-web
