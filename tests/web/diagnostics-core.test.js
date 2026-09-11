@@ -4,6 +4,7 @@ import {
   createBoundedTimeline,
   diagnosticsRequested,
   errorMessage,
+  formatTimeline,
   isWinitControlFlowHandoff,
   safeString,
 } from "../../web/diagnostics-core.js";
@@ -94,6 +95,26 @@ describe("createBoundedTimeline", () => {
   it("rejects invalid bounds", () => {
     expect(() => createBoundedTimeline({ maxEvents: 0 })).toThrow(RangeError);
     expect(() => createBoundedTimeline({ maxEvents: 1.5 })).toThrow(RangeError);
+  });
+});
+
+describe("formatTimeline", () => {
+  it("formats an empty timeline deterministically", () => {
+    expect(formatTimeline([])).toBe("  no events");
+  });
+
+  it("formats timestamps, labels and optional details exactly", () => {
+    expect(
+      formatTimeline([
+        { ms: 0, label: "diagnostics installed", detail: null },
+        { ms: 12.34, label: "adapter selected", detail: "vendor=nvidia" },
+      ]),
+    ).toBe(
+      [
+        "  T+    0.0 ms  diagnostics installed",
+        "  T+   12.3 ms  adapter selected — vendor=nvidia",
+      ].join("\n"),
+    );
   });
 });
 
