@@ -98,6 +98,27 @@ def command_check_web_unit(_: argparse.Namespace) -> None:
     print("==> OK")
 
 
+def command_check_web_browser(_: argparse.Namespace) -> None:
+    generated = ROOT / "tests" / "browser" / "generated"
+    if generated.exists():
+        shutil.rmtree(generated)
+    wasm = cargo_build_web("web_demo", release=False)
+    wasm_bindgen(wasm, generated)
+    run(["npm", "run", "test:browser"])
+    print("==> OK")
+
+
+def verify_pages_shell(dist: Path) -> None:
+    required = [dist / name for name in PAGES_STATIC_FILES]
+    missing = [path.name for path in required if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"Pages shell missing required files: {', '.join(missing)}")
+
+    diagnostics = (dist / "diagnostics.js").read_text(encoding="utf-8")
+    if 'from "./diagnostics-core.js"' not in diagnostics:
+        raise RuntimeError("Pages diagnostics.js does not import diagnostics-core.js")
+
+
 def prepare_pages() -> Path:
     dist = ROOT / "dist"
     if dist.exists():
@@ -106,6 +127,7 @@ def prepare_pages() -> Path:
     pkg.mkdir(parents=True)
     for name in PAGES_STATIC_FILES:
         shutil.copy2(ROOT / "web" / name, dist / name)
+    verify_pages_shell(dist)
     return pkg
 
 
@@ -153,6 +175,12 @@ def parser() -> argparse.ArgumentParser:
 
     check_web_unit = sub.add_parser("check-web-unit", help="run Vitest Web shell unit tests")
     check_web_unit.set_defaults(handler=command_check_web_unit)
+
+    check_web_browser = sub.add_parser(
+        "check-web-browser",
+        help="run the real wasm-bindgen + winit Chromium smoke test",
+    )
+    check_web_browser.set_defaults(handler=command_check_web_browser)
 
     build_web = sub.add_parser("build-web", help="build/package GPE Web/WASM surfaces")
     build_web.add_argument("--release", action="store_true")
