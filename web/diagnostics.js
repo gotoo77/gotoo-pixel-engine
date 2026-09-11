@@ -1,5 +1,6 @@
 const PARAM = "diagnostics";
 const REFRESH_MS = 1000;
+const MAX_TIMELINE_EVENTS = 64;
 
 export function diagnosticsRequested(search = globalThis.location?.search ?? "") {
   const value = new URLSearchParams(search).get(PARAM);
@@ -140,17 +141,43 @@ export function installGpeWebDiagnostics() {
   if (!diagnosticsRequested()) return null;
 
   const panel = makePanel();
+  const startedAt = performance.now();
+  const timeline = [];
   let snapshotProvider = null;
+  let startupState = "page shell initializing";
   let startupError = null;
   let gpuFacts = {
     available: Boolean(navigator.gpu),
     adapter: "probing…",
   };
 
+  function markEvent(label, detail = null) {
+    timeline.push({
+      ms: Math.max(0, performance.now() - startedAt),
+      label: safeString(label),
+      detail: detail === null ? null : safeString(detail),
+    });
+    if (timeline.length > MAX_TIMELINE_EVENTS) timeline.shift();
+    render();
+  }
+
+  markEvent("diagnostics installed");
+  markEvent("browser GPU adapter probe started", `navigator.gpu=${Boolean(navigator.gpu)}`);
+
   browserGpuFacts().then((facts) => {
     gpuFacts = facts;
-    render();
+    markEvent("browser GPU adapter probe finished", facts.adapter);
   });
+
+  function timelineReport() {
+    if (!timeline.length) return "  no events";
+    return timeline
+      .map(({ ms, label, detail }) => {
+        const suffix = detail ? ` — ${detail}` : "";
+        return `  T+${ms.toFixed(1).padStart(7)} ms  ${label}${suffix}`;
+      })
+      .join("\n");
+  }
 
   function report() {
     const canvas = canvasFacts();
@@ -180,7 +207,11 @@ export function installGpeWebDiagnostics() {
       `  viewport: ${globalThis.innerWidth ?? "unknown"} x ${globalThis.innerHeight ?? "unknown"}`,
       "",
       "Startup",
+      `  state: ${startupState}`,
       `  error: ${startupError ?? "none observed by page shell"}`,
+      "",
+      "Startup timeline",
+      timelineReport(),
       "",
       "GPE engine observation",
       engine,
@@ -212,13 +243,21 @@ export function installGpeWebDiagnostics() {
   render();
 
   return {
+    markEvent,
     setSnapshotProvider(provider) {
       snapshotProvider = typeof provider === "function" ? provider : null;
-      render();
+      markEvent(
+        snapshotProvider ? "engine snapshot provider attached" : "engine snapshot provider cleared",
+      );
+    },
+    setStartupState(state) {
+      startupState = safeString(state);
+      markEvent("startup state changed", startupState);
     },
     setStartupError(error) {
       startupError = safeString(error);
-      render();
+      startupState = "failed";
+      markEvent("startup error", startupError);
     },
   };
 }
