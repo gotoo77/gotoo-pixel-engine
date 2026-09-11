@@ -1,16 +1,13 @@
-const PARAM = "diagnostics";
+import {
+  createBoundedTimeline,
+  diagnosticsRequested,
+  safeString,
+} from "./diagnostics-core.js";
+
 const REFRESH_MS = 1000;
 const MAX_TIMELINE_EVENTS = 64;
 
-export function diagnosticsRequested(search = globalThis.location?.search ?? "") {
-  const value = new URLSearchParams(search).get(PARAM);
-  return value === "1" || value === "true" || value === "on";
-}
-
-function safeString(value, fallback = "unknown") {
-  if (value === undefined || value === null || value === "") return fallback;
-  return String(value);
-}
+export { diagnosticsRequested };
 
 function canvasFacts() {
   const canvas = document.querySelector("canvas");
@@ -138,11 +135,10 @@ function makePanel() {
 }
 
 export function installGpeWebDiagnostics() {
-  if (!diagnosticsRequested()) return null;
+  if (!diagnosticsRequested(globalThis.location?.search ?? "")) return null;
 
   const panel = makePanel();
-  const startedAt = performance.now();
-  const timeline = [];
+  const timeline = createBoundedTimeline({ maxEvents: MAX_TIMELINE_EVENTS });
   let snapshotProvider = null;
   let startupState = "page shell initializing";
   let startupError = null;
@@ -151,13 +147,12 @@ export function installGpeWebDiagnostics() {
     adapter: "probing…",
   };
 
+  function render() {
+    panel.output.textContent = report();
+  }
+
   function markEvent(label, detail = null) {
-    timeline.push({
-      ms: Math.max(0, performance.now() - startedAt),
-      label: safeString(label),
-      detail: detail === null ? null : safeString(detail),
-    });
-    if (timeline.length > MAX_TIMELINE_EVENTS) timeline.shift();
+    timeline.mark(label, detail);
     render();
   }
 
@@ -170,8 +165,9 @@ export function installGpeWebDiagnostics() {
   });
 
   function timelineReport() {
-    if (!timeline.length) return "  no events";
-    return timeline
+    const events = timeline.snapshot();
+    if (!events.length) return "  no events";
+    return events
       .map(({ ms, label, detail }) => {
         const suffix = detail ? ` — ${detail}` : "";
         return `  T+${ms.toFixed(1).padStart(7)} ms  ${label}${suffix}`;
@@ -220,10 +216,6 @@ export function installGpeWebDiagnostics() {
       "  Browser adapter data is a separate safe JS probe; it is not claimed to be the adapter selected by GPE/wgpu.",
       "  Unknown data is intentionally left unknown rather than inferred.",
     ].join("\n");
-  }
-
-  function render() {
-    panel.output.textContent = report();
   }
 
   panel.copy.addEventListener("click", async () => {
