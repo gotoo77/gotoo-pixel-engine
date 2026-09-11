@@ -1,7 +1,7 @@
 export const WINIT_CONTROL_FLOW_MARKER = "Using exceptions for control flow";
 export const WINIT_NOT_ERROR_MARKER = "This isn't actually an error";
 
-export function diagnosticsRequested(search = "") {
+export function diagnosticsRequested(search = globalThis.location?.search ?? "") {
   const value = new URLSearchParams(search).get("diagnostics");
   return value === "1" || value === "true" || value === "on";
 }
