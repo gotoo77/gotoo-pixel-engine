@@ -94,7 +94,7 @@ def command_check_web(_: argparse.Namespace) -> None:
 
 
 def command_check_web_unit(_: argparse.Namespace) -> None:
-    run(["npm", "test", "--", "--runInBand"])
+    run(["npm", "test"])
     print("==> OK")
 
 
