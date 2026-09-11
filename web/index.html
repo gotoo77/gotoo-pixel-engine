@@ -52,19 +52,7 @@
         diagnosticsRequested,
         installGpeWebDiagnostics,
       } from "./diagnostics.js";
-
-      function errorMessage(error) {
-        if (typeof error?.message === "string") return error.message;
-        return String(error);
-      }
-
-      function isWinitControlFlowHandoff(error) {
-        const message = errorMessage(error);
-        return (
-          message.includes("Using exceptions for control flow") &&
-          message.includes("This isn't actually an error")
-        );
-      }
+      import { isWinitControlFlowHandoff } from "./diagnostics-core.js";
 
       const diagnosticsEnabled = diagnosticsRequested();
       const diagnostics = installGpeWebDiagnostics();
