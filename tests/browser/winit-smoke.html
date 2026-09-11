@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>GPE winit smoke</title>
+  </head>
+  <body>
+    <div id="status">starting</div>
+    <script type="module">
+      import init from "./generated/web_demo.js";
+      import {
+        errorMessage,
+        isWinitControlFlowHandoff,
+      } from "../../web/diagnostics-core.js";
+
+      const status = document.querySelector("#status");
+      const setState = (phase, extra = {}) => {
+        globalThis.__gpeSmokeState = {
+          phase,
+          webgpu: Boolean(navigator.gpu),
+          ...extra,
+        };
+        status.textContent = phase;
+      };
+
+      setState("initializing");
+
+      try {
+        await init();
+        setState("initialized");
+      } catch (error) {
+        if (isWinitControlFlowHandoff(error)) {
+          setState("winit-handoff", { message: errorMessage(error) });
+        } else {
+          setState("failed", { message: errorMessage(error) });
+          throw error;
+        }
+      }
+    </script>
+  </body>
+</html>

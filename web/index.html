@@ -52,23 +52,50 @@
         diagnosticsRequested,
         installGpeWebDiagnostics,
       } from "./diagnostics.js";
+      import { isWinitControlFlowHandoff } from "./diagnostics-core.js";
 
       const diagnosticsEnabled = diagnosticsRequested();
       const diagnostics = installGpeWebDiagnostics();
+      diagnostics?.markEvent("page shell initialized");
+
       const audioHint = document.querySelector("#audio-hint");
       const dismissAudioHint = () => audioHint?.remove();
       for (const type of ["pointerdown", "touchstart", "keydown"]) {
         document.addEventListener(type, dismissAudioHint, { once: true, capture: true });
       }
 
+      let arcade;
       try {
-        const arcade = await import("./pkg/arcade-web.js");
-        await arcade.default();
-        diagnostics?.setSnapshotProvider(arcade.gpe_diagnostics_snapshot);
+        diagnostics?.setStartupState("importing Arcade module");
+        diagnostics?.markEvent("Arcade module import started");
+        arcade = await import("./pkg/arcade-web.js");
+        diagnostics?.markEvent("Arcade module import completed");
       } catch (error) {
-        console.error("GPE Arcade startup failed", error);
+        console.error("GPE Arcade module import failed", error);
         diagnostics?.setStartupError(error);
         if (!diagnosticsEnabled) throw error;
+      }
+
+      if (arcade) {
+        diagnostics?.setSnapshotProvider(arcade.gpe_diagnostics_snapshot);
+        diagnostics?.setStartupState("initializing Arcade WASM");
+        diagnostics?.markEvent("Arcade WASM initialization started");
+
+        try {
+          await arcade.default();
+          diagnostics?.setStartupState("Arcade WASM initialized");
+          diagnostics?.markEvent("Arcade WASM initialization resolved");
+        } catch (error) {
+          if (isWinitControlFlowHandoff(error)) {
+            console.debug("GPE Arcade event loop handed off to winit");
+            diagnostics?.markEvent("winit event loop control-flow handoff");
+            diagnostics?.setStartupState("event loop running (winit handoff)");
+          } else {
+            console.error("GPE Arcade startup failed", error);
+            diagnostics?.setStartupError(error);
+            if (!diagnosticsEnabled) throw error;
+          }
+        }
       }
     </script>
     <script type="module" src="./fullscreen.js"></script>

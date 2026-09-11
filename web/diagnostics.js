@@ -1,15 +1,14 @@
-const PARAM = "diagnostics";
+import {
+  createBoundedTimeline,
+  diagnosticsRequested,
+  formatTimeline,
+  safeString,
+} from "./diagnostics-core.js";
+
 const REFRESH_MS = 1000;
+const MAX_TIMELINE_EVENTS = 64;
 
-export function diagnosticsRequested(search = globalThis.location?.search ?? "") {
-  const value = new URLSearchParams(search).get(PARAM);
-  return value === "1" || value === "true" || value === "on";
-}
-
-function safeString(value, fallback = "unknown") {
-  if (value === undefined || value === null || value === "") return fallback;
-  return String(value);
-}
+export { diagnosticsRequested };
 
 function canvasFacts() {
   const canvas = document.querySelector("canvas");
@@ -137,19 +136,33 @@ function makePanel() {
 }
 
 export function installGpeWebDiagnostics() {
-  if (!diagnosticsRequested()) return null;
+  if (!diagnosticsRequested(globalThis.location?.search ?? "")) return null;
 
   const panel = makePanel();
+  const timeline = createBoundedTimeline({ maxEvents: MAX_TIMELINE_EVENTS });
   let snapshotProvider = null;
+  let startupState = "page shell initializing";
   let startupError = null;
   let gpuFacts = {
     available: Boolean(navigator.gpu),
     adapter: "probing…",
   };
 
+  function render() {
+    panel.output.textContent = report();
+  }
+
+  function markEvent(label, detail = null) {
+    timeline.mark(label, detail);
+    render();
+  }
+
+  markEvent("diagnostics installed");
+  markEvent("browser GPU adapter probe started", `navigator.gpu=${Boolean(navigator.gpu)}`);
+
   browserGpuFacts().then((facts) => {
     gpuFacts = facts;
-    render();
+    markEvent("browser GPU adapter probe finished", facts.adapter);
   });
 
   function report() {
@@ -180,7 +193,11 @@ export function installGpeWebDiagnostics() {
       `  viewport: ${globalThis.innerWidth ?? "unknown"} x ${globalThis.innerHeight ?? "unknown"}`,
       "",
       "Startup",
+      `  state: ${startupState}`,
       `  error: ${startupError ?? "none observed by page shell"}`,
+      "",
+      "Startup timeline",
+      formatTimeline(timeline.snapshot()),
       "",
       "GPE engine observation",
       engine,
@@ -189,10 +206,6 @@ export function installGpeWebDiagnostics() {
       "  Browser adapter data is a separate safe JS probe; it is not claimed to be the adapter selected by GPE/wgpu.",
       "  Unknown data is intentionally left unknown rather than inferred.",
     ].join("\n");
-  }
-
-  function render() {
-    panel.output.textContent = report();
   }
 
   panel.copy.addEventListener("click", async () => {
@@ -212,13 +225,21 @@ export function installGpeWebDiagnostics() {
   render();
 
   return {
+    markEvent,
     setSnapshotProvider(provider) {
       snapshotProvider = typeof provider === "function" ? provider : null;
-      render();
+      markEvent(
+        snapshotProvider ? "engine snapshot provider attached" : "engine snapshot provider cleared",
+      );
+    },
+    setStartupState(state) {
+      startupState = safeString(state);
+      markEvent("startup state changed", startupState);
     },
     setStartupError(error) {
       startupError = safeString(error);
-      render();
+      startupState = "failed";
+      markEvent("startup error", startupError);
     },
   };
 }

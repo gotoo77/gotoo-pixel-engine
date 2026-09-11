@@ -1,0 +1,14 @@
+{
+  "name": "gotoo-pixel-engine-web-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run tests/web",
+    "test:web": "vitest run tests/web",
+    "test:browser": "playwright test tests/browser/winit-smoke.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0",
+    "vitest": "3.2.4"
+  }
+}

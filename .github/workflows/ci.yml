@@ -106,6 +106,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install Web test dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Validate Web shell unit tests
+        run: python3 scripts/dev.py check-web-unit
+
       - name: Install Rust 1.97.1
         run: |
           rustup toolchain install 1.97.1 --profile minimal
@@ -128,8 +139,14 @@ jobs:
         if: steps.cache-wasm-bindgen-cli.outputs.cache-hit != 'true'
         run: cargo +1.97.1 install wasm-bindgen-cli --version 0.2.127 --locked
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Validate Web targets
         run: python3 scripts/dev.py check-web
+
+      - name: Validate real browser wasm/winit startup
+        run: python3 scripts/dev.py check-web-browser
 
       - name: Validate Web packaging
         run: python3 scripts/dev.py build-web
