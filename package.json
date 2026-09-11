@@ -1,0 +1,12 @@
+{
+  "name": "gotoo-pixel-engine-web-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:web": "vitest run tests/web"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}
