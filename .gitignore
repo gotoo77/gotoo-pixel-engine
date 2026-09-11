@@ -2,3 +2,6 @@
 /web/pkg/
 /dist/
 /node_modules/
+/tests/browser/generated/
+/playwright-report/
+/test-results/
