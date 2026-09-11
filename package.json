@@ -7,6 +7,6 @@
     "test:web": "vitest run tests/web"
   },
   "devDependencies": {
-    "vitest": "^3.2.4"
+    "vitest": "3.2.4"
   }
 }
