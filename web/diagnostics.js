@@ -1,6 +1,7 @@
 import {
   createBoundedTimeline,
   diagnosticsRequested,
+  formatTimeline,
   safeString,
 } from "./diagnostics-core.js";
 
@@ -164,17 +165,6 @@ export function installGpeWebDiagnostics() {
     markEvent("browser GPU adapter probe finished", facts.adapter);
   });
 
-  function timelineReport() {
-    const events = timeline.snapshot();
-    if (!events.length) return "  no events";
-    return events
-      .map(({ ms, label, detail }) => {
-        const suffix = detail ? ` — ${detail}` : "";
-        return `  T+${ms.toFixed(1).padStart(7)} ms  ${label}${suffix}`;
-      })
-      .join("\n");
-  }
-
   function report() {
     const canvas = canvasFacts();
     let engine = "unavailable (consumer did not expose a diagnostics snapshot)";
@@ -207,7 +197,7 @@ export function installGpeWebDiagnostics() {
       `  error: ${startupError ?? "none observed by page shell"}`,
       "",
       "Startup timeline",
-      timelineReport(),
+      formatTimeline(timeline.snapshot()),
       "",
       "GPE engine observation",
       engine,
