@@ -20,6 +20,7 @@ PAGES_STATIC_FILES = [
     "audio-unlock.js",
     "fullscreen.js",
     "diagnostics.js",
+    "diagnostics-core.js",
 ]
 
 
@@ -92,6 +93,11 @@ def command_check_web(_: argparse.Namespace) -> None:
     print("==> OK")
 
 
+def command_check_web_unit(_: argparse.Namespace) -> None:
+    run(["npm", "test", "--", "--runInBand"])
+    print("==> OK")
+
+
 def prepare_pages() -> Path:
     dist = ROOT / "dist"
     if dist.exists():
@@ -144,6 +150,9 @@ def parser() -> argparse.ArgumentParser:
 
     check_web = sub.add_parser("check-web", help="compile GPE Web/WASM engine demos")
     check_web.set_defaults(handler=command_check_web)
+
+    check_web_unit = sub.add_parser("check-web-unit", help="run Vitest Web shell unit tests")
+    check_web_unit.set_defaults(handler=command_check_web_unit)
 
     build_web = sub.add_parser("build-web", help="build/package GPE Web/WASM surfaces")
     build_web.add_argument("--release", action="store_true")
