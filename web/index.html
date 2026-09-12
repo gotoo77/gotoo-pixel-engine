@@ -53,9 +53,11 @@
         installGpeWebDiagnostics,
       } from "./diagnostics.js";
       import { isWinitControlFlowHandoff } from "./diagnostics-core.js";
+      import { installWasmWinitStartupTrace } from "./startup-trace.js";
 
       const diagnosticsEnabled = diagnosticsRequested();
       const diagnostics = installGpeWebDiagnostics();
+      installWasmWinitStartupTrace(globalThis, document, diagnostics?.markEvent);
       diagnostics?.markEvent("page shell initialized");
 
       const audioHint = document.querySelector("#audio-hint");
