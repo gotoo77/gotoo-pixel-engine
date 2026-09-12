@@ -5,6 +5,7 @@ import {
   safeString,
   snapshotUnavailableDuringStartup,
 } from "./diagnostics-core.js";
+import { createStartupWatchdog } from "./startup-watchdog.js";
 
 const REFRESH_MS = 1000;
 const MAX_TIMELINE_EVENTS = 64;
@@ -206,15 +207,23 @@ export function installGpeWebDiagnostics() {
     available: Boolean(navigator.gpu),
     adapter: "probing…",
   };
+  let startupWatchdog = null;
 
   function render() {
     panel.output.textContent = report();
   }
 
-  function markEvent(label, detail = null) {
+  function rawMarkEvent(label, detail = null) {
     timeline.mark(label, detail);
     render();
   }
+
+  function markEvent(label, detail = null) {
+    startupWatchdog?.observe(label);
+    rawMarkEvent(label, detail);
+  }
+
+  startupWatchdog = createStartupWatchdog({ emit: rawMarkEvent });
 
   markEvent("diagnostics installed");
   installWebGpuApiTrace(navigator.gpu, markEvent);
@@ -227,6 +236,7 @@ export function installGpeWebDiagnostics() {
 
   function report() {
     const canvas = canvasFacts();
+    const watchdog = startupWatchdog.snapshot();
     let engine = "unavailable (consumer did not expose a diagnostics snapshot)";
     if (snapshotProvider) {
       try {
@@ -258,6 +268,15 @@ export function installGpeWebDiagnostics() {
       `  state: ${startupState}`,
       `  error: ${startupError ?? "none observed by page shell"}`,
       "",
+      "Startup watchdog",
+      `  status: ${watchdog.status}`,
+      `  classification: ${watchdog.classification}`,
+      `  threshold: ${watchdog.thresholdMs} ms without progress`,
+      `  elapsed: ${Math.round(watchdog.elapsedMs)} ms`,
+      `  last milestone: ${watchdog.lastMilestone}`,
+      `  no progress for: ${Math.round(watchdog.stalledForMs)} ms`,
+      `  last slow stall: ${watchdog.lastSlowDurationMs === null ? "none" : `${Math.round(watchdog.lastSlowDurationMs)} ms`}`,
+      "",
       "Startup timeline",
       formatTimeline(timeline.snapshot()),
       "",
@@ -267,6 +286,8 @@ export function installGpeWebDiagnostics() {
       "Notes",
       "  Browser adapter data is a separate JS probe; it is not claimed to be the adapter selected by GPE/wgpu.",
       "  WebGPU API tracing is diagnostics-only and may slightly perturb timing; use it to locate long waits, not to benchmark absolute latency.",
+      "  Startup watchdog classifications: FAST <1s; SUSPICIOUS 1-3s; SLOW 3-8s; VERY SLOW >=8s.",
+      "  The watchdog emits SLOW STARTUP DETECTED after 3s without a diagnostics milestone and records the recovery milestone.",
       "  Unknown data is intentionally left unknown rather than inferred.",
     ].join("\n");
   }
@@ -284,7 +305,14 @@ export function installGpeWebDiagnostics() {
   });
 
   const timer = setInterval(render, REFRESH_MS);
-  globalThis.addEventListener("pagehide", () => clearInterval(timer), { once: true });
+  globalThis.addEventListener(
+    "pagehide",
+    () => {
+      clearInterval(timer);
+      startupWatchdog.dispose();
+    },
+    { once: true },
+  );
   render();
 
   return {
