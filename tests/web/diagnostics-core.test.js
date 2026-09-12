@@ -7,6 +7,7 @@ import {
   formatTimeline,
   isWinitControlFlowHandoff,
   safeString,
+  snapshotUnavailableDuringStartup,
 } from "../../web/diagnostics-core.js";
 
 describe("diagnosticsRequested", () => {
@@ -47,6 +48,15 @@ describe("isWinitControlFlowHandoff", () => {
         "Using exceptions for control flow; This isn't actually an error",
       ),
     ).toBe(true);
+  });
+});
+
+describe("snapshotUnavailableDuringStartup", () => {
+  it("only suppresses snapshot read errors while Arcade WASM is initializing", () => {
+    expect(snapshotUnavailableDuringStartup("initializing Arcade WASM")).toBe(true);
+    expect(snapshotUnavailableDuringStartup("importing Arcade module")).toBe(false);
+    expect(snapshotUnavailableDuringStartup("event loop running (winit handoff)")).toBe(false);
+    expect(snapshotUnavailableDuringStartup("failed")).toBe(false);
   });
 });
 
