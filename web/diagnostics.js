@@ -28,9 +28,9 @@ function canvasFacts() {
   };
 }
 
-function instrumentAdapterRequestDevice(adapter, markEvent) {
-  if (!adapter || typeof adapter.requestDevice !== "function" || tracedAdapters.has(adapter)) return;
-  tracedAdapters.add(adapter);
+export function instrumentAdapterRequestDevice(adapter, markEvent, traced = tracedAdapters) {
+  if (!adapter || typeof adapter.requestDevice !== "function" || traced.has(adapter)) return;
+  traced.add(adapter);
 
   const original = adapter.requestDevice.bind(adapter);
   try {
@@ -53,8 +53,7 @@ function instrumentAdapterRequestDevice(adapter, markEvent) {
   }
 }
 
-function installWebGpuApiTrace(markEvent) {
-  const gpu = navigator.gpu;
+export function installWebGpuApiTrace(gpu, markEvent, traced = tracedAdapters) {
   if (!gpu || typeof gpu.requestAdapter !== "function") {
     markEvent("WebGPU API trace unavailable", "navigator.gpu.requestAdapter missing");
     return;
@@ -72,7 +71,7 @@ function installWebGpuApiTrace(markEvent) {
             "WebGPU requestAdapter resolved",
             adapter ? "adapter selected" : "null adapter",
           );
-          instrumentAdapterRequestDevice(adapter, markEvent);
+          instrumentAdapterRequestDevice(adapter, markEvent, traced);
           return adapter;
         } catch (error) {
           markEvent("WebGPU requestAdapter rejected", safeString(error));
@@ -218,7 +217,7 @@ export function installGpeWebDiagnostics() {
   }
 
   markEvent("diagnostics installed");
-  installWebGpuApiTrace(markEvent);
+  installWebGpuApiTrace(navigator.gpu, markEvent);
   markEvent("browser GPU adapter probe started", `navigator.gpu=${Boolean(navigator.gpu)}`);
 
   browserGpuFacts().then((facts) => {
