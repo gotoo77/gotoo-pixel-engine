@@ -9,6 +9,10 @@ import {
   safeString,
   snapshotUnavailableDuringStartup,
 } from "../../web/diagnostics-core.js";
+import {
+  installWebGpuApiTrace,
+  instrumentAdapterRequestDevice,
+} from "../../web/diagnostics.js";
 
 describe("diagnosticsRequested", () => {
   it.each([
@@ -57,6 +61,109 @@ describe("snapshotUnavailableDuringStartup", () => {
     expect(snapshotUnavailableDuringStartup("importing Arcade module")).toBe(false);
     expect(snapshotUnavailableDuringStartup("event loop running (winit handoff)")).toBe(false);
     expect(snapshotUnavailableDuringStartup("failed")).toBe(false);
+  });
+});
+
+describe("WebGPU API tracing", () => {
+  it("traces requestAdapter and requestDevice success without changing return values", async () => {
+    const events = [];
+    const markEvent = (label, detail = null) => events.push([label, detail]);
+    const device = { kind: "device" };
+    const adapter = {
+      async requestDevice(descriptor) {
+        expect(descriptor).toEqual({ label: "test-device" });
+        return device;
+      },
+    };
+    const gpu = {
+      async requestAdapter(options) {
+        expect(options).toEqual({ powerPreference: "high-performance" });
+        return adapter;
+      },
+    };
+
+    installWebGpuApiTrace(gpu, markEvent, new WeakSet());
+    const returnedAdapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+    const returnedDevice = await returnedAdapter.requestDevice({ label: "test-device" });
+
+    expect(returnedAdapter).toBe(adapter);
+    expect(returnedDevice).toBe(device);
+    expect(events).toEqual([
+      ["WebGPU API trace installed", "requestAdapter/requestDevice"],
+      ["WebGPU requestAdapter started", null],
+      ["WebGPU requestAdapter resolved", "adapter selected"],
+      ["WebGPU requestDevice started", null],
+      ["WebGPU requestDevice resolved", null],
+    ]);
+  });
+
+  it("traces and rethrows requestAdapter rejection", async () => {
+    const events = [];
+    const failure = new Error("adapter boom");
+    const gpu = {
+      async requestAdapter() {
+        throw failure;
+      },
+    };
+
+    installWebGpuApiTrace(gpu, (label, detail = null) => events.push([label, detail]), new WeakSet());
+
+    await expect(gpu.requestAdapter()).rejects.toBe(failure);
+    expect(events).toContainEqual(["WebGPU requestAdapter rejected", "Error: adapter boom"]);
+  });
+
+  it("traces and rethrows requestDevice rejection", async () => {
+    const events = [];
+    const failure = new Error("device boom");
+    const adapter = {
+      async requestDevice() {
+        throw failure;
+      },
+    };
+
+    instrumentAdapterRequestDevice(
+      adapter,
+      (label, detail = null) => events.push([label, detail]),
+      new WeakSet(),
+    );
+
+    await expect(adapter.requestDevice()).rejects.toBe(failure);
+    expect(events).toEqual([
+      ["WebGPU requestDevice started", null],
+      ["WebGPU requestDevice rejected", "Error: device boom"],
+    ]);
+  });
+
+  it("reports missing requestAdapter without throwing", () => {
+    const events = [];
+    installWebGpuApiTrace(
+      {},
+      (label, detail = null) => events.push([label, detail]),
+      new WeakSet(),
+    );
+
+    expect(events).toEqual([
+      ["WebGPU API trace unavailable", "navigator.gpu.requestAdapter missing"],
+    ]);
+  });
+
+  it("instruments one adapter only once", async () => {
+    const events = [];
+    const traced = new WeakSet();
+    const adapter = {
+      async requestDevice() {
+        return "device";
+      },
+    };
+    const markEvent = (label, detail = null) => events.push([label, detail]);
+
+    instrumentAdapterRequestDevice(adapter, markEvent, traced);
+    const wrapped = adapter.requestDevice;
+    instrumentAdapterRequestDevice(adapter, markEvent, traced);
+
+    expect(adapter.requestDevice).toBe(wrapped);
+    await adapter.requestDevice();
+    expect(events.filter(([label]) => label === "WebGPU requestDevice started")).toHaveLength(1);
   });
 });
 
