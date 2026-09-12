@@ -103,7 +103,7 @@ describe("WebGPU API tracing", () => {
     expect(returnedAdapter).toBe(adapter);
     expect(returnedDevice).toBe(device);
     expect(events).toEqual([
-      ["WebGPU API trace installed", "requestAdapter/requestDevice"],
+      ["WebGPU API trace installed", "requestAdapter/requestDevice/first-submit"],
       ["WebGPU requestAdapter started", null],
       ["WebGPU requestAdapter resolved", "adapter selected"],
       ["WebGPU requestDevice started", null],
