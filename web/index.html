@@ -78,10 +78,17 @@
         webGpuApiAvailable,
       } from "./diagnostics-core.js";
       import { installWasmWinitStartupTrace } from "./startup-trace.js";
+      import {
+        initializeArcadeWasm,
+        resolveWasmLoadMode,
+      } from "./wasm-load-experiment.js";
 
       const diagnosticsEnabled = diagnosticsRequested();
       const diagnostics = installGpeWebDiagnostics();
       const webGpuAvailable = webGpuApiAvailable(navigator.gpu);
+      const wasmLoadMode = diagnosticsEnabled
+        ? resolveWasmLoadMode(globalThis.location?.search ?? "")
+        : "streaming";
 
       if (webGpuAvailable) {
         installWasmWinitStartupTrace(globalThis, document, diagnostics?.markEvent);
@@ -132,7 +139,15 @@
           diagnostics?.markEvent("Arcade WASM initialization started");
 
           try {
-            await arcade.default();
+            if (diagnosticsEnabled) {
+              await initializeArcadeWasm({
+                init: arcade.default,
+                mode: wasmLoadMode,
+                markEvent: diagnostics.markEvent,
+              });
+            } else {
+              await arcade.default();
+            }
             diagnostics?.setStartupState("Arcade WASM initialized");
             diagnostics?.markEvent("Arcade WASM initialization resolved");
           } catch (error) {

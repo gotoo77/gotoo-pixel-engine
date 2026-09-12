@@ -86,9 +86,8 @@ export function installWebGpuApiTrace(gpu, markEvent, traced = tracedAdapters) {
   }
 }
 
-async function browserGpuFacts() {
-  const gpu = navigator.gpu;
-  if (!gpu) {
+async function browserGpuFacts(requestAdapter) {
+  if (typeof requestAdapter !== "function") {
     return {
       available: false,
       adapter: "unavailable",
@@ -96,7 +95,7 @@ async function browserGpuFacts() {
   }
 
   try {
-    const adapter = await gpu.requestAdapter();
+    const adapter = await requestAdapter();
     if (!adapter) {
       return {
         available: true,
@@ -219,17 +218,22 @@ export function installGpeWebDiagnostics() {
   }
 
   function markEvent(label, detail = null) {
-    startupWatchdog?.observe(label);
+    startupWatchdog?.observe(label, detail);
     rawMarkEvent(label, detail);
   }
 
   startupWatchdog = createStartupWatchdog({ emit: rawMarkEvent });
 
+  const browserProbeRequestAdapter =
+    typeof navigator.gpu?.requestAdapter === "function"
+      ? navigator.gpu.requestAdapter.bind(navigator.gpu)
+      : null;
+
   markEvent("diagnostics installed");
   installWebGpuApiTrace(navigator.gpu, markEvent);
   markEvent("browser GPU adapter probe started", `navigator.gpu=${Boolean(navigator.gpu)}`);
 
-  browserGpuFacts().then((facts) => {
+  browserGpuFacts(browserProbeRequestAdapter).then((facts) => {
     gpuFacts = facts;
     markEvent("browser GPU adapter probe finished", facts.adapter);
   });
