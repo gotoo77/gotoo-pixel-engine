@@ -24,6 +24,10 @@ export function isWinitControlFlowHandoff(error) {
   );
 }
 
+export function snapshotUnavailableDuringStartup(startupState) {
+  return startupState === "initializing Arcade WASM";
+}
+
 export function createBoundedTimeline({ maxEvents = 64, now = () => performance.now() } = {}) {
   if (!Number.isInteger(maxEvents) || maxEvents < 1) {
     throw new RangeError("maxEvents must be a positive integer");
