@@ -42,6 +42,27 @@
         font: 12px monospace;
         pointer-events: none;
       }
+
+      #gpe-web-unsupported {
+        width: min(680px, calc(100vw - 48px));
+        box-sizing: border-box;
+        padding: 22px 24px;
+        border: 1px solid #f6c453;
+        border-radius: 6px;
+        background: #18130b;
+        color: #f7e7bd;
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
+      #gpe-web-unsupported h1 {
+        margin: 0 0 12px;
+        color: #f6c453;
+        font-size: 18px;
+      }
+
+      #gpe-web-unsupported p {
+        margin: 8px 0 0;
+      }
     </style>
   </head>
   <body>
@@ -52,50 +73,78 @@
         diagnosticsRequested,
         installGpeWebDiagnostics,
       } from "./diagnostics.js";
-      import { isWinitControlFlowHandoff } from "./diagnostics-core.js";
+      import {
+        isWinitControlFlowHandoff,
+        webGpuApiAvailable,
+      } from "./diagnostics-core.js";
       import { installWasmWinitStartupTrace } from "./startup-trace.js";
 
       const diagnosticsEnabled = diagnosticsRequested();
       const diagnostics = installGpeWebDiagnostics();
-      installWasmWinitStartupTrace(globalThis, document, diagnostics?.markEvent);
+      const webGpuAvailable = webGpuApiAvailable(navigator.gpu);
+
+      if (webGpuAvailable) {
+        installWasmWinitStartupTrace(globalThis, document, diagnostics?.markEvent);
+      }
       diagnostics?.markEvent("page shell initialized");
 
       const audioHint = document.querySelector("#audio-hint");
-      const dismissAudioHint = () => audioHint?.remove();
-      for (const type of ["pointerdown", "touchstart", "keydown"]) {
-        document.addEventListener(type, dismissAudioHint, { once: true, capture: true });
+
+      function showUnsupportedGraphicsCapability() {
+        audioHint?.remove();
+        const notice = document.createElement("section");
+        notice.id = "gpe-web-unsupported";
+        notice.setAttribute("role", "alert");
+        notice.innerHTML = `
+          <h1>GPE WEB — WebGPU unavailable</h1>
+          <p>GPE Arcade requires WebGPU to create its renderer.</p>
+          <p>This browser does not expose <code>navigator.gpu.requestAdapter()</code>, so startup was stopped before Arcade WASM and renderer initialization.</p>
+        `;
+        document.body.appendChild(notice);
       }
 
-      let arcade;
-      try {
-        diagnostics?.setStartupState("importing Arcade module");
-        diagnostics?.markEvent("Arcade module import started");
-        arcade = await import("./pkg/arcade-web.js");
-        diagnostics?.markEvent("Arcade module import completed");
-      } catch (error) {
-        console.error("GPE Arcade module import failed", error);
-        diagnostics?.setStartupError(error);
-        if (!diagnosticsEnabled) throw error;
-      }
+      if (!webGpuAvailable) {
+        const detail = "navigator.gpu.requestAdapter missing";
+        diagnostics?.setStartupState("unsupported — WebGPU unavailable");
+        diagnostics?.markEvent("startup unsupported", detail);
+        showUnsupportedGraphicsCapability();
+      } else {
+        const dismissAudioHint = () => audioHint?.remove();
+        for (const type of ["pointerdown", "touchstart", "keydown"]) {
+          document.addEventListener(type, dismissAudioHint, { once: true, capture: true });
+        }
 
-      if (arcade) {
-        diagnostics?.setSnapshotProvider(arcade.gpe_diagnostics_snapshot);
-        diagnostics?.setStartupState("initializing Arcade WASM");
-        diagnostics?.markEvent("Arcade WASM initialization started");
-
+        let arcade;
         try {
-          await arcade.default();
-          diagnostics?.setStartupState("Arcade WASM initialized");
-          diagnostics?.markEvent("Arcade WASM initialization resolved");
+          diagnostics?.setStartupState("importing Arcade module");
+          diagnostics?.markEvent("Arcade module import started");
+          arcade = await import("./pkg/arcade-web.js");
+          diagnostics?.markEvent("Arcade module import completed");
         } catch (error) {
-          if (isWinitControlFlowHandoff(error)) {
-            console.debug("GPE Arcade event loop handed off to winit");
-            diagnostics?.markEvent("winit event loop control-flow handoff");
-            diagnostics?.setStartupState("event loop running (winit handoff)");
-          } else {
-            console.error("GPE Arcade startup failed", error);
-            diagnostics?.setStartupError(error);
-            if (!diagnosticsEnabled) throw error;
+          console.error("GPE Arcade module import failed", error);
+          diagnostics?.setStartupError(error);
+          if (!diagnosticsEnabled) throw error;
+        }
+
+        if (arcade) {
+          diagnostics?.setSnapshotProvider(arcade.gpe_diagnostics_snapshot);
+          diagnostics?.setStartupState("initializing Arcade WASM");
+          diagnostics?.markEvent("Arcade WASM initialization started");
+
+          try {
+            await arcade.default();
+            diagnostics?.setStartupState("Arcade WASM initialized");
+            diagnostics?.markEvent("Arcade WASM initialization resolved");
+          } catch (error) {
+            if (isWinitControlFlowHandoff(error)) {
+              console.debug("GPE Arcade event loop handed off to winit");
+              diagnostics?.markEvent("winit event loop control-flow handoff");
+              diagnostics?.setStartupState("event loop running (winit handoff)");
+            } else {
+              console.error("GPE Arcade startup failed", error);
+              diagnostics?.setStartupError(error);
+              if (!diagnosticsEnabled) throw error;
+            }
           }
         }
       }
