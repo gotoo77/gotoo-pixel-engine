@@ -3,10 +3,12 @@ import {
   diagnosticsRequested,
   formatTimeline,
   safeString,
+  snapshotUnavailableDuringStartup,
 } from "./diagnostics-core.js";
 
 const REFRESH_MS = 1000;
 const MAX_TIMELINE_EVENTS = 64;
+const tracedAdapters = new WeakSet();
 
 export { diagnosticsRequested };
 
@@ -24,6 +26,63 @@ function canvasFacts() {
     backing: `${canvas.width} x ${canvas.height}`,
     css: `${Math.round(rect.width)} x ${Math.round(rect.height)}`,
   };
+}
+
+export function instrumentAdapterRequestDevice(adapter, markEvent, traced = tracedAdapters) {
+  if (!adapter || typeof adapter.requestDevice !== "function" || traced.has(adapter)) return;
+  traced.add(adapter);
+
+  const original = adapter.requestDevice.bind(adapter);
+  try {
+    Object.defineProperty(adapter, "requestDevice", {
+      configurable: true,
+      value: async (...args) => {
+        markEvent("WebGPU requestDevice started");
+        try {
+          const device = await original(...args);
+          markEvent("WebGPU requestDevice resolved");
+          return device;
+        } catch (error) {
+          markEvent("WebGPU requestDevice rejected", safeString(error));
+          throw error;
+        }
+      },
+    });
+  } catch (error) {
+    markEvent("WebGPU requestDevice trace unavailable", safeString(error));
+  }
+}
+
+export function installWebGpuApiTrace(gpu, markEvent, traced = tracedAdapters) {
+  if (!gpu || typeof gpu.requestAdapter !== "function") {
+    markEvent("WebGPU API trace unavailable", "navigator.gpu.requestAdapter missing");
+    return;
+  }
+
+  const original = gpu.requestAdapter.bind(gpu);
+  try {
+    Object.defineProperty(gpu, "requestAdapter", {
+      configurable: true,
+      value: async (...args) => {
+        markEvent("WebGPU requestAdapter started");
+        try {
+          const adapter = await original(...args);
+          markEvent(
+            "WebGPU requestAdapter resolved",
+            adapter ? "adapter selected" : "null adapter",
+          );
+          instrumentAdapterRequestDevice(adapter, markEvent, traced);
+          return adapter;
+        } catch (error) {
+          markEvent("WebGPU requestAdapter rejected", safeString(error));
+          throw error;
+        }
+      },
+    });
+    markEvent("WebGPU API trace installed", "requestAdapter/requestDevice");
+  } catch (error) {
+    markEvent("WebGPU API trace unavailable", safeString(error));
+  }
 }
 
 async function browserGpuFacts() {
@@ -158,6 +217,7 @@ export function installGpeWebDiagnostics() {
   }
 
   markEvent("diagnostics installed");
+  installWebGpuApiTrace(navigator.gpu, markEvent);
   markEvent("browser GPU adapter probe started", `navigator.gpu=${Boolean(navigator.gpu)}`);
 
   browserGpuFacts().then((facts) => {
@@ -172,7 +232,9 @@ export function installGpeWebDiagnostics() {
       try {
         engine = safeString(snapshotProvider(), "no snapshot yet");
       } catch (error) {
-        engine = `snapshot read failed: ${safeString(error)}`;
+        engine = snapshotUnavailableDuringStartup(startupState)
+          ? "not available yet (WASM initialization in progress)"
+          : `snapshot read failed: ${safeString(error)}`;
       }
     }
 
@@ -203,7 +265,8 @@ export function installGpeWebDiagnostics() {
       engine,
       "",
       "Notes",
-      "  Browser adapter data is a separate safe JS probe; it is not claimed to be the adapter selected by GPE/wgpu.",
+      "  Browser adapter data is a separate JS probe; it is not claimed to be the adapter selected by GPE/wgpu.",
+      "  WebGPU API tracing is diagnostics-only and may slightly perturb timing; use it to locate long waits, not to benchmark absolute latency.",
       "  Unknown data is intentionally left unknown rather than inferred.",
     ].join("\n");
   }
