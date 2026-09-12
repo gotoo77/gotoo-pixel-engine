@@ -6,6 +6,10 @@ export function diagnosticsRequested(search = globalThis.location?.search ?? "")
   return value === "1" || value === "true" || value === "on";
 }
 
+export function webGpuApiAvailable(gpu) {
+  return Boolean(gpu && typeof gpu.requestAdapter === "function");
+}
+
 export function safeString(value, fallback = "unknown") {
   if (value === undefined || value === null || value === "") return fallback;
   return String(value);

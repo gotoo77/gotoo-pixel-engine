@@ -97,6 +97,7 @@ describe("startup watchdog", () => {
       status: "complete",
       classification: "FAST",
       complete: true,
+      outcome: "success",
       elapsedMs: 400,
     });
     expect(scheduler.pendingCount()).toBe(0);
@@ -104,6 +105,60 @@ describe("startup watchdog", () => {
     now = 5000;
     scheduler.runPending();
     expect(events).toEqual([]);
+  });
+
+  it("marks an unsupported capability as terminal instead of reporting a slow startup", () => {
+    let now = 0;
+    const events = [];
+    const scheduler = fakeScheduler();
+    const watchdog = createStartupWatchdog({
+      now: () => now,
+      schedule: (callback) => scheduler.schedule(callback),
+      cancel: (id) => scheduler.cancel(id),
+      emit: (label, detail) => events.push([label, detail]),
+    });
+
+    now = 25;
+    watchdog.observe("startup unsupported");
+
+    expect(watchdog.snapshot()).toMatchObject({
+      status: "UNSUPPORTED",
+      classification: "N/A",
+      complete: true,
+      outcome: "unsupported",
+      elapsedMs: 25,
+      stalledForMs: 0,
+    });
+    expect(scheduler.pendingCount()).toBe(0);
+
+    now = 10000;
+    scheduler.runPending();
+    expect(events).toEqual([]);
+  });
+
+  it.each([
+    "WebGPU requestAdapter rejected",
+    "WebGPU requestDevice rejected",
+    "startup error",
+  ])("marks %s as terminal failure", (label) => {
+    let now = 0;
+    const scheduler = fakeScheduler();
+    const watchdog = createStartupWatchdog({
+      now: () => now,
+      schedule: (callback) => scheduler.schedule(callback),
+      cancel: (id) => scheduler.cancel(id),
+    });
+
+    now = 500;
+    watchdog.observe(label);
+
+    expect(watchdog.snapshot()).toMatchObject({
+      status: "FAILED",
+      classification: "N/A",
+      complete: true,
+      outcome: "failed",
+    });
+    expect(scheduler.pendingCount()).toBe(0);
   });
 
   it("keeps slow evidence after a recovered run completes", () => {
@@ -129,6 +184,7 @@ describe("startup watchdog", () => {
       slowObserved: true,
       lastSlowDurationMs: 9000,
       complete: true,
+      outcome: "success",
     });
   });
 

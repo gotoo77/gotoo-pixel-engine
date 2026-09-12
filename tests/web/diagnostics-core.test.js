@@ -8,6 +8,7 @@ import {
   isWinitControlFlowHandoff,
   safeString,
   snapshotUnavailableDuringStartup,
+  webGpuApiAvailable,
 } from "../../web/diagnostics-core.js";
 import {
   installWebGpuApiTrace,
@@ -26,6 +27,19 @@ describe("diagnosticsRequested", () => {
   ])("parses %s", (search, expected) => {
     expect(diagnosticsRequested(search)).toBe(expected);
   });
+});
+
+describe("webGpuApiAvailable", () => {
+  it("accepts a WebGPU object exposing requestAdapter", () => {
+    expect(webGpuApiAvailable({ requestAdapter() {} })).toBe(true);
+  });
+
+  it.each([undefined, null, {}, { requestAdapter: true }])(
+    "rejects missing or invalid WebGPU API: %j",
+    (gpu) => {
+      expect(webGpuApiAvailable(gpu)).toBe(false);
+    },
+  );
 });
 
 describe("isWinitControlFlowHandoff", () => {
