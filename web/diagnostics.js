@@ -44,12 +44,18 @@ export function createFirstFrameTiming({
   let firstRafCallbackMs = null;
   let firstSubmitMs = null;
   let postSubmitRafMs = null;
+  let unavailableReason = null;
 
   function elapsed() {
     return Math.max(0, now() - startedAt);
   }
 
-  function observe(label) {
+  function markUnavailable(label, detail) {
+    if (unavailableReason !== null) return;
+    unavailableReason = `${label}: ${safeString(detail, "unknown reason")}`;
+  }
+
+  function observe(label, detail = null) {
     const observedMs = elapsed();
     switch (String(label)) {
       case "WebGPU requestDevice resolved":
@@ -64,6 +70,10 @@ export function createFirstFrameTiming({
       case "first post-submit requestAnimationFrame callback":
         if (postSubmitRafMs === null) postSubmitRafMs = observedMs;
         break;
+      case "GPUQueue.submit trace unavailable":
+      case "first post-submit requestAnimationFrame unavailable":
+        markUnavailable(String(label), detail);
+        break;
       default:
         break;
     }
@@ -72,6 +82,34 @@ export function createFirstFrameTiming({
   function snapshot() {
     const sampledElapsedMs = postSubmitRafMs ?? elapsed();
     const complete = postSubmitRafMs !== null;
+    const deviceToSubmitMs =
+      deviceReadyMs !== null && firstSubmitMs !== null
+        ? Math.max(0, firstSubmitMs - deviceReadyMs)
+        : null;
+    const submitToPostRafMs =
+      firstSubmitMs !== null && postSubmitRafMs !== null
+        ? Math.max(0, postSubmitRafMs - firstSubmitMs)
+        : null;
+
+    if (!complete && unavailableReason !== null) {
+      return {
+        status: "UNAVAILABLE",
+        classification: "N/A",
+        elapsedMs: sampledElapsedMs,
+        slowThresholdMs,
+        waitingFor: null,
+        stalledForMs: 0,
+        unavailableReason,
+        deviceReadyMs,
+        firstRafCallbackMs,
+        firstSubmitMs,
+        postSubmitRafMs,
+        deviceToSubmitMs,
+        submitToPostRafMs,
+        complete: false,
+      };
+    }
+
     let waitingFor = null;
     let stalledForMs = 0;
 
@@ -95,18 +133,13 @@ export function createFirstFrameTiming({
       slowThresholdMs,
       waitingFor,
       stalledForMs,
+      unavailableReason: null,
       deviceReadyMs,
       firstRafCallbackMs,
       firstSubmitMs,
       postSubmitRafMs,
-      deviceToSubmitMs:
-        deviceReadyMs !== null && firstSubmitMs !== null
-          ? Math.max(0, firstSubmitMs - deviceReadyMs)
-          : null,
-      submitToPostRafMs:
-        firstSubmitMs !== null && postSubmitRafMs !== null
-          ? Math.max(0, postSubmitRafMs - firstSubmitMs)
-          : null,
+      deviceToSubmitMs,
+      submitToPostRafMs,
       complete,
     };
   }
@@ -300,6 +333,15 @@ export function deriveDiagnosticStatus({ startupError = null, watchdog = {}, fir
       label: "ATTENTION",
       marker: "[WARN]",
       reason: "startup timing needs attention",
+    };
+  }
+
+  if (firstFrame.status === "UNAVAILABLE") {
+    return {
+      level: "warn",
+      label: "ATTENTION",
+      marker: "[WARN]",
+      reason: "first-frame trace unavailable",
     };
   }
 
@@ -556,6 +598,7 @@ export function installGpeWebDiagnostics() {
       `  elapsed: ${Math.round(firstFrame.elapsedMs)} ms`,
       `  waiting for: ${firstFrame.waitingFor ?? "none"}`,
       `  stalled for: ${Math.round(firstFrame.stalledForMs)} ms`,
+      `  trace unavailable: ${firstFrame.unavailableReason ?? "no"}`,
       `  device ready: ${formatTiming(firstFrame.deviceReadyMs)}`,
       `  first requestAnimationFrame callback: ${formatTiming(firstFrame.firstRafCallbackMs)}`,
       `  first GPUQueue.submit: ${formatTiming(firstFrame.firstSubmitMs)}`,
