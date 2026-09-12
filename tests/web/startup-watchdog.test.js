@@ -107,6 +107,56 @@ describe("startup watchdog", () => {
     expect(events).toEqual([]);
   });
 
+  it("marks a null engine adapter as terminal failure instead of VERY SLOW", () => {
+    let now = 0;
+    const events = [];
+    const scheduler = fakeScheduler();
+    const watchdog = createStartupWatchdog({
+      now: () => now,
+      schedule: (callback) => scheduler.schedule(callback),
+      cancel: (id) => scheduler.cancel(id),
+      emit: (label, detail) => events.push([label, detail]),
+    });
+
+    watchdog.observe("Arcade WASM initialization started");
+    now = 1650;
+    watchdog.observe("WebGPU requestAdapter resolved", "null adapter");
+
+    expect(watchdog.snapshot()).toMatchObject({
+      status: "FAILED",
+      classification: "N/A",
+      complete: true,
+      outcome: "failed",
+      elapsedMs: 1650,
+      stalledForMs: 0,
+    });
+    expect(scheduler.pendingCount()).toBe(0);
+
+    now = 20000;
+    scheduler.runPending();
+    expect(events).toEqual([]);
+  });
+
+  it("does not treat a selected adapter as terminal before requestDevice", () => {
+    let now = 0;
+    const scheduler = fakeScheduler();
+    const watchdog = createStartupWatchdog({
+      now: () => now,
+      schedule: (callback) => scheduler.schedule(callback),
+      cancel: (id) => scheduler.cancel(id),
+    });
+
+    now = 400;
+    watchdog.observe("WebGPU requestAdapter resolved", "adapter selected");
+
+    expect(watchdog.snapshot()).toMatchObject({
+      status: "monitoring",
+      complete: false,
+      lastMilestone: "WebGPU requestAdapter resolved",
+    });
+    expect(scheduler.pendingCount()).toBe(1);
+  });
+
   it("marks an unsupported capability as terminal instead of reporting a slow startup", () => {
     let now = 0;
     const events = [];
