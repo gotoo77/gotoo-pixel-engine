@@ -54,6 +54,49 @@ describe("first-frame timing", () => {
       complete: false,
     });
   });
+
+  it("does not report a false slow frame when queue-submit tracing is unavailable", () => {
+    let now = 0;
+    const timing = createFirstFrameTiming({ now: () => now, slowThresholdMs: 3000 });
+
+    now = 500;
+    timing.observe("WebGPU requestDevice resolved");
+    now = 550;
+    timing.observe("GPUQueue.submit trace unavailable", "TypeError: read only");
+    now = 8000;
+
+    expect(timing.snapshot()).toMatchObject({
+      status: "UNAVAILABLE",
+      classification: "N/A",
+      waitingFor: null,
+      stalledForMs: 0,
+      unavailableReason: "GPUQueue.submit trace unavailable: TypeError: read only",
+      complete: false,
+    });
+  });
+
+  it("does not report a false slow frame when post-submit RAF is unavailable", () => {
+    let now = 0;
+    const timing = createFirstFrameTiming({ now: () => now, slowThresholdMs: 3000 });
+
+    now = 500;
+    timing.observe("WebGPU requestDevice resolved");
+    now = 700;
+    timing.observe("first GPUQueue.submit");
+    now = 710;
+    timing.observe("first post-submit requestAnimationFrame unavailable", "requestAnimationFrame missing");
+    now = 8000;
+
+    expect(timing.snapshot()).toMatchObject({
+      status: "UNAVAILABLE",
+      classification: "N/A",
+      waitingFor: null,
+      stalledForMs: 0,
+      unavailableReason:
+        "first post-submit requestAnimationFrame unavailable: requestAnimationFrame missing",
+      complete: false,
+    });
+  });
 });
 
 describe("GPU queue submit tracing", () => {
@@ -132,6 +175,21 @@ describe("diagnostic severity", () => {
     ).toBe("warn");
   });
 
+  it("uses WARN when first-frame tracing is unavailable", () => {
+    expect(
+      deriveDiagnosticStatus({
+        startupError: null,
+        watchdog: { outcome: "success", status: "complete", classification: "FAST" },
+        firstFrame: { complete: false, classification: "N/A", status: "UNAVAILABLE" },
+      }),
+    ).toEqual({
+      level: "warn",
+      label: "ATTENTION",
+      marker: "[WARN]",
+      reason: "first-frame trace unavailable",
+    });
+  });
+
   it("uses OK only after a fast complete startup and first frame", () => {
     expect(
       deriveDiagnosticStatus({
@@ -161,7 +219,7 @@ describe("diagnostics text export", () => {
     );
   });
 
-  it("saves the exact report text through a temporary object URL and revokes it", () => {
+  it("saves the exact report text through a temporary object URL and revokes it", async () => {
     const clicked = [];
     const removed = [];
     const anchors = [];
@@ -191,8 +249,9 @@ describe("diagnostics text export", () => {
         revoked.push(url);
       },
     };
+    const report = "EXACT REPORT\n[OK] done";
 
-    const filename = saveDiagnosticsText("EXACT REPORT\n[OK] done", {
+    const filename = saveDiagnosticsText(report, {
       documentRef,
       urlApi,
       BlobCtor: Blob,
@@ -207,5 +266,6 @@ describe("diagnostics text export", () => {
     expect(revoked).toEqual(["blob:gpe-test"]);
     expect(created).toHaveLength(1);
     expect(created[0].type).toBe("text/plain;charset=utf-8");
+    expect(await created[0].text()).toBe(report);
   });
 });
