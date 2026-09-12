@@ -23,6 +23,7 @@ PAGES_STATIC_FILES = [
     "diagnostics-core.js",
     "startup-trace.js",
     "startup-watchdog.js",
+    "wasm-load-experiment.js",
 ]
 
 
@@ -125,6 +126,8 @@ def verify_pages_shell(dist: Path) -> None:
     index = (dist / "index.html").read_text(encoding="utf-8")
     if 'from "./startup-trace.js"' not in index:
         raise RuntimeError("Pages index.html does not import startup-trace.js")
+    if 'from "./wasm-load-experiment.js"' not in index:
+        raise RuntimeError("Pages index.html does not import wasm-load-experiment.js")
 
 
 def prepare_pages() -> Path:
