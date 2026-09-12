@@ -21,6 +21,8 @@ PAGES_STATIC_FILES = [
     "fullscreen.js",
     "diagnostics.js",
     "diagnostics-core.js",
+    "startup-trace.js",
+    "startup-watchdog.js",
 ]
 
 
@@ -117,6 +119,12 @@ def verify_pages_shell(dist: Path) -> None:
     diagnostics = (dist / "diagnostics.js").read_text(encoding="utf-8")
     if 'from "./diagnostics-core.js"' not in diagnostics:
         raise RuntimeError("Pages diagnostics.js does not import diagnostics-core.js")
+    if 'from "./startup-watchdog.js"' not in diagnostics:
+        raise RuntimeError("Pages diagnostics.js does not import startup-watchdog.js")
+
+    index = (dist / "index.html").read_text(encoding="utf-8")
+    if 'from "./startup-trace.js"' not in index:
+        raise RuntimeError("Pages index.html does not import startup-trace.js")
 
 
 def prepare_pages() -> Path:
