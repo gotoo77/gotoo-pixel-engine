@@ -15,6 +15,13 @@ const DEFAULT_TERMINAL_OUTCOMES = new Map([
   ["startup unsupported", "unsupported"],
 ]);
 
+function terminalOutcome(terminal, label, detail) {
+  if (label === "WebGPU requestAdapter resolved" && detail === "null adapter") {
+    return "failed";
+  }
+  return terminal.get(label) ?? null;
+}
+
 export function createStartupWatchdog({
   thresholdMs = DEFAULT_SLOW_STARTUP_THRESHOLD_MS,
   now = () => performance.now(),
@@ -68,7 +75,7 @@ export function createStartupWatchdog({
     }, thresholdMs);
   }
 
-  function observe(label) {
+  function observe(label, detail = null) {
     if (completedAt !== null) return;
 
     const current = String(label);
@@ -87,9 +94,10 @@ export function createStartupWatchdog({
     lastMilestone = current;
     lastMilestoneAt = observedAt;
 
-    if (terminal.has(current)) {
+    const outcome = terminalOutcome(terminal, current, detail);
+    if (outcome !== null) {
       completedAt = observedAt;
-      completedOutcome = terminal.get(current);
+      completedOutcome = outcome;
       clearTimer();
       return;
     }
