@@ -5,6 +5,16 @@ import {
   safeString,
   snapshotUnavailableDuringStartup,
 } from "./diagnostics-core.js";
+import {
+  buildDiagnosticsJson,
+  createDiagnosticsRunId,
+  createJavaScriptErrorTracker,
+  createStartupStateLatch,
+  deriveEngineTriageFacts,
+  derivePhaseTimings,
+  deriveTriage,
+  formatDiagnosticsSummary,
+} from "./diagnostics-report.js";
 import { classifyStartupElapsed, createStartupWatchdog } from "./startup-watchdog.js";
 
 const REFRESH_MS = 1000;
@@ -13,15 +23,22 @@ const DEFAULT_FIRST_FRAME_SLOW_MS = 3000;
 const tracedAdapters = new WeakSet();
 const tracedQueues = new WeakSet();
 
-export { diagnosticsRequested };
+export {
+  buildDiagnosticsJson,
+  createDiagnosticsRunId,
+  createJavaScriptErrorTracker,
+  createStartupStateLatch,
+  deriveEngineTriageFacts,
+  derivePhaseTimings,
+  deriveTriage,
+  diagnosticsRequested,
+  formatDiagnosticsSummary,
+};
 
 function canvasFacts() {
   const canvas = document.querySelector("canvas");
   if (!canvas) {
-    return {
-      backing: "not created",
-      css: "not created",
-    };
+    return { backing: "not created", css: "not created" };
   }
 
   const rect = canvas.getBoundingClientRect();
@@ -72,6 +89,7 @@ export function createFirstFrameTiming({
         if (postSubmitRafMs === null) postSubmitRafMs = observedMs;
         break;
       case "engine startup failed":
+      case "startup error":
         if (terminal === null) terminal = { status: "FAILED", observedMs };
         break;
       case "startup unsupported":
@@ -138,7 +156,6 @@ export function createFirstFrameTiming({
 
     let waitingFor = null;
     let stalledForMs = 0;
-
     if (!complete && deviceReadyMs !== null && firstSubmitMs === null) {
       waitingFor = "first GPUQueue.submit";
       stalledForMs = Math.max(0, sampledElapsedMs - deviceReadyMs);
@@ -286,10 +303,7 @@ export function installWebGpuApiTrace(
 
 async function browserGpuFacts(requestAdapter) {
   if (typeof requestAdapter !== "function") {
-    return {
-      available: false,
-      adapter: "unavailable",
-    };
+    return { available: false, adapterUsable: false, adapter: "unavailable" };
   }
 
   try {
@@ -297,6 +311,7 @@ async function browserGpuFacts(requestAdapter) {
     if (!adapter) {
       return {
         available: true,
+        adapterUsable: false,
         adapter: "requestAdapter returned null",
       };
     }
@@ -307,15 +322,13 @@ async function browserGpuFacts(requestAdapter) {
     } catch (error) {
       return {
         available: true,
+        adapterUsable: true,
         adapter: `selected; info read failed: ${safeString(error)}`,
       };
     }
 
     if (!info) {
-      return {
-        available: true,
-        adapter: "selected; info unavailable",
-      };
+      return { available: true, adapterUsable: true, adapter: "selected; info unavailable" };
     }
 
     const parts = [];
@@ -325,38 +338,38 @@ async function browserGpuFacts(requestAdapter) {
     }
     return {
       available: true,
+      adapterUsable: true,
       adapter: parts.length ? parts.join(", ") : "selected; info empty",
     };
   } catch (error) {
     return {
       available: true,
+      adapterUsable: null,
       adapter: `probe failed: ${safeString(error)}`,
     };
   }
 }
 
 export function detectEngineStartupFailure(snapshot) {
-  const text = safeString(snapshot, "");
-  const rendererFailed = /RendererRecord\s*\{[\s\S]*?lifecycle:\s*DiagnosticField\s*\{[\s\S]*?value:\s*Some\(\s*InitializationFailed\b/.test(
-    text,
-  );
-  if (!rendererFailed) {
+  const facts = deriveEngineTriageFacts(snapshot);
+  if (facts.rendererState !== "InitializationFailed") {
     return { failed: false, reason: null };
   }
-
-  const category = text.match(
-    /last_wgpu_error:\s*DiagnosticField\s*\{[\s\S]*?value:\s*Some\(\s*([A-Za-z0-9_]+)/,
-  )?.[1];
   return {
     failed: true,
-    reason: category
-      ? `renderer initialization failed (${category})`
+    reason: facts.failureCategory
+      ? `renderer initialization failed (${facts.failureCategory})`
       : "renderer initialization failed",
   };
 }
 
 export function deriveDiagnosticStatus({ startupError = null, watchdog = {}, firstFrame = {} } = {}) {
-  if (startupError || watchdog.outcome === "failed" || watchdog.status === "FAILED") {
+  if (
+    startupError ||
+    watchdog.outcome === "failed" ||
+    watchdog.status === "FAILED" ||
+    firstFrame.status === "FAILED"
+  ) {
     return { level: "error", label: "ERROR", marker: "[ERROR]", reason: "startup failed" };
   }
 
@@ -393,7 +406,8 @@ export function deriveDiagnosticStatus({ startupError = null, watchdog = {}, fir
 
   const slowFirstFrame =
     firstFrame.status === "SLOW FIRST FRAME" ||
-    (firstFrame.complete && ["SUSPICIOUS", "SLOW", "VERY SLOW"].includes(firstFrame.classification));
+    (firstFrame.complete &&
+      ["SUSPICIOUS", "SLOW", "VERY SLOW"].includes(firstFrame.classification));
   if (slowFirstFrame) {
     return {
       level: "warn",
@@ -437,14 +451,15 @@ function pad2(value) {
   return String(value).padStart(2, "0");
 }
 
-export function diagnosticsFilename(date = new Date()) {
+export function diagnosticsFilename(date = new Date(), extension = "txt") {
   const year = date.getUTCFullYear();
   const month = pad2(date.getUTCMonth() + 1);
   const day = pad2(date.getUTCDate());
   const hour = pad2(date.getUTCHours());
   const minute = pad2(date.getUTCMinutes());
   const second = pad2(date.getUTCSeconds());
-  return `gpe-web-diagnostics-${year}${month}${day}-${hour}${minute}${second}.txt`;
+  const ext = extension === "json" ? "json" : "txt";
+  return `gpe-web-diagnostics-${year}${month}${day}-${hour}${minute}${second}.${ext}`;
 }
 
 export function saveDiagnosticsText(
@@ -454,6 +469,8 @@ export function saveDiagnosticsText(
     urlApi = globalThis.URL,
     BlobCtor = globalThis.Blob,
     date = new Date(),
+    extension = "txt",
+    mimeType = extension === "json" ? "application/json;charset=utf-8" : "text/plain;charset=utf-8",
   } = {},
 ) {
   if (!documentRef || typeof documentRef.createElement !== "function") {
@@ -466,8 +483,8 @@ export function saveDiagnosticsText(
     throw new Error("Blob unavailable for diagnostics export");
   }
 
-  const filename = diagnosticsFilename(date);
-  const blob = new BlobCtor([String(text)], { type: "text/plain;charset=utf-8" });
+  const filename = diagnosticsFilename(date, extension);
+  const blob = new BlobCtor([String(text)], { type: mimeType });
   const url = urlApi.createObjectURL(blob);
   const anchor = documentRef.createElement("a");
   anchor.href = url;
@@ -495,7 +512,7 @@ function makePanel() {
         z-index: 10000;
         top: 10px;
         left: 10px;
-        width: min(680px, calc(100vw - 20px));
+        width: min(760px, calc(100vw - 20px));
         max-height: calc(100vh - 20px);
         box-sizing: border-box;
         overflow: auto;
@@ -507,6 +524,7 @@ function makePanel() {
         box-shadow: 0 4px 24px #000a;
         font: 12px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
       #gpe-web-diagnostics[data-severity="ok"] { border-color: #3fb950; }
       #gpe-web-diagnostics[data-severity="warn"] { border-color: #d29922; }
@@ -514,6 +532,7 @@ function makePanel() {
       #gpe-web-diagnostics[data-severity="info"] { border-color: #8b949e; }
       #gpe-web-diagnostics header {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
         align-items: center;
         justify-content: space-between;
@@ -522,6 +541,7 @@ function makePanel() {
       #gpe-web-diagnostics .gpe-diagnostics-title,
       #gpe-web-diagnostics .gpe-diagnostics-actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
         align-items: center;
       }
@@ -546,16 +566,28 @@ function makePanel() {
         font: inherit;
         cursor: pointer;
       }
-      #gpe-web-diagnostics pre { margin: 0; font: inherit; }
+      #gpe-web-diagnostics pre {
+        margin: 0;
+        font: inherit;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 520px) {
+        #gpe-web-diagnostics { top: 4px; left: 4px; width: calc(100vw - 8px); max-height: calc(100vh - 8px); }
+        #gpe-web-diagnostics .gpe-diagnostics-title,
+        #gpe-web-diagnostics .gpe-diagnostics-actions { width: 100%; }
+      }
     </style>
     <header>
       <div class="gpe-diagnostics-title">
-        <strong>GPE WEB DIAGNOSTICS</strong>
+        <strong>GPE WEB DIAGNOSTICS v2</strong>
         <span data-role="status-badge">[INFO] INFO</span>
       </div>
       <div class="gpe-diagnostics-actions">
-        <button type="button" data-action="copy">COPY</button>
-        <button type="button" data-action="save">SAVE TXT</button>
+        <button type="button" data-action="copy-summary">COPY SUMMARY</button>
+        <button type="button" data-action="copy-full">COPY FULL</button>
+        <button type="button" data-action="save-txt">SAVE TXT</button>
+        <button type="button" data-action="save-json">SAVE JSON</button>
       </div>
     </header>
     <pre>initializing diagnostics…</pre>
@@ -564,8 +596,10 @@ function makePanel() {
   return {
     root,
     output: root.querySelector("pre"),
-    copy: root.querySelector('[data-action="copy"]'),
-    save: root.querySelector('[data-action="save"]'),
+    copySummary: root.querySelector('[data-action="copy-summary"]'),
+    copyFull: root.querySelector('[data-action="copy-full"]'),
+    saveTxt: root.querySelector('[data-action="save-txt"]'),
+    saveJson: root.querySelector('[data-action="save-json"]'),
     statusBadge: root.querySelector('[data-role="status-badge"]'),
   };
 }
@@ -574,18 +608,32 @@ function formatTiming(value) {
   return value === null ? "not observed" : `${Math.round(value)} ms`;
 }
 
+function wasmLoadModeFromTimeline(events) {
+  return events.find((event) => event.label === "WASM load mode selected")?.detail ?? "not observed";
+}
+
+function setTemporaryButtonText(button, active, idle) {
+  button.textContent = active;
+  setTimeout(() => {
+    button.textContent = idle;
+  }, 1500);
+}
+
 export function installGpeWebDiagnostics() {
   if (!diagnosticsRequested(globalThis.location?.search ?? "")) return null;
 
   const panel = makePanel();
   const timeline = createBoundedTimeline({ maxEvents: MAX_TIMELINE_EVENTS });
   const firstFrameTiming = createFirstFrameTiming();
+  const startupState = createStartupStateLatch("page shell initializing");
+  const javascriptErrors = createJavaScriptErrorTracker();
+  const runId = createDiagnosticsRunId();
   let snapshotProvider = null;
-  let startupState = "page shell initializing";
   let startupError = null;
   let engineFailureReason = null;
   let gpuFacts = {
     available: Boolean(navigator.gpu),
+    adapterUsable: null,
     adapter: "probing…",
   };
   let startupWatchdog = null;
@@ -596,7 +644,7 @@ export function installGpeWebDiagnostics() {
       try {
         engine = safeString(snapshotProvider(), "no snapshot yet");
       } catch (error) {
-        engine = snapshotUnavailableDuringStartup(startupState)
+        engine = snapshotUnavailableDuringStartup(startupState.snapshot().state)
           ? "not available yet (WASM initialization in progress)"
           : `snapshot read failed: ${safeString(error)}`;
       }
@@ -610,7 +658,7 @@ export function installGpeWebDiagnostics() {
     if (!failure.failed) return;
 
     engineFailureReason = failure.reason;
-    startupState = "failed — engine renderer initialization failed";
+    startupState.fail(engineFailureReason);
     startupWatchdog.observe("engine startup failed", engineFailureReason);
     firstFrameTiming.observe("engine startup failed", engineFailureReason);
     timeline.mark("engine startup failed", engineFailureReason);
@@ -620,17 +668,23 @@ export function installGpeWebDiagnostics() {
     const canvas = canvasFacts();
     const engine = readEngineObservation();
     reconcileEngineFailure(engine);
+    const events = timeline.snapshot();
     const watchdog = startupWatchdog.snapshot();
     const firstFrame = firstFrameTiming.snapshot();
+    const currentState = startupState.snapshot();
+    const engineFacts = deriveEngineTriageFacts(engine);
+    const wasmLoadMode = wasmLoadModeFromTimeline(events);
+    const triage = deriveTriage({ gpuFacts, engineFacts, firstFrame, wasmLoadMode });
+    const timings = derivePhaseTimings(events);
+    const javascript = javascriptErrors.snapshot();
     const status = deriveDiagnosticStatus({ startupError, watchdog, firstFrame });
+    const summaryData = { runId, status, triage, timings, javascript };
+    const summaryText = formatDiagnosticsSummary(summaryData);
 
-    const text = [
-      "GPE WEB DIAGNOSTICS",
+    const fullText = [
+      summaryText,
       "",
-      "Overall status",
-      `  ${status.marker} ${status.label}: ${status.reason}`,
-      "",
-      "Browser",
+      "Browser detail",
       `  userAgent: ${safeString(navigator.userAgent)}`,
       `  platform: ${safeString(navigator.userAgentData?.platform ?? navigator.platform)}`,
       `  language: ${safeString(navigator.language)}`,
@@ -643,8 +697,9 @@ export function installGpeWebDiagnostics() {
       `  devicePixelRatio: ${safeString(globalThis.devicePixelRatio)}`,
       `  viewport: ${globalThis.innerWidth ?? "unknown"} x ${globalThis.innerHeight ?? "unknown"}`,
       "",
-      "Startup",
-      `  state: ${startupState}`,
+      "Startup detail",
+      `  state: ${currentState.state}`,
+      `  terminal: ${currentState.terminal ?? "no"}`,
       `  error: ${startupError ?? "none observed by page shell"}`,
       `  engine failure: ${engineFailureReason ?? "none observed"}`,
       "",
@@ -673,7 +728,7 @@ export function installGpeWebDiagnostics() {
       `  first submit -> post-submit RAF: ${formatTiming(firstFrame.submitToPostRafMs)}`,
       "",
       "Startup timeline",
-      formatTimeline(timeline.snapshot()),
+      formatTimeline(events),
       "",
       "GPE engine observation",
       engine,
@@ -682,19 +737,40 @@ export function installGpeWebDiagnostics() {
       "  Browser adapter data is a separate JS probe; it is not claimed to be the adapter selected by GPE/wgpu.",
       "  WebGPU API tracing is diagnostics-only and may slightly perturb timing; use it to locate long waits, not to benchmark absolute latency.",
       "  GPUQueue.submit is a browser-side proxy for first rendering work; GPE engine diagnostics remain authoritative for renderer lifecycle and presents.",
-      "  Startup/first-frame classifications: FAST <1s; SUSPICIOUS 1-3s; SLOW 3-8s; VERY SLOW >=8s.",
-      "  The startup watchdog emits SLOW STARTUP DETECTED after 3s without a diagnostics milestone and records the recovery milestone.",
-      "  Renderer InitializationFailed is terminal for startup and first-frame timing; the engine snapshot remains the authoritative failure source.",
-      "  Status meaning is also written as [OK], [WARN], [ERROR], or [INFO]; color is supplementary only.",
+      "  Chunked WASM mode aggregates per-chunk progress by default; add verbose=1 only when raw chunk events are required.",
+      "  Renderer InitializationFailed and unsupported capability states are terminal and cannot be overwritten by later shell events.",
       "  Unknown data is intentionally left unknown rather than inferred.",
     ].join("\n");
 
-    return { text, status };
+    const browser = {
+      user_agent: safeString(navigator.userAgent),
+      platform: safeString(navigator.userAgentData?.platform ?? navigator.platform),
+      language: safeString(navigator.language),
+      webgpu_available: gpuFacts.available,
+      browser_adapter_probe: gpuFacts.adapter,
+    };
+    const json = buildDiagnosticsJson({
+      ...summaryData,
+      browser,
+      canvas,
+      startup: {
+        state: currentState.state,
+        terminal: currentState.terminal,
+        error: startupError,
+        engine_failure: engineFailureReason,
+      },
+      watchdog,
+      firstFrame,
+      timeline: events,
+      engineObservation: engine,
+    });
+
+    return { summaryText, fullText, json, status };
   }
 
   function render() {
     const current = buildReport();
-    panel.output.textContent = current.text;
+    panel.output.textContent = current.fullText;
     applyDiagnosticStatus(panel, current.status);
   }
 
@@ -716,7 +792,18 @@ export function installGpeWebDiagnostics() {
       ? navigator.gpu.requestAdapter.bind(navigator.gpu)
       : null;
 
-  markEvent("diagnostics installed");
+  const onWindowError = (event) => {
+    const recorded = javascriptErrors.recordError(event);
+    markEvent("JavaScript unhandled error", recorded.lastUnhandledError);
+  };
+  const onUnhandledRejection = (event) => {
+    const recorded = javascriptErrors.recordRejection(event);
+    markEvent("JavaScript unhandled rejection", recorded.lastUnhandledError);
+  };
+  globalThis.addEventListener("error", onWindowError);
+  globalThis.addEventListener("unhandledrejection", onUnhandledRejection);
+
+  markEvent("diagnostics installed", `run=${runId}; schema=v2`);
   installWebGpuApiTrace(navigator.gpu, markEvent);
   markEvent("browser GPU adapter probe started", `navigator.gpu=${Boolean(navigator.gpu)}`);
 
@@ -725,28 +812,43 @@ export function installGpeWebDiagnostics() {
     markEvent("browser GPU adapter probe finished", facts.adapter);
   });
 
-  panel.copy.addEventListener("click", async () => {
+  panel.copySummary.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(buildReport().text);
-      panel.copy.textContent = "COPIED";
+      await navigator.clipboard.writeText(buildReport().summaryText);
+      setTemporaryButtonText(panel.copySummary, "COPIED", "COPY SUMMARY");
     } catch {
-      panel.copy.textContent = "COPY FAILED";
+      setTemporaryButtonText(panel.copySummary, "COPY FAILED", "COPY SUMMARY");
     }
-    setTimeout(() => {
-      panel.copy.textContent = "COPY";
-    }, 1500);
   });
 
-  panel.save.addEventListener("click", () => {
+  panel.copyFull.addEventListener("click", async () => {
     try {
-      saveDiagnosticsText(buildReport().text);
-      panel.save.textContent = "SAVED";
+      await navigator.clipboard.writeText(buildReport().fullText);
+      setTemporaryButtonText(panel.copyFull, "COPIED", "COPY FULL");
     } catch {
-      panel.save.textContent = "SAVE FAILED";
+      setTemporaryButtonText(panel.copyFull, "COPY FAILED", "COPY FULL");
     }
-    setTimeout(() => {
-      panel.save.textContent = "SAVE TXT";
-    }, 1500);
+  });
+
+  panel.saveTxt.addEventListener("click", () => {
+    try {
+      saveDiagnosticsText(buildReport().fullText);
+      setTemporaryButtonText(panel.saveTxt, "SAVED", "SAVE TXT");
+    } catch {
+      setTemporaryButtonText(panel.saveTxt, "SAVE FAILED", "SAVE TXT");
+    }
+  });
+
+  panel.saveJson.addEventListener("click", () => {
+    try {
+      saveDiagnosticsText(JSON.stringify(buildReport().json, null, 2), {
+        extension: "json",
+        mimeType: "application/json;charset=utf-8",
+      });
+      setTemporaryButtonText(panel.saveJson, "SAVED", "SAVE JSON");
+    } catch {
+      setTemporaryButtonText(panel.saveJson, "SAVE FAILED", "SAVE JSON");
+    }
   });
 
   const timer = setInterval(render, REFRESH_MS);
@@ -755,6 +857,8 @@ export function installGpeWebDiagnostics() {
     () => {
       clearInterval(timer);
       startupWatchdog.dispose();
+      globalThis.removeEventListener?.("error", onWindowError);
+      globalThis.removeEventListener?.("unhandledrejection", onUnhandledRejection);
     },
     { once: true },
   );
@@ -769,12 +873,17 @@ export function installGpeWebDiagnostics() {
       );
     },
     setStartupState(state) {
-      startupState = safeString(state);
-      markEvent("startup state changed", startupState);
+      const before = startupState.snapshot();
+      if (before.terminal !== null) {
+        markEvent("startup state ignored after terminal", safeString(state));
+        return;
+      }
+      const after = startupState.set(state);
+      markEvent("startup state changed", after.state);
     },
     setStartupError(error) {
       startupError = safeString(error);
-      startupState = "failed";
+      startupState.fail(startupError, "failed");
       markEvent("startup error", startupError);
     },
   };
