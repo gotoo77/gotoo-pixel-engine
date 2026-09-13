@@ -12,6 +12,7 @@ const DEFAULT_TERMINAL_OUTCOMES = new Map([
   ["WebGPU requestAdapter rejected", "failed"],
   ["WebGPU requestDevice rejected", "failed"],
   ["startup error", "failed"],
+  ["engine startup failed", "failed"],
   ["startup unsupported", "unsupported"],
 ]);
 
