@@ -68,20 +68,37 @@ function failureStageFromEvents(events = []) {
   return null;
 }
 
-export function deriveEngineTriageFacts(snapshot) {
-  const text = safeString(snapshot, "");
-  const rendererMatch = text.match(
-    /RendererRecord\s*\{[\s\S]*?lifecycle:\s*DiagnosticField\s*\{[\s\S]*?value:\s*Some\(\s*([A-Za-z0-9_]+)/,
-  );
-  const category = text.match(
+function parseRendererRecord(segment) {
+  const rendererState = segment.match(
+    /lifecycle:\s*DiagnosticField\s*\{[\s\S]*?value:\s*Some\(\s*([A-Za-z0-9_]+)/,
+  )?.[1] ?? null;
+  const failureCategory = segment.match(
     /last_wgpu_error:\s*DiagnosticField\s*\{[\s\S]*?value:\s*Some\(\s*([A-Za-z0-9_]+)/,
   )?.[1] ?? null;
-  const rendererState = rendererMatch?.[1] ?? null;
+  return { rendererState, failureCategory };
+}
+
+export function deriveEngineTriageFacts(snapshot) {
+  const text = safeString(snapshot, "");
+  const records = text
+    .split(/RendererRecord\s*\{/)
+    .slice(1)
+    .map(parseRendererRecord)
+    .filter((record) => record.rendererState !== null || record.failureCategory !== null);
+  const failed = records.find((record) => record.rendererState === "InitializationFailed");
+
+  if (failed) {
+    return {
+      rendererState: failed.rendererState,
+      failureCategory: failed.failureCategory,
+      failureStage: normalizeFailureStage(failed.failureCategory) ?? "renderer",
+    };
+  }
 
   return {
-    rendererState,
-    failureCategory: category,
-    failureStage: rendererState === "InitializationFailed" ? normalizeFailureStage(category) ?? "renderer" : null,
+    rendererState: records[0]?.rendererState ?? null,
+    failureCategory: null,
+    failureStage: null,
   };
 }
 
@@ -235,13 +252,13 @@ export function formatDiagnosticsSummary({ runId, status = {}, triage = {}, timi
     `  WASM fetch: ${formatMaybeMs(timings.wasmFetchMs)}`,
     `  WASM read: ${formatMaybeMs(timings.wasmReadMs)}`,
     `  WASM instantiate: ${formatMaybeMs(timings.wasmInstantiateMs)}`,
-    `  winit handoff: ${formatMaybeMs(timings.winitHandoffAtMs)}`,
+    `  winit handoff at: ${formatMaybeMs(timings.winitHandoffAtMs)}`,
     `  requestAdapter: ${formatMaybeMs(timings.requestAdapterMs)}`,
     `  requestDevice: ${formatMaybeMs(timings.requestDeviceMs)}`,
     `  device -> first submit: ${formatMaybeMs(timings.deviceToFirstSubmitMs)}`,
     `  first submit -> first frame: ${formatMaybeMs(timings.firstSubmitToFirstFrameMs)}`,
-    `  failure detected: ${formatMaybeMs(timings.failureAtMs)}`,
-    `  first frame: ${formatMaybeMs(timings.firstFrameAtMs)}`,
+    `  failure detected at: ${formatMaybeMs(timings.failureAtMs)}`,
+    `  first frame at: ${formatMaybeMs(timings.firstFrameAtMs)}`,
     "",
     "JavaScript",
     `  unhandled error: ${safeString(javascript.lastUnhandledError, "none")}`,
