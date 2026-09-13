@@ -24,6 +24,11 @@ function formatGapMs(value) {
   return `${Math.round(Math.max(0, Number(value) || 0))} ms`;
 }
 
+function verboseChunkTracingRequested(search = globalThis.location?.search ?? "") {
+  const value = new URLSearchParams(search).get("verbose");
+  return value === "1" || value === "true" || value === "on";
+}
+
 export async function initializeArcadeWasm({
   init,
   mode = WASM_LOAD_STREAMING,
@@ -32,6 +37,7 @@ export async function initializeArcadeWasm({
   markEvent = () => {},
   now = () => globalThis.performance?.now?.() ?? Date.now(),
   slowChunkGapMs = 1000,
+  verboseChunks = verboseChunkTracingRequested(),
 } = {}) {
   if (typeof init !== "function") {
     throw new TypeError("init must be a function");
@@ -85,10 +91,14 @@ export async function initializeArcadeWasm({
     let chunkCount = 0;
     let totalBytes = 0;
     let previousChunkAt = now();
+    const readerStartedAt = previousChunkAt;
+    let maxGapMs = 0;
+    let slowGapCount = 0;
     const slowGapThreshold = Math.max(0, Number(slowChunkGapMs) || 0);
 
     markEvent("WASM response.body reader started");
 
+    let completedAt = readerStartedAt;
     try {
       while (true) {
         let readResult;
@@ -100,6 +110,7 @@ export async function initializeArcadeWasm({
         }
 
         const observedAt = now();
+        completedAt = observedAt;
         if (readResult?.done) break;
 
         let chunk;
@@ -112,27 +123,34 @@ export async function initializeArcadeWasm({
 
         chunkCount += 1;
         const gapMs = Math.max(0, observedAt - previousChunkAt);
+        maxGapMs = Math.max(maxGapMs, gapMs);
         totalBytes += chunk.byteLength;
         chunks.push(chunk);
 
         if (gapMs >= slowGapThreshold && slowGapThreshold > 0) {
+          slowGapCount += 1;
           markEvent(
             "WASM response.body slow gap",
             `index=${chunkCount}; gap=${formatGapMs(gapMs)}`,
           );
         }
 
-        markEvent(
-          chunkCount === 1 ? "WASM response.body first chunk" : "WASM response.body chunk",
-          `index=${chunkCount}; bytes=${chunk.byteLength}; total=${totalBytes}; gap=${formatGapMs(gapMs)}`,
-        );
+        if (chunkCount === 1 || verboseChunks) {
+          markEvent(
+            chunkCount === 1 ? "WASM response.body first chunk" : "WASM response.body chunk",
+            `index=${chunkCount}; bytes=${chunk.byteLength}; total=${totalBytes}; gap=${formatGapMs(gapMs)}`,
+          );
+        }
         previousChunkAt = observedAt;
       }
     } finally {
       if (typeof reader.releaseLock === "function") reader.releaseLock();
     }
 
-    markEvent("WASM response.body completed", `chunks=${chunkCount}; bytes=${totalBytes}`);
+    markEvent(
+      "WASM response.body completed",
+      `chunks=${chunkCount}; bytes=${totalBytes}; duration=${formatGapMs(completedAt - readerStartedAt)}; max_gap=${formatGapMs(maxGapMs)}; slow_gaps=${slowGapCount}`,
+    );
 
     const bytes = new Uint8Array(totalBytes);
     let offset = 0;
