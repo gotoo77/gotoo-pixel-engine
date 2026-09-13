@@ -78,7 +78,7 @@ describe("WASM loader experiment", () => {
     ]);
   });
 
-  it("reads response.body chunk-by-chunk and traces progress plus long gaps", async () => {
+  it("aggregates chunked progress by default while retaining first chunk and slow gaps", async () => {
     const events = [];
     const calls = [];
     const result = { ok: true };
@@ -129,8 +129,47 @@ describe("WASM loader experiment", () => {
       ["WASM response.body reader started", null],
       ["WASM response.body first chunk", "index=1; bytes=2; total=2; gap=50 ms"],
       ["WASM response.body slow gap", "index=2; gap=1650 ms"],
-      ["WASM response.body chunk", "index=2; bytes=1; total=3; gap=1650 ms"],
-      ["WASM response.body completed", "chunks=2; bytes=3"],
+      [
+        "WASM response.body completed",
+        "chunks=2; bytes=3; duration=1710 ms; max_gap=1650 ms; slow_gaps=1",
+      ],
+    ]);
+  });
+
+  it("emits every chunk only in verbose mode", async () => {
+    const events = [];
+    const reads = [
+      { done: false, value: new Uint8Array([1]) },
+      { done: false, value: new Uint8Array([2]) },
+      { done: true, value: undefined },
+    ];
+    const times = [0, 10, 20, 30];
+
+    await initializeArcadeWasm({
+      init: async () => ({ ok: true }),
+      mode: WASM_LOAD_CHUNKED,
+      verboseChunks: true,
+      fetchFn: async () => ({
+        ok: true,
+        status: 200,
+        body: {
+          getReader() {
+            return {
+              async read() {
+                return reads.shift();
+              },
+              releaseLock() {},
+            };
+          },
+        },
+      }),
+      now: () => times.shift() ?? 30,
+      markEvent: (label, detail = null) => events.push([label, detail]),
+    });
+
+    expect(events).toContainEqual([
+      "WASM response.body chunk",
+      "index=2; bytes=1; total=2; gap=10 ms",
     ]);
   });
 
