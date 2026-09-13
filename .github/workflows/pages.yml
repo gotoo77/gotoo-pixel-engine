@@ -114,9 +114,11 @@ jobs:
         run: |
           test -f dist/diagnostics.js
           test -f dist/diagnostics-core.js
+          test -f dist/diagnostics-report.js
           test -f dist/startup-trace.js
           test -f dist/startup-watchdog.js
           grep -Fq './diagnostics-core.js' dist/diagnostics.js
+          grep -Fq './diagnostics-report.js' dist/diagnostics.js
           grep -Fq './startup-watchdog.js' dist/diagnostics.js
           grep -Fq './startup-trace.js' dist/index.html
           test -f dist/pkg/arcade-web.js
