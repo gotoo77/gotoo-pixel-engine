@@ -71,6 +71,9 @@ export function createFirstFrameTiming({
       case "first post-submit requestAnimationFrame callback":
         if (postSubmitRafMs === null) postSubmitRafMs = observedMs;
         break;
+      case "engine startup failed":
+        if (terminal === null) terminal = { status: "FAILED", observedMs };
+        break;
       case "startup unsupported":
         if (terminal === null) terminal = { status: "UNSUPPORTED", observedMs };
         break;
@@ -332,6 +335,26 @@ async function browserGpuFacts(requestAdapter) {
   }
 }
 
+export function detectEngineStartupFailure(snapshot) {
+  const text = safeString(snapshot, "");
+  const rendererFailed = /RendererRecord\s*\{[\s\S]*?lifecycle:\s*DiagnosticField\s*\{[\s\S]*?value:\s*Some\(\s*InitializationFailed\b/.test(
+    text,
+  );
+  if (!rendererFailed) {
+    return { failed: false, reason: null };
+  }
+
+  const category = text.match(
+    /last_wgpu_error:\s*DiagnosticField\s*\{[\s\S]*?value:\s*Some\(\s*([A-Za-z0-9_]+)/,
+  )?.[1];
+  return {
+    failed: true,
+    reason: category
+      ? `renderer initialization failed (${category})`
+      : "renderer initialization failed",
+  };
+}
+
 export function deriveDiagnosticStatus({ startupError = null, watchdog = {}, firstFrame = {} } = {}) {
   if (startupError || watchdog.outcome === "failed" || watchdog.status === "FAILED") {
     return { level: "error", label: "ERROR", marker: "[ERROR]", reason: "startup failed" };
@@ -560,17 +583,14 @@ export function installGpeWebDiagnostics() {
   let snapshotProvider = null;
   let startupState = "page shell initializing";
   let startupError = null;
+  let engineFailureReason = null;
   let gpuFacts = {
     available: Boolean(navigator.gpu),
     adapter: "probing…",
   };
   let startupWatchdog = null;
 
-  function buildReport() {
-    const canvas = canvasFacts();
-    const watchdog = startupWatchdog.snapshot();
-    const firstFrame = firstFrameTiming.snapshot();
-    const status = deriveDiagnosticStatus({ startupError, watchdog, firstFrame });
+  function readEngineObservation() {
     let engine = "unavailable (consumer did not expose a diagnostics snapshot)";
     if (snapshotProvider) {
       try {
@@ -581,6 +601,28 @@ export function installGpeWebDiagnostics() {
           : `snapshot read failed: ${safeString(error)}`;
       }
     }
+    return engine;
+  }
+
+  function reconcileEngineFailure(engine) {
+    if (engineFailureReason !== null) return;
+    const failure = detectEngineStartupFailure(engine);
+    if (!failure.failed) return;
+
+    engineFailureReason = failure.reason;
+    startupState = "failed — engine renderer initialization failed";
+    startupWatchdog.observe("engine startup failed", engineFailureReason);
+    firstFrameTiming.observe("engine startup failed", engineFailureReason);
+    timeline.mark("engine startup failed", engineFailureReason);
+  }
+
+  function buildReport() {
+    const canvas = canvasFacts();
+    const engine = readEngineObservation();
+    reconcileEngineFailure(engine);
+    const watchdog = startupWatchdog.snapshot();
+    const firstFrame = firstFrameTiming.snapshot();
+    const status = deriveDiagnosticStatus({ startupError, watchdog, firstFrame });
 
     const text = [
       "GPE WEB DIAGNOSTICS",
@@ -604,6 +646,7 @@ export function installGpeWebDiagnostics() {
       "Startup",
       `  state: ${startupState}`,
       `  error: ${startupError ?? "none observed by page shell"}`,
+      `  engine failure: ${engineFailureReason ?? "none observed"}`,
       "",
       "Startup watchdog",
       `  status: ${watchdog.status}`,
@@ -641,6 +684,7 @@ export function installGpeWebDiagnostics() {
       "  GPUQueue.submit is a browser-side proxy for first rendering work; GPE engine diagnostics remain authoritative for renderer lifecycle and presents.",
       "  Startup/first-frame classifications: FAST <1s; SUSPICIOUS 1-3s; SLOW 3-8s; VERY SLOW >=8s.",
       "  The startup watchdog emits SLOW STARTUP DETECTED after 3s without a diagnostics milestone and records the recovery milestone.",
+      "  Renderer InitializationFailed is terminal for startup and first-frame timing; the engine snapshot remains the authoritative failure source.",
       "  Status meaning is also written as [OK], [WARN], [ERROR], or [INFO]; color is supplementary only.",
       "  Unknown data is intentionally left unknown rather than inferred.",
     ].join("\n");
