@@ -45,6 +45,7 @@ export function createFirstFrameTiming({
   let firstSubmitMs = null;
   let postSubmitRafMs = null;
   let unavailableReason = null;
+  let terminal = null;
 
   function elapsed() {
     return Math.max(0, now() - startedAt);
@@ -70,6 +71,9 @@ export function createFirstFrameTiming({
       case "first post-submit requestAnimationFrame callback":
         if (postSubmitRafMs === null) postSubmitRafMs = observedMs;
         break;
+      case "startup unsupported":
+        if (terminal === null) terminal = { status: "UNSUPPORTED", observedMs };
+        break;
       case "GPUQueue.submit trace unavailable":
       case "first post-submit requestAnimationFrame unavailable":
         markUnavailable(String(label), detail);
@@ -80,7 +84,7 @@ export function createFirstFrameTiming({
   }
 
   function snapshot() {
-    const sampledElapsedMs = postSubmitRafMs ?? elapsed();
+    const sampledElapsedMs = terminal?.observedMs ?? postSubmitRafMs ?? elapsed();
     const complete = postSubmitRafMs !== null;
     const deviceToSubmitMs =
       deviceReadyMs !== null && firstSubmitMs !== null
@@ -90,6 +94,25 @@ export function createFirstFrameTiming({
       firstSubmitMs !== null && postSubmitRafMs !== null
         ? Math.max(0, postSubmitRafMs - firstSubmitMs)
         : null;
+
+    if (!complete && terminal !== null) {
+      return {
+        status: terminal.status,
+        classification: "N/A",
+        elapsedMs: sampledElapsedMs,
+        slowThresholdMs,
+        waitingFor: null,
+        stalledForMs: 0,
+        unavailableReason: null,
+        deviceReadyMs,
+        firstRafCallbackMs,
+        firstSubmitMs,
+        postSubmitRafMs,
+        deviceToSubmitMs,
+        submitToPostRafMs,
+        complete: false,
+      };
+    }
 
     if (!complete && unavailableReason !== null) {
       return {
