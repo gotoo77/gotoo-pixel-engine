@@ -63,6 +63,16 @@
       #gpe-web-unsupported p {
         margin: 8px 0 0;
       }
+
+      #gpe-web-unsupported a {
+        display: inline-block;
+        margin-top: 14px;
+        padding: 7px 10px;
+        border: 1px solid #f6c453;
+        border-radius: 4px;
+        color: #f6c453;
+        text-decoration: none;
+      }
     </style>
   </head>
   <body>
@@ -74,6 +84,7 @@
         installGpeWebDiagnostics,
       } from "./diagnostics.js";
       import {
+        diagnosticsUrl,
         isWinitControlFlowHandoff,
         webGpuApiAvailable,
       } from "./diagnostics-core.js";
@@ -107,6 +118,10 @@
           <p>GPE Arcade requires WebGPU to create its renderer.</p>
           <p>This browser does not expose <code>navigator.gpu.requestAdapter()</code>, so startup was stopped before Arcade WASM and renderer initialization.</p>
         `;
+        const action = document.createElement("a");
+        action.href = diagnosticsUrl(globalThis.location?.href ?? "");
+        action.textContent = "OPEN DIAGNOSTICS";
+        notice.appendChild(action);
         document.body.appendChild(notice);
       }
 

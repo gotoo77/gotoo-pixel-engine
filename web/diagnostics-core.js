@@ -6,6 +6,12 @@ export function diagnosticsRequested(search = globalThis.location?.search ?? "")
   return value === "1" || value === "true" || value === "on";
 }
 
+export function diagnosticsUrl(href) {
+  const url = new URL(href);
+  url.searchParams.set("diagnostics", "1");
+  return url.href;
+}
+
 export function webGpuApiAvailable(gpu) {
   return Boolean(gpu && typeof gpu.requestAdapter === "function");
 }
