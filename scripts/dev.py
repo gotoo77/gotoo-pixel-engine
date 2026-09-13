@@ -21,6 +21,7 @@ PAGES_STATIC_FILES = [
     "fullscreen.js",
     "diagnostics.js",
     "diagnostics-core.js",
+    "diagnostics-report.js",
     "startup-trace.js",
     "startup-watchdog.js",
     "wasm-load-experiment.js",
@@ -120,6 +121,8 @@ def verify_pages_shell(dist: Path) -> None:
     diagnostics = (dist / "diagnostics.js").read_text(encoding="utf-8")
     if 'from "./diagnostics-core.js"' not in diagnostics:
         raise RuntimeError("Pages diagnostics.js does not import diagnostics-core.js")
+    if 'from "./diagnostics-report.js"' not in diagnostics:
+        raise RuntimeError("Pages diagnostics.js does not import diagnostics-report.js")
     if 'from "./startup-watchdog.js"' not in diagnostics:
         raise RuntimeError("Pages diagnostics.js does not import startup-watchdog.js")
 
