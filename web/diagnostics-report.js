@@ -53,6 +53,21 @@ function normalizeFailureStage(category) {
   return category ? (stages[category] ?? "renderer") : null;
 }
 
+function failureStageFromEvents(events = []) {
+  for (const event of [...events].reverse()) {
+    const label = safeString(event?.label, "");
+    if (/^WASM .*(rejected|failed)$/i.test(label) || label === "startup WASM failed") {
+      return "wasm";
+    }
+    if (label === "WebGPU requestAdapter rejected") return "request_adapter";
+    if (label === "WebGPU requestDevice rejected") return "request_device";
+    if (label === "GPUQueue.submit trace unavailable") return "first_submit";
+    if (label === "first post-submit requestAnimationFrame unavailable") return "first_frame";
+    if (/winit.*(failed|error|rejected)/i.test(label)) return "winit";
+  }
+  return null;
+}
+
 export function deriveEngineTriageFacts(snapshot) {
   const text = safeString(snapshot, "");
   const rendererMatch = text.match(
@@ -75,6 +90,7 @@ export function deriveTriage({
   engineFacts = {},
   firstFrame = {},
   wasmLoadMode = "unknown",
+  events = [],
 } = {}) {
   const adapterUsable = gpuFacts.adapterUsable;
   const firstFrameState = firstFrame.complete
@@ -84,7 +100,7 @@ export function deriveTriage({
       : "not observed";
 
   return {
-    failureStage: engineFacts.failureStage ?? null,
+    failureStage: engineFacts.failureStage ?? failureStageFromEvents(events),
     failureCategory: engineFacts.failureCategory ?? null,
     webGpuApi: gpuFacts.available ? "available" : "unavailable",
     browserAdapter:
@@ -111,24 +127,56 @@ function duration(events, startLabel, endLabel, options = {}) {
   return end - start;
 }
 
+function firstDuration(events, pairs) {
+  for (const [start, end, options = {}] of pairs) {
+    const value = duration(events, start, end, options);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
 export function derivePhaseTimings(events = []) {
-  const wasmInstantiateMs =
-    duration(events, "WASM instantiateStreaming started", "WASM instantiateStreaming resolved") ??
-    duration(events, "WASM instantiate started", "WASM instantiate resolved");
+  const wasmFetchMs = firstDuration(events, [
+    ["WASM Chunked fetch started", "WASM Chunked fetch resolved"],
+    ["WASM ArrayBuffer fetch started", "WASM ArrayBuffer fetch resolved"],
+    ["WASM fetch started", "WASM fetch resolved"],
+  ]);
+  const wasmReadMs = firstDuration(events, [
+    ["WASM response.body reader started", "WASM response.body completed"],
+    ["WASM response.arrayBuffer started", "WASM response.arrayBuffer resolved"],
+  ]);
+  const wasmInstantiateMs = firstDuration(events, [
+    ["WASM instantiateStreaming started", "WASM instantiateStreaming resolved"],
+    ["WASM instantiate started", "WASM instantiate resolved"],
+  ]);
+  const deviceReadyAtMs = eventMs(events, "WebGPU requestDevice resolved", { last: true });
+  const firstSubmitAtMs = eventMs(events, "first GPUQueue.submit");
+  const firstFrameAtMs =
+    eventMs(events, "first post-submit requestAnimationFrame callback") ??
+    eventMs(events, "first requestAnimationFrame callback");
 
   return {
     moduleImportMs: duration(events, "Arcade module import started", "Arcade module import completed"),
+    wasmFetchMs,
+    wasmReadMs,
     wasmInstantiateMs,
+    winitHandoffAtMs: eventMs(events, "winit event loop control-flow handoff"),
     requestAdapterMs: duration(events, "WebGPU requestAdapter started", "WebGPU requestAdapter resolved", {
       last: true,
     }),
     requestDeviceMs: duration(events, "WebGPU requestDevice started", "WebGPU requestDevice resolved", {
       last: true,
     }),
+    deviceToFirstSubmitMs:
+      deviceReadyAtMs !== null && firstSubmitAtMs !== null && firstSubmitAtMs >= deviceReadyAtMs
+        ? firstSubmitAtMs - deviceReadyAtMs
+        : null,
+    firstSubmitToFirstFrameMs:
+      firstSubmitAtMs !== null && firstFrameAtMs !== null && firstFrameAtMs >= firstSubmitAtMs
+        ? firstFrameAtMs - firstSubmitAtMs
+        : null,
     failureAtMs: eventMs(events, "engine startup failed"),
-    firstFrameAtMs:
-      eventMs(events, "first post-submit requestAnimationFrame callback") ??
-      eventMs(events, "first requestAnimationFrame callback"),
+    firstFrameAtMs,
   };
 }
 
@@ -184,9 +232,14 @@ export function formatDiagnosticsSummary({ runId, status = {}, triage = {}, timi
     "",
     "Timing",
     `  module import: ${formatMaybeMs(timings.moduleImportMs)}`,
+    `  WASM fetch: ${formatMaybeMs(timings.wasmFetchMs)}`,
+    `  WASM read: ${formatMaybeMs(timings.wasmReadMs)}`,
     `  WASM instantiate: ${formatMaybeMs(timings.wasmInstantiateMs)}`,
+    `  winit handoff: ${formatMaybeMs(timings.winitHandoffAtMs)}`,
     `  requestAdapter: ${formatMaybeMs(timings.requestAdapterMs)}`,
     `  requestDevice: ${formatMaybeMs(timings.requestDeviceMs)}`,
+    `  device -> first submit: ${formatMaybeMs(timings.deviceToFirstSubmitMs)}`,
+    `  first submit -> first frame: ${formatMaybeMs(timings.firstSubmitToFirstFrameMs)}`,
     `  failure detected: ${formatMaybeMs(timings.failureAtMs)}`,
     `  first frame: ${formatMaybeMs(timings.firstFrameAtMs)}`,
     "",
