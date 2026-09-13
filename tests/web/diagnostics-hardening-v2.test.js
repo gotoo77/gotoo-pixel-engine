@@ -112,6 +112,25 @@ describe("diagnostics v2 triage", () => {
     expect(triage.webGpuApi).toBe("available");
     expect(triage.browserAdapter).toBe("unavailable");
   });
+
+  it.each([
+    ["WASM response.arrayBuffer rejected", "wasm"],
+    ["WASM instantiateStreaming rejected", "wasm"],
+    ["WebGPU requestAdapter rejected", "request_adapter"],
+    ["WebGPU requestDevice rejected", "request_device"],
+    ["GPUQueue.submit trace unavailable", "first_submit"],
+    ["first post-submit requestAnimationFrame unavailable", "first_frame"],
+  ])("normalizes %s as %s when no engine category is available", (label, stage) => {
+    const deriveTriage = requireExport("deriveTriage");
+    const triage = deriveTriage({
+      gpuFacts: { available: true, adapterUsable: true, adapter: "selected" },
+      engineFacts: { rendererState: null, failureCategory: null, failureStage: null },
+      firstFrame: { complete: false, status: "FAILED" },
+      wasmLoadMode: "streaming",
+      events: [{ ms: 120, label, detail: "boom" }],
+    });
+    expect(triage.failureStage).toBe(stage);
+  });
 });
 
 describe("diagnostics v2 timing summary", () => {
@@ -129,6 +148,37 @@ describe("diagnostics v2 timing summary", () => {
       moduleImportMs: 283,
       wasmInstantiateMs: 255,
       failureAtMs: 1046,
+    });
+  });
+
+  it("summarizes fetch/read, winit, adapter, device, submit and first-frame timings when observed", () => {
+    const derivePhaseTimings = requireExport("derivePhaseTimings");
+    const timings = derivePhaseTimings([
+      { ms: 100, label: "WASM Chunked fetch started" },
+      { ms: 140, label: "WASM Chunked fetch resolved" },
+      { ms: 145, label: "WASM response.body reader started" },
+      { ms: 300, label: "WASM response.body completed" },
+      { ms: 310, label: "WASM instantiate started" },
+      { ms: 360, label: "WASM instantiate resolved" },
+      { ms: 370, label: "winit event loop control-flow handoff" },
+      { ms: 400, label: "WebGPU requestAdapter started" },
+      { ms: 420, label: "WebGPU requestAdapter resolved" },
+      { ms: 425, label: "WebGPU requestDevice started" },
+      { ms: 455, label: "WebGPU requestDevice resolved" },
+      { ms: 490, label: "first GPUQueue.submit" },
+      { ms: 510, label: "first post-submit requestAnimationFrame callback" },
+    ]);
+
+    expect(timings).toMatchObject({
+      wasmFetchMs: 40,
+      wasmReadMs: 155,
+      wasmInstantiateMs: 50,
+      winitHandoffAtMs: 370,
+      requestAdapterMs: 20,
+      requestDeviceMs: 30,
+      deviceToFirstSubmitMs: 35,
+      firstSubmitToFirstFrameMs: 20,
+      firstFrameAtMs: 510,
     });
   });
 });
