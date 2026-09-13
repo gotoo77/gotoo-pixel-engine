@@ -100,6 +100,28 @@ describe("diagnostics v2 triage", () => {
     });
   });
 
+  it("finds a failed renderer even when an earlier retained renderer is healthy", () => {
+    const deriveEngineTriageFacts = requireExport("deriveEngineTriageFacts");
+    const snapshot = `RendererObservations {
+      records: [
+        Some(RendererRecord {
+          lifecycle: DiagnosticField { value: Some(Ready), },
+          last_wgpu_error: DiagnosticField { value: Some(Unknown), },
+        }),
+        Some(RendererRecord {
+          lifecycle: DiagnosticField { value: Some(InitializationFailed), },
+          last_wgpu_error: DiagnosticField { value: Some(CreateSurface), },
+        }),
+      ],
+    }`;
+
+    expect(deriveEngineTriageFacts(snapshot)).toEqual({
+      rendererState: "InitializationFailed",
+      failureCategory: "CreateSurface",
+      failureStage: "create_surface",
+    });
+  });
+
   it("distinguishes API exposure from usable adapter availability", () => {
     const deriveTriage = requireExport("deriveTriage");
     const triage = deriveTriage({
