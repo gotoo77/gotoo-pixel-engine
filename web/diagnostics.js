@@ -674,7 +674,7 @@ export function installGpeWebDiagnostics() {
     const currentState = startupState.snapshot();
     const engineFacts = deriveEngineTriageFacts(engine);
     const wasmLoadMode = wasmLoadModeFromTimeline(events);
-    const triage = deriveTriage({ gpuFacts, engineFacts, firstFrame, wasmLoadMode });
+    const triage = deriveTriage({ gpuFacts, engineFacts, firstFrame, wasmLoadMode, events });
     const timings = derivePhaseTimings(events);
     const javascript = javascriptErrors.snapshot();
     const status = deriveDiagnosticStatus({ startupError, watchdog, firstFrame });
