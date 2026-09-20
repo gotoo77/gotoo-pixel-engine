@@ -5,9 +5,9 @@ use crate::{
 
 use super::{
     MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
-    standard_menu_controls,
-    menu::{PauseSettingsMenu, SettingsIntent},
     experimental::UiNavInput,
+    menu::{PauseSettingsMenu, SettingsIntent},
+    standard_menu_controls,
 };
 
 const PAUSE_TOGGLE: ActionId = ActionId::new("ui.pause.toggle");
@@ -150,7 +150,11 @@ impl<G> PauseGame<G> {
             self.state = PauseState::Paused;
             self.menu = MenuState::new(2);
             if let Some(menu) = self.settings_menu.as_mut() {
-                menu.update(frame.framebuffer, UiNavInput::default(), super::UiTheme::default());
+                menu.update(
+                    frame.framebuffer,
+                    UiNavInput::default(),
+                    super::UiTheme::default(),
+                );
             } else {
                 self.render_pause(frame.framebuffer);
             }
@@ -215,9 +219,15 @@ impl<G> PauseGame<G> {
             up: self.controls.action(PAUSE_UP).pressed(),
             down: self.controls.action(PAUSE_DOWN).pressed(),
             left: frame.input.key(Key::Left).pressed()
-                || frame.input.gamepad_button_any(GamepadButton::DPadLeft).pressed(),
+                || frame
+                    .input
+                    .gamepad_button_any(GamepadButton::DPadLeft)
+                    .pressed(),
             right: frame.input.key(Key::Right).pressed()
-                || frame.input.gamepad_button_any(GamepadButton::DPadRight).pressed(),
+                || frame
+                    .input
+                    .gamepad_button_any(GamepadButton::DPadRight)
+                    .pressed(),
             confirm: self.controls.action(PAUSE_CONFIRM).pressed(),
             cancel: pause_pressed,
         };
@@ -246,7 +256,11 @@ impl<G> PauseGame<G> {
 
         if self.pause_input_held() {
             if let Some(menu) = self.settings_menu.as_mut() {
-                menu.update(frame.framebuffer, UiNavInput::default(), super::UiTheme::default());
+                menu.update(
+                    frame.framebuffer,
+                    UiNavInput::default(),
+                    super::UiTheme::default(),
+                );
             } else {
                 self.render_pause(frame.framebuffer);
             }
