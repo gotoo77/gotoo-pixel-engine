@@ -43,7 +43,11 @@ impl<Id> MenuStack<Id> {
     }
 
     pub fn ui_state_mut(&mut self) -> &mut UiStateStore {
-        &mut self.pages.last_mut().expect("menu root is always present").ui_state
+        &mut self
+            .pages
+            .last_mut()
+            .expect("menu root is always present")
+            .ui_state
     }
 
     pub fn push(&mut self, id: Id) {
@@ -68,8 +72,8 @@ mod tests {
     use super::*;
     use crate::{
         Size,
-        ui::experimental::{UiNavInput, run_headless},
         ui::UiTheme,
+        ui::experimental::{UiNavInput, run_headless},
     };
 
     fn surface() -> Size {
@@ -98,17 +102,11 @@ mod tests {
     fn parent_focus_is_restored_after_visiting_child_page() {
         let mut stack = MenuStack::new("pause");
         let render = |state: &mut UiStateStore, nav: UiNavInput| {
-            let (output, _) = run_headless(
-                surface(),
-                state,
-                nav,
-                UiTheme::default(),
-                |ui| {
-                    ui.keyed("resume", |ui| ui.button("RESUME"));
-                    ui.keyed("settings", |ui| ui.button("SETTINGS"));
-                    ui.keyed("quit", |ui| ui.button("QUIT"));
-                },
-            );
+            let (output, _) = run_headless(surface(), state, nav, UiTheme::default(), |ui| {
+                ui.keyed("resume", |ui| ui.button("RESUME"));
+                ui.keyed("settings", |ui| ui.button("SETTINGS"));
+                ui.keyed("quit", |ui| ui.button("QUIT"));
+            });
             output
         };
 
