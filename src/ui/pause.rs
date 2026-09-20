@@ -562,4 +562,137 @@ mod tests {
         assert!(!trigger.intersects(wrapper.layout.resume));
         assert!(!trigger.intersects(wrapper.layout.quit));
     }
+
+    #[test]
+    fn shared_settings_pause_navigation_keeps_child_suspended() {
+        use crate::ui::menu::SettingsPage;
+        let mut wrapper = PauseGame::new(
+            CountingGame::default(),
+            PauseConfig::new(Size {
+                width: 320,
+                height: 180,
+            }),
+        )
+        .with_settings_menu();
+        let mut input = Input::default();
+        let mut framebuffer = Framebuffer::new(320, 180);
+
+        input.press_key(Key::Escape);
+        with_frame(&input, &mut framebuffer, |frame| {
+            assert_eq!(wrapper.update(frame), GameResult::Continue);
+        });
+        assert_eq!(wrapper.state, PauseState::Paused);
+        input.advance_frame();
+        input.release_key(Key::Escape);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        input.advance_frame();
+
+        input.press_key(Key::Down);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        input.advance_frame();
+        input.release_key(Key::Down);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        input.advance_frame();
+
+        input.press_key(Key::Space);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        assert_eq!(
+            wrapper.settings_menu.as_ref().unwrap().current(),
+            SettingsPage::Settings
+        );
+        assert_eq!(wrapper.game.updates, 0);
+        input.advance_frame();
+        input.release_key(Key::Space);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        input.advance_frame();
+        input.press_key(Key::Space);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        assert_eq!(
+            wrapper.settings_menu.as_ref().unwrap().current(),
+            SettingsPage::Audio
+        );
+        assert_eq!(wrapper.game.updates, 0);
+        input.advance_frame();
+        input.release_key(Key::Space);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        input.advance_frame();
+
+        input.press_key(Key::Escape);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        assert_eq!(
+            wrapper.settings_menu.as_ref().unwrap().current(),
+            SettingsPage::Settings
+        );
+        assert_eq!(wrapper.state, PauseState::Paused);
+        assert_eq!(wrapper.game.updates, 0);
+    }
+
+    #[test]
+    fn shared_settings_resume_gate_waits_for_confirmation_release() {
+        let mut wrapper = PauseGame::new(
+            CountingGame::default(),
+            PauseConfig::new(Size {
+                width: 320,
+                height: 180,
+            }),
+        )
+        .with_settings_menu();
+        let mut input = Input::default();
+        let mut framebuffer = Framebuffer::new(320, 180);
+
+        input.press_key(Key::Escape);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        input.advance_frame();
+        input.release_key(Key::Escape);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        input.advance_frame();
+
+        input.press_key(Key::Space);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        assert_eq!(wrapper.state, PauseState::ResumeGate);
+        assert_eq!(wrapper.game.updates, 0);
+
+        input.advance_frame();
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        assert_eq!(wrapper.state, PauseState::ResumeGate);
+        assert_eq!(wrapper.game.updates, 0);
+
+        input.release_key(Key::Space);
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        assert_eq!(wrapper.state, PauseState::Running);
+        assert_eq!(wrapper.game.updates, 0);
+
+        input.advance_frame();
+        with_frame(&input, &mut framebuffer, |frame| {
+            wrapper.update(frame);
+        });
+        assert_eq!(wrapper.game.updates, 1);
+    }
+
 }
