@@ -133,14 +133,25 @@ impl PauseSettingsMenu {
         nav: super::experimental::UiNavInput,
         theme: super::UiTheme,
     ) -> SettingsIntent {
-        use super::experimental::run;
+        self.update_with_input(framebuffer, super::experimental::UiInput { nav, ..Default::default() }, theme)
+    }
+
+    /// Render with the shared kernel's pointer and touch inputs.
+    pub fn update_with_input(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        input: super::experimental::UiInput<'_>,
+        theme: super::UiTheme,
+    ) -> SettingsIntent {
+        use super::experimental::run_with_input;
+        let nav = input.nav;
         let mut intent = SettingsIntent::None;
         let mut next = None;
         let mut back = nav.cancel;
         match self.current() {
             SettingsPage::Pause => {
                 let (output, (resume, settings, quit)) =
-                    run(framebuffer, self.pages.ui_state_mut(), nav, theme, |ui| {
+                    run_with_input(framebuffer, self.pages.ui_state_mut(), input, theme, |ui| {
                         ui.text("PAUSED");
                         (
                             ui.keyed("resume", |ui| ui.button("RESUME")),
@@ -159,7 +170,7 @@ impl PauseSettingsMenu {
             }
             SettingsPage::Settings => {
                 let (output, (audio, previous)) =
-                    run(framebuffer, self.pages.ui_state_mut(), nav, theme, |ui| {
+                    run_with_input(framebuffer, self.pages.ui_state_mut(), input, theme, |ui| {
                         ui.text("SETTINGS");
                         (
                             ui.keyed("audio", |ui| ui.button("AUDIO")),
@@ -175,7 +186,7 @@ impl PauseSettingsMenu {
             }
             SettingsPage::Audio => {
                 let (output, (master, music, sfx, previous)) =
-                    run(framebuffer, self.pages.ui_state_mut(), nav, theme, |ui| {
+                    run_with_input(framebuffer, self.pages.ui_state_mut(), input, theme, |ui| {
                         ui.text("AUDIO");
                         (
                             ui.keyed("master", |ui| {
