@@ -67,7 +67,6 @@ impl<Id> MenuStack<Id> {
     }
 }
 
-
 /// Pages for the minimal pause/settings/audio reference menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsPage {
@@ -292,4 +291,90 @@ mod tests {
         let restored = render(stack.ui_state_mut(), UiNavInput::default());
         assert_eq!(restored.focused_id(), Some(parent_focus));
     }
+
+    fn tick(menu: &mut PauseSettingsMenu, nav: UiNavInput) -> SettingsIntent {
+        let mut framebuffer = crate::Framebuffer::new(320, 180);
+        menu.update(&mut framebuffer, nav, UiTheme::default())
+    }
+
+    fn nav_down() -> UiNavInput {
+        UiNavInput {
+            down: true,
+            ..UiNavInput::default()
+        }
+    }
+
+    fn nav_confirm() -> UiNavInput {
+        UiNavInput {
+            confirm: true,
+            ..UiNavInput::default()
+        }
+    }
+
+    fn nav_cancel() -> UiNavInput {
+        UiNavInput {
+            cancel: true,
+            ..UiNavInput::default()
+        }
+    }
+
+    #[test]
+    fn pause_settings_audio_navigation_and_root_cancel() {
+        let mut menu = PauseSettingsMenu::new();
+        assert_eq!(tick(&mut menu, UiNavInput::default()), SettingsIntent::None);
+        tick(&mut menu, nav_down());
+        assert_eq!(tick(&mut menu, nav_confirm()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Settings);
+        tick(&mut menu, UiNavInput::default());
+        assert_eq!(tick(&mut menu, nav_confirm()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Audio);
+        assert_eq!(tick(&mut menu, nav_cancel()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Settings);
+        assert_eq!(tick(&mut menu, nav_cancel()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Pause);
+        assert_eq!(tick(&mut menu, nav_cancel()), SettingsIntent::Resume);
+        assert_eq!(menu.current(), SettingsPage::Pause);
+    }
+
+    #[test]
+    fn audio_slider_changes_values_without_changing_page() {
+        let mut menu = PauseSettingsMenu::new();
+        tick(&mut menu, UiNavInput::default());
+        tick(&mut menu, nav_down());
+        tick(&mut menu, nav_confirm());
+        tick(&mut menu, UiNavInput::default());
+        tick(&mut menu, nav_confirm());
+        assert_eq!(menu.current(), SettingsPage::Audio);
+        tick(&mut menu, UiNavInput::default());
+        let intent = tick(
+            &mut menu,
+            UiNavInput {
+                left: true,
+                ..UiNavInput::default()
+            },
+        );
+        assert_eq!(intent, SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Audio);
+        assert!((menu.audio.master - 0.95).abs() < f32::EPSILON * 2.0);
+        assert_eq!(menu.audio.music, 1.0);
+        assert_eq!(menu.audio.sfx, 1.0);
+    }
+
+    #[test]
+    fn applying_audio_settings_updates_existing_backend_buses() {
+        let mut menu = PauseSettingsMenu::new();
+        menu.audio = AudioSettings {
+            master: 0.75,
+            music: 0.5,
+            sfx: 0.25,
+        };
+        let mut backend = crate::NoopAudio::default();
+        menu.apply_audio(&mut backend).expect("noop backend supports volumes");
+        use crate::Audio;
+        assert_eq!(backend.master_volume(), 0.75);
+        assert_eq!(backend.bus_volume(crate::AudioBus::Music), 0.5);
+        assert_eq!(backend.bus_volume(crate::AudioBus::Sfx), 0.25);
+        assert_eq!(backend.bus_volume(crate::AudioBus::Ui), 1.0);
+    }
+
 }
