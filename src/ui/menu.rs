@@ -133,7 +133,14 @@ impl PauseSettingsMenu {
         nav: super::experimental::UiNavInput,
         theme: super::UiTheme,
     ) -> SettingsIntent {
-        self.update_with_input(framebuffer, super::experimental::UiInput { nav, ..Default::default() }, theme)
+        self.update_with_input(
+            framebuffer,
+            super::experimental::UiInput {
+                nav,
+                ..Default::default()
+            },
+            theme,
+        )
     }
 
     /// Render with the shared kernel's pointer and touch inputs.
