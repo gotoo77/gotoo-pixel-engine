@@ -150,6 +150,7 @@ impl<G> PauseGame<G> {
             self.state = PauseState::Paused;
             self.menu = MenuState::new(2);
             if let Some(menu) = self.settings_menu.as_mut() {
+                frame.framebuffer.clear(BG);
                 menu.update(
                     frame.framebuffer,
                     UiNavInput::default(),
@@ -232,6 +233,7 @@ impl<G> PauseGame<G> {
             cancel: pause_pressed,
         };
         let before = menu.audio;
+        frame.framebuffer.clear(BG);
         let intent = menu.update(frame.framebuffer, nav, super::UiTheme::default());
         if menu.audio != before {
             // Do not claim successful application if the backend rejects it.
@@ -256,6 +258,7 @@ impl<G> PauseGame<G> {
 
         if self.pause_input_held() {
             if let Some(menu) = self.settings_menu.as_mut() {
+                frame.framebuffer.clear(BG);
                 menu.update(
                     frame.framebuffer,
                     UiNavInput::default(),
@@ -694,5 +697,4 @@ mod tests {
         });
         assert_eq!(wrapper.game.updates, 1);
     }
-
 }
