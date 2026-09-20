@@ -456,6 +456,14 @@ impl Input {
         self.mouse_buttons[mouse_button_index(button)].set_released();
     }
 
+    /// Remap spatial events for a child framebuffer while retaining keyboard and gamepad state.
+    pub(crate) fn remap_spatial(&mut self, map: impl Fn((i32, i32)) -> Option<(i32, i32)>) {
+        self.mouse_position = self.mouse_position.and_then(&map);
+        for touch in &mut self.touches {
+            touch.position = touch.position.and_then(&map);
+        }
+    }
+
     pub(crate) fn set_mouse_position(&mut self, position: Option<(i32, i32)>) {
         self.mouse_position = position;
     }
