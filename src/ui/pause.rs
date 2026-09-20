@@ -6,6 +6,8 @@ use crate::{
 use super::{
     MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
     standard_menu_controls,
+    menu::{PauseSettingsMenu, SettingsIntent},
+    experimental::UiNavInput,
 };
 
 const PAUSE_TOGGLE: ActionId = ActionId::new("ui.pause.toggle");
@@ -102,6 +104,7 @@ pub struct PauseGame<G> {
     controls: ControlMap,
     trigger_pad: Option<VirtualPad>,
     menu_pad: Option<VirtualPad>,
+    settings_menu: Option<PauseSettingsMenu>,
 }
 
 impl<G> PauseGame<G> {
@@ -126,7 +129,14 @@ impl<G> PauseGame<G> {
             controls: pause_controls(),
             trigger_pad,
             menu_pad,
+            settings_menu: None,
         }
+    }
+
+    /// Opt in to the shared settings UI without changing legacy pause users.
+    pub fn with_settings_menu(mut self) -> Self {
+        self.settings_menu = Some(PauseSettingsMenu::new());
+        self
     }
 
     fn update_running(&mut self, frame: &mut Frame<'_>) -> GameResult
@@ -139,7 +149,11 @@ impl<G> PauseGame<G> {
         if trigger_touch || self.controls.action(PAUSE_TOGGLE).pressed() {
             self.state = PauseState::Paused;
             self.menu = MenuState::new(2);
-            self.render_pause(frame.framebuffer);
+            if let Some(menu) = self.settings_menu.as_mut() {
+                menu.update(frame.framebuffer, UiNavInput::default(), super::UiTheme::default());
+            } else {
+                self.render_pause(frame.framebuffer);
+            }
             return GameResult::Continue;
         }
 
@@ -151,6 +165,9 @@ impl<G> PauseGame<G> {
     }
 
     fn update_paused(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        if self.settings_menu.is_some() {
+            return self.update_paused_settings(frame);
+        }
         let trigger_touch = self.update_trigger(frame.input);
         let (touch_resume, touch_quit) = self.update_menu_pad(frame.input);
         self.controls.update(frame.input);
@@ -187,13 +204,52 @@ impl<G> PauseGame<G> {
         GameResult::Continue
     }
 
+    fn update_paused_settings(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        self.update_trigger(frame.input);
+        self.controls.update(frame.input);
+        let pause_pressed = self.controls.action(PAUSE_TOGGLE).pressed();
+        let menu = self.settings_menu.as_mut().expect("settings menu enabled");
+        // Start/Escape navigates back inside submenus; from the root it resumes.
+        // No child update occurs during menu interaction or on the resume frame.
+        let nav = UiNavInput {
+            up: self.controls.action(PAUSE_UP).pressed(),
+            down: self.controls.action(PAUSE_DOWN).pressed(),
+            left: frame.input.key(Key::Left).pressed()
+                || frame.input.gamepad_button_any(GamepadButton::DPadLeft).pressed(),
+            right: frame.input.key(Key::Right).pressed()
+                || frame.input.gamepad_button_any(GamepadButton::DPadRight).pressed(),
+            confirm: self.controls.action(PAUSE_CONFIRM).pressed(),
+            cancel: pause_pressed,
+        };
+        let before = menu.audio;
+        let intent = menu.update(frame.framebuffer, nav, super::UiTheme::default());
+        if menu.audio != before {
+            // Do not claim successful application if the backend rejects it.
+            if let Err(error) = menu.apply_audio(frame.audio) {
+                eprintln!("pause audio setting not applied: {error}");
+            }
+        }
+        match intent {
+            SettingsIntent::None => GameResult::Continue,
+            SettingsIntent::Resume => {
+                self.state = PauseState::ResumeGate;
+                GameResult::Continue
+            }
+            SettingsIntent::Exit => GameResult::Exit,
+        }
+    }
+
     fn update_resume_gate(&mut self, frame: &mut Frame<'_>) -> GameResult {
         self.update_trigger(frame.input);
         self.update_menu_pad(frame.input);
         self.controls.update(frame.input);
 
         if self.pause_input_held() {
-            self.render_pause(frame.framebuffer);
+            if let Some(menu) = self.settings_menu.as_mut() {
+                menu.update(frame.framebuffer, UiNavInput::default(), super::UiTheme::default());
+            } else {
+                self.render_pause(frame.framebuffer);
+            }
             return GameResult::Continue;
         }
 
