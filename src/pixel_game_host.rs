@@ -94,6 +94,33 @@ impl PixelGameHost {
         (result, presentation)
     }
 
+    /// Run a fitted child with pointer and touch events remapped to its surface.
+    pub fn update_and_present_fit_mapped(
+        &mut self,
+        host: &mut Frame<'_>,
+        bounds: Rect,
+    ) -> (GameResult, Option<PixelFitPresentation>) {
+        // Reuse the canonical fitter to obtain exactly the same presentation
+        // geometry as the subsequent blit (including letterboxing).
+        let geometry = present_pixel_surface_fit(host.framebuffer, &self.framebuffer, bounds);
+        let mut mapped = host.input.clone();
+        mapped.remap_spatial(|point| geometry.and_then(|fit| fit.map_point(point)));
+        let result = {
+            let mut child = Frame {
+                framebuffer: &mut self.framebuffer,
+                input: &mapped,
+                delta_time: host.delta_time,
+                storage: &mut *host.storage,
+                audio: &mut *host.audio,
+                surface_size: self.size,
+                viewport: Viewport::new(self.size, self.size),
+            };
+            self.game.update(&mut child)
+        };
+        let presentation = present_pixel_surface_fit(host.framebuffer, &self.framebuffer, bounds);
+        (result, presentation)
+    }
+
     /// Compatibility alias kept during the P6 API-shape audit.
     pub fn update_and_present_shared_input(
         &mut self,
