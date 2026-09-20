@@ -1,11 +1,11 @@
 use crate::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, Pixel,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, MouseButton, Pixel,
     Rect, Size,
 };
 
 use super::{
     MenuState, VirtualButton, VirtualPad, draw_menu_item, draw_panel, draw_text_centered,
-    experimental::UiNavInput,
+    experimental::{UiInput, UiNavInput, UiPointerInput},
     menu::{PauseSettingsMenu, SettingsIntent},
     standard_menu_controls,
 };
@@ -95,6 +95,38 @@ impl PauseLayout {
     }
 }
 
+/// Time-based horizontal repeat, independent of OS keyboard auto-repeat.
+#[derive(Default)]
+struct SliderRepeat {
+    direction: i8,
+    elapsed: std::time::Duration,
+    repeated: bool,
+}
+
+impl SliderRepeat {
+    fn pulse(&mut self, direction: i8, delta: std::time::Duration) -> (bool, bool) {
+        if direction == 0 {
+            *self = Self::default();
+            return (false, false);
+        }
+        if self.direction != direction {
+            self.direction = direction;
+            self.elapsed = std::time::Duration::ZERO;
+            self.repeated = false;
+            return (direction < 0, direction > 0);
+        }
+        self.elapsed += delta;
+        let delay = if self.repeated { 75 } else { 350 };
+        if self.elapsed >= std::time::Duration::from_millis(delay) {
+            self.elapsed -= std::time::Duration::from_millis(delay);
+            self.repeated = true;
+            (direction < 0, direction > 0)
+        } else {
+            (false, false)
+        }
+    }
+}
+
 pub struct PauseGame<G> {
     game: G,
     config: PauseConfig,
@@ -105,6 +137,7 @@ pub struct PauseGame<G> {
     trigger_pad: Option<VirtualPad>,
     menu_pad: Option<VirtualPad>,
     settings_menu: Option<PauseSettingsMenu>,
+    slider_repeat: SliderRepeat,
 }
 
 impl<G> PauseGame<G> {
@@ -130,6 +163,7 @@ impl<G> PauseGame<G> {
             trigger_pad,
             menu_pad,
             settings_menu: None,
+            slider_repeat: SliderRepeat::default(),
         }
     }
 
@@ -149,6 +183,7 @@ impl<G> PauseGame<G> {
         if trigger_touch || self.controls.action(PAUSE_TOGGLE).pressed() {
             self.state = PauseState::Paused;
             self.menu = MenuState::new(2);
+            self.slider_repeat = SliderRepeat::default();
             if let Some(menu) = self.settings_menu.as_mut() {
                 frame.framebuffer.clear(BG);
                 menu.update(
@@ -216,25 +251,35 @@ impl<G> PauseGame<G> {
         let menu = self.settings_menu.as_mut().expect("settings menu enabled");
         // Start/Escape navigates back inside submenus; from the root it resumes.
         // No child update occurs during menu interaction or on the resume frame.
-        let nav = UiNavInput {
-            up: self.controls.action(PAUSE_UP).pressed(),
-            down: self.controls.action(PAUSE_DOWN).pressed(),
-            left: frame.input.key(Key::Left).pressed()
-                || frame
-                    .input
-                    .gamepad_button_any(GamepadButton::DPadLeft)
-                    .pressed(),
-            right: frame.input.key(Key::Right).pressed()
-                || frame
-                    .input
-                    .gamepad_button_any(GamepadButton::DPadRight)
-                    .pressed(),
-            confirm: self.controls.action(PAUSE_CONFIRM).pressed(),
-            cancel: pause_pressed,
+        let left_held = frame.input.key(Key::Left).held()
+            || frame.input.gamepad_button_any(GamepadButton::DPadLeft).held();
+        let right_held = frame.input.key(Key::Right).held()
+            || frame.input.gamepad_button_any(GamepadButton::DPadRight).held();
+        let direction = match (left_held, right_held) {
+            (true, false) => -1,
+            (false, true) => 1,
+            _ => 0,
+        };
+        let (left, right) = self.slider_repeat.pulse(direction, frame.delta_time);
+        let input = UiInput {
+            nav: UiNavInput {
+                up: self.controls.action(PAUSE_UP).pressed(),
+                down: self.controls.action(PAUSE_DOWN).pressed(),
+                left,
+                right,
+                confirm: self.controls.action(PAUSE_CONFIRM).pressed(),
+                cancel: pause_pressed,
+            },
+            pointer: UiPointerInput {
+                position: frame.input.mouse_position(),
+                pressed: frame.input.mouse_button(MouseButton::Left).pressed(),
+                released: frame.input.mouse_button(MouseButton::Left).released(),
+            },
+            touches: frame.input.touches(),
         };
         let before = menu.audio;
         frame.framebuffer.clear(BG);
-        let intent = menu.update(frame.framebuffer, nav, super::UiTheme::default());
+        let intent = menu.update_with_input(frame.framebuffer, input, super::UiTheme::default());
         if menu.audio != before {
             // Do not claim successful application if the backend rejects it.
             if let Err(error) = menu.apply_audio(frame.audio) {
