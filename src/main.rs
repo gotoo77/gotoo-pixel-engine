@@ -1,7 +1,10 @@
 mod demo;
 
 use demo::DemoGame;
-use gotoo_pixel_engine::{EngineConfig, EngineError, Size, run, ui::{PauseConfig, PauseGame}};
+use gotoo_pixel_engine::{
+    EngineConfig, EngineError, Size, run,
+    ui::{PauseConfig, PauseGame},
+};
 
 const FRAMEBUFFER_WIDTH: u32 = 320;
 const FRAMEBUFFER_HEIGHT: u32 = 180;
