@@ -369,12 +369,12 @@ mod tests {
             sfx: 0.25,
         };
         let mut backend = crate::NoopAudio::default();
-        menu.apply_audio(&mut backend).expect("noop backend supports volumes");
+        menu.apply_audio(&mut backend)
+            .expect("noop backend supports volumes");
         use crate::Audio;
         assert_eq!(backend.master_volume(), 0.75);
         assert_eq!(backend.bus_volume(crate::AudioBus::Music), 0.5);
         assert_eq!(backend.bus_volume(crate::AudioBus::Sfx), 0.25);
         assert_eq!(backend.bus_volume(crate::AudioBus::Ui), 1.0);
     }
-
 }
