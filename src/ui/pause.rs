@@ -1,6 +1,6 @@
 use crate::{
-    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key, MouseButton, Pixel,
-    Rect, Size,
+    ActionId, ControlMap, Frame, Framebuffer, Game, GameResult, GamepadButton, Input, Key,
+    MouseButton, Pixel, Rect, Size,
 };
 
 use super::{
@@ -252,9 +252,15 @@ impl<G> PauseGame<G> {
         // Start/Escape navigates back inside submenus; from the root it resumes.
         // No child update occurs during menu interaction or on the resume frame.
         let left_held = frame.input.key(Key::Left).held()
-            || frame.input.gamepad_button_any(GamepadButton::DPadLeft).held();
+            || frame
+                .input
+                .gamepad_button_any(GamepadButton::DPadLeft)
+                .held();
         let right_held = frame.input.key(Key::Right).held()
-            || frame.input.gamepad_button_any(GamepadButton::DPadRight).held();
+            || frame
+                .input
+                .gamepad_button_any(GamepadButton::DPadRight)
+                .held();
         let direction = match (left_held, right_held) {
             (true, false) => -1,
             (false, true) => 1,
