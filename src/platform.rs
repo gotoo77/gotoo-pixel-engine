@@ -1,4 +1,6 @@
 use std::fmt;
+#[cfg(not(target_arch = "wasm32"))]
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -107,7 +109,7 @@ pub trait Game {
     /// Updates and renders the auxiliary tool window when it exists.
     fn update_tool_window(&mut self, _frame: &mut ToolFrame<'_>) {}
 
-    /// Called when the user closes the auxiliary window using the OS chrome.
+    /// Called when the auxiliary window closes or cannot be initialized.
     /// Implementations that request the window conditionally should clear that
     /// request here so the window stays closed until explicitly reopened.
     fn tool_window_closed(&mut self) {}
@@ -529,33 +531,46 @@ impl<G: Game> PlatformApp<G> {
             }
         };
 
-        #[cfg(feature = "diagnostics")]
-        let renderer_result = match self.diagnostics.as_ref() {
-            Some(diagnostics) => pollster::block_on(Renderer::new_with_diagnostics(
-                Arc::clone(&window),
-                config.framebuffer_width,
-                config.framebuffer_height,
-                diagnostics.clone(),
-                RendererRole::Tool,
-            )),
-            None => pollster::block_on(Renderer::new(
-                Arc::clone(&window),
-                config.framebuffer_width,
-                config.framebuffer_height,
-            )),
-        };
-        #[cfg(all(not(target_arch = "wasm32"), not(feature = "diagnostics")))]
-        let renderer_result = pollster::block_on(Renderer::new(
-            Arc::clone(&window),
-            config.framebuffer_width,
-            config.framebuffer_height,
-        ));
-        #[cfg(not(target_arch = "wasm32"))]
+        let renderer_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            #[cfg(feature = "diagnostics")]
+            {
+                match self.diagnostics.as_ref() {
+                    Some(diagnostics) => pollster::block_on(Renderer::new_with_diagnostics(
+                        Arc::clone(&window),
+                        config.framebuffer_width,
+                        config.framebuffer_height,
+                        diagnostics.clone(),
+                        RendererRole::Tool,
+                    )),
+                    None => pollster::block_on(Renderer::new(
+                        Arc::clone(&window),
+                        config.framebuffer_width,
+                        config.framebuffer_height,
+                    )),
+                }
+            }
+            #[cfg(not(feature = "diagnostics"))]
+            {
+                pollster::block_on(Renderer::new(
+                    Arc::clone(&window),
+                    config.framebuffer_width,
+                    config.framebuffer_height,
+                ))
+            }
+        }));
+
         let renderer = match renderer_result {
-            Ok(renderer) => renderer,
-            Err(error) => {
-                self.pending_error = Some(EngineError::renderer(error));
-                self.request_exit(event_loop);
+            Ok(Ok(renderer)) => renderer,
+            Ok(Err(error)) => {
+                eprintln!("GPE tool window renderer initialization failed: {error}");
+                self.game.tool_window_closed();
+                return;
+            }
+            Err(_) => {
+                eprintln!(
+                    "GPE tool window renderer initialization panicked; disabling auxiliary window"
+                );
+                self.game.tool_window_closed();
                 return;
             }
         };
