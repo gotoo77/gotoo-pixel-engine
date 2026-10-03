@@ -107,6 +107,37 @@ impl Game for ToolWindowProbe {
             Pixel::rgb(240, 210, 90),
         );
 
+        // Visual controls in the sidecar intentionally affect this preview so
+        // the probe verifies that tool-window edits propagate into the primary
+        // game state immediately.
+        frame
+            .framebuffer
+            .draw_rect(255, 70, 45, 45, Pixel::rgb(80, 95, 130));
+        if self.visual_enabled {
+            match self.visual_style {
+                0 => {
+                    frame
+                        .framebuffer
+                        .fill_rect(260, 75, 35, 35, Pixel::rgb(205, 95, 235));
+                }
+                1 => {
+                    for x in (260..295).step_by(8) {
+                        frame
+                            .framebuffer
+                            .fill_rect(x, 75, 4, 35, Pixel::rgb(205, 95, 235));
+                    }
+                }
+                _ => {
+                    frame
+                        .framebuffer
+                        .draw_rect(260, 75, 35, 35, Pixel::rgb(205, 95, 235));
+                    frame
+                        .framebuffer
+                        .draw_rect(265, 80, 25, 25, Pixel::rgb(125, 75, 150));
+                }
+            }
+        }
+
         if self.tool_open {
             frame
                 .framebuffer
