@@ -524,7 +524,6 @@ impl<G: Game> PlatformApp<G> {
                 f64::from(config.window_height),
             ))
             .with_min_inner_size(LogicalSize::new(1.0, 1.0))
-            .with_resizable(std::env::var_os("WSL_DISTRO_NAME").is_none())
             .with_window_icon(default_window_icon());
 
         let window = match event_loop.create_window(attributes) {
