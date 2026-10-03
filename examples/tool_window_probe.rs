@@ -89,13 +89,25 @@ impl Game for ToolWindowProbe {
         frame
             .framebuffer
             .draw_rect(20, 60, 220, 40, Pixel::rgb(90, 120, 180));
-        frame.framebuffer.fill_rect(
-            30,
-            70,
-            self.bar_width.round() as u32,
-            20,
-            Pixel::rgb(100, 220, 180),
-        );
+        if self.bar_enabled {
+            let bar_width = self.bar_width.round() as u32;
+            let bar_x = if self.direction == 0 {
+                30
+            } else {
+                230 - bar_width as i32
+            };
+            let gain = self.bar_gain.clamp(0.0, 1.0);
+            let green = (80.0 + gain * 175.0).round() as u8;
+            let blue = (70.0 + gain * 150.0).round() as u8;
+
+            frame.framebuffer.fill_rect(
+                bar_x,
+                70,
+                bar_width,
+                20,
+                Pixel::rgb(70, green, blue),
+            );
+        }
         frame
             .framebuffer
             .draw_rect(30, 125, 208, 12, Pixel::rgb(70, 90, 130));
