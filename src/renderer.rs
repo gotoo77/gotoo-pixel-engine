@@ -76,6 +76,7 @@ pub enum RendererInitError {
     CreateSurface(wgpu::CreateSurfaceError),
     RequestAdapter(wgpu::RequestAdapterError),
     RequestDevice(wgpu::RequestDeviceError),
+    ConfigureSurface(String),
 }
 
 impl fmt::Display for RendererInitError {
@@ -84,6 +85,7 @@ impl fmt::Display for RendererInitError {
             Self::CreateSurface(err) => write!(f, "failed to create surface: {err}"),
             Self::RequestAdapter(err) => write!(f, "failed to request adapter: {err}"),
             Self::RequestDevice(err) => write!(f, "failed to request device: {err}"),
+            Self::ConfigureSurface(err) => write!(f, "failed to configure surface: {err}"),
         }
     }
 }
@@ -262,7 +264,16 @@ impl Renderer {
             alpha_mode,
             view_formats: vec![],
         };
+        let surface_error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         surface.configure(&device, &config);
+        if let Some(error) = surface_error_scope.pop().await {
+            #[cfg(feature = "diagnostics")]
+            if let Some(diagnostics) = diagnostics.as_mut() {
+                diagnostics.initialization_failed(WgpuErrorCategory::SurfaceValidation);
+            }
+            return Err(RendererInitError::ConfigureSurface(error.to_string()));
+        }
+
         #[cfg(feature = "diagnostics")]
         if let Some(diagnostics) = diagnostics.as_ref() {
             diagnostics.surface_configured(surface_configuration(&config));
