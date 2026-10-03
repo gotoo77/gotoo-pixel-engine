@@ -466,8 +466,12 @@ impl<G: Game> PlatformApp<G> {
                 }
             }
             RenderOutcome::SurfaceChanged => {
-                if let Some(renderer) = self.renderer.as_mut() {
-                    renderer.resize(window.inner_size());
+                if let Some(renderer) = self.renderer.as_mut()
+                    && let Err(error) = renderer.resize(window.inner_size())
+                {
+                    self.pending_error = Some(EngineError::renderer(error));
+                    self.request_exit(event_loop);
+                    return;
                 }
             }
             RenderOutcome::Skipped => {}
@@ -588,6 +592,7 @@ impl<G: Game> PlatformApp<G> {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn render_tool_frame(&mut self, event_loop: &ActiveEventLoop) {
+        let mut resize_error = None;
         {
             let Some(state) = self.tool_window.as_mut() else {
                 return;
@@ -611,11 +616,22 @@ impl<G: Game> PlatformApp<G> {
 
             match state.renderer.render(&state.framebuffer) {
                 RenderOutcome::Presented => {}
-                RenderOutcome::SurfaceChanged => state.renderer.resize(state.window.inner_size()),
+                RenderOutcome::SurfaceChanged => {
+                    if let Err(error) = state.renderer.resize(state.window.inner_size()) {
+                        resize_error = Some(error);
+                    }
+                }
                 RenderOutcome::Skipped => {}
             }
 
             state.input.advance_frame();
+        }
+
+        if let Some(error) = resize_error {
+            eprintln!("GPE tool window resize failed: {error}");
+            self.game.tool_window_closed();
+            self.tool_window = None;
+            return;
         }
 
         self.sync_tool_window(event_loop);
@@ -779,8 +795,12 @@ impl<G: Game> PlatformApp<G> {
         };
 
         self.reset_frame_timing();
-        if let Some(size) = self.last_non_zero_window_size {
-            renderer.resize(size);
+        if let Some(size) = self.last_non_zero_window_size
+            && let Err(error) = renderer.resize(size)
+        {
+            self.pending_error = Some(EngineError::renderer(error));
+            self.request_exit(event_loop);
+            return;
         }
         self.renderer = Some(renderer);
         #[cfg(feature = "diagnostics")]
@@ -816,7 +836,11 @@ impl<G: Game> PlatformApp<G> {
         match event {
             WindowEvent::Resized(size) => {
                 remember_non_zero_size(&mut state.last_non_zero_window_size, size);
-                state.renderer.resize(size);
+                if let Err(error) = state.renderer.resize(size) {
+                    eprintln!("GPE tool window resize failed: {error}");
+                    self.game.tool_window_closed();
+                    self.tool_window = None;
+                }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if !state.window.has_focus() {
@@ -930,8 +954,11 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             WindowEvent::CloseRequested => self.request_exit(event_loop),
             WindowEvent::Resized(size) => {
                 remember_non_zero_size(&mut self.last_non_zero_window_size, size);
-                if let Some(renderer) = self.renderer.as_mut() {
-                    renderer.resize(size);
+                if let Some(renderer) = self.renderer.as_mut()
+                    && let Err(error) = renderer.resize(size)
+                {
+                    self.pending_error = Some(EngineError::renderer(error));
+                    self.request_exit(event_loop);
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
