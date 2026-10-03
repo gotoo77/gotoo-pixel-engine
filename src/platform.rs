@@ -524,6 +524,7 @@ impl<G: Game> PlatformApp<G> {
                 f64::from(config.window_height),
             ))
             .with_min_inner_size(LogicalSize::new(1.0, 1.0))
+            .with_resizable(std::env::var_os("WSL_DISTRO_NAME").is_none())
             .with_window_icon(default_window_icon());
 
         let window = match event_loop.create_window(attributes) {
@@ -628,7 +629,7 @@ impl<G: Game> PlatformApp<G> {
         }
 
         if let Some(error) = resize_error {
-            eprintln!("GPE tool window resize failed: {error}");
+            eprintln!("GPE tool window surface-change resize failed: {error}");
             self.game.tool_window_closed();
             self.tool_window = None;
             return;
@@ -837,7 +838,7 @@ impl<G: Game> PlatformApp<G> {
             WindowEvent::Resized(size) => {
                 remember_non_zero_size(&mut state.last_non_zero_window_size, size);
                 if let Err(error) = state.renderer.resize(size) {
-                    eprintln!("GPE tool window resize failed: {error}");
+                    eprintln!("GPE tool window resize event failed: {error}");
                     self.game.tool_window_closed();
                     self.tool_window = None;
                 }
