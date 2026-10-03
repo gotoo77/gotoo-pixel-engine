@@ -76,6 +76,7 @@ pub enum RendererInitError {
     CreateSurface(wgpu::CreateSurfaceError),
     RequestAdapter(wgpu::RequestAdapterError),
     RequestDevice(wgpu::RequestDeviceError),
+    ConfigureSurface(String),
 }
 
 impl fmt::Display for RendererInitError {
@@ -84,6 +85,7 @@ impl fmt::Display for RendererInitError {
             Self::CreateSurface(err) => write!(f, "failed to create surface: {err}"),
             Self::RequestAdapter(err) => write!(f, "failed to request adapter: {err}"),
             Self::RequestDevice(err) => write!(f, "failed to request device: {err}"),
+            Self::ConfigureSurface(err) => write!(f, "failed to configure surface: {err}"),
         }
     }
 }
@@ -262,7 +264,14 @@ impl Renderer {
             alpha_mode,
             view_formats: vec![],
         };
-        surface.configure(&device, &config);
+        if let Err(error) = Self::configure_surface(&surface, &device, &config).await {
+            #[cfg(feature = "diagnostics")]
+            if let Some(diagnostics) = diagnostics.as_mut() {
+                diagnostics.initialization_failed(WgpuErrorCategory::SurfaceValidation);
+            }
+            return Err(error);
+        }
+
         #[cfg(feature = "diagnostics")]
         if let Some(diagnostics) = diagnostics.as_ref() {
             diagnostics.surface_configured(surface_configuration(&config));
@@ -413,13 +422,38 @@ impl Renderer {
         })
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
+    async fn configure_surface(
+        surface: &wgpu::Surface<'_>,
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+    ) -> Result<(), RendererInitError> {
+        let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        surface.configure(device, config);
+        if let Some(error) = error_scope.pop().await {
+            return Err(RendererInitError::ConfigureSurface(error.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), RendererInitError> {
         if size.width == 0 || size.height == 0 {
-            return;
+            return Ok(());
+        }
+        if size.width == self.config.width && size.height == self.config.height {
+            return Ok(());
         }
 
-        self.config.width = size.width;
-        self.config.height = size.height;
+        let mut config = self.config.clone();
+        config.width = size.width;
+        config.height = size.height;
+
+        pollster::block_on(Self::configure_surface(
+            &self.surface,
+            &self.device,
+            &config,
+        ))?;
+
+        self.config = config;
         self.viewport = Viewport::new(
             Size {
                 width: size.width,
@@ -427,11 +461,11 @@ impl Renderer {
             },
             self.framebuffer_size,
         );
-        self.surface.configure(&self.device, &self.config);
         #[cfg(feature = "diagnostics")]
         if let Some(diagnostics) = self.diagnostics.as_ref() {
             diagnostics.surface_configured(surface_configuration(&self.config));
         }
+        Ok(())
     }
 
     fn request_window_for_framebuffer(&self, size: Size) {

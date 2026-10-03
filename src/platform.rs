@@ -1,4 +1,6 @@
 use std::fmt;
+#[cfg(not(target_arch = "wasm32"))]
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,6 +32,8 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+#[cfg(target_os = "linux")]
+use winit::platform::x11::EventLoopBuilderExtX11;
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
 use winit::window::{Window, WindowId};
@@ -107,7 +111,7 @@ pub trait Game {
     /// Updates and renders the auxiliary tool window when it exists.
     fn update_tool_window(&mut self, _frame: &mut ToolFrame<'_>) {}
 
-    /// Called when the user closes the auxiliary window using the OS chrome.
+    /// Called when the auxiliary window closes or cannot be initialized.
     /// Implementations that request the window conditionally should clear that
     /// request here so the window stays closed until explicitly reopened.
     fn tool_window_closed(&mut self) {}
@@ -187,9 +191,7 @@ impl std::error::Error for EngineError {}
 pub fn run<G: Game + 'static>(config: EngineConfig, game: G) -> Result<(), EngineError> {
     validate_config(&config)?;
 
-    let event_loop = EventLoop::<PlatformEvent>::with_user_event()
-        .build()
-        .map_err(EngineError::event_loop)?;
+    let event_loop = build_event_loop().map_err(EngineError::event_loop)?;
     #[cfg(target_arch = "wasm32")]
     let mut app = PlatformApp::new(config, game, event_loop.create_proxy());
     #[cfg(not(target_arch = "wasm32"))]
@@ -225,7 +227,7 @@ pub fn run_with_diagnostics<G: Game + 'static>(
         return Err(error);
     }
 
-    let event_loop = match EventLoop::<PlatformEvent>::with_user_event().build() {
+    let event_loop = match build_event_loop() {
         Ok(event_loop) => event_loop,
         Err(error) => {
             diagnostics
@@ -264,6 +266,33 @@ pub fn run_with_diagnostics<G: Game + 'static>(
         }),
     );
     result
+}
+
+fn build_event_loop() -> Result<EventLoop<PlatformEvent>, winit::error::EventLoopError> {
+    let mut builder = EventLoop::<PlatformEvent>::with_user_event();
+
+    #[cfg(target_os = "linux")]
+    if prefer_x11_on_wsl() {
+        builder.with_x11();
+    }
+
+    builder.build()
+}
+
+#[cfg(target_os = "linux")]
+fn prefer_x11_on_wsl() -> bool {
+    let wsl = std::env::var_os("WSL_DISTRO_NAME").is_some();
+    let x11 = std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty());
+    let wayland = std::env::var_os("WAYLAND_DISPLAY")
+        .is_some_and(|value| !value.is_empty())
+        || std::env::var_os("WAYLAND_SOCKET").is_some_and(|value| !value.is_empty());
+
+    should_prefer_x11_on_wsl(wsl, x11, wayland)
+}
+
+#[cfg(target_os = "linux")]
+const fn should_prefer_x11_on_wsl(wsl: bool, x11: bool, wayland: bool) -> bool {
+    wsl && x11 && wayland
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -464,8 +493,12 @@ impl<G: Game> PlatformApp<G> {
                 }
             }
             RenderOutcome::SurfaceChanged => {
-                if let Some(renderer) = self.renderer.as_mut() {
-                    renderer.resize(window.inner_size());
+                if let Some(renderer) = self.renderer.as_mut()
+                    && let Err(error) = renderer.resize(window.inner_size())
+                {
+                    self.pending_error = Some(EngineError::renderer(error));
+                    self.request_exit(event_loop);
+                    return;
                 }
             }
             RenderOutcome::Skipped => {}
@@ -529,33 +562,46 @@ impl<G: Game> PlatformApp<G> {
             }
         };
 
-        #[cfg(feature = "diagnostics")]
-        let renderer_result = match self.diagnostics.as_ref() {
-            Some(diagnostics) => pollster::block_on(Renderer::new_with_diagnostics(
-                Arc::clone(&window),
-                config.framebuffer_width,
-                config.framebuffer_height,
-                diagnostics.clone(),
-                RendererRole::Tool,
-            )),
-            None => pollster::block_on(Renderer::new(
-                Arc::clone(&window),
-                config.framebuffer_width,
-                config.framebuffer_height,
-            )),
-        };
-        #[cfg(all(not(target_arch = "wasm32"), not(feature = "diagnostics")))]
-        let renderer_result = pollster::block_on(Renderer::new(
-            Arc::clone(&window),
-            config.framebuffer_width,
-            config.framebuffer_height,
-        ));
-        #[cfg(not(target_arch = "wasm32"))]
+        let renderer_result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            #[cfg(feature = "diagnostics")]
+            {
+                match self.diagnostics.as_ref() {
+                    Some(diagnostics) => pollster::block_on(Renderer::new_with_diagnostics(
+                        Arc::clone(&window),
+                        config.framebuffer_width,
+                        config.framebuffer_height,
+                        diagnostics.clone(),
+                        RendererRole::Tool,
+                    )),
+                    None => pollster::block_on(Renderer::new(
+                        Arc::clone(&window),
+                        config.framebuffer_width,
+                        config.framebuffer_height,
+                    )),
+                }
+            }
+            #[cfg(not(feature = "diagnostics"))]
+            {
+                pollster::block_on(Renderer::new(
+                    Arc::clone(&window),
+                    config.framebuffer_width,
+                    config.framebuffer_height,
+                ))
+            }
+        }));
+
         let renderer = match renderer_result {
-            Ok(renderer) => renderer,
-            Err(error) => {
-                self.pending_error = Some(EngineError::renderer(error));
-                self.request_exit(event_loop);
+            Ok(Ok(renderer)) => renderer,
+            Ok(Err(error)) => {
+                eprintln!("GPE tool window renderer initialization failed: {error}");
+                self.game.tool_window_closed();
+                return;
+            }
+            Err(_) => {
+                eprintln!(
+                    "GPE tool window renderer initialization panicked; disabling auxiliary window"
+                );
+                self.game.tool_window_closed();
                 return;
             }
         };
@@ -573,6 +619,7 @@ impl<G: Game> PlatformApp<G> {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn render_tool_frame(&mut self, event_loop: &ActiveEventLoop) {
+        let mut resize_error = None;
         {
             let Some(state) = self.tool_window.as_mut() else {
                 return;
@@ -596,11 +643,22 @@ impl<G: Game> PlatformApp<G> {
 
             match state.renderer.render(&state.framebuffer) {
                 RenderOutcome::Presented => {}
-                RenderOutcome::SurfaceChanged => state.renderer.resize(state.window.inner_size()),
+                RenderOutcome::SurfaceChanged => {
+                    if let Err(error) = state.renderer.resize(state.window.inner_size()) {
+                        resize_error = Some(error);
+                    }
+                }
                 RenderOutcome::Skipped => {}
             }
 
             state.input.advance_frame();
+        }
+
+        if let Some(error) = resize_error {
+            eprintln!("GPE tool window surface-change resize failed: {error}");
+            self.game.tool_window_closed();
+            self.tool_window = None;
+            return;
         }
 
         self.sync_tool_window(event_loop);
@@ -764,8 +822,12 @@ impl<G: Game> PlatformApp<G> {
         };
 
         self.reset_frame_timing();
-        if let Some(size) = self.last_non_zero_window_size {
-            renderer.resize(size);
+        if let Some(size) = self.last_non_zero_window_size
+            && let Err(error) = renderer.resize(size)
+        {
+            self.pending_error = Some(EngineError::renderer(error));
+            self.request_exit(event_loop);
+            return;
         }
         self.renderer = Some(renderer);
         #[cfg(feature = "diagnostics")]
@@ -801,7 +863,11 @@ impl<G: Game> PlatformApp<G> {
         match event {
             WindowEvent::Resized(size) => {
                 remember_non_zero_size(&mut state.last_non_zero_window_size, size);
-                state.renderer.resize(size);
+                if let Err(error) = state.renderer.resize(size) {
+                    eprintln!("GPE tool window resize event failed: {error}");
+                    self.game.tool_window_closed();
+                    self.tool_window = None;
+                }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if !state.window.has_focus() {
@@ -915,8 +981,11 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             WindowEvent::CloseRequested => self.request_exit(event_loop),
             WindowEvent::Resized(size) => {
                 remember_non_zero_size(&mut self.last_non_zero_window_size, size);
-                if let Some(renderer) = self.renderer.as_mut() {
-                    renderer.resize(size);
+                if let Some(renderer) = self.renderer.as_mut()
+                    && let Err(error) = renderer.resize(size)
+                {
+                    self.pending_error = Some(EngineError::renderer(error));
+                    self.request_exit(event_loop);
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -1302,8 +1371,19 @@ mod tests {
         tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
         validate_tool_window_config,
     };
+    #[cfg(target_os = "linux")]
+    use super::should_prefer_x11_on_wsl;
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wsl_x11_fallback_requires_wsl_x11_and_wayland() {
+        assert!(should_prefer_x11_on_wsl(true, true, true));
+        assert!(!should_prefer_x11_on_wsl(false, true, true));
+        assert!(!should_prefer_x11_on_wsl(true, false, true));
+        assert!(!should_prefer_x11_on_wsl(true, true, false));
+    }
 
     #[test]
     fn simulation_delta_keeps_regular_frames() {
