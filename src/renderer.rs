@@ -439,6 +439,9 @@ impl Renderer {
         if size.width == 0 || size.height == 0 {
             return Ok(());
         }
+        if size.width == self.config.width && size.height == self.config.height {
+            return Ok(());
+        }
 
         let mut config = self.config.clone();
         config.width = size.width;
