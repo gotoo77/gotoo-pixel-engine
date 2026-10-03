@@ -32,6 +32,8 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+#[cfg(target_os = "linux")]
+use winit::platform::x11::EventLoopBuilderExtX11;
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Fullscreen;
 use winit::window::{Window, WindowId};
@@ -189,9 +191,7 @@ impl std::error::Error for EngineError {}
 pub fn run<G: Game + 'static>(config: EngineConfig, game: G) -> Result<(), EngineError> {
     validate_config(&config)?;
 
-    let event_loop = EventLoop::<PlatformEvent>::with_user_event()
-        .build()
-        .map_err(EngineError::event_loop)?;
+    let event_loop = build_event_loop().map_err(EngineError::event_loop)?;
     #[cfg(target_arch = "wasm32")]
     let mut app = PlatformApp::new(config, game, event_loop.create_proxy());
     #[cfg(not(target_arch = "wasm32"))]
@@ -227,7 +227,7 @@ pub fn run_with_diagnostics<G: Game + 'static>(
         return Err(error);
     }
 
-    let event_loop = match EventLoop::<PlatformEvent>::with_user_event().build() {
+    let event_loop = match build_event_loop() {
         Ok(event_loop) => event_loop,
         Err(error) => {
             diagnostics
@@ -266,6 +266,33 @@ pub fn run_with_diagnostics<G: Game + 'static>(
         }),
     );
     result
+}
+
+fn build_event_loop() -> Result<EventLoop<PlatformEvent>, winit::error::EventLoopError> {
+    let mut builder = EventLoop::<PlatformEvent>::with_user_event();
+
+    #[cfg(target_os = "linux")]
+    if prefer_x11_on_wsl() {
+        builder.with_x11();
+    }
+
+    builder.build()
+}
+
+#[cfg(target_os = "linux")]
+fn prefer_x11_on_wsl() -> bool {
+    let wsl = std::env::var_os("WSL_DISTRO_NAME").is_some();
+    let x11 = std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty());
+    let wayland = std::env::var_os("WAYLAND_DISPLAY")
+        .is_some_and(|value| !value.is_empty())
+        || std::env::var_os("WAYLAND_SOCKET").is_some_and(|value| !value.is_empty());
+
+    should_prefer_x11_on_wsl(wsl, x11, wayland)
+}
+
+#[cfg(target_os = "linux")]
+const fn should_prefer_x11_on_wsl(wsl: bool, x11: bool, wayland: bool) -> bool {
+    wsl && x11 && wayland
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -1344,8 +1371,19 @@ mod tests {
         tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
         validate_tool_window_config,
     };
+    #[cfg(target_os = "linux")]
+    use super::should_prefer_x11_on_wsl;
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wsl_x11_fallback_requires_wsl_x11_and_wayland() {
+        assert!(should_prefer_x11_on_wsl(true, true, true));
+        assert!(!should_prefer_x11_on_wsl(false, true, true));
+        assert!(!should_prefer_x11_on_wsl(true, false, true));
+        assert!(!should_prefer_x11_on_wsl(true, true, false));
+    }
 
     #[test]
     fn simulation_delta_keeps_regular_frames() {
