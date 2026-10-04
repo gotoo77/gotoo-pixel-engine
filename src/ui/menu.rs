@@ -4,6 +4,8 @@
 //! remain owned by the consumer.
 
 use super::{UiStyleSheet, experimental::UiStateStore};
+#[cfg(feature = "outline-fonts")]
+use crate::outline_text::OutlineFont;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuBack {
@@ -107,6 +109,12 @@ impl Default for AudioSettings {
 pub struct PauseSettingsMenu {
     pages: MenuStack<SettingsPage>,
     pub audio: AudioSettings,
+    #[cfg(feature = "outline-fonts")]
+    outline_font: Option<OutlineFont>,
+    #[cfg(feature = "outline-fonts")]
+    outline_text_px: f32,
+    #[cfg(feature = "outline-fonts")]
+    outline_raster_scale: u32,
 }
 
 impl Default for PauseSettingsMenu {
@@ -120,11 +128,67 @@ impl PauseSettingsMenu {
         Self {
             pages: MenuStack::new(SettingsPage::Pause),
             audio: AudioSettings::default(),
+            #[cfg(feature = "outline-fonts")]
+            outline_font: None,
+            #[cfg(feature = "outline-fonts")]
+            outline_text_px: 14.0,
+            #[cfg(feature = "outline-fonts")]
+            outline_raster_scale: 2,
         }
     }
 
     pub fn current(&self) -> SettingsPage {
         *self.pages.current()
+    }
+
+    pub fn reset_to_pause(&mut self) {
+        self.pages = MenuStack::new(SettingsPage::Pause);
+    }
+
+    #[cfg(feature = "outline-fonts")]
+    pub fn with_outline_font(
+        mut self,
+        font: OutlineFont,
+        text_px: f32,
+        raster_scale: u32,
+    ) -> Self {
+        self.outline_font = Some(font);
+        self.outline_text_px = text_px.clamp(1.0, 256.0);
+        self.outline_raster_scale = raster_scale.clamp(1, 4);
+        self
+    }
+
+    fn run_ui<'a, R>(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        input: super::experimental::UiInput<'_>,
+        theme: super::UiTheme,
+        stylesheet: UiStyleSheet,
+        build: impl FnOnce(&mut super::experimental::UiBuilder<'a>) -> R,
+    ) -> (super::experimental::UiOutput, R) {
+        #[cfg(feature = "outline-fonts")]
+        if let Some(font) = self.outline_font.as_mut() {
+            return super::experimental::run_with_input_styled_outline(
+                framebuffer,
+                self.pages.ui_state_mut(),
+                input,
+                theme,
+                stylesheet,
+                font,
+                self.outline_text_px,
+                self.outline_raster_scale,
+                build,
+            );
+        }
+
+        super::experimental::run_with_input_styled(
+            framebuffer,
+            self.pages.ui_state_mut(),
+            input,
+            theme,
+            stylesheet,
+            build,
+        )
     }
 
     pub fn update(
@@ -171,7 +235,6 @@ impl PauseSettingsMenu {
         theme: super::UiTheme,
         stylesheet: UiStyleSheet,
     ) -> SettingsIntent {
-        use super::experimental::run_with_input_styled;
         let nav = input.nav;
         let mut intent = SettingsIntent::None;
         let mut next = None;
@@ -179,7 +242,7 @@ impl PauseSettingsMenu {
         match self.current() {
             SettingsPage::Pause => {
                 let (output, (resume, settings, quit)) =
-                    run_with_input_styled(framebuffer, self.pages.ui_state_mut(), input, theme, stylesheet, |ui| {
+                    self.run_ui(framebuffer, input, theme, stylesheet, |ui| {
                         ui.text("PAUSED");
                         (
                             ui.keyed("resume", |ui| ui.button("RESUME")),
@@ -198,7 +261,7 @@ impl PauseSettingsMenu {
             }
             SettingsPage::Settings => {
                 let (output, (audio, previous)) =
-                    run_with_input_styled(framebuffer, self.pages.ui_state_mut(), input, theme, stylesheet, |ui| {
+                    self.run_ui(framebuffer, input, theme, stylesheet, |ui| {
                         ui.text("SETTINGS");
                         (
                             ui.keyed("audio", |ui| ui.button("AUDIO")),
@@ -213,18 +276,19 @@ impl PauseSettingsMenu {
                 back |= output.cancel_requested();
             }
             SettingsPage::Audio => {
+                let audio = self.audio;
                 let (output, (master, music, sfx, previous)) =
-                    run_with_input_styled(framebuffer, self.pages.ui_state_mut(), input, theme, stylesheet, |ui| {
+                    self.run_ui(framebuffer, input, theme, stylesheet, |ui| {
                         ui.text("AUDIO");
                         (
                             ui.keyed("master", |ui| {
-                                ui.slider_f32("MASTER", self.audio.master, 0.0..=1.0, 0.05)
+                                ui.slider_f32("MASTER", audio.master, 0.0..=1.0, 0.05)
                             }),
                             ui.keyed("music", |ui| {
-                                ui.slider_f32("MUSIC", self.audio.music, 0.0..=1.0, 0.05)
+                                ui.slider_f32("MUSIC", audio.music, 0.0..=1.0, 0.05)
                             }),
                             ui.keyed("sfx", |ui| {
-                                ui.slider_f32("SFX", self.audio.sfx, 0.0..=1.0, 0.05)
+                                ui.slider_f32("SFX", audio.sfx, 0.0..=1.0, 0.05)
                             }),
                             ui.keyed("back", |ui| ui.button("BACK")),
                         )
