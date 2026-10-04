@@ -8,6 +8,7 @@ pub mod icon_text;
 pub mod language;
 pub mod menu;
 pub mod paged_spatial;
+pub mod sfx;
 
 mod kernel;
 mod layout;
@@ -30,6 +31,7 @@ pub use language::{
     classify_text_script, recommended_raster_scale,
 };
 pub use pause::{PauseConfig, PauseGame};
+pub use sfx::{UiSfx, UiSoundCue};
 pub use style::{UiComponentStyle, UiStyleOverride, UiStyleSheet, UiVisualState};
 pub use toolkit::{RepeatConfig, RepeatState, Ui, UiResponse, UiState, UiTheme};
 pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
