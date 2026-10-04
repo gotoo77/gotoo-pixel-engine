@@ -464,6 +464,40 @@ mod tests {
     }
 
     #[test]
+    fn reset_to_pause_preserves_audio_values() {
+        let mut menu = PauseSettingsMenu::new();
+        menu.audio.master = 0.42;
+        menu.pages.push(SettingsPage::Settings);
+        menu.pages.push(SettingsPage::Audio);
+        assert_eq!(menu.current(), SettingsPage::Audio);
+
+        menu.reset_to_pause();
+
+        assert_eq!(menu.current(), SettingsPage::Pause);
+        assert!((menu.audio.master - 0.42).abs() < f32::EPSILON * 2.0);
+    }
+
+    #[cfg(feature = "outline-fonts")]
+    #[test]
+    fn pause_settings_outline_backend_renders_without_changing_contract() {
+        use crate::ui::fonts::BuiltinOutlineFont;
+
+        let font = BuiltinOutlineFont::Exo2.load().expect("bundled outline font");
+        let mut menu = PauseSettingsMenu::new().with_outline_font(font, 14.0, 2);
+        let mut framebuffer = crate::Framebuffer::new(320, 180);
+
+        assert_eq!(
+            menu.update(
+                &mut framebuffer,
+                UiNavInput::default(),
+                UiTheme::default(),
+            ),
+            SettingsIntent::None
+        );
+        assert_eq!(menu.current(), SettingsPage::Pause);
+    }
+
+    #[test]
     fn applying_audio_settings_updates_existing_backend_buses() {
         let mut menu = PauseSettingsMenu::new();
         menu.audio = AudioSettings {
