@@ -1155,7 +1155,7 @@ fn measure_linear_container(
     constraints: Constraints,
     theme: UiTheme,
     stylesheet: UiStyleSheet,
-    text_renderer: TextRenderer,
+    text_backend: &mut UiTextBackend<'_>,
 ) -> Size {
     let style = resolved_static_style(&nodes[index], theme, stylesheet);
     let (padding, gap) = match nodes[index].kind {
@@ -1182,7 +1182,7 @@ fn measure_linear_container(
             }),
             theme,
             stylesheet,
-            text_renderer,
+            text_backend,
         );
         width = width.max(child_size.width);
         height = height.saturating_add(child_size.height);
@@ -1236,7 +1236,7 @@ fn measure_grid_container(
             }),
             theme,
             stylesheet,
-            text_renderer,
+            text_backend,
         );
     }
 
