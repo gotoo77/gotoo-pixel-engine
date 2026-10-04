@@ -2354,6 +2354,42 @@ mod tests {
     }
 
     #[test]
+    fn touch_drag_updates_slider_value() {
+        let mut state = debug_state();
+        let (initial, slider) = run_headless(
+            size(),
+            &mut state,
+            UiNavInput::default(),
+            theme(),
+            |ui| ui.slider_f32("VOLUME", 0.25, 0.0..=1.0, 0.05),
+        );
+        let rect = initial.rect(slider).expect("slider rect");
+        let point = (
+            rect.x + i32::try_from(rect.width * 3 / 4).unwrap_or(i32::MAX),
+            rect.y + i32::try_from(rect.height / 2).unwrap_or(i32::MAX),
+        );
+        let touches = [Touch {
+            id: 77,
+            phase: TouchPhase::Started,
+            position: Some(point),
+        }];
+
+        let (output, slider) = run_headless_with_input(
+            size(),
+            &mut state,
+            UiInput {
+                touches: &touches,
+                ..UiInput::default()
+            },
+            theme(),
+            |ui| ui.slider_f32("VOLUME", 0.25, 0.0..=1.0, 0.05),
+        );
+
+        let value = output.changed(slider).expect("touch drag proposes slider value");
+        assert!(value > 0.5, "touch at 75% should raise slider, got {value}");
+    }
+
+    #[test]
     fn transactional_touch_move_off_cancels_capture() {
         let mut state = UiStateStore::default();
         let position = first_control_position();
