@@ -1205,7 +1205,7 @@ fn measure_grid_container(
     spec: UiGridSpec,
     theme: UiTheme,
     stylesheet: UiStyleSheet,
-    text_renderer: TextRenderer,
+    text_backend: &mut UiTextBackend<'_>,
 ) -> Size {
     let constraints = constraints.normalized();
     let children = std::mem::take(&mut nodes[index].children);
