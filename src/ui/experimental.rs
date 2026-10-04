@@ -192,6 +192,7 @@ pub struct UiOutput {
     generation: u64,
     interaction: UiInteractionOutput,
     changed_values: HashMap<UiId, UiValue>,
+    resolved_rects: HashMap<UiId, Rect>,
     diagnostics: Vec<UiDiagnostic>,
     dump: String,
     metrics: UiMetrics,
@@ -221,6 +222,12 @@ impl UiOutput {
     pub fn changed<T: UiValueType>(&self, handle: WidgetRef<T>) -> Option<T> {
         (handle.generation == self.generation)
             .then(|| T::read(self, handle.id))
+            .flatten()
+    }
+
+    pub fn rect<T>(&self, handle: WidgetRef<T>) -> Option<Rect> {
+        (handle.generation == self.generation)
+            .then(|| self.resolved_rects.get(&handle.id).copied())
             .flatten()
     }
 
@@ -1038,6 +1045,11 @@ fn run_impl_with_text_backend<'a, R>(
         .entries
         .retain(|_, entry| entry.last_seen_generation == generation);
 
+    let resolved_rects = nodes
+        .iter()
+        .map(|node| (node.id, node.rect))
+        .collect::<HashMap<_, _>>();
+
     let metrics = UiMetrics {
         node_count: nodes.len(),
         interactive_count: targets.len(),
@@ -1052,6 +1064,7 @@ fn run_impl_with_text_backend<'a, R>(
             generation,
             interaction,
             changed_values,
+            resolved_rects,
             diagnostics,
             dump,
             metrics,
