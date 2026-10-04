@@ -325,6 +325,9 @@ struct PlatformApp<G> {
     last_frame_at: Instant,
     fps_timer: Instant,
     fps_frames: u32,
+    profile_update_total: Duration,
+    profile_present_total: Duration,
+    profile_tool_total: Duration,
     last_non_zero_window_size: Option<PhysicalSize<u32>>,
     pending_error: Option<EngineError>,
     #[cfg(feature = "diagnostics")]
@@ -358,6 +361,9 @@ impl<G: Game> PlatformApp<G> {
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
+            profile_update_total: Duration::ZERO,
+            profile_present_total: Duration::ZERO,
+            profile_tool_total: Duration::ZERO,
             last_non_zero_window_size: None,
             pending_error: None,
             #[cfg(feature = "diagnostics")]
@@ -388,6 +394,9 @@ impl<G: Game> PlatformApp<G> {
             last_frame_at: now,
             fps_timer: now,
             fps_frames: 0,
+            profile_update_total: Duration::ZERO,
+            profile_present_total: Duration::ZERO,
+            profile_tool_total: Duration::ZERO,
             last_non_zero_window_size: None,
             pending_error: None,
             #[cfg(feature = "diagnostics")]
@@ -465,7 +474,10 @@ impl<G: Game> PlatformApp<G> {
             viewport,
         };
 
-        if self.game.update(&mut frame) == GameResult::Exit {
+        let update_started = Instant::now();
+        let game_result = self.game.update(&mut frame);
+        self.profile_update_total += update_started.elapsed();
+        if game_result == GameResult::Exit {
             self.request_exit(event_loop);
             return;
         }
@@ -476,20 +488,36 @@ impl<G: Game> PlatformApp<G> {
         let Some(renderer) = self.renderer.as_mut() else {
             return;
         };
-        match renderer.render(&self.framebuffer) {
+        let present_started = Instant::now();
+        let render_outcome = renderer.render(&self.framebuffer);
+        self.profile_present_total += present_started.elapsed();
+        match render_outcome {
             RenderOutcome::Presented => {
                 self.fps_frames += 1;
                 let elapsed = self.fps_timer.elapsed();
                 if elapsed.as_secs_f32() >= 0.5 {
                     let fps = self.fps_frames as f32 / elapsed.as_secs_f32();
+                    let frames = f64::from(self.fps_frames.max(1));
+                    let update_ms =
+                        self.profile_update_total.as_secs_f64() * 1_000.0 / frames;
+                    let present_ms =
+                        self.profile_present_total.as_secs_f64() * 1_000.0 / frames;
+                    let tool_ms =
+                        self.profile_tool_total.as_secs_f64() * 1_000.0 / frames;
                     window.set_title(&format!(
-                        "{} | {:.1} ms | {:.0} FPS",
+                        "{} | {:.1} ms | upd {:.1} | present {:.1} | tool {:.1} | {:.0} FPS",
                         self.config.title,
                         raw_dt.as_secs_f64() * 1_000.0,
+                        update_ms,
+                        present_ms,
+                        tool_ms,
                         fps
                     ));
                     self.fps_timer = now;
                     self.fps_frames = 0;
+                    self.profile_update_total = Duration::ZERO;
+                    self.profile_present_total = Duration::ZERO;
+                    self.profile_tool_total = Duration::ZERO;
                 }
             }
             RenderOutcome::SurfaceChanged => {
@@ -516,7 +544,9 @@ impl<G: Game> PlatformApp<G> {
             self.render_frame(event_loop);
         }
         if self.tool_window.is_some() {
+            let tool_started = Instant::now();
             self.render_tool_frame(event_loop);
+            self.profile_tool_total += tool_started.elapsed();
         }
     }
 
