@@ -366,9 +366,11 @@ impl PauseSettingsMenu {
                 return SettingsIntent::Resume;
             }
             self.selected = 0;
+            self.controls = [None; 4];
         } else if let Some(page) = next {
             self.pages.push(page);
             self.selected = 0;
+            self.controls = [None; 4];
         }
         intent
     }
