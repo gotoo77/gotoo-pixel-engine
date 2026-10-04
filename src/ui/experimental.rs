@@ -1701,7 +1701,7 @@ impl UiTextBackend<'_> {
                 let bounds = Rect {
                     x: centered_coordinate(rect.x, rect.width, measured.width),
                     y: centered_coordinate(rect.y, rect.height, measured.height),
-                    width: rect.width,
+                    width: measured.width.min(rect.width).max(1),
                     height: rect.height,
                 };
                 font.draw_supersampled(framebuffer, text, px, bounds, color, *raster_scale);
