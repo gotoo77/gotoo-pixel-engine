@@ -281,18 +281,20 @@ fn build_event_loop() -> Result<EventLoop<PlatformEvent>, winit::error::EventLoo
 
 #[cfg(target_os = "linux")]
 fn prefer_x11_on_wsl() -> bool {
+    let opt_in = std::env::var_os("GPE_WSL_X11_TOOL_FALLBACK")
+        .is_some_and(|value| value == "1");
     let wsl = std::env::var_os("WSL_DISTRO_NAME").is_some();
     let x11 = std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty());
     let wayland = std::env::var_os("WAYLAND_DISPLAY")
         .is_some_and(|value| !value.is_empty())
         || std::env::var_os("WAYLAND_SOCKET").is_some_and(|value| !value.is_empty());
 
-    should_prefer_x11_on_wsl(wsl, x11, wayland)
+    should_prefer_x11_on_wsl(opt_in, wsl, x11, wayland)
 }
 
 #[cfg(target_os = "linux")]
-const fn should_prefer_x11_on_wsl(wsl: bool, x11: bool, wayland: bool) -> bool {
-    wsl && x11 && wayland
+const fn should_prefer_x11_on_wsl(opt_in: bool, wsl: bool, x11: bool, wayland: bool) -> bool {
+    opt_in && wsl && x11 && wayland
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -1733,6 +1735,16 @@ mod tests {
 
         let err = validate_config(&config).expect_err("config should be rejected");
         assert_eq!(err.to_string(), "window_height must be greater than 0");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wsl_x11_fallback_is_explicit_opt_in() {
+        assert!(!should_prefer_x11_on_wsl(false, true, true, true));
+        assert!(should_prefer_x11_on_wsl(true, true, true, true));
+        assert!(!should_prefer_x11_on_wsl(true, false, true, true));
+        assert!(!should_prefer_x11_on_wsl(true, true, false, true));
+        assert!(!should_prefer_x11_on_wsl(true, true, true, false));
     }
 
     fn valid_tool_config() -> ToolWindowConfig {
