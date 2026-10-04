@@ -111,12 +111,14 @@ pub struct SettingsPresentationSnapshot {
     pub page: SettingsPage,
     pub selected: usize,
     pub audio: AudioSettings,
+    pub controls: [Option<crate::Rect>; 4],
 }
 
 pub struct PauseSettingsMenu {
     pages: MenuStack<SettingsPage>,
     pub audio: AudioSettings,
     selected: usize,
+    controls: [Option<crate::Rect>; 4],
     #[cfg(feature = "outline-fonts")]
     outline_font: Option<OutlineFont>,
     #[cfg(feature = "outline-fonts")]
@@ -137,6 +139,7 @@ impl PauseSettingsMenu {
             pages: MenuStack::new(SettingsPage::Pause),
             audio: AudioSettings::default(),
             selected: 0,
+            controls: [None; 4],
             #[cfg(feature = "outline-fonts")]
             outline_font: None,
             #[cfg(feature = "outline-fonts")]
@@ -155,12 +158,14 @@ impl PauseSettingsMenu {
             page: self.current(),
             selected: self.selected,
             audio: self.audio,
+            controls: self.controls,
         }
     }
 
     pub fn reset_to_pause(&mut self) {
         self.pages = MenuStack::new(SettingsPage::Pause);
         self.selected = 0;
+        self.controls = [None; 4];
     }
 
     #[cfg(feature = "outline-fonts")]
@@ -273,6 +278,12 @@ impl PauseSettingsMenu {
                     Some(id) if id == quit.id() => 2,
                     _ => 0,
                 };
+                self.controls = [
+                    output.rect(resume),
+                    output.rect(settings),
+                    output.rect(quit),
+                    None,
+                ];
                 if output.activated(resume) {
                     intent = SettingsIntent::Resume;
                 } else if output.activated(settings) {
@@ -295,6 +306,12 @@ impl PauseSettingsMenu {
                     Some(id) if id == previous.id() => 1,
                     _ => 0,
                 };
+                self.controls = [
+                    output.rect(audio),
+                    output.rect(previous),
+                    None,
+                    None,
+                ];
                 if output.activated(audio) {
                     next = Some(SettingsPage::Audio);
                 } else if output.activated(previous) {
@@ -326,6 +343,12 @@ impl PauseSettingsMenu {
                     Some(id) if id == previous.id() => 3,
                     _ => 0,
                 };
+                self.controls = [
+                    output.rect(master),
+                    output.rect(music),
+                    output.rect(sfx),
+                    output.rect(previous),
+                ];
                 if let Some(value) = output.changed(master) {
                     self.audio.master = value;
                 }
