@@ -524,6 +524,26 @@ mod tests {
     }
 
     #[test]
+    fn presentation_snapshot_exposes_resolved_pause_hitboxes() {
+        let mut menu = PauseSettingsMenu::new();
+        let mut framebuffer = crate::Framebuffer::new(320, 180);
+
+        let intent = menu.update(
+            &mut framebuffer,
+            UiNavInput::default(),
+            UiTheme::default(),
+        );
+
+        assert_eq!(intent, SettingsIntent::None);
+        let snapshot = menu.presentation_snapshot();
+        assert_eq!(snapshot.page, SettingsPage::Pause);
+        assert!(snapshot.controls[0].is_some());
+        assert!(snapshot.controls[1].is_some());
+        assert!(snapshot.controls[2].is_some());
+        assert!(snapshot.controls[3].is_none());
+    }
+
+    #[test]
     fn reset_to_pause_preserves_audio_values() {
         let mut menu = PauseSettingsMenu::new();
         menu.audio.master = 0.42;
