@@ -6,6 +6,7 @@ pub mod fonts;
 pub mod icon;
 pub mod icon_text;
 pub mod language;
+pub mod menu;
 pub mod paged_spatial;
 
 mod kernel;
