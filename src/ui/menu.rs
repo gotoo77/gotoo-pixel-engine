@@ -3,7 +3,7 @@
 //! Each page owns its interaction state. Domain actions and menu presentation
 //! remain owned by the consumer.
 
-use super::experimental::UiStateStore;
+use super::{UiStyleSheet, experimental::UiStateStore};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuBack {
@@ -133,13 +133,24 @@ impl PauseSettingsMenu {
         nav: super::experimental::UiNavInput,
         theme: super::UiTheme,
     ) -> SettingsIntent {
-        self.update_with_input(
+        self.update_styled(framebuffer, nav, theme, UiStyleSheet::default())
+    }
+
+    pub fn update_styled(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        nav: super::experimental::UiNavInput,
+        theme: super::UiTheme,
+        stylesheet: UiStyleSheet,
+    ) -> SettingsIntent {
+        self.update_with_input_styled(
             framebuffer,
             super::experimental::UiInput {
                 nav,
                 ..Default::default()
             },
             theme,
+            stylesheet,
         )
     }
 
@@ -150,7 +161,17 @@ impl PauseSettingsMenu {
         input: super::experimental::UiInput<'_>,
         theme: super::UiTheme,
     ) -> SettingsIntent {
-        use super::experimental::run_with_input;
+        self.update_with_input_styled(framebuffer, input, theme, UiStyleSheet::default())
+    }
+
+    pub fn update_with_input_styled(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        input: super::experimental::UiInput<'_>,
+        theme: super::UiTheme,
+        stylesheet: UiStyleSheet,
+    ) -> SettingsIntent {
+        use super::experimental::run_with_input_styled;
         let nav = input.nav;
         let mut intent = SettingsIntent::None;
         let mut next = None;
@@ -158,7 +179,7 @@ impl PauseSettingsMenu {
         match self.current() {
             SettingsPage::Pause => {
                 let (output, (resume, settings, quit)) =
-                    run_with_input(framebuffer, self.pages.ui_state_mut(), input, theme, |ui| {
+                    run_with_input_styled(framebuffer, self.pages.ui_state_mut(), input, theme, stylesheet, |ui| {
                         ui.text("PAUSED");
                         (
                             ui.keyed("resume", |ui| ui.button("RESUME")),
@@ -177,7 +198,7 @@ impl PauseSettingsMenu {
             }
             SettingsPage::Settings => {
                 let (output, (audio, previous)) =
-                    run_with_input(framebuffer, self.pages.ui_state_mut(), input, theme, |ui| {
+                    run_with_input_styled(framebuffer, self.pages.ui_state_mut(), input, theme, stylesheet, |ui| {
                         ui.text("SETTINGS");
                         (
                             ui.keyed("audio", |ui| ui.button("AUDIO")),
@@ -193,7 +214,7 @@ impl PauseSettingsMenu {
             }
             SettingsPage::Audio => {
                 let (output, (master, music, sfx, previous)) =
-                    run_with_input(framebuffer, self.pages.ui_state_mut(), input, theme, |ui| {
+                    run_with_input_styled(framebuffer, self.pages.ui_state_mut(), input, theme, stylesheet, |ui| {
                         ui.text("AUDIO");
                         (
                             ui.keyed("master", |ui| {
