@@ -106,9 +106,17 @@ impl Default for AudioSettings {
 
 /// Reusable reference composition. Call it once per frame while the session is
 /// paused; the caller owns simulation suspension, input adaptation and exit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SettingsPresentationSnapshot {
+    pub page: SettingsPage,
+    pub selected: usize,
+    pub audio: AudioSettings,
+}
+
 pub struct PauseSettingsMenu {
     pages: MenuStack<SettingsPage>,
     pub audio: AudioSettings,
+    selected: usize,
     #[cfg(feature = "outline-fonts")]
     outline_font: Option<OutlineFont>,
     #[cfg(feature = "outline-fonts")]
@@ -128,6 +136,7 @@ impl PauseSettingsMenu {
         Self {
             pages: MenuStack::new(SettingsPage::Pause),
             audio: AudioSettings::default(),
+            selected: 0,
             #[cfg(feature = "outline-fonts")]
             outline_font: None,
             #[cfg(feature = "outline-fonts")]
@@ -141,8 +150,17 @@ impl PauseSettingsMenu {
         *self.pages.current()
     }
 
+    pub fn presentation_snapshot(&self) -> SettingsPresentationSnapshot {
+        SettingsPresentationSnapshot {
+            page: self.current(),
+            selected: self.selected,
+            audio: self.audio,
+        }
+    }
+
     pub fn reset_to_pause(&mut self) {
         self.pages = MenuStack::new(SettingsPage::Pause);
+        self.selected = 0;
     }
 
     #[cfg(feature = "outline-fonts")]
@@ -250,6 +268,11 @@ impl PauseSettingsMenu {
                             ui.keyed("quit", |ui| ui.button("QUIT")),
                         )
                     });
+                self.selected = match output.focused_id() {
+                    Some(id) if id == settings.id() => 1,
+                    Some(id) if id == quit.id() => 2,
+                    _ => 0,
+                };
                 if output.activated(resume) {
                     intent = SettingsIntent::Resume;
                 } else if output.activated(settings) {
@@ -268,6 +291,10 @@ impl PauseSettingsMenu {
                             ui.keyed("back", |ui| ui.button("BACK")),
                         )
                     });
+                self.selected = match output.focused_id() {
+                    Some(id) if id == previous.id() => 1,
+                    _ => 0,
+                };
                 if output.activated(audio) {
                     next = Some(SettingsPage::Audio);
                 } else if output.activated(previous) {
@@ -293,6 +320,12 @@ impl PauseSettingsMenu {
                             ui.keyed("back", |ui| ui.button("BACK")),
                         )
                     });
+                self.selected = match output.focused_id() {
+                    Some(id) if id == music.id() => 1,
+                    Some(id) if id == sfx.id() => 2,
+                    Some(id) if id == previous.id() => 3,
+                    _ => 0,
+                };
                 if let Some(value) = output.changed(master) {
                     self.audio.master = value;
                 }
@@ -309,8 +342,10 @@ impl PauseSettingsMenu {
             if self.pages.back() == MenuBack::CloseRequested {
                 return SettingsIntent::Resume;
             }
+            self.selected = 0;
         } else if let Some(page) = next {
             self.pages.push(page);
+            self.selected = 0;
         }
         intent
     }
