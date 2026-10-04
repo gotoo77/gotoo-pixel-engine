@@ -1019,6 +1019,41 @@ fn run_impl_with_text_backend<'a, R>(
         }
     }
 
+    for touch in input.touches {
+        if !matches!(touch.phase, crate::TouchPhase::Started | crate::TouchPhase::Moved) {
+            continue;
+        }
+        let Some((x, _)) = touch.position else {
+            continue;
+        };
+        let Some(captured) = state.interaction.touch_capture_id(touch.id) else {
+            continue;
+        };
+        let Some(node) = nodes.iter_mut().find(|node| node.id == captured) else {
+            continue;
+        };
+        let track = slider_track_rect(node.rect);
+        if let NodeContent::SliderF32 {
+            input,
+            effective,
+            min,
+            max,
+            step,
+            ..
+        } = &mut node.content
+        {
+            let ratio = ((i64::from(x) - i64::from(track.x)) as f32
+                / track.width.saturating_sub(1).max(1) as f32)
+                .clamp(0.0, 1.0);
+            *effective = snap_to_step(*min + ratio * (*max - *min), *min, *max, *step);
+            if *effective != *input {
+                changed_values.insert(captured, UiValue::F32(*effective));
+            } else {
+                changed_values.remove(&captured);
+            }
+        }
+    }
+
     if let Some(framebuffer) = framebuffer {
         let mut context = PaintContext {
             framebuffer,
