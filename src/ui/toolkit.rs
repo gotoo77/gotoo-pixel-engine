@@ -1,7 +1,9 @@
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
-use crate::{ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextRenderer};
+use crate::{
+    ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextRenderer, TouchPhase,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepeatConfig {
@@ -118,6 +120,7 @@ pub struct UiState {
     focused: usize,
     previous_interactive_count: usize,
     pointer_active: Option<usize>,
+    touch_active: Option<(u64, usize)>,
     horizontal_repeat_owner: Option<usize>,
     left_repeat: RepeatState,
     right_repeat: RepeatState,
@@ -267,7 +270,28 @@ impl<'a> Ui<'a> {
             }
         }
 
-        self.draw_tabs(rect, labels, normalized, ordinal, hovered_tab);
+        let touched_tab = self.input.touches().iter().find_map(|touch| {
+            if touch.phase != TouchPhase::Started {
+                return None;
+            }
+            touch
+                .position
+                .and_then(|position| tab_index_at_position(rect, labels.len(), position))
+        });
+        if let Some(index) = touched_tab {
+            self.state.focused = ordinal;
+            if requested.is_none() && index != normalized {
+                requested = Some(index);
+            }
+        }
+
+        self.draw_tabs(
+            rect,
+            labels,
+            normalized,
+            ordinal,
+            hovered_tab.or(touched_tab),
+        );
         requested
     }
 
@@ -297,10 +321,11 @@ impl<'a> Ui<'a> {
         let ordinal = self.next_interactive(rect);
         let hovered = self.pointer_over(rect);
         let left_button = self.input.mouse_button(MouseButton::Left);
+        let touch_press = self.touch_started_in(rect);
         let mut changed = false;
         let mut normalized = false;
 
-        if left_button.pressed() && hovered {
+        if (left_button.pressed() && hovered) || touch_press.is_some() {
             self.state.focused = ordinal;
         }
 
@@ -323,20 +348,24 @@ impl<'a> Ui<'a> {
             width: rect.width.saturating_sub(rect.width / 2),
             height: rect.height,
         };
+        let direct_position = if left_button.pressed() {
+            self.input.mouse_position()
+        } else {
+            touch_press.map(|(_, position)| position)
+        };
         if !normalized
             && options.len() > 1
-            && left_button.pressed()
-            && let Some(position) = self.input.mouse_position()
+            && let Some(position) = direct_position
             && value_rect.contains(position)
         {
             let midpoint = i64::from(value_rect.x) + i64::from(value_rect.width) / 2;
-            let mouse_delta = if i64::from(position.0) < midpoint {
+            let pointer_delta = if i64::from(position.0) < midpoint {
                 -1
             } else {
                 1
             };
             let before = *selected;
-            *selected = wrapped_index(*selected, options.len(), mouse_delta);
+            *selected = wrapped_index(*selected, options.len(), pointer_delta);
             changed |= before != *selected;
         }
 
@@ -372,6 +401,14 @@ impl<'a> Ui<'a> {
         }
 
         let mut changed = false;
+        if let Some((touch_id, position)) = self.touch_started_in(track) {
+            self.state.focused = ordinal;
+            self.state.touch_active = Some((touch_id, ordinal));
+            let before = *value;
+            *value = slider_value_from_pointer(position.0, track, &range, step);
+            changed |= before != *value;
+        }
+
         if self.state.pointer_active == Some(ordinal) {
             if let Some((mouse_x, _)) = mouse {
                 let before = *value;
@@ -382,6 +419,31 @@ impl<'a> Ui<'a> {
                 }
             } else {
                 self.state.pointer_active = None;
+            }
+        }
+
+        if let Some((touch_id, active_ordinal)) = self.state.touch_active
+            && active_ordinal == ordinal
+        {
+            for touch in self.input.touches().iter().filter(|touch| touch.id == touch_id) {
+                match touch.phase {
+                    TouchPhase::Started | TouchPhase::Moved => {
+                        if let Some((x, _)) = touch.position {
+                            let before = *value;
+                            *value = slider_value_from_pointer(x, track, &range, step);
+                            changed |= before != *value;
+                        }
+                    }
+                    TouchPhase::Ended => {
+                        if let Some((x, _)) = touch.position {
+                            let before = *value;
+                            *value = slider_value_from_pointer(x, track, &range, step);
+                            changed |= before != *value;
+                        }
+                        self.state.touch_active = None;
+                    }
+                    TouchPhase::Cancelled => self.state.touch_active = None,
+                }
             }
         }
 
@@ -396,7 +458,8 @@ impl<'a> Ui<'a> {
         let response = UiResponse {
             focused,
             hovered,
-            active: self.state.pointer_active == Some(ordinal),
+            active: self.state.pointer_active == Some(ordinal)
+                || self.state.touch_active.is_some_and(|(_, owner)| owner == ordinal),
             changed,
             ..UiResponse::default()
         };
@@ -548,12 +611,26 @@ impl<'a> Ui<'a> {
             .is_some_and(|position| rect.contains(position))
     }
 
+    fn touch_started_in(&self, rect: Rect) -> Option<(u64, (i32, i32))> {
+        self.input.touches().iter().find_map(|touch| {
+            if touch.phase != TouchPhase::Started {
+                return None;
+            }
+            let position = touch.position?;
+            rect.contains(position).then_some((touch.id, position))
+        })
+    }
+
     fn click_response(&mut self, rect: Rect, ordinal: usize) -> UiResponse {
         let hovered = self.pointer_over(rect);
         let left_button = self.input.mouse_button(MouseButton::Left);
         if left_button.pressed() && hovered {
             self.state.focused = ordinal;
             self.state.pointer_active = Some(ordinal);
+        }
+        if let Some((touch_id, _)) = self.touch_started_in(rect) {
+            self.state.focused = ordinal;
+            self.state.touch_active = Some((touch_id, ordinal));
         }
 
         let mut clicked = self.state.focused == ordinal && self.input.key(Key::Space).pressed();
@@ -568,10 +645,26 @@ impl<'a> Ui<'a> {
             }
         }
 
+        if let Some((touch_id, active_ordinal)) = self.state.touch_active
+            && active_ordinal == ordinal
+        {
+            for touch in self.input.touches().iter().filter(|touch| touch.id == touch_id) {
+                match touch.phase {
+                    TouchPhase::Ended => {
+                        clicked |= touch.position.is_some_and(|position| rect.contains(position));
+                        self.state.touch_active = None;
+                    }
+                    TouchPhase::Cancelled => self.state.touch_active = None,
+                    TouchPhase::Started | TouchPhase::Moved => {}
+                }
+            }
+        }
+
         UiResponse {
             focused: self.state.focused == ordinal,
             hovered,
-            active: self.state.pointer_active == Some(ordinal),
+            active: self.state.pointer_active == Some(ordinal)
+                || self.state.touch_active.is_some_and(|(_, owner)| owner == ordinal),
             clicked,
             changed: false,
         }
@@ -758,6 +851,7 @@ impl Drop for Ui<'_> {
         if self.interactive_count == 0 {
             self.state.focused = 0;
             self.state.pointer_active = None;
+            self.state.touch_active = None;
             self.state.horizontal_repeat_owner = None;
             return;
         }
@@ -768,6 +862,13 @@ impl Drop for Ui<'_> {
             .is_some_and(|ordinal| ordinal >= self.interactive_count)
         {
             self.state.pointer_active = None;
+        }
+        if self
+            .state
+            .touch_active
+            .is_some_and(|(_, ordinal)| ordinal >= self.interactive_count)
+        {
+            self.state.touch_active = None;
         }
     }
 }
