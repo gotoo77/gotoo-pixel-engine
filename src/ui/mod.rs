@@ -188,6 +188,15 @@ fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
     coordinate.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
+
+pub(crate) fn begin_text_input_frame() {
+    text_input_web::begin_frame();
+}
+
+pub(crate) fn end_text_input_frame() {
+    text_input_web::end_frame();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,12 +290,4 @@ mod tests {
         assert_eq!(framebuffer.pixel(1, 1), Some(border));
         assert_eq!(framebuffer.pixel(2, 2), Some(background));
     }
-}
-
-pub(crate) fn begin_text_input_frame() {
-    text_input_web::begin_frame();
-}
-
-pub(crate) fn end_text_input_frame() {
-    text_input_web::end_frame();
 }
