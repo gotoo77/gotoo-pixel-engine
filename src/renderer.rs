@@ -264,13 +264,15 @@ impl Renderer {
             alpha_mode,
             view_formats: vec![],
         };
+        #[cfg(feature = "diagnostics")]
         if let Err(error) = Self::configure_surface(&surface, &device, &config).await {
-            #[cfg(feature = "diagnostics")]
             if let Some(diagnostics) = diagnostics.as_mut() {
                 diagnostics.initialization_failed(WgpuErrorCategory::SurfaceValidation);
             }
             return Err(error);
         }
+        #[cfg(not(feature = "diagnostics"))]
+        Self::configure_surface(&surface, &device, &config).await?;
 
         #[cfg(feature = "diagnostics")]
         if let Some(diagnostics) = diagnostics.as_ref() {
