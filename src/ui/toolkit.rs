@@ -432,21 +432,23 @@ impl<'a> Ui<'a> {
         let ordinal = self.next_interactive(rect);
         let pointer = self.click_response(rect, ordinal);
 
-        let web = text_input_web::sync(
-            self.state.surface_id,
+        let web = text_input_web::sync(text_input_web::WebTextInputRequest {
+            surface_id: self.state.surface_id,
             ordinal,
             rect,
-            self.framebuffer.width(),
-            self.framebuffer.height(),
+            framebuffer_size: crate::Size {
+                width: self.framebuffer.width(),
+                height: self.framebuffer.height(),
+            },
             value,
-            options.max_chars,
-            options.enter_hint.as_web_str(),
-            if options.aria_label.is_empty() {
+            max_chars: options.max_chars,
+            enter_hint: options.enter_hint.as_web_str(),
+            aria_label: if options.aria_label.is_empty() {
                 options.placeholder
             } else {
                 options.aria_label
             },
-        );
+        });
         if web.focused {
             self.state.focused = ordinal;
         }
