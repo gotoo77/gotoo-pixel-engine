@@ -258,6 +258,15 @@ mod imp {
     pub(crate) fn begin_frame() {}
 
     pub(crate) fn sync(request: WebTextInputRequest<'_>) -> WebTextInputSnapshot {
+        let _ = (
+            request.surface_id,
+            request.ordinal,
+            request.rect,
+            request.framebuffer_size,
+            request.max_chars,
+            request.enter_hint,
+            request.aria_label,
+        );
         WebTextInputSnapshot {
             focused: false,
             value: request.value.to_owned(),
