@@ -84,6 +84,7 @@ jobs:
       - name: Build Arcade from standalone repository
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+          ARCADE_ASSET_REV: ${{ github.sha }}
         run: |
           cargo build \
             --manifest-path _standalone/gpe_arcade/Cargo.toml \
@@ -91,11 +92,18 @@ jobs:
             --target wasm32-unknown-unknown \
             --bin arcade-web \
             --features web
+
+          arcade_asset_dir="dist/pkg/arcade-${ARCADE_ASSET_REV}"
+          mkdir -p "$arcade_asset_dir"
           wasm-bindgen \
             --target web \
             --out-name arcade-web \
-            --out-dir dist/pkg \
+            --out-dir "$arcade_asset_dir" \
             _standalone/gpe_arcade/target/wasm32-unknown-unknown/release/arcade-web.wasm
+
+          sed -i \
+            "s#./pkg/arcade-web.js#./pkg/arcade-${ARCADE_ASSET_REV}/arcade-web.js#g" \
+            dist/index.html
 
       - name: Build Smart Boy Hero from standalone repository
         env:
@@ -136,13 +144,13 @@ jobs:
           grep -Fq './diagnostics-report.js' dist/diagnostics.js
           grep -Fq './startup-watchdog.js' dist/diagnostics.js
           grep -Fq './startup-trace.js' dist/index.html
-          test -f dist/pkg/arcade-web.js
-          test -f dist/pkg/arcade-web_bg.wasm
+          test -f "dist/pkg/arcade-${GITHUB_SHA}/arcade-web.js"
+          test -f "dist/pkg/arcade-${GITHUB_SHA}/arcade-web_bg.wasm"
           test -f dist/pkg/sbh-web.js
           test -f dist/pkg/sbh-web_bg.wasm
           test -f dist/pkg/sbh-iso-web.js
           test -f dist/pkg/sbh-iso-web_bg.wasm
-          grep -Fq './pkg/arcade-web.js' dist/index.html
+          grep -Fq "./pkg/arcade-${GITHUB_SHA}/arcade-web.js" dist/index.html
           grep -Fq './pkg/sbh-web.js' dist/smart_boy_hero.html
           grep -Fq './pkg/sbh-iso-web.js' dist/smart_boy_hero_iso.html
 
