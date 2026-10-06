@@ -1676,6 +1676,8 @@ impl UiTextBackend<'_> {
                     height: bounds.height.max(1),
                 },
             ),
+            #[cfg(not(feature = "outline-fonts"))]
+            Self::_Lifetime(_) => unreachable!("lifetime marker is never constructed"),
         }
     }
 
@@ -1716,6 +1718,8 @@ impl UiTextBackend<'_> {
                 };
                 font.draw_supersampled(framebuffer, text, px, bounds, color, *raster_scale);
             }
+            #[cfg(not(feature = "outline-fonts"))]
+            Self::_Lifetime(_) => unreachable!("lifetime marker is never constructed"),
         }
     }
 
@@ -1756,6 +1760,8 @@ impl UiTextBackend<'_> {
                 };
                 font.draw_supersampled(framebuffer, text, px, bounds, color, *raster_scale);
             }
+            #[cfg(not(feature = "outline-fonts"))]
+            Self::_Lifetime(_) => unreachable!("lifetime marker is never constructed"),
         }
     }
 }
