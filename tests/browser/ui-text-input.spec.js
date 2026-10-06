@@ -10,18 +10,15 @@ test("GPE.UI text input bridges DOM edits and submit back to Rust", async ({ pag
     )
     .toMatch(/^(initialized|winit-handoff)$/);
 
-  // Startup errors belong to winit-smoke. This probe waits for evidence that
-  // the GPE game loop actually reached TextInputProbe::update before testing
-  // the DOM <-> Rust contract.
+  // This probe deliberately bypasses winit. Startup behavior belongs to
+  // winit-smoke; here we isolate the GPE.UI DOM <-> Rust contract.
   await expect
-    .poll(
-      () =>
-        page.evaluate(() =>
-          globalThis.__gpeTextInputState?.snapshot
-            ? globalThis.__gpeTextInputState.snapshot()
-            : "",
-        ),
-      { timeout: 30_000 },
+    .poll(() =>
+      page.evaluate(() =>
+        globalThis.__gpeTextInputState?.snapshot
+          ? globalThis.__gpeTextInputState.snapshot()
+          : "",
+      ),
     )
     .toContain("search=");
 
@@ -33,6 +30,7 @@ test("GPE.UI text input bridges DOM edits and submit back to Rust", async ({ pag
 
   await search.click();
   await search.fill("minoku");
+  await page.evaluate(() => globalThis.__gpeTextInputState.tick());
   await expect
     .poll(() =>
       page.evaluate(() => globalThis.__gpeTextInputState.snapshot()),
@@ -40,6 +38,7 @@ test("GPE.UI text input bridges DOM edits and submit back to Rust", async ({ pag
     .toContain("search=minoku");
 
   await search.press("Enter");
+  await page.evaluate(() => globalThis.__gpeTextInputState.tick());
   await expect
     .poll(() =>
       page.evaluate(() => globalThis.__gpeTextInputState.snapshot()),
@@ -48,6 +47,7 @@ test("GPE.UI text input bridges DOM edits and submit back to Rust", async ({ pag
 
   await player.click();
   await player.fill("Gotoo");
+  await page.evaluate(() => globalThis.__gpeTextInputState.tick());
   await expect
     .poll(() =>
       page.evaluate(() => globalThis.__gpeTextInputState.snapshot()),
@@ -55,6 +55,7 @@ test("GPE.UI text input bridges DOM edits and submit back to Rust", async ({ pag
     .toContain("player=Gotoo");
 
   await player.press("Enter");
+  await page.evaluate(() => globalThis.__gpeTextInputState.tick());
   await expect
     .poll(() =>
       page.evaluate(() => globalThis.__gpeTextInputState.snapshot()),
