@@ -1,9 +1,13 @@
 use std::ops::RangeInclusive;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use crate::{
-    ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextRenderer, TouchPhase,
+    ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextInputEvent,
+    TextRenderer, TouchPhase,
 };
+
+use super::text_input_web;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepeatConfig {
@@ -106,6 +110,55 @@ impl Default for UiTheme {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextInputEnterHint {
+    Enter,
+    Done,
+    Search,
+    Go,
+    Next,
+}
+
+impl TextInputEnterHint {
+    const fn as_web_str(self) -> &'static str {
+        match self {
+            Self::Enter => "enter",
+            Self::Done => "done",
+            Self::Search => "search",
+            Self::Go => "go",
+            Self::Next => "next",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextInputOptions<'a> {
+    pub placeholder: &'a str,
+    pub aria_label: &'a str,
+    pub max_chars: Option<usize>,
+    pub enter_hint: TextInputEnterHint,
+}
+
+impl Default for TextInputOptions<'_> {
+    fn default() -> Self {
+        Self {
+            placeholder: "",
+            aria_label: "",
+            max_chars: None,
+            enter_hint: TextInputEnterHint::Enter,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TextInputResponse {
+    pub focused: bool,
+    pub hovered: bool,
+    pub active: bool,
+    pub changed: bool,
+    pub submitted: bool,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct UiResponse {
     pub focused: bool,
@@ -115,8 +168,18 @@ pub struct UiResponse {
     pub changed: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TextEditState {
+    owner: Option<usize>,
+    cursor: usize,
+    select_all: bool,
+}
+
+static NEXT_UI_SURFACE_ID: AtomicU32 = AtomicU32::new(1);
+
+#[derive(Debug)]
 pub struct UiState {
+    surface_id: u32,
     focused: usize,
     previous_interactive_count: usize,
     pointer_active: Option<usize>,
@@ -124,8 +187,28 @@ pub struct UiState {
     horizontal_repeat_owner: Option<usize>,
     left_repeat: RepeatState,
     right_repeat: RepeatState,
+    text_edit: TextEditState,
     scroll_y: u32,
     previous_content_height: u32,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        let surface_id = NEXT_UI_SURFACE_ID.fetch_add(1, Ordering::Relaxed).max(1);
+        Self {
+            surface_id,
+            focused: 0,
+            previous_interactive_count: 0,
+            pointer_active: None,
+            touch_active: None,
+            horizontal_repeat_owner: None,
+            left_repeat: RepeatState::default(),
+            right_repeat: RepeatState::default(),
+            text_edit: TextEditState::default(),
+            scroll_y: 0,
+            previous_content_height: 0,
+        }
+    }
 }
 
 impl UiState {
@@ -139,7 +222,9 @@ impl UiState {
     /// a page. Consumers should call this before switching to a page or structure
     /// whose interactive widget order differs.
     pub fn reset_interaction(&mut self) {
+        let surface_id = self.surface_id;
         *self = Self::default();
+        self.surface_id = surface_id;
     }
 }
 
@@ -313,6 +398,80 @@ impl<'a> Ui<'a> {
         }
         let suffix = if *value { "ON" } else { "OFF" };
         self.draw_control(rect, &format!("{label}: {suffix}"), response);
+        response
+    }
+
+    pub fn text_input(
+        &mut self,
+        value: &mut String,
+        options: TextInputOptions<'_>,
+    ) -> TextInputResponse {
+        let rect = self.next_row();
+        let ordinal = self.next_interactive(rect);
+        let pointer = self.click_response(rect, ordinal);
+
+        let web = text_input_web::sync(
+            self.state.surface_id,
+            ordinal,
+            rect,
+            self.framebuffer.width(),
+            self.framebuffer.height(),
+            value,
+            options.max_chars,
+            options.enter_hint.as_web_str(),
+            if options.aria_label.is_empty() {
+                options.placeholder
+            } else {
+                options.aria_label
+            },
+        );
+        if web.focused {
+            self.state.focused = ordinal;
+        }
+
+        let focused = self.state.focused == ordinal;
+        if focused && self.state.text_edit.owner != Some(ordinal) {
+            self.state.text_edit = TextEditState {
+                owner: Some(ordinal),
+                cursor: value.len(),
+                select_all: false,
+            };
+        }
+
+        let mut changed = false;
+        if web.focused {
+            let normalized = truncate_to_char_limit(&web.value, options.max_chars);
+            if *value != normalized {
+                *value = normalized;
+                changed = true;
+            }
+            self.state.text_edit.cursor = value.len();
+            self.state.text_edit.select_all = false;
+        } else if focused {
+            if (self.input.key(Key::LeftControl).held()
+                || self.input.key(Key::RightControl).held())
+                && self.input.key(Key::A).pressed()
+            {
+                self.state.text_edit.select_all = true;
+                self.state.text_edit.cursor = value.len();
+            }
+            changed |= apply_text_events(
+                value,
+                &mut self.state.text_edit,
+                self.input.text_events(),
+                options.max_chars,
+            );
+        }
+
+        let submitted = focused && (web.submitted || self.input.key(Key::Enter).pressed());
+        let response = TextInputResponse {
+            focused,
+            hovered: pointer.hovered,
+            active: pointer.active || web.focused,
+            changed,
+            submitted,
+        };
+        self.draw_text_input(rect, value, options, response);
         response
     }
 
@@ -670,6 +829,44 @@ impl<'a> Ui<'a> {
         }
     }
 
+    fn draw_text_input(
+        &mut self,
+        rect: Rect,
+        value: &str,
+        options: TextInputOptions<'_>,
+        response: TextInputResponse,
+    ) {
+        self.draw_control_frame(
+            rect,
+            UiResponse {
+                focused: response.focused,
+                hovered: response.hovered,
+                active: response.active,
+                changed: response.changed,
+                ..UiResponse::default()
+            },
+        );
+
+        let text_rect = Rect {
+            x: rect.x.saturating_add(4),
+            y: rect.y,
+            width: rect.width.saturating_sub(8),
+            height: rect.height,
+        };
+        if value.is_empty() && !response.focused {
+            self.draw_text_left(text_rect, options.placeholder, self.theme.muted_text);
+            return;
+        }
+
+        let display = if response.focused {
+            let cursor = clamp_to_char_boundary(value, self.state.text_edit.cursor);
+            format!("{}|{}", &value[..cursor], &value[cursor..])
+        } else {
+            value.to_owned()
+        };
+        self.draw_text_left(text_rect, &display, self.theme.text);
+    }
+
     fn draw_control(&mut self, rect: Rect, label: &str, response: UiResponse) {
         self.draw_control_frame(rect, response);
         self.draw_text_centered(rect, label, self.theme.text);
@@ -871,6 +1068,116 @@ impl Drop for Ui<'_> {
             self.state.touch_active = None;
         }
     }
+}
+
+fn truncate_to_char_limit(value: &str, max_chars: Option<usize>) -> String {
+    match max_chars {
+        Some(max_chars) => value.chars().take(max_chars).collect(),
+        None => value.to_owned(),
+    }
+}
+
+fn clamp_to_char_boundary(value: &str, cursor: usize) -> usize {
+    let mut cursor = cursor.min(value.len());
+    while cursor > 0 && !value.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    cursor
+}
+
+fn previous_char_boundary(value: &str, cursor: usize) -> usize {
+    let cursor = clamp_to_char_boundary(value, cursor);
+    value[..cursor]
+        .char_indices()
+        .last()
+        .map(|(index, _)| index)
+        .unwrap_or(0)
+}
+
+fn next_char_boundary(value: &str, cursor: usize) -> usize {
+    let cursor = clamp_to_char_boundary(value, cursor);
+    value[cursor..]
+        .chars()
+        .next()
+        .map(|character| cursor + character.len_utf8())
+        .unwrap_or(value.len())
+}
+
+fn apply_text_events(
+    value: &mut String,
+    edit: &mut TextEditState,
+    events: &[TextInputEvent],
+    max_chars: Option<usize>,
+) -> bool {
+    edit.cursor = clamp_to_char_boundary(value, edit.cursor);
+    let mut changed = false;
+
+    for event in events {
+        match event {
+            TextInputEvent::Insert(text) => {
+                if edit.select_all {
+                    if !value.is_empty() {
+                        value.clear();
+                        changed = true;
+                    }
+                    edit.cursor = 0;
+                    edit.select_all = false;
+                }
+
+                let clean = text.chars().filter(|character| !character.is_control());
+                let available = max_chars
+                    .map(|max| max.saturating_sub(value.chars().count()))
+                    .unwrap_or(usize::MAX);
+                let inserted: String = clean.take(available).collect();
+                if !inserted.is_empty() {
+                    value.insert_str(edit.cursor, &inserted);
+                    edit.cursor += inserted.len();
+                    changed = true;
+                }
+            }
+            TextInputEvent::Backspace | TextInputEvent::Delete if edit.select_all => {
+                if !value.is_empty() {
+                    value.clear();
+                    changed = true;
+                }
+                edit.cursor = 0;
+                edit.select_all = false;
+            }
+            TextInputEvent::Backspace => {
+                if edit.cursor > 0 {
+                    let previous = previous_char_boundary(value, edit.cursor);
+                    value.drain(previous..edit.cursor);
+                    edit.cursor = previous;
+                    changed = true;
+                }
+            }
+            TextInputEvent::Delete => {
+                if edit.cursor < value.len() {
+                    let next = next_char_boundary(value, edit.cursor);
+                    value.drain(edit.cursor..next);
+                    changed = true;
+                }
+            }
+            TextInputEvent::Left => {
+                edit.cursor = previous_char_boundary(value, edit.cursor);
+                edit.select_all = false;
+            }
+            TextInputEvent::Right => {
+                edit.cursor = next_char_boundary(value, edit.cursor);
+                edit.select_all = false;
+            }
+            TextInputEvent::Home => {
+                edit.cursor = 0;
+                edit.select_all = false;
+            }
+            TextInputEvent::End => {
+                edit.cursor = value.len();
+                edit.select_all = false;
+            }
+        }
+    }
+
+    changed
 }
 
 fn ordered_range(range: &RangeInclusive<f32>) -> (f32, f32) {
