@@ -137,6 +137,11 @@ pub struct TextInputOptions<'a> {
     pub aria_label: &'a str,
     pub max_chars: Option<usize>,
     pub enter_hint: TextInputEnterHint,
+    /// Whether the consumer currently considers the field to be in edit mode.
+    ///
+    /// On Web, direct focus of the DOM proxy also enables editing so a tap can
+    /// summon the mobile soft keyboard even when the consumer was inactive.
+    pub editing: bool,
 }
 
 impl Default for TextInputOptions<'_> {
@@ -146,6 +151,7 @@ impl Default for TextInputOptions<'_> {
             aria_label: "",
             max_chars: None,
             enter_hint: TextInputEnterHint::Enter,
+            editing: true,
         }
     }
 }
@@ -155,6 +161,8 @@ pub struct TextInputResponse {
     pub focused: bool,
     pub hovered: bool,
     pub active: bool,
+    /// True while the field is accepting text edits.
+    pub editing: bool,
     pub changed: bool,
     pub submitted: bool,
 }
@@ -452,6 +460,7 @@ impl<'a> Ui<'a> {
             };
         }
 
+        let editing = options.editing || web.focused;
         let mut changed = false;
         if web.focused {
             let normalized = truncate_to_char_limit(&web.value, options.max_chars);
@@ -461,7 +470,7 @@ impl<'a> Ui<'a> {
             }
             self.state.text_edit.cursor = value.len();
             self.state.text_edit.select_all = false;
-        } else if focused {
+        } else if focused && editing {
             if (self.input.key(Key::LeftControl).held() || self.input.key(Key::RightControl).held())
                 && self.input.key(Key::A).pressed()
             {
@@ -476,11 +485,13 @@ impl<'a> Ui<'a> {
             );
         }
 
-        let submitted = focused && (web.submitted || self.input.key(Key::Enter).pressed());
+        let submitted =
+            focused && editing && (web.submitted || self.input.key(Key::Enter).pressed());
         let response = TextInputResponse {
             focused,
             hovered: pointer.hovered,
             active: pointer.active || web.focused,
+            editing,
             changed,
             submitted,
         };
@@ -889,7 +900,7 @@ impl<'a> Ui<'a> {
             return;
         }
 
-        let display = if response.focused {
+        let display = if response.editing {
             let cursor = clamp_to_char_boundary(value, self.state.text_edit.cursor);
             format!("{}|{}", &value[..cursor], &value[cursor..])
         } else {
@@ -1586,6 +1597,7 @@ mod tests {
                     aria_label: "Player name",
                     max_chars: Some(20),
                     enter_hint: TextInputEnterHint::Done,
+                    editing: true,
                 },
             )
         };
@@ -1602,6 +1614,32 @@ mod tests {
         };
         assert!(response.submitted);
         assert_eq!(value, "Gotoo");
+    }
+
+    #[test]
+    fn inactive_text_input_keeps_navigation_focus_without_editing() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = "KEEP".to_owned();
+        let mut input = Input::default();
+        input.push_text_event(TextInputEvent::Insert("X".into()));
+
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.text_input(
+                &mut value,
+                TextInputOptions {
+                    editing: false,
+                    ..TextInputOptions::default()
+                },
+            )
+        };
+
+        assert!(response.focused);
+        assert!(!response.editing);
+        assert!(!response.changed);
+        assert_eq!(value, "KEEP");
     }
 
     #[test]
