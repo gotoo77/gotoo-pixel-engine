@@ -45,6 +45,8 @@ jobs:
           fi
           echo "Standalone repository token is present and can read gpe_arcade."
 
+      # A fresh Pages run intentionally resolves the current Arcade main so
+      # standalone game updates such as Minoku mobile input are published.
       - name: Checkout Arcade standalone
         uses: actions/checkout@v7
         with:
