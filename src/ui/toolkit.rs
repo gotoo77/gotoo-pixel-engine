@@ -1502,6 +1502,115 @@ mod tests {
     }
 
     #[test]
+    fn text_input_inserts_edits_utf8_and_respects_char_limit() {
+        let mut value = "éa".to_owned();
+        let mut edit = TextEditState {
+            owner: Some(0),
+            cursor: value.len(),
+            select_all: false,
+        };
+
+        assert!(apply_text_events(
+            &mut value,
+            &mut edit,
+            &[TextInputEvent::Backspace],
+            Some(3),
+        ));
+        assert_eq!(value, "é");
+        assert_eq!(edit.cursor, "é".len());
+
+        assert!(apply_text_events(
+            &mut value,
+            &mut edit,
+            &[TextInputEvent::Insert("猫xy".into())],
+            Some(3),
+        ));
+        assert_eq!(value, "é猫x");
+        assert_eq!(value.chars().count(), 3);
+
+        assert!(!apply_text_events(
+            &mut value,
+            &mut edit,
+            &[TextInputEvent::Insert("z".into())],
+            Some(3),
+        ));
+        assert_eq!(value, "é猫x");
+    }
+
+    #[test]
+    fn text_input_widget_consumes_text_events_and_submits() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = String::new();
+
+        let mut input = Input::default();
+        input.push_text_event(TextInputEvent::Insert("Gotoo".into()));
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.text_input(
+                &mut value,
+                TextInputOptions {
+                    placeholder: "PLAYER",
+                    aria_label: "Player name",
+                    max_chars: Some(20),
+                    enter_hint: TextInputEnterHint::Done,
+                },
+            )
+        };
+        assert!(response.focused);
+        assert!(response.changed);
+        assert!(!response.submitted);
+        assert_eq!(value, "Gotoo");
+
+        let mut enter = Input::default();
+        enter.press_key(Key::Enter);
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &enter, Duration::ZERO, &mut state, theme);
+            ui.text_input(&mut value, TextInputOptions::default())
+        };
+        assert!(response.submitted);
+        assert_eq!(value, "Gotoo");
+    }
+
+    #[test]
+    fn text_input_ctrl_a_replaces_existing_value() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = "OLD".to_owned();
+
+        {
+            let idle = Input::default();
+            let mut ui = Ui::new(&mut framebuffer, &idle, Duration::ZERO, &mut state, theme);
+            ui.text_input(&mut value, TextInputOptions::default());
+        }
+
+        let mut select_all = Input::default();
+        select_all.press_key(Key::LeftControl);
+        select_all.press_key(Key::A);
+        {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &select_all,
+                Duration::ZERO,
+                &mut state,
+                theme,
+            );
+            ui.text_input(&mut value, TextInputOptions::default());
+        }
+
+        let mut replace = Input::default();
+        replace.push_text_event(TextInputEvent::Insert("NEW".into()));
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &replace, Duration::ZERO, &mut state, theme);
+            ui.text_input(&mut value, TextInputOptions::default())
+        };
+        assert!(response.changed);
+        assert_eq!(value, "NEW");
+    }
+
+    #[test]
     fn slider_keyboard_step_clamps_to_range() {
         let mut state = UiState::default();
         let mut framebuffer = Framebuffer::new(160, 40);
