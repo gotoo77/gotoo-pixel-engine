@@ -1654,6 +1654,8 @@ enum UiTextBackend<'a> {
         text_px: f32,
         raster_scale: u32,
     },
+    #[cfg(not(feature = "outline-fonts"))]
+    _Lifetime(std::marker::PhantomData<&'a mut ()>),
 }
 
 impl UiTextBackend<'_> {
