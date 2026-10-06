@@ -407,6 +407,20 @@ impl<'a> Ui<'a> {
         options: TextInputOptions<'_>,
     ) -> TextInputResponse {
         let rect = self.next_row();
+        self.text_input_at(rect, value, options)
+    }
+
+    /// Text input rendered at explicit logical framebuffer geometry.
+    ///
+    /// This variant lets custom game/launcher layouts share the same editing,
+    /// focus and mobile soft-keyboard behavior without adopting the toolkit's
+    /// vertical row layout.
+    pub fn text_input_at(
+        &mut self,
+        rect: Rect,
+        value: &mut String,
+        options: TextInputOptions<'_>,
+    ) -> TextInputResponse {
         let ordinal = self.next_interactive(rect);
         let pointer = self.click_response(rect, ordinal);
 
@@ -1588,6 +1602,34 @@ mod tests {
         };
         assert!(response.submitted);
         assert_eq!(value, "Gotoo");
+    }
+
+    #[test]
+    fn text_input_at_uses_explicit_geometry_without_advancing_row_layout() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 60);
+        let mut value = String::new();
+        let input = Input::default();
+
+        {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            let response = ui.text_input_at(
+                Rect {
+                    x: 40,
+                    y: 30,
+                    width: 120,
+                    height: 20,
+                },
+                &mut value,
+                TextInputOptions::default(),
+            );
+            assert!(response.focused);
+            ui.button("ROW");
+        }
+
+        assert_eq!(state.focused_index(), Some(0));
+        assert_eq!(state.previous_content_height, 20);
     }
 
     #[test]
