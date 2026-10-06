@@ -283,7 +283,6 @@ mod tests {
     }
 }
 
-
 pub(crate) fn begin_text_input_frame() {
     text_input_web::begin_frame();
 }
