@@ -54,6 +54,11 @@ name = "primitives"
 harness = false
 
 [[example]]
+name = "gpe_ui_text_input_probe"
+path = "examples/gpe_ui_text_input_probe.rs"
+crate-type = ["cdylib"]
+
+[[example]]
 name = "gpe_ui_p4_font_gallery"
 required-features = ["outline-fonts"]
 
