@@ -253,7 +253,7 @@ export function gpeUiTextInputEndFrame() {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::{Rect, WebTextInputSnapshot};
+    use super::{WebTextInputRequest, WebTextInputSnapshot};
 
     pub(crate) fn begin_frame() {}
 
