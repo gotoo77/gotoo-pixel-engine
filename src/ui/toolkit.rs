@@ -448,8 +448,7 @@ impl<'a> Ui<'a> {
             self.state.text_edit.cursor = value.len();
             self.state.text_edit.select_all = false;
         } else if focused {
-            if (self.input.key(Key::LeftControl).held()
-                || self.input.key(Key::RightControl).held())
+            if (self.input.key(Key::LeftControl).held() || self.input.key(Key::RightControl).held())
                 && self.input.key(Key::A).pressed()
             {
                 self.state.text_edit.select_all = true;
@@ -584,7 +583,12 @@ impl<'a> Ui<'a> {
         if let Some((touch_id, active_ordinal)) = self.state.touch_active
             && active_ordinal == ordinal
         {
-            for touch in self.input.touches().iter().filter(|touch| touch.id == touch_id) {
+            for touch in self
+                .input
+                .touches()
+                .iter()
+                .filter(|touch| touch.id == touch_id)
+            {
                 match touch.phase {
                     TouchPhase::Started | TouchPhase::Moved => {
                         if let Some((x, _)) = touch.position {
@@ -618,7 +622,10 @@ impl<'a> Ui<'a> {
             focused,
             hovered,
             active: self.state.pointer_active == Some(ordinal)
-                || self.state.touch_active.is_some_and(|(_, owner)| owner == ordinal),
+                || self
+                    .state
+                    .touch_active
+                    .is_some_and(|(_, owner)| owner == ordinal),
             changed,
             ..UiResponse::default()
         };
@@ -807,10 +814,17 @@ impl<'a> Ui<'a> {
         if let Some((touch_id, active_ordinal)) = self.state.touch_active
             && active_ordinal == ordinal
         {
-            for touch in self.input.touches().iter().filter(|touch| touch.id == touch_id) {
+            for touch in self
+                .input
+                .touches()
+                .iter()
+                .filter(|touch| touch.id == touch_id)
+            {
                 match touch.phase {
                     TouchPhase::Ended => {
-                        clicked |= touch.position.is_some_and(|position| rect.contains(position));
+                        clicked |= touch
+                            .position
+                            .is_some_and(|position| rect.contains(position));
                         self.state.touch_active = None;
                     }
                     TouchPhase::Cancelled => self.state.touch_active = None,
@@ -823,7 +837,10 @@ impl<'a> Ui<'a> {
             focused: self.state.focused == ordinal,
             hovered,
             active: self.state.pointer_active == Some(ordinal)
-                || self.state.touch_active.is_some_and(|(_, owner)| owner == ordinal),
+                || self
+                    .state
+                    .touch_active
+                    .is_some_and(|(_, owner)| owner == ordinal),
             clicked,
             changed: false,
         }
@@ -1603,7 +1620,13 @@ mod tests {
         let mut replace = Input::default();
         replace.push_text_event(TextInputEvent::Insert("NEW".into()));
         let response = {
-            let mut ui = Ui::new(&mut framebuffer, &replace, Duration::ZERO, &mut state, theme);
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &replace,
+                Duration::ZERO,
+                &mut state,
+                theme,
+            );
             ui.text_input(&mut value, TextInputOptions::default())
         };
         assert!(response.changed);
