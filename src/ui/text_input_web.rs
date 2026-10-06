@@ -1,4 +1,16 @@
-use crate::Rect;
+use crate::{Rect, Size};
+
+#[derive(Debug)]
+pub(crate) struct WebTextInputRequest<'a> {
+    pub surface_id: u32,
+    pub ordinal: usize,
+    pub rect: Rect,
+    pub framebuffer_size: Size,
+    pub value: &'a str,
+    pub max_chars: Option<usize>,
+    pub enter_hint: &'a str,
+    pub aria_label: &'a str,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WebTextInputSnapshot {
@@ -9,7 +21,7 @@ pub(crate) struct WebTextInputSnapshot {
 
 #[cfg(target_arch = "wasm32")]
 mod imp {
-    use super::{Rect, WebTextInputSnapshot};
+    use super::{WebTextInputRequest, WebTextInputSnapshot};
     use wasm_bindgen::prelude::wasm_bindgen;
 
     #[wasm_bindgen(inline_js = r#"
@@ -207,39 +219,30 @@ export function gpeUiTextInputEndFrame() {
         js_begin_frame();
     }
 
-    pub(crate) fn sync(
-        surface_id: u32,
-        ordinal: usize,
-        rect: Rect,
-        framebuffer_width: u32,
-        framebuffer_height: u32,
-        value: &str,
-        max_chars: Option<usize>,
-        enter_hint: &str,
-        aria_label: &str,
-    ) -> WebTextInputSnapshot {
-        let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-        let max_chars = max_chars
+    pub(crate) fn sync(request: WebTextInputRequest<'_>) -> WebTextInputSnapshot {
+        let ordinal = u32::try_from(request.ordinal).unwrap_or(u32::MAX);
+        let max_chars = request
+            .max_chars
             .and_then(|value| u32::try_from(value).ok())
             .unwrap_or(0);
         js_ensure(
-            surface_id,
+            request.surface_id,
             ordinal,
-            rect.x,
-            rect.y,
-            rect.width,
-            rect.height,
-            framebuffer_width,
-            framebuffer_height,
-            value,
+            request.rect.x,
+            request.rect.y,
+            request.rect.width,
+            request.rect.height,
+            request.framebuffer_size.width,
+            request.framebuffer_size.height,
+            request.value,
             max_chars,
-            enter_hint,
-            aria_label,
+            request.enter_hint,
+            request.aria_label,
         );
         WebTextInputSnapshot {
-            focused: js_focused(surface_id, ordinal),
-            value: js_value(surface_id, ordinal),
-            submitted: js_take_submitted(surface_id, ordinal),
+            focused: js_focused(request.surface_id, ordinal),
+            value: js_value(request.surface_id, ordinal),
+            submitted: js_take_submitted(request.surface_id, ordinal),
         }
     }
 
@@ -254,20 +257,10 @@ mod imp {
 
     pub(crate) fn begin_frame() {}
 
-    pub(crate) fn sync(
-        _surface_id: u32,
-        _ordinal: usize,
-        _rect: Rect,
-        _framebuffer_width: u32,
-        _framebuffer_height: u32,
-        value: &str,
-        _max_chars: Option<usize>,
-        _enter_hint: &str,
-        _aria_label: &str,
-    ) -> WebTextInputSnapshot {
+    pub(crate) fn sync(request: WebTextInputRequest<'_>) -> WebTextInputSnapshot {
         WebTextInputSnapshot {
             focused: false,
-            value: value.to_owned(),
+            value: request.value.to_owned(),
             submitted: false,
         }
     }
