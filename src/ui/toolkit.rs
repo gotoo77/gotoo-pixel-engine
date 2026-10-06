@@ -1044,6 +1044,157 @@ mod tests {
     }
 
     #[test]
+    fn button_touch_activates_on_release_inside() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(120, 20);
+
+        let mut start = Input::default();
+        start.push_touch(crate::Touch {
+            id: 7,
+            phase: TouchPhase::Started,
+            position: Some((20, 10)),
+        });
+        let started = {
+            let mut ui = Ui::new(&mut framebuffer, &start, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH")
+        };
+        assert!(started.focused);
+        assert!(started.active);
+        assert!(!started.clicked);
+
+        let mut end = Input::default();
+        end.push_touch(crate::Touch {
+            id: 7,
+            phase: TouchPhase::Ended,
+            position: Some((20, 10)),
+        });
+        let ended = {
+            let mut ui = Ui::new(&mut framebuffer, &end, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH")
+        };
+        assert!(ended.clicked);
+        assert!(!ended.active);
+    }
+
+    #[test]
+    fn button_touch_release_outside_cancels_click() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(120, 20);
+
+        let mut start = Input::default();
+        start.push_touch(crate::Touch {
+            id: 3,
+            phase: TouchPhase::Started,
+            position: Some((20, 10)),
+        });
+        {
+            let mut ui = Ui::new(&mut framebuffer, &start, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH");
+        }
+
+        let mut end = Input::default();
+        end.push_touch(crate::Touch {
+            id: 3,
+            phase: TouchPhase::Ended,
+            position: Some((200, 10)),
+        });
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &end, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH")
+        };
+        assert!(!response.clicked);
+        assert!(!response.active);
+    }
+
+    #[test]
+    fn tabs_accept_touch_selection() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(120, 20);
+        let mut input = Input::default();
+        input.push_touch(crate::Touch {
+            id: 1,
+            phase: TouchPhase::Started,
+            position: Some((100, 10)),
+        });
+
+        let requested = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.tabs(0, &["A", "B", "C"])
+        };
+        assert_eq!(requested, Some(2));
+    }
+
+    #[test]
+    fn select_accepts_touch_on_value_half() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut selected = 1;
+        let mut input = Input::default();
+        input.push_touch(crate::Touch {
+            id: 1,
+            phase: TouchPhase::Started,
+            position: Some((180, 10)),
+        });
+
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.select("VALUE", &mut selected, &["A", "B", "C"])
+        };
+        assert!(response.changed);
+        assert_eq!(selected, 2);
+    }
+
+    #[test]
+    fn slider_accepts_touch_drag_and_release() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = 0.0;
+
+        let mut start = Input::default();
+        start.push_touch(crate::Touch {
+            id: 9,
+            phase: TouchPhase::Started,
+            position: Some((120, 10)),
+        });
+        let started = {
+            let mut ui = Ui::new(&mut framebuffer, &start, Duration::ZERO, &mut state, theme);
+            ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1)
+        };
+        assert!(started.active);
+        assert!(started.changed);
+
+        let after_start = value;
+        let mut moved = Input::default();
+        moved.push_touch(crate::Touch {
+            id: 9,
+            phase: TouchPhase::Moved,
+            position: Some((180, 10)),
+        });
+        {
+            let mut ui = Ui::new(&mut framebuffer, &moved, Duration::ZERO, &mut state, theme);
+            ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1);
+        }
+        assert!(value > after_start);
+
+        let mut end = Input::default();
+        end.push_touch(crate::Touch {
+            id: 9,
+            phase: TouchPhase::Ended,
+            position: Some((180, 10)),
+        });
+        let ended = {
+            let mut ui = Ui::new(&mut framebuffer, &end, Duration::ZERO, &mut state, theme);
+            ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1)
+        };
+        assert!(!ended.active);
+    }
+
+    #[test]
     fn slider_keyboard_step_clamps_to_range() {
         let mut state = UiState::default();
         let mut framebuffer = Framebuffer::new(160, 40);
