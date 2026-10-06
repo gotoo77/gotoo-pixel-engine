@@ -30,6 +30,21 @@ jobs:
       - name: Checkout GPE
         uses: actions/checkout@v7
 
+      - name: Verify standalone repository token
+        env:
+          STANDALONE_TOKEN: ${{ secrets.GPE_STANDALONE_REPOS_TOKEN }}
+        run: |
+          if [ -z "$STANDALONE_TOKEN" ]; then
+            echo "::error::GPE_STANDALONE_REPOS_TOKEN is empty or unavailable to this workflow"
+            exit 1
+          fi
+          status="$(curl -sS -o /tmp/gpe-arcade-repo.json -w '%{http_code}'             -H "Authorization: Bearer $STANDALONE_TOKEN"             -H "Accept: application/vnd.github+json"             https://api.github.com/repos/gotoo77/gpe_arcade)"
+          if [ "$status" != "200" ]; then
+            echo "::error::GPE_STANDALONE_REPOS_TOKEN cannot read gotoo77/gpe_arcade (HTTP $status)"
+            exit 1
+          fi
+          echo "Standalone repository token is present and can read gpe_arcade."
+
       - name: Checkout Arcade standalone
         uses: actions/checkout@v7
         with:
