@@ -188,7 +188,6 @@ fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
     coordinate.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
-
 pub(crate) fn begin_text_input_frame() {
     text_input_web::begin_frame();
 }
