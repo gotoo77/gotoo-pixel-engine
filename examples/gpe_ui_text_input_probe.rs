@@ -47,9 +47,13 @@ impl TextInputProbe {
 impl Game for TextInputProbe {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
         frame.framebuffer.clear(Pixel::rgb(8, 12, 18));
-        frame
-            .framebuffer
-            .draw_text_scaled(24, 20, "GPE.UI TEXT INPUT", 2, Pixel::rgb(105, 238, 184));
+        frame.framebuffer.draw_text_scaled(
+            24,
+            20,
+            "GPE.UI TEXT INPUT",
+            2,
+            Pixel::rgb(105, 238, 184),
+        );
         frame
             .framebuffer
             .draw_text_scaled(24, 70, "SEARCH", 1, Pixel::WHITE);
