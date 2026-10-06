@@ -58,7 +58,8 @@ Le moteur est exercé par plusieurs jeux réels :
 - Pong deux joueurs ;
 - Breakout ;
 - [Smart Boy Hero](https://github.com/gotoo77/gpe_smartboyhero), désormais maintenu dans son dépôt standalone ;
-- [GPE Arcade](https://github.com/gotoo77/gpe_arcade), désormais maintenu dans son dépôt standalone et servant aussi de test architectural multi-jeux.
+- [GPE Arcade](https://github.com/gotoo77/gpe_arcade), désormais maintenu dans son dépôt standalone et servant aussi de test architectural multi-jeux ;
+- Minoku, publié dans l'Arcade Web depuis son dépôt standalone.
 
 Version publique de l'Arcade :
 
