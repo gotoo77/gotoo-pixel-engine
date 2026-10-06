@@ -283,8 +283,7 @@ fn build_event_loop() -> Result<EventLoop<PlatformEvent>, winit::error::EventLoo
 fn prefer_x11_on_wsl() -> bool {
     let wsl = std::env::var_os("WSL_DISTRO_NAME").is_some();
     let x11 = std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty());
-    let wayland = std::env::var_os("WAYLAND_DISPLAY")
-        .is_some_and(|value| !value.is_empty())
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty())
         || std::env::var_os("WAYLAND_SOCKET").is_some_and(|value| !value.is_empty());
 
     should_prefer_x11_on_wsl(wsl, x11, wayland)
@@ -1367,6 +1366,8 @@ fn validate_tool_window_config(config: &ToolWindowConfig) -> Result<(), EngineEr
 mod tests {
     use std::time::Duration;
 
+    #[cfg(target_os = "linux")]
+    use super::should_prefer_x11_on_wsl;
     use super::{
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
         TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
@@ -1375,8 +1376,6 @@ mod tests {
         tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
         validate_tool_window_config,
     };
-    #[cfg(target_os = "linux")]
-    use super::should_prefer_x11_on_wsl;
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
