@@ -3,12 +3,20 @@ use crate::{Audio, AudioBus, AudioError, SoundBank, SoundId};
 const OPEN: SoundId = SoundId::new("gpe.ui.open");
 const CONFIRM: SoundId = SoundId::new("gpe.ui.confirm");
 const ADJUST: SoundId = SoundId::new("gpe.ui.adjust");
+const SUCCESS_1: SoundId = SoundId::new("gpe.ui.success.1");
+const SUCCESS_2: SoundId = SoundId::new("gpe.ui.success.2");
+const SUCCESS_3: SoundId = SoundId::new("gpe.ui.success.3");
+const SUCCESS_4: SoundId = SoundId::new("gpe.ui.success.4");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiSoundCue {
     Open,
     Confirm,
     Adjust,
+    Success1,
+    Success2,
+    Success3,
+    Success4,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +39,26 @@ impl UiSfx {
             .expect("generated UI confirm sound id must be unique");
         bank.insert_wav(ADJUST, tone_sequence(&[(880.0, 24)], 0.035))
             .expect("generated UI adjust sound id must be unique");
+        bank.insert_wav(SUCCESS_1, tone_sequence(&[(620.0, 42), (760.0, 54)], 0.05))
+            .expect("generated UI success 1 sound id must be unique");
+        bank.insert_wav(
+            SUCCESS_2,
+            tone_sequence(&[(660.0, 38), (820.0, 46), (980.0, 58)], 0.052),
+        )
+        .expect("generated UI success 2 sound id must be unique");
+        bank.insert_wav(
+            SUCCESS_3,
+            tone_sequence(&[(700.0, 36), (880.0, 42), (1060.0, 48), (1240.0, 62)], 0.055),
+        )
+        .expect("generated UI success 3 sound id must be unique");
+        bank.insert_wav(
+            SUCCESS_4,
+            tone_sequence(
+                &[(760.0, 34), (960.0, 40), (1160.0, 46), (1360.0, 52), (1560.0, 72)],
+                0.058,
+            ),
+        )
+        .expect("generated UI success 4 sound id must be unique");
         Self { bank }
     }
 
@@ -43,6 +71,10 @@ impl UiSfx {
             UiSoundCue::Open => OPEN,
             UiSoundCue::Confirm => CONFIRM,
             UiSoundCue::Adjust => ADJUST,
+            UiSoundCue::Success1 => SUCCESS_1,
+            UiSoundCue::Success2 => SUCCESS_2,
+            UiSoundCue::Success3 => SUCCESS_3,
+            UiSoundCue::Success4 => SUCCESS_4,
         };
         self.bank.play_on_bus(audio, id, AudioBus::Ui)
     }
