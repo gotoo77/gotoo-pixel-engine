@@ -6,9 +6,11 @@
   </head>
   <body>
     <div id="status">starting</div>
+    <canvas width="480" height="270" style="width: 960px; height: 540px;"></canvas>
     <script type="module">
       import init, {
         gpe_ui_text_input_probe_snapshot,
+        gpe_ui_text_input_probe_tick,
       } from "./generated/gpe_ui_text_input_probe.js";
       import {
         errorMessage,
@@ -21,6 +23,7 @@
           phase,
           webgpu: Boolean(navigator.gpu),
           snapshot: () => gpe_ui_text_input_probe_snapshot(),
+          tick: () => gpe_ui_text_input_probe_tick(),
           ...extra,
         };
         status.textContent = phase;
