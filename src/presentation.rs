@@ -143,17 +143,20 @@ pub fn present_pixel_surface(
 /// Sampling is performed explicitly in framebuffer space, so no linear filtering is
 /// introduced. This keeps hard pixel edges while avoiding the large unused margins
 /// caused by falling back to the next-lowest integer scale.
-pub fn present_pixel_surface_fit(
-    host: &mut Framebuffer,
-    source: &Framebuffer,
+pub(crate) fn fit_pixel_surface_presentation(
+    source_size: Size,
     bounds: Rect,
 ) -> Option<PixelFitPresentation> {
-    if source.width() == 0 || source.height() == 0 || bounds.width == 0 || bounds.height == 0 {
+    if source_size.width == 0
+        || source_size.height == 0
+        || bounds.width == 0
+        || bounds.height == 0
+    {
         return None;
     }
 
-    let source_width = u64::from(source.width());
-    let source_height = u64::from(source.height());
+    let source_width = u64::from(source_size.width);
+    let source_height = u64::from(source_size.height);
     let bounds_width = u64::from(bounds.width);
     let bounds_height = u64::from(bounds.height);
 
@@ -173,12 +176,37 @@ pub fn present_pixel_surface_fit(
     let y = bounds
         .y
         .checked_add(i32::try_from((bounds.height - height) / 2).ok()?)?;
-    let rect = Rect {
-        x,
-        y,
-        width,
-        height,
-    };
+
+    Some(PixelFitPresentation {
+        rect: Rect {
+            x,
+            y,
+            width,
+            height,
+        },
+        source_size,
+    })
+}
+
+pub fn present_pixel_surface_fit(
+    host: &mut Framebuffer,
+    source: &Framebuffer,
+    bounds: Rect,
+) -> Option<PixelFitPresentation> {
+    let presentation = fit_pixel_surface_presentation(
+        Size {
+            width: source.width(),
+            height: source.height(),
+        },
+        bounds,
+    )?;
+    let rect = presentation.rect;
+    let width = rect.width;
+    let height = rect.height;
+    let x = rect.x;
+    let y = rect.y;
+    let source_width = u64::from(source.width());
+    let source_height = u64::from(source.height());
 
     let bytes = source.as_rgba8();
     for destination_y in 0..height {
@@ -198,13 +226,7 @@ pub fn present_pixel_surface_fit(
         }
     }
 
-    Some(PixelFitPresentation {
-        rect,
-        source_size: Size {
-            width: source.width(),
-            height: source.height(),
-        },
-    })
+    Some(presentation)
 }
 
 #[cfg(test)]
@@ -261,6 +283,36 @@ mod tests {
         assert_eq!(presentation.map_point((20, 80)), Some((0, 0)));
         assert_eq!(presentation.map_point((979, 619)), Some((319, 179)));
         assert_eq!(presentation.map_point((19, 80)), None);
+    }
+
+    #[test]
+    fn fit_geometry_can_be_computed_before_rendering() {
+        let presentation = fit_pixel_surface_presentation(
+            Size {
+                width: 540,
+                height: 960,
+            },
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 960,
+            },
+        )
+        .expect("portrait surface should fit");
+
+        assert_eq!(
+            presentation.rect,
+            Rect {
+                x: 370,
+                y: 0,
+                width: 540,
+                height: 960,
+            }
+        );
+        assert_eq!(presentation.map_point((370, 0)), Some((0, 0)));
+        assert_eq!(presentation.map_point((909, 959)), Some((539, 959)));
+        assert_eq!(presentation.map_point((369, 0)), None);
     }
 
     #[test]
