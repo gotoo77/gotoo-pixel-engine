@@ -100,13 +100,9 @@ impl Game for ToolWindowProbe {
             let green = (80.0 + gain * 175.0).round() as u8;
             let blue = (70.0 + gain * 150.0).round() as u8;
 
-            frame.framebuffer.fill_rect(
-                bar_x,
-                70,
-                bar_width,
-                20,
-                Pixel::rgb(70, green, blue),
-            );
+            frame
+                .framebuffer
+                .fill_rect(bar_x, 70, bar_width, 20, Pixel::rgb(70, green, blue));
         }
         frame
             .framebuffer
