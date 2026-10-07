@@ -306,6 +306,38 @@ mod tests {
     }
 
     #[test]
+    fn standard_layout_stays_inside_portrait_and_landscape_bounds() {
+        for bounds in [
+            Rect {
+                x: 0,
+                y: 0,
+                width: 540,
+                height: 960,
+            },
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 960,
+            },
+        ] {
+            let layout = VirtualGamepadLayout::standard(bounds);
+            for button in layout.buttons() {
+                assert!(button.rect.x >= bounds.x);
+                assert!(button.rect.y >= bounds.y);
+                assert!(
+                    button.rect.x + i32::try_from(button.rect.width).unwrap_or(i32::MAX)
+                        <= bounds.x + i32::try_from(bounds.width).unwrap_or(i32::MAX)
+                );
+                assert!(
+                    button.rect.y + i32::try_from(button.rect.height).unwrap_or(i32::MAX)
+                        <= bounds.y + i32::try_from(bounds.height).unwrap_or(i32::MAX)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn multitouch_holds_direction_and_action_simultaneously() {
         let layout = VirtualGamepadLayout::standard(bounds());
         let left = layout
