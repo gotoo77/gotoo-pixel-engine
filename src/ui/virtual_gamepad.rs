@@ -17,6 +17,13 @@ const STANDARD_BUTTONS: [GamepadButton; 10] = [
     GamepadButton::Select,
 ];
 
+const TRACKBALL_BUTTONS: [GamepadButton; 4] = [
+    GamepadButton::LeftStickUp,
+    GamepadButton::LeftStickDown,
+    GamepadButton::LeftStickLeft,
+    GamepadButton::LeftStickRight,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtualGamepadButton {
     pub button: GamepadButton,
@@ -141,6 +148,22 @@ impl VirtualGamepadLayout {
         });
 
         Self { buttons }
+    }
+
+    /// Builds only the face + utility buttons, leaving movement to another
+    /// virtual control such as VirtualTrackball.
+    pub fn actions(bounds: Rect) -> Self {
+        let mut layout = Self::standard(bounds);
+        layout.buttons.retain(|button| {
+            !matches!(
+                button.button,
+                GamepadButton::DPadUp
+                    | GamepadButton::DPadDown
+                    | GamepadButton::DPadLeft
+                    | GamepadButton::DPadRight
+            )
+        });
+        layout
     }
 
     pub fn buttons(&self) -> &[VirtualGamepadButton] {
@@ -289,6 +312,213 @@ impl VirtualGamepad {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VirtualTrackballStyle {
+    pub border: Pixel,
+    pub active: Pixel,
+    pub knob: Pixel,
+    pub text: Pixel,
+}
+
+impl Default for VirtualTrackballStyle {
+    fn default() -> Self {
+        Self {
+            border: Pixel::rgb(82, 105, 128),
+            active: Pixel::rgb(96, 194, 224),
+            knob: Pixel::rgb(220, 238, 248),
+            text: Pixel::rgb(168, 190, 205),
+        }
+    }
+}
+
+/// Floating relative movement control for touch devices.
+///
+/// The first touch starting inside area becomes the movement contact. The
+/// touch origin is the neutral point; dragging away from it produces synthetic
+/// left-stick direction buttons, including diagonals. Sparse touch frames keep
+/// the current direction held until the captured contact moves or ends.
+#[derive(Debug, Clone)]
+pub struct VirtualTrackball {
+    contact_id: Option<u64>,
+    anchor: Option<(i32, i32)>,
+    current: Option<(i32, i32)>,
+    previous_held: HashSet<GamepadButton>,
+    visible: bool,
+    deadzone: i32,
+    radius: i32,
+}
+
+impl Default for VirtualTrackball {
+    fn default() -> Self {
+        Self {
+            contact_id: None,
+            anchor: None,
+            current: None,
+            previous_held: HashSet::new(),
+            visible: false,
+            deadzone: 18,
+            radius: 72,
+        }
+    }
+}
+
+impl VirtualTrackball {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub const fn visible(&self) -> bool {
+        self.visible
+    }
+
+    pub fn show(&mut self) {
+        self.visible = true;
+    }
+
+    pub fn hide(&mut self) {
+        self.visible = false;
+        self.reset();
+    }
+
+    pub fn reset(&mut self) {
+        self.contact_id = None;
+        self.anchor = None;
+        self.current = None;
+        self.previous_held.clear();
+    }
+
+    pub fn with_deadzone(mut self, deadzone: i32) -> Self {
+        self.deadzone = deadzone.max(0);
+        self
+    }
+
+    pub fn with_radius(mut self, radius: i32) -> Self {
+        self.radius = radius.max(1);
+        self
+    }
+
+    fn held_buttons(&self) -> HashSet<GamepadButton> {
+        let Some(anchor) = self.anchor else {
+            return HashSet::new();
+        };
+        let Some(current) = self.current else {
+            return HashSet::new();
+        };
+        let dx = current.0.saturating_sub(anchor.0);
+        let dy = current.1.saturating_sub(anchor.1);
+        let mut held = HashSet::new();
+
+        if dx < -self.deadzone {
+            held.insert(GamepadButton::LeftStickLeft);
+        } else if dx > self.deadzone {
+            held.insert(GamepadButton::LeftStickRight);
+        }
+        if dy < -self.deadzone {
+            held.insert(GamepadButton::LeftStickUp);
+        } else if dy > self.deadzone {
+            held.insert(GamepadButton::LeftStickDown);
+        }
+
+        held
+    }
+
+    /// Returns an Input snapshot augmented with synthetic left-stick directions.
+    pub fn update_input(&mut self, input: &Input, area: Rect) -> Input {
+        if !input.touches().is_empty() {
+            self.visible = true;
+        }
+
+        for touch in input.touches() {
+            match touch.phase {
+                TouchPhase::Started => {
+                    if self.contact_id.is_none()
+                        && let Some(point) = touch.position
+                        && area.contains(point)
+                    {
+                        self.contact_id = Some(touch.id);
+                        self.anchor = Some(point);
+                        self.current = Some(point);
+                    }
+                }
+                TouchPhase::Moved => {
+                    if self.contact_id == Some(touch.id)
+                        && let Some(point) = touch.position
+                    {
+                        self.current = Some(point);
+                    }
+                }
+                TouchPhase::Ended | TouchPhase::Cancelled => {
+                    if self.contact_id == Some(touch.id) {
+                        self.contact_id = None;
+                        self.anchor = None;
+                        self.current = None;
+                    }
+                }
+            }
+        }
+
+        let held = self.held_buttons();
+        let mut augmented = input.clone();
+        for button in TRACKBALL_BUTTONS {
+            let state = ButtonState::from_transition(
+                self.previous_held.contains(&button),
+                held.contains(&button),
+            );
+            augmented.set_gamepad_button_state(VIRTUAL_GAMEPAD_ID, button, state);
+        }
+        self.previous_held = held;
+        augmented
+    }
+
+    pub fn render(
+        &self,
+        framebuffer: &mut Framebuffer,
+        area: Rect,
+        style: VirtualTrackballStyle,
+    ) {
+        if !self.visible {
+            return;
+        }
+
+        let fallback = (
+            area.x + i32::try_from(area.width / 2).unwrap_or(0),
+            area.y + i32::try_from(area.height / 2).unwrap_or(0),
+        );
+        let center = self.anchor.unwrap_or(fallback);
+        let raw = self.current.unwrap_or(center);
+        let dx = raw.0.saturating_sub(center.0);
+        let dy = raw.1.saturating_sub(center.1);
+        let distance = ((i64::from(dx) * i64::from(dx) + i64::from(dy) * i64::from(dy)) as f64)
+            .sqrt();
+        let scale = if distance > f64::from(self.radius) && distance > 0.0 {
+            f64::from(self.radius) / distance
+        } else {
+            1.0
+        };
+        let knob = (
+            center.0.saturating_add((f64::from(dx) * scale).round() as i32),
+            center.1.saturating_add((f64::from(dy) * scale).round() as i32),
+        );
+
+        let active = self.contact_id.is_some();
+        let ring = if active { style.active } else { style.border };
+        framebuffer.draw_circle(center.0, center.1, self.radius as u32, ring);
+        framebuffer.draw_circle(
+            center.0,
+            center.1,
+            self.deadzone.max(1) as u32,
+            style.border,
+        );
+        framebuffer.fill_circle(knob.0, knob.1, 14, style.knob);
+
+        let label_y = area
+            .y
+            .saturating_add(i32::try_from(area.height).unwrap_or(0))
+            .saturating_sub(22);
+        framebuffer.draw_text(area.x + 8, label_y, "MOVE", style.text);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,6 +576,93 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn action_layout_keeps_face_and_utility_buttons_without_dpad() {
+        let layout = VirtualGamepadLayout::actions(bounds());
+        for button in [
+            GamepadButton::South,
+            GamepadButton::East,
+            GamepadButton::West,
+            GamepadButton::North,
+            GamepadButton::Start,
+            GamepadButton::Select,
+        ] {
+            assert!(layout.buttons().iter().any(|item| item.button == button));
+        }
+        for button in [
+            GamepadButton::DPadUp,
+            GamepadButton::DPadDown,
+            GamepadButton::DPadLeft,
+            GamepadButton::DPadRight,
+        ] {
+            assert!(!layout.buttons().iter().any(|item| item.button == button));
+        }
+    }
+
+    #[test]
+    fn trackball_supports_diagonal_hold_and_release() {
+        let area = Rect {
+            x: 0,
+            y: 480,
+            width: 260,
+            height: 480,
+        };
+        let mut trackball = VirtualTrackball::new().with_deadzone(10);
+
+        let mut started = Input::default();
+        started.push_touch(Touch {
+            id: 31,
+            phase: TouchPhase::Started,
+            position: Some((100, 700)),
+        });
+        let neutral = trackball.update_input(&started, area);
+        assert!(!neutral.gamepad_button_any(GamepadButton::LeftStickRight).held());
+
+        let mut moved = Input::default();
+        moved.push_touch(Touch {
+            id: 31,
+            phase: TouchPhase::Moved,
+            position: Some((145, 655)),
+        });
+        let diagonal = trackball.update_input(&moved, area);
+        assert!(diagonal.gamepad_button_any(GamepadButton::LeftStickRight).pressed());
+        assert!(diagonal.gamepad_button_any(GamepadButton::LeftStickUp).pressed());
+
+        let sparse = trackball.update_input(&Input::default(), area);
+        assert!(sparse.gamepad_button_any(GamepadButton::LeftStickRight).held());
+        assert!(sparse.gamepad_button_any(GamepadButton::LeftStickUp).held());
+
+        let mut ended = Input::default();
+        ended.push_touch(Touch {
+            id: 31,
+            phase: TouchPhase::Ended,
+            position: None,
+        });
+        let released = trackball.update_input(&ended, area);
+        assert!(released.gamepad_button_any(GamepadButton::LeftStickRight).released());
+        assert!(released.gamepad_button_any(GamepadButton::LeftStickUp).released());
+    }
+
+    #[test]
+    fn trackball_ignores_touch_started_outside_its_area() {
+        let area = Rect {
+            x: 0,
+            y: 480,
+            width: 260,
+            height: 480,
+        };
+        let mut trackball = VirtualTrackball::new();
+        let mut input = Input::default();
+        input.push_touch(Touch {
+            id: 9,
+            phase: TouchPhase::Started,
+            position: Some((400, 700)),
+        });
+        let augmented = trackball.update_input(&input, area);
+        assert!(!augmented.gamepad_button_any(GamepadButton::LeftStickLeft).held());
+        assert!(!augmented.gamepad_button_any(GamepadButton::LeftStickRight).held());
     }
 
     #[test]
