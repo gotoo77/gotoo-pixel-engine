@@ -470,12 +470,7 @@ impl VirtualTrackball {
         augmented
     }
 
-    pub fn render(
-        &self,
-        framebuffer: &mut Framebuffer,
-        area: Rect,
-        style: VirtualTrackballStyle,
-    ) {
+    pub fn render(&self, framebuffer: &mut Framebuffer, area: Rect, style: VirtualTrackballStyle) {
         if !self.visible {
             return;
         }
@@ -488,16 +483,20 @@ impl VirtualTrackball {
         let raw = self.current.unwrap_or(center);
         let dx = raw.0.saturating_sub(center.0);
         let dy = raw.1.saturating_sub(center.1);
-        let distance = ((i64::from(dx) * i64::from(dx) + i64::from(dy) * i64::from(dy)) as f64)
-            .sqrt();
+        let distance =
+            ((i64::from(dx) * i64::from(dx) + i64::from(dy) * i64::from(dy)) as f64).sqrt();
         let scale = if distance > f64::from(self.radius) && distance > 0.0 {
             f64::from(self.radius) / distance
         } else {
             1.0
         };
         let knob = (
-            center.0.saturating_add((f64::from(dx) * scale).round() as i32),
-            center.1.saturating_add((f64::from(dy) * scale).round() as i32),
+            center
+                .0
+                .saturating_add((f64::from(dx) * scale).round() as i32),
+            center
+                .1
+                .saturating_add((f64::from(dy) * scale).round() as i32),
         );
 
         let active = self.contact_id.is_some();
@@ -618,7 +617,11 @@ mod tests {
             position: Some((100, 700)),
         });
         let neutral = trackball.update_input(&started, area);
-        assert!(!neutral.gamepad_button_any(GamepadButton::LeftStickRight).held());
+        assert!(
+            !neutral
+                .gamepad_button_any(GamepadButton::LeftStickRight)
+                .held()
+        );
 
         let mut moved = Input::default();
         moved.push_touch(Touch {
@@ -627,11 +630,23 @@ mod tests {
             position: Some((145, 655)),
         });
         let diagonal = trackball.update_input(&moved, area);
-        assert!(diagonal.gamepad_button_any(GamepadButton::LeftStickRight).pressed());
-        assert!(diagonal.gamepad_button_any(GamepadButton::LeftStickUp).pressed());
+        assert!(
+            diagonal
+                .gamepad_button_any(GamepadButton::LeftStickRight)
+                .pressed()
+        );
+        assert!(
+            diagonal
+                .gamepad_button_any(GamepadButton::LeftStickUp)
+                .pressed()
+        );
 
         let sparse = trackball.update_input(&Input::default(), area);
-        assert!(sparse.gamepad_button_any(GamepadButton::LeftStickRight).held());
+        assert!(
+            sparse
+                .gamepad_button_any(GamepadButton::LeftStickRight)
+                .held()
+        );
         assert!(sparse.gamepad_button_any(GamepadButton::LeftStickUp).held());
 
         let mut ended = Input::default();
@@ -641,8 +656,16 @@ mod tests {
             position: None,
         });
         let released = trackball.update_input(&ended, area);
-        assert!(released.gamepad_button_any(GamepadButton::LeftStickRight).released());
-        assert!(released.gamepad_button_any(GamepadButton::LeftStickUp).released());
+        assert!(
+            released
+                .gamepad_button_any(GamepadButton::LeftStickRight)
+                .released()
+        );
+        assert!(
+            released
+                .gamepad_button_any(GamepadButton::LeftStickUp)
+                .released()
+        );
     }
 
     #[test]
@@ -661,8 +684,16 @@ mod tests {
             position: Some((400, 700)),
         });
         let augmented = trackball.update_input(&input, area);
-        assert!(!augmented.gamepad_button_any(GamepadButton::LeftStickLeft).held());
-        assert!(!augmented.gamepad_button_any(GamepadButton::LeftStickRight).held());
+        assert!(
+            !augmented
+                .gamepad_button_any(GamepadButton::LeftStickLeft)
+                .held()
+        );
+        assert!(
+            !augmented
+                .gamepad_button_any(GamepadButton::LeftStickRight)
+                .held()
+        );
     }
 
     #[test]
