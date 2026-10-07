@@ -562,10 +562,10 @@ fn validate_config(config: &TouchControlsConfig) -> Result<(), TouchLayoutError>
         ));
     }
 
-    if let MovementControl::VirtualStick(stick) = config.movement {
-        if !(stick.dead_zone_ratio.is_finite() && (0.0..1.0).contains(&stick.dead_zone_ratio)) {
-            return Err(TouchLayoutError::InvalidDeadZone(stick.dead_zone_ratio));
-        }
+    if let MovementControl::VirtualStick(stick) = config.movement
+        && !(stick.dead_zone_ratio.is_finite() && (0.0..1.0).contains(&stick.dead_zone_ratio))
+    {
+        return Err(TouchLayoutError::InvalidDeadZone(stick.dead_zone_ratio));
     }
 
     let mut actions = HashSet::new();
