@@ -442,9 +442,9 @@ impl<G: Game> PlatformApp<G> {
         let Some(window) = self.window.as_ref().map(Arc::clone) else {
             return;
         };
-        let Some(viewport) = self.renderer.as_ref().map(Renderer::viewport) else {
+        if self.renderer.is_none() {
             return;
-        };
+        }
 
         self.gamepads.poll(&mut self.input);
 
@@ -453,6 +453,7 @@ impl<G: Game> PlatformApp<G> {
         let dt = simulation_delta_time(raw_dt);
         self.last_frame_at = now;
         let surface_size = size_from_physical(window.inner_size());
+        let viewport = current_framebuffer_viewport(window.inner_size(), &self.framebuffer);
 
         let mut frame = Frame {
             framebuffer: &mut self.framebuffer,
@@ -633,7 +634,8 @@ impl<G: Game> PlatformApp<G> {
             let dt = simulation_delta_time(raw_dt);
             state.last_frame_at = now;
             let surface_size = size_from_physical(state.window.inner_size());
-            let viewport = state.renderer.viewport();
+            let viewport =
+                current_framebuffer_viewport(state.window.inner_size(), &state.framebuffer);
 
             let mut frame = ToolFrame {
                 framebuffer: &mut state.framebuffer,
@@ -685,11 +687,7 @@ impl<G: Game> PlatformApp<G> {
             touch.id,
             touch.phase,
             touch.location,
-            current_viewport(
-                window.inner_size(),
-                self.config.framebuffer_width,
-                self.config.framebuffer_height,
-            ),
+            current_framebuffer_viewport(window.inner_size(), &self.framebuffer),
         ));
     }
 
@@ -698,11 +696,7 @@ impl<G: Game> PlatformApp<G> {
 
         surface_to_framebuffer_position(
             position,
-            current_viewport(
-                window.inner_size(),
-                self.config.framebuffer_width,
-                self.config.framebuffer_height,
-            ),
+            current_framebuffer_viewport(window.inner_size(), &self.framebuffer),
         )
     }
 
@@ -906,22 +900,16 @@ impl<G: Game> PlatformApp<G> {
                     .add_mouse_wheel_steps(mouse_wheel_steps_from_winit(delta));
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let viewport = current_viewport(
-                    state.window.inner_size(),
-                    state.config.framebuffer_width,
-                    state.config.framebuffer_height,
-                );
+                let viewport =
+                    current_framebuffer_viewport(state.window.inner_size(), &state.framebuffer);
                 state
                     .input
                     .set_mouse_position(surface_to_framebuffer_position(position, viewport));
             }
             WindowEvent::CursorLeft { .. } => state.input.set_mouse_position(None),
             WindowEvent::Touch(touch) => {
-                let viewport = current_viewport(
-                    state.window.inner_size(),
-                    state.config.framebuffer_width,
-                    state.config.framebuffer_height,
-                );
+                let viewport =
+                    current_framebuffer_viewport(state.window.inner_size(), &state.framebuffer);
                 state.input.push_touch(touch_from_winit(
                     touch.id,
                     touch.phase,
@@ -1308,6 +1296,13 @@ fn current_viewport(
     )
 }
 
+fn current_framebuffer_viewport(
+    window_size: PhysicalSize<u32>,
+    framebuffer: &Framebuffer,
+) -> Viewport {
+    current_viewport(window_size, framebuffer.width(), framebuffer.height())
+}
+
 fn size_from_physical(size: PhysicalSize<u32>) -> Size {
     Size {
         width: size.width,
@@ -1370,11 +1365,11 @@ mod tests {
     use super::should_prefer_x11_on_wsl;
     use super::{
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
-        TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
-        mouse_button_from_winit, mouse_wheel_steps_from_winit, remember_non_zero_size,
-        simulation_delta_time, surface_to_framebuffer_position, tool_mode_blocks_primary,
-        tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
-        validate_tool_window_config,
+        TouchPhase, current_framebuffer_viewport, current_viewport, is_fullscreen_shortcut,
+        key_from_winit, mouse_button_from_winit, mouse_wheel_steps_from_winit,
+        remember_non_zero_size, simulation_delta_time, surface_to_framebuffer_position,
+        tool_mode_blocks_primary, tool_window_surface_matches, touch_from_winit,
+        touch_phase_from_winit, validate_config, validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
@@ -1616,6 +1611,26 @@ mod tests {
 
         assert_ne!(first.rect, second.rect);
         assert_eq!(second.rect.x, 120);
+    }
+
+    #[test]
+    fn runtime_framebuffer_resize_changes_pointer_mapping() {
+        let window_size = PhysicalSize::new(1280, 960);
+        let configured = current_viewport(window_size, 1280, 960);
+        let framebuffer = crate::Framebuffer::new(540, 960);
+        let active = current_framebuffer_viewport(window_size, &framebuffer);
+        let center = PhysicalPosition::new(640.0, 480.0);
+
+        assert_eq!(
+            surface_to_framebuffer_position(center, configured),
+            Some((640, 480))
+        );
+        assert_eq!(
+            surface_to_framebuffer_position(center, active),
+            Some((270, 480))
+        );
+        assert_eq!(active.rect.x, 370);
+        assert_eq!(active.rect.width, 540);
     }
 
     #[test]

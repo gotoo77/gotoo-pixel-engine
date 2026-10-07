@@ -551,10 +551,6 @@ impl Renderer {
         );
     }
 
-    pub fn viewport(&self) -> Viewport {
-        self.viewport
-    }
-
     pub fn render(&mut self, framebuffer: &Framebuffer) -> RenderOutcome {
         self.sync_framebuffer_size(Size {
             width: framebuffer.width(),

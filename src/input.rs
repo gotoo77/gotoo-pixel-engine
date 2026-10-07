@@ -373,6 +373,24 @@ impl Input {
         &self.touches
     }
 
+    pub(crate) fn map_pointer_positions(
+        &self,
+        mut map: impl FnMut((i32, i32)) -> Option<(i32, i32)>,
+    ) -> Self {
+        let mut mapped = self.clone();
+        mapped.mouse_position = self.mouse_position.and_then(&mut map);
+        mapped.touches = self
+            .touches
+            .iter()
+            .copied()
+            .map(|mut touch| {
+                touch.position = touch.position.and_then(&mut map);
+                touch
+            })
+            .collect();
+        mapped
+    }
+
     pub fn gamepad_button(&self, id: GamepadId, button: GamepadButton) -> ButtonState {
         self.gamepads
             .get(&id)
@@ -512,6 +530,26 @@ impl Input {
             .get_mut(&id)
             .expect("gamepad state should exist after insertion");
         state.buttons[gamepad_button_index(button)].set_held(held);
+    }
+
+    pub(crate) fn set_gamepad_button_state(
+        &mut self,
+        id: GamepadId,
+        button: GamepadButton,
+        button_state: ButtonState,
+    ) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.gamepads.entry(id) {
+            let info = GamepadDeviceInfo::unknown(id);
+            entry.insert(GamepadState::new(info.clone()));
+            self.gamepad_connection_events
+                .push(GamepadConnectionEvent::Connected(info));
+        }
+
+        let state = self
+            .gamepads
+            .get_mut(&id)
+            .expect("gamepad state should exist after insertion");
+        state.buttons[gamepad_button_index(button)] = button_state;
     }
 
     pub(crate) fn disconnect_gamepad(&mut self, id: GamepadId) {
@@ -777,6 +815,45 @@ mod tests {
 
         input.advance_frame();
         assert_eq!(input.mouse_wheel_steps(), 0);
+    }
+
+    #[test]
+    fn mapped_pointer_positions_preserve_touch_lifecycle_and_other_inputs() {
+        let mut input = Input::default();
+        input.press_key(Key::Space);
+        input.press_mouse_button(MouseButton::Left);
+        input.set_mouse_position(Some((400, 200)));
+        input.push_touch(Touch {
+            id: 7,
+            phase: TouchPhase::Started,
+            position: Some((420, 220)),
+        });
+        input.push_touch(Touch {
+            id: 8,
+            phase: TouchPhase::Ended,
+            position: Some((100, 50)),
+        });
+
+        let mapped = input.map_pointer_positions(|(x, y)| (x >= 300).then_some((x - 300, y / 2)));
+
+        assert!(mapped.key(Key::Space).held());
+        assert!(mapped.mouse_button(MouseButton::Left).held());
+        assert_eq!(mapped.mouse_position(), Some((100, 100)));
+        assert_eq!(
+            mapped.touches(),
+            &[
+                Touch {
+                    id: 7,
+                    phase: TouchPhase::Started,
+                    position: Some((120, 110)),
+                },
+                Touch {
+                    id: 8,
+                    phase: TouchPhase::Ended,
+                    position: None,
+                },
+            ]
+        );
     }
 
     #[test]
