@@ -532,6 +532,26 @@ impl Input {
         state.buttons[gamepad_button_index(button)].set_held(held);
     }
 
+    pub(crate) fn set_gamepad_button_state(
+        &mut self,
+        id: GamepadId,
+        button: GamepadButton,
+        button_state: ButtonState,
+    ) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.gamepads.entry(id) {
+            let info = GamepadDeviceInfo::unknown(id);
+            entry.insert(GamepadState::new(info.clone()));
+            self.gamepad_connection_events
+                .push(GamepadConnectionEvent::Connected(info));
+        }
+
+        let state = self
+            .gamepads
+            .get_mut(&id)
+            .expect("gamepad state should exist after insertion");
+        state.buttons[gamepad_button_index(button)] = button_state;
+    }
+
     pub(crate) fn disconnect_gamepad(&mut self, id: GamepadId) {
         if let Some(gamepad) = self.gamepads.remove(&id) {
             self.gamepad_connection_events
