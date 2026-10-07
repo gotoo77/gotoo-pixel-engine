@@ -38,6 +38,7 @@ pub use toolkit::{
 };
 pub use virtual_gamepad::{
     VirtualGamepad, VirtualGamepadButton, VirtualGamepadLayout, VirtualGamepadStyle,
+    VirtualTrackball, VirtualTrackballStyle,
 };
 pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
 
