@@ -102,8 +102,10 @@ impl PixelGameHost {
         bounds: Rect,
     ) -> (GameResult, Option<PixelFitPresentation>) {
         let input_presentation = fit_pixel_surface_presentation(self.size, bounds);
-        let mapped_input = input_presentation
-            .map(|presentation| host.input.map_pointer_positions(|point| presentation.map_point(point)));
+        let mapped_input = input_presentation.map(|presentation| {
+            host.input
+                .map_pointer_positions(|point| presentation.map_point(point))
+        });
 
         let result = if let Some(input) = mapped_input.as_ref() {
             self.update_child_with_input(host, input)
@@ -135,7 +137,6 @@ impl PixelGameHost {
         present_pixel_surface_fit(host, &self.framebuffer, bounds)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
