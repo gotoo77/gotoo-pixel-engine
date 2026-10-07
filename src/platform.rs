@@ -634,7 +634,8 @@ impl<G: Game> PlatformApp<G> {
             let dt = simulation_delta_time(raw_dt);
             state.last_frame_at = now;
             let surface_size = size_from_physical(state.window.inner_size());
-            let viewport = current_framebuffer_viewport(state.window.inner_size(), &state.framebuffer);
+            let viewport =
+                current_framebuffer_viewport(state.window.inner_size(), &state.framebuffer);
 
             let mut frame = ToolFrame {
                 framebuffer: &mut state.framebuffer,
@@ -1366,10 +1367,9 @@ mod tests {
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
         TouchPhase, current_framebuffer_viewport, current_viewport, is_fullscreen_shortcut,
         key_from_winit, mouse_button_from_winit, mouse_wheel_steps_from_winit,
-        remember_non_zero_size,
-        simulation_delta_time, surface_to_framebuffer_position, tool_mode_blocks_primary,
-        tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
-        validate_tool_window_config,
+        remember_non_zero_size, simulation_delta_time, surface_to_framebuffer_position,
+        tool_mode_blocks_primary, tool_window_surface_matches, touch_from_winit,
+        touch_phase_from_winit, validate_config, validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
