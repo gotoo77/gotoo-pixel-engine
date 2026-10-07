@@ -1,7 +1,13 @@
 use std::ops::RangeInclusive;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use crate::{ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextRenderer};
+use crate::{
+    ButtonState, Font, Framebuffer, Input, Key, MouseButton, Pixel, Rect, TextInputEvent,
+    TextRenderer, TouchPhase,
+};
+
+use super::text_input_web;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepeatConfig {
@@ -104,6 +110,63 @@ impl Default for UiTheme {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextInputEnterHint {
+    Enter,
+    Done,
+    Search,
+    Go,
+    Next,
+}
+
+impl TextInputEnterHint {
+    const fn as_web_str(self) -> &'static str {
+        match self {
+            Self::Enter => "enter",
+            Self::Done => "done",
+            Self::Search => "search",
+            Self::Go => "go",
+            Self::Next => "next",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextInputOptions<'a> {
+    pub placeholder: &'a str,
+    pub aria_label: &'a str,
+    pub max_chars: Option<usize>,
+    pub enter_hint: TextInputEnterHint,
+    /// Whether the consumer currently considers the field to be in edit mode.
+    ///
+    /// On Web, direct focus of the DOM proxy also enables editing so a tap can
+    /// summon the mobile soft keyboard even when the consumer was inactive.
+    pub editing: bool,
+}
+
+impl Default for TextInputOptions<'_> {
+    fn default() -> Self {
+        Self {
+            placeholder: "",
+            aria_label: "",
+            max_chars: None,
+            enter_hint: TextInputEnterHint::Enter,
+            editing: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TextInputResponse {
+    pub focused: bool,
+    pub hovered: bool,
+    pub active: bool,
+    /// True while the field is accepting text edits.
+    pub editing: bool,
+    pub changed: bool,
+    pub submitted: bool,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct UiResponse {
     pub focused: bool,
@@ -113,16 +176,47 @@ pub struct UiResponse {
     pub changed: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TextEditState {
+    owner: Option<usize>,
+    cursor: usize,
+    select_all: bool,
+}
+
+static NEXT_UI_SURFACE_ID: AtomicU32 = AtomicU32::new(1);
+
+#[derive(Debug)]
 pub struct UiState {
+    surface_id: u32,
     focused: usize,
     previous_interactive_count: usize,
     pointer_active: Option<usize>,
+    touch_active: Option<(u64, usize)>,
     horizontal_repeat_owner: Option<usize>,
     left_repeat: RepeatState,
     right_repeat: RepeatState,
+    text_edit: TextEditState,
     scroll_y: u32,
     previous_content_height: u32,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        let surface_id = NEXT_UI_SURFACE_ID.fetch_add(1, Ordering::Relaxed).max(1);
+        Self {
+            surface_id,
+            focused: 0,
+            previous_interactive_count: 0,
+            pointer_active: None,
+            touch_active: None,
+            horizontal_repeat_owner: None,
+            left_repeat: RepeatState::default(),
+            right_repeat: RepeatState::default(),
+            text_edit: TextEditState::default(),
+            scroll_y: 0,
+            previous_content_height: 0,
+        }
+    }
 }
 
 impl UiState {
@@ -136,7 +230,9 @@ impl UiState {
     /// a page. Consumers should call this before switching to a page or structure
     /// whose interactive widget order differs.
     pub fn reset_interaction(&mut self) {
+        let surface_id = self.surface_id;
         *self = Self::default();
+        self.surface_id = surface_id;
     }
 }
 
@@ -267,7 +363,28 @@ impl<'a> Ui<'a> {
             }
         }
 
-        self.draw_tabs(rect, labels, normalized, ordinal, hovered_tab);
+        let touched_tab = self.input.touches().iter().find_map(|touch| {
+            if touch.phase != TouchPhase::Started {
+                return None;
+            }
+            touch
+                .position
+                .and_then(|position| tab_index_at_position(rect, labels.len(), position))
+        });
+        if let Some(index) = touched_tab {
+            self.state.focused = ordinal;
+            if requested.is_none() && index != normalized {
+                requested = Some(index);
+            }
+        }
+
+        self.draw_tabs(
+            rect,
+            labels,
+            normalized,
+            ordinal,
+            hovered_tab.or(touched_tab),
+        );
         requested
     }
 
@@ -292,15 +409,108 @@ impl<'a> Ui<'a> {
         response
     }
 
+    pub fn text_input(
+        &mut self,
+        value: &mut String,
+        options: TextInputOptions<'_>,
+    ) -> TextInputResponse {
+        let rect = self.next_row();
+        self.text_input_at(rect, value, options)
+    }
+
+    /// Text input rendered at explicit logical framebuffer geometry.
+    ///
+    /// This variant lets custom game/launcher layouts share the same editing,
+    /// focus and mobile soft-keyboard behavior without adopting the toolkit's
+    /// vertical row layout.
+    pub fn text_input_at(
+        &mut self,
+        rect: Rect,
+        value: &mut String,
+        options: TextInputOptions<'_>,
+    ) -> TextInputResponse {
+        let ordinal = self.next_interactive(rect);
+        let pointer = self.click_response(rect, ordinal);
+
+        let web = text_input_web::sync(text_input_web::WebTextInputRequest {
+            surface_id: self.state.surface_id,
+            ordinal,
+            rect,
+            framebuffer_size: crate::Size {
+                width: self.framebuffer.width(),
+                height: self.framebuffer.height(),
+            },
+            value,
+            max_chars: options.max_chars,
+            enter_hint: options.enter_hint.as_web_str(),
+            aria_label: if options.aria_label.is_empty() {
+                options.placeholder
+            } else {
+                options.aria_label
+            },
+        });
+        if web.focused {
+            self.state.focused = ordinal;
+        }
+
+        let focused = self.state.focused == ordinal;
+        if focused && self.state.text_edit.owner != Some(ordinal) {
+            self.state.text_edit = TextEditState {
+                owner: Some(ordinal),
+                cursor: value.len(),
+                select_all: false,
+            };
+        }
+
+        let editing = options.editing || web.focused;
+        let mut changed = false;
+        if web.focused {
+            let normalized = truncate_to_char_limit(&web.value, options.max_chars);
+            if *value != normalized {
+                *value = normalized;
+                changed = true;
+            }
+            self.state.text_edit.cursor = value.len();
+            self.state.text_edit.select_all = false;
+        } else if focused && editing {
+            if (self.input.key(Key::LeftControl).held() || self.input.key(Key::RightControl).held())
+                && self.input.key(Key::A).pressed()
+            {
+                self.state.text_edit.select_all = true;
+                self.state.text_edit.cursor = value.len();
+            }
+            changed |= apply_text_events(
+                value,
+                &mut self.state.text_edit,
+                self.input.text_events(),
+                options.max_chars,
+            );
+        }
+
+        let submitted =
+            focused && editing && (web.submitted || self.input.key(Key::Enter).pressed());
+        let response = TextInputResponse {
+            focused,
+            hovered: pointer.hovered,
+            active: pointer.active || web.focused,
+            editing,
+            changed,
+            submitted,
+        };
+        self.draw_text_input(rect, value, options, response);
+        response
+    }
+
     pub fn select(&mut self, label: &str, selected: &mut usize, options: &[&str]) -> UiResponse {
         let rect = self.next_row();
         let ordinal = self.next_interactive(rect);
         let hovered = self.pointer_over(rect);
         let left_button = self.input.mouse_button(MouseButton::Left);
+        let touch_press = self.touch_started_in(rect);
         let mut changed = false;
         let mut normalized = false;
 
-        if left_button.pressed() && hovered {
+        if (left_button.pressed() && hovered) || touch_press.is_some() {
             self.state.focused = ordinal;
         }
 
@@ -323,20 +533,24 @@ impl<'a> Ui<'a> {
             width: rect.width.saturating_sub(rect.width / 2),
             height: rect.height,
         };
+        let direct_position = if left_button.pressed() {
+            self.input.mouse_position()
+        } else {
+            touch_press.map(|(_, position)| position)
+        };
         if !normalized
             && options.len() > 1
-            && left_button.pressed()
-            && let Some(position) = self.input.mouse_position()
+            && let Some(position) = direct_position
             && value_rect.contains(position)
         {
             let midpoint = i64::from(value_rect.x) + i64::from(value_rect.width) / 2;
-            let mouse_delta = if i64::from(position.0) < midpoint {
+            let pointer_delta = if i64::from(position.0) < midpoint {
                 -1
             } else {
                 1
             };
             let before = *selected;
-            *selected = wrapped_index(*selected, options.len(), mouse_delta);
+            *selected = wrapped_index(*selected, options.len(), pointer_delta);
             changed |= before != *selected;
         }
 
@@ -372,6 +586,14 @@ impl<'a> Ui<'a> {
         }
 
         let mut changed = false;
+        if let Some((touch_id, position)) = self.touch_started_in(track) {
+            self.state.focused = ordinal;
+            self.state.touch_active = Some((touch_id, ordinal));
+            let before = *value;
+            *value = slider_value_from_pointer(position.0, track, &range, step);
+            changed |= before != *value;
+        }
+
         if self.state.pointer_active == Some(ordinal) {
             if let Some((mouse_x, _)) = mouse {
                 let before = *value;
@@ -382,6 +604,36 @@ impl<'a> Ui<'a> {
                 }
             } else {
                 self.state.pointer_active = None;
+            }
+        }
+
+        if let Some((touch_id, active_ordinal)) = self.state.touch_active
+            && active_ordinal == ordinal
+        {
+            for touch in self
+                .input
+                .touches()
+                .iter()
+                .filter(|touch| touch.id == touch_id)
+            {
+                match touch.phase {
+                    TouchPhase::Started | TouchPhase::Moved => {
+                        if let Some((x, _)) = touch.position {
+                            let before = *value;
+                            *value = slider_value_from_pointer(x, track, &range, step);
+                            changed |= before != *value;
+                        }
+                    }
+                    TouchPhase::Ended => {
+                        if let Some((x, _)) = touch.position {
+                            let before = *value;
+                            *value = slider_value_from_pointer(x, track, &range, step);
+                            changed |= before != *value;
+                        }
+                        self.state.touch_active = None;
+                    }
+                    TouchPhase::Cancelled => self.state.touch_active = None,
+                }
             }
         }
 
@@ -396,7 +648,11 @@ impl<'a> Ui<'a> {
         let response = UiResponse {
             focused,
             hovered,
-            active: self.state.pointer_active == Some(ordinal),
+            active: self.state.pointer_active == Some(ordinal)
+                || self
+                    .state
+                    .touch_active
+                    .is_some_and(|(_, owner)| owner == ordinal),
             changed,
             ..UiResponse::default()
         };
@@ -548,12 +804,26 @@ impl<'a> Ui<'a> {
             .is_some_and(|position| rect.contains(position))
     }
 
+    fn touch_started_in(&self, rect: Rect) -> Option<(u64, (i32, i32))> {
+        self.input.touches().iter().find_map(|touch| {
+            if touch.phase != TouchPhase::Started {
+                return None;
+            }
+            let position = touch.position?;
+            rect.contains(position).then_some((touch.id, position))
+        })
+    }
+
     fn click_response(&mut self, rect: Rect, ordinal: usize) -> UiResponse {
         let hovered = self.pointer_over(rect);
         let left_button = self.input.mouse_button(MouseButton::Left);
         if left_button.pressed() && hovered {
             self.state.focused = ordinal;
             self.state.pointer_active = Some(ordinal);
+        }
+        if let Some((touch_id, _)) = self.touch_started_in(rect) {
+            self.state.focused = ordinal;
+            self.state.touch_active = Some((touch_id, ordinal));
         }
 
         let mut clicked = self.state.focused == ordinal && self.input.key(Key::Space).pressed();
@@ -568,13 +838,77 @@ impl<'a> Ui<'a> {
             }
         }
 
+        if let Some((touch_id, active_ordinal)) = self.state.touch_active
+            && active_ordinal == ordinal
+        {
+            for touch in self
+                .input
+                .touches()
+                .iter()
+                .filter(|touch| touch.id == touch_id)
+            {
+                match touch.phase {
+                    TouchPhase::Ended => {
+                        clicked |= touch
+                            .position
+                            .is_some_and(|position| rect.contains(position));
+                        self.state.touch_active = None;
+                    }
+                    TouchPhase::Cancelled => self.state.touch_active = None,
+                    TouchPhase::Started | TouchPhase::Moved => {}
+                }
+            }
+        }
+
         UiResponse {
             focused: self.state.focused == ordinal,
             hovered,
-            active: self.state.pointer_active == Some(ordinal),
+            active: self.state.pointer_active == Some(ordinal)
+                || self
+                    .state
+                    .touch_active
+                    .is_some_and(|(_, owner)| owner == ordinal),
             clicked,
             changed: false,
         }
+    }
+
+    fn draw_text_input(
+        &mut self,
+        rect: Rect,
+        value: &str,
+        options: TextInputOptions<'_>,
+        response: TextInputResponse,
+    ) {
+        self.draw_control_frame(
+            rect,
+            UiResponse {
+                focused: response.focused,
+                hovered: response.hovered,
+                active: response.active,
+                changed: response.changed,
+                ..UiResponse::default()
+            },
+        );
+
+        let text_rect = Rect {
+            x: rect.x.saturating_add(4),
+            y: rect.y,
+            width: rect.width.saturating_sub(8),
+            height: rect.height,
+        };
+        if value.is_empty() && !response.focused {
+            self.draw_text_left(text_rect, options.placeholder, self.theme.muted_text);
+            return;
+        }
+
+        let display = if response.editing {
+            let cursor = clamp_to_char_boundary(value, self.state.text_edit.cursor);
+            format!("{}|{}", &value[..cursor], &value[cursor..])
+        } else {
+            value.to_owned()
+        };
+        self.draw_text_left(text_rect, &display, self.theme.text);
     }
 
     fn draw_control(&mut self, rect: Rect, label: &str, response: UiResponse) {
@@ -758,6 +1092,7 @@ impl Drop for Ui<'_> {
         if self.interactive_count == 0 {
             self.state.focused = 0;
             self.state.pointer_active = None;
+            self.state.touch_active = None;
             self.state.horizontal_repeat_owner = None;
             return;
         }
@@ -769,7 +1104,124 @@ impl Drop for Ui<'_> {
         {
             self.state.pointer_active = None;
         }
+        if self
+            .state
+            .touch_active
+            .is_some_and(|(_, ordinal)| ordinal >= self.interactive_count)
+        {
+            self.state.touch_active = None;
+        }
     }
+}
+
+fn truncate_to_char_limit(value: &str, max_chars: Option<usize>) -> String {
+    match max_chars {
+        Some(max_chars) => value.chars().take(max_chars).collect(),
+        None => value.to_owned(),
+    }
+}
+
+fn clamp_to_char_boundary(value: &str, cursor: usize) -> usize {
+    let mut cursor = cursor.min(value.len());
+    while cursor > 0 && !value.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    cursor
+}
+
+fn previous_char_boundary(value: &str, cursor: usize) -> usize {
+    let cursor = clamp_to_char_boundary(value, cursor);
+    value[..cursor]
+        .char_indices()
+        .last()
+        .map(|(index, _)| index)
+        .unwrap_or(0)
+}
+
+fn next_char_boundary(value: &str, cursor: usize) -> usize {
+    let cursor = clamp_to_char_boundary(value, cursor);
+    value[cursor..]
+        .chars()
+        .next()
+        .map(|character| cursor + character.len_utf8())
+        .unwrap_or(value.len())
+}
+
+fn apply_text_events(
+    value: &mut String,
+    edit: &mut TextEditState,
+    events: &[TextInputEvent],
+    max_chars: Option<usize>,
+) -> bool {
+    edit.cursor = clamp_to_char_boundary(value, edit.cursor);
+    let mut changed = false;
+
+    for event in events {
+        match event {
+            TextInputEvent::Insert(text) => {
+                if edit.select_all {
+                    if !value.is_empty() {
+                        value.clear();
+                        changed = true;
+                    }
+                    edit.cursor = 0;
+                    edit.select_all = false;
+                }
+
+                let clean = text.chars().filter(|character| !character.is_control());
+                let available = max_chars
+                    .map(|max| max.saturating_sub(value.chars().count()))
+                    .unwrap_or(usize::MAX);
+                let inserted: String = clean.take(available).collect();
+                if !inserted.is_empty() {
+                    value.insert_str(edit.cursor, &inserted);
+                    edit.cursor += inserted.len();
+                    changed = true;
+                }
+            }
+            TextInputEvent::Backspace | TextInputEvent::Delete if edit.select_all => {
+                if !value.is_empty() {
+                    value.clear();
+                    changed = true;
+                }
+                edit.cursor = 0;
+                edit.select_all = false;
+            }
+            TextInputEvent::Backspace => {
+                if edit.cursor > 0 {
+                    let previous = previous_char_boundary(value, edit.cursor);
+                    value.drain(previous..edit.cursor);
+                    edit.cursor = previous;
+                    changed = true;
+                }
+            }
+            TextInputEvent::Delete => {
+                if edit.cursor < value.len() {
+                    let next = next_char_boundary(value, edit.cursor);
+                    value.drain(edit.cursor..next);
+                    changed = true;
+                }
+            }
+            TextInputEvent::Left => {
+                edit.cursor = previous_char_boundary(value, edit.cursor);
+                edit.select_all = false;
+            }
+            TextInputEvent::Right => {
+                edit.cursor = next_char_boundary(value, edit.cursor);
+                edit.select_all = false;
+            }
+            TextInputEvent::Home => {
+                edit.cursor = 0;
+                edit.select_all = false;
+            }
+            TextInputEvent::End => {
+                edit.cursor = value.len();
+                edit.select_all = false;
+            }
+        }
+    }
+
+    changed
 }
 
 fn ordered_range(range: &RangeInclusive<f32>) -> (f32, f32) {
@@ -940,6 +1392,327 @@ mod tests {
         assert!(three_buttons(&up, &mut state)[0].focused);
         assert!(three_buttons(&up, &mut state)[2].focused);
         assert_eq!(state.focused_index(), Some(2));
+    }
+
+    #[test]
+    fn button_touch_activates_on_release_inside() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(120, 20);
+
+        let mut start = Input::default();
+        start.push_touch(crate::Touch {
+            id: 7,
+            phase: TouchPhase::Started,
+            position: Some((20, 10)),
+        });
+        let started = {
+            let mut ui = Ui::new(&mut framebuffer, &start, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH")
+        };
+        assert!(started.focused);
+        assert!(started.active);
+        assert!(!started.clicked);
+
+        let mut end = Input::default();
+        end.push_touch(crate::Touch {
+            id: 7,
+            phase: TouchPhase::Ended,
+            position: Some((20, 10)),
+        });
+        let ended = {
+            let mut ui = Ui::new(&mut framebuffer, &end, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH")
+        };
+        assert!(ended.clicked);
+        assert!(!ended.active);
+    }
+
+    #[test]
+    fn button_touch_release_outside_cancels_click() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(120, 20);
+
+        let mut start = Input::default();
+        start.push_touch(crate::Touch {
+            id: 3,
+            phase: TouchPhase::Started,
+            position: Some((20, 10)),
+        });
+        {
+            let mut ui = Ui::new(&mut framebuffer, &start, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH");
+        }
+
+        let mut end = Input::default();
+        end.push_touch(crate::Touch {
+            id: 3,
+            phase: TouchPhase::Ended,
+            position: Some((200, 10)),
+        });
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &end, Duration::ZERO, &mut state, theme);
+            ui.button("TOUCH")
+        };
+        assert!(!response.clicked);
+        assert!(!response.active);
+    }
+
+    #[test]
+    fn tabs_accept_touch_selection() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(120, 20);
+        let mut input = Input::default();
+        input.push_touch(crate::Touch {
+            id: 1,
+            phase: TouchPhase::Started,
+            position: Some((100, 10)),
+        });
+
+        let requested = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.tabs(0, &["A", "B", "C"])
+        };
+        assert_eq!(requested, Some(2));
+    }
+
+    #[test]
+    fn select_accepts_touch_on_value_half() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut selected = 1;
+        let mut input = Input::default();
+        input.push_touch(crate::Touch {
+            id: 1,
+            phase: TouchPhase::Started,
+            position: Some((180, 10)),
+        });
+
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.select("VALUE", &mut selected, &["A", "B", "C"])
+        };
+        assert!(response.changed);
+        assert_eq!(selected, 2);
+    }
+
+    #[test]
+    fn slider_accepts_touch_drag_and_release() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = 0.0;
+
+        let mut start = Input::default();
+        start.push_touch(crate::Touch {
+            id: 9,
+            phase: TouchPhase::Started,
+            position: Some((120, 10)),
+        });
+        let started = {
+            let mut ui = Ui::new(&mut framebuffer, &start, Duration::ZERO, &mut state, theme);
+            ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1)
+        };
+        assert!(started.active);
+        assert!(started.changed);
+
+        let after_start = value;
+        let mut moved = Input::default();
+        moved.push_touch(crate::Touch {
+            id: 9,
+            phase: TouchPhase::Moved,
+            position: Some((180, 10)),
+        });
+        {
+            let mut ui = Ui::new(&mut framebuffer, &moved, Duration::ZERO, &mut state, theme);
+            ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1);
+        }
+        assert!(value > after_start);
+
+        let mut end = Input::default();
+        end.push_touch(crate::Touch {
+            id: 9,
+            phase: TouchPhase::Ended,
+            position: Some((180, 10)),
+        });
+        let ended = {
+            let mut ui = Ui::new(&mut framebuffer, &end, Duration::ZERO, &mut state, theme);
+            ui.slider_f32("VALUE", &mut value, 0.0..=1.0, 0.1)
+        };
+        assert!(!ended.active);
+    }
+
+    #[test]
+    fn text_input_inserts_edits_utf8_and_respects_char_limit() {
+        let mut value = "éa".to_owned();
+        let mut edit = TextEditState {
+            owner: Some(0),
+            cursor: value.len(),
+            select_all: false,
+        };
+
+        assert!(apply_text_events(
+            &mut value,
+            &mut edit,
+            &[TextInputEvent::Backspace],
+            Some(3),
+        ));
+        assert_eq!(value, "é");
+        assert_eq!(edit.cursor, "é".len());
+
+        assert!(apply_text_events(
+            &mut value,
+            &mut edit,
+            &[TextInputEvent::Insert("猫xy".into())],
+            Some(3),
+        ));
+        assert_eq!(value, "é猫x");
+        assert_eq!(value.chars().count(), 3);
+
+        assert!(!apply_text_events(
+            &mut value,
+            &mut edit,
+            &[TextInputEvent::Insert("z".into())],
+            Some(3),
+        ));
+        assert_eq!(value, "é猫x");
+    }
+
+    #[test]
+    fn text_input_widget_consumes_text_events_and_submits() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = String::new();
+
+        let mut input = Input::default();
+        input.push_text_event(TextInputEvent::Insert("Gotoo".into()));
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.text_input(
+                &mut value,
+                TextInputOptions {
+                    placeholder: "PLAYER",
+                    aria_label: "Player name",
+                    max_chars: Some(20),
+                    enter_hint: TextInputEnterHint::Done,
+                    editing: true,
+                },
+            )
+        };
+        assert!(response.focused);
+        assert!(response.changed);
+        assert!(!response.submitted);
+        assert_eq!(value, "Gotoo");
+
+        let mut enter = Input::default();
+        enter.press_key(Key::Enter);
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &enter, Duration::ZERO, &mut state, theme);
+            ui.text_input(&mut value, TextInputOptions::default())
+        };
+        assert!(response.submitted);
+        assert_eq!(value, "Gotoo");
+    }
+
+    #[test]
+    fn inactive_text_input_keeps_navigation_focus_without_editing() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = "KEEP".to_owned();
+        let mut input = Input::default();
+        input.push_text_event(TextInputEvent::Insert("X".into()));
+
+        let response = {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            ui.text_input(
+                &mut value,
+                TextInputOptions {
+                    editing: false,
+                    ..TextInputOptions::default()
+                },
+            )
+        };
+
+        assert!(response.focused);
+        assert!(!response.editing);
+        assert!(!response.changed);
+        assert_eq!(value, "KEEP");
+    }
+
+    #[test]
+    fn text_input_at_uses_explicit_geometry_without_advancing_row_layout() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 60);
+        let mut value = String::new();
+        let input = Input::default();
+
+        {
+            let mut ui = Ui::new(&mut framebuffer, &input, Duration::ZERO, &mut state, theme);
+            let response = ui.text_input_at(
+                Rect {
+                    x: 40,
+                    y: 30,
+                    width: 120,
+                    height: 20,
+                },
+                &mut value,
+                TextInputOptions::default(),
+            );
+            assert!(response.focused);
+            ui.button("ROW");
+        }
+
+        assert_eq!(state.focused_index(), Some(0));
+        assert_eq!(state.previous_content_height, 20);
+    }
+
+    #[test]
+    fn text_input_ctrl_a_replaces_existing_value() {
+        let theme = compact_theme();
+        let mut state = UiState::default();
+        let mut framebuffer = Framebuffer::new(200, 20);
+        let mut value = "OLD".to_owned();
+
+        {
+            let idle = Input::default();
+            let mut ui = Ui::new(&mut framebuffer, &idle, Duration::ZERO, &mut state, theme);
+            ui.text_input(&mut value, TextInputOptions::default());
+        }
+
+        let mut select_all = Input::default();
+        select_all.press_key(Key::LeftControl);
+        select_all.press_key(Key::A);
+        {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &select_all,
+                Duration::ZERO,
+                &mut state,
+                theme,
+            );
+            ui.text_input(&mut value, TextInputOptions::default());
+        }
+
+        let mut replace = Input::default();
+        replace.push_text_event(TextInputEvent::Insert("NEW".into()));
+        let response = {
+            let mut ui = Ui::new(
+                &mut framebuffer,
+                &replace,
+                Duration::ZERO,
+                &mut state,
+                theme,
+            );
+            ui.text_input(&mut value, TextInputOptions::default())
+        };
+        assert!(response.changed);
+        assert_eq!(value, "NEW");
     }
 
     #[test]

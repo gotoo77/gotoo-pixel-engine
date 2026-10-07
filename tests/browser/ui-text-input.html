@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>GPE.UI text input probe</title>
+  </head>
+  <body>
+    <div id="status">starting</div>
+    <canvas width="480" height="270" style="width: 960px; height: 540px;"></canvas>
+    <script type="module">
+      import init, {
+        gpe_ui_text_input_probe_snapshot,
+        gpe_ui_text_input_probe_tick,
+      } from "./generated/gpe_ui_text_input_probe.js";
+      import {
+        errorMessage,
+        isWinitControlFlowHandoff,
+      } from "../../web/diagnostics-core.js";
+
+      const status = document.querySelector("#status");
+      const setState = (phase, extra = {}) => {
+        globalThis.__gpeTextInputState = {
+          phase,
+          webgpu: Boolean(navigator.gpu),
+          snapshot: () => gpe_ui_text_input_probe_snapshot(),
+          tick: () => gpe_ui_text_input_probe_tick(),
+          ...extra,
+        };
+        status.textContent = phase;
+      };
+
+      setState("initializing");
+
+      try {
+        await init();
+        setState("initialized");
+      } catch (error) {
+        if (isWinitControlFlowHandoff(error)) {
+          setState("winit-handoff", { message: errorMessage(error) });
+        } else {
+          setState("failed", { message: errorMessage(error) });
+          throw error;
+        }
+      }
+    </script>
+  </body>
+</html>

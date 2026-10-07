@@ -464,7 +464,11 @@ impl<G: Game> PlatformApp<G> {
             viewport,
         };
 
-        if self.game.update(&mut frame) == GameResult::Exit {
+        crate::ui::begin_text_input_frame();
+        let game_result = self.game.update(&mut frame);
+        crate::ui::end_text_input_frame();
+
+        if game_result == GameResult::Exit {
             self.request_exit(event_loop);
             return;
         }

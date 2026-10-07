@@ -106,8 +106,9 @@ def command_check_web_browser(_: argparse.Namespace) -> None:
     generated = ROOT / "tests" / "browser" / "generated"
     if generated.exists():
         shutil.rmtree(generated)
-    wasm = cargo_build_web("web_demo", release=False)
-    wasm_bindgen(wasm, generated)
+    for example in ["web_demo", "gpe_ui_text_input_probe"]:
+        wasm = cargo_build_web(example, release=False)
+        wasm_bindgen(wasm, generated)
     run(["npm", "run", "test:browser"])
     print("==> OK")
 

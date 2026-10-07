@@ -12,6 +12,7 @@ mod kernel;
 mod layout;
 mod pause;
 mod style;
+mod text_input_web;
 mod toolkit;
 mod virtual_pad;
 
@@ -30,7 +31,10 @@ pub use language::{
 };
 pub use pause::{PauseConfig, PauseGame};
 pub use style::{UiComponentStyle, UiStyleOverride, UiStyleSheet, UiVisualState};
-pub use toolkit::{RepeatConfig, RepeatState, Ui, UiResponse, UiState, UiTheme};
+pub use toolkit::{
+    RepeatConfig, RepeatState, TextInputEnterHint, TextInputOptions, TextInputResponse, Ui,
+    UiResponse, UiState, UiTheme,
+};
 pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
 
 use crate::{
@@ -182,6 +186,14 @@ impl MenuState {
 fn centered_coordinate(origin: i32, extent: u32, content_extent: u32) -> i32 {
     let coordinate = i64::from(origin) + (i64::from(extent) - i64::from(content_extent)) / 2;
     coordinate.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+pub(crate) fn begin_text_input_frame() {
+    text_input_web::begin_frame();
+}
+
+pub(crate) fn end_text_input_frame() {
+    text_input_web::end_frame();
 }
 
 #[cfg(test)]
