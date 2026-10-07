@@ -814,9 +814,7 @@ mod tests {
             position: Some((100, 50)),
         });
 
-        let mapped = input.map_pointer_positions(|(x, y)| {
-            (x >= 300).then_some((x - 300, y / 2))
-        });
+        let mapped = input.map_pointer_positions(|(x, y)| (x >= 300).then_some((x - 300, y / 2)));
 
         assert!(mapped.key(Key::Space).held());
         assert!(mapped.mouse_button(MouseButton::Left).held());
