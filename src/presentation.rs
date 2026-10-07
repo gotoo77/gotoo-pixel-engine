@@ -147,10 +147,7 @@ pub(crate) fn fit_pixel_surface_presentation(
     source_size: Size,
     bounds: Rect,
 ) -> Option<PixelFitPresentation> {
-    if source_size.width == 0
-        || source_size.height == 0
-        || bounds.width == 0
-        || bounds.height == 0
+    if source_size.width == 0 || source_size.height == 0 || bounds.width == 0 || bounds.height == 0
     {
         return None;
     }
