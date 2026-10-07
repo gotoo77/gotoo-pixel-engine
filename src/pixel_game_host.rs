@@ -1,16 +1,14 @@
 use crate::{
-    Frame, Framebuffer, Game, GameResult, PixelFitPresentation, PixelPresentation, Rect, Size,
-    ToolFrame, ToolWindowConfig, Viewport, present_pixel_surface, present_pixel_surface_fit,
+    Frame, Framebuffer, Game, GameResult, Input, PixelFitPresentation, PixelPresentation, Rect,
+    Size, ToolFrame, ToolWindowConfig, Viewport, present_pixel_surface, present_pixel_surface_fit,
+    presentation::fit_pixel_surface_presentation,
 };
 
-/// Provisional P6 helper for hosting one low-resolution `Game` inside a
-/// high-resolution parent frame.
+/// Hosts one low-resolution `Game` inside a high-resolution parent frame.
 ///
-/// This intentionally solves only the Native keyboard/gamepad case proven by
-/// Arcade. The child currently receives the parent's `Input` snapshot unchanged,
-/// so pointer/touch coordinates remain host-space and are therefore outside this
-/// helper's validated contract. A mapped pointer/touch contract remains a
-/// separate P6/P7 concern.
+/// Keyboard/gamepad state is forwarded unchanged. The adaptive-fit path maps
+/// mouse and touch positions from host space into the presented child surface,
+/// while preserving touch ids/phases and button transitions.
 pub struct PixelGameHost {
     game: Box<dyn Game>,
     framebuffer: Framebuffer,
@@ -51,9 +49,13 @@ impl PixelGameHost {
     }
 
     fn update_child(&mut self, host: &mut Frame<'_>) -> GameResult {
+        self.update_child_with_input(host, host.input)
+    }
+
+    fn update_child_with_input(&mut self, host: &mut Frame<'_>, input: &Input) -> GameResult {
         let mut child = Frame {
             framebuffer: &mut self.framebuffer,
-            input: host.input,
+            input,
             delta_time: host.delta_time,
             storage: &mut *host.storage,
             audio: &mut *host.audio,
@@ -78,18 +80,27 @@ impl PixelGameHost {
         (result, presentation)
     }
 
-    /// Updates a keyboard/gamepad-oriented child and fits its framebuffer into
-    /// `bounds` using aspect-ratio preserving nearest-neighbour sampling at any scale.
+    /// Updates a child and fits its framebuffer into `bounds` using
+    /// aspect-ratio preserving nearest-neighbour sampling at any scale.
     ///
-    /// This is opt-in because it trades uniform physical pixel block sizes for better
-    /// viewport utilisation. It remains nearest-neighbour and never introduces linear
-    /// filtering.
+    /// Pointer and touch positions are mapped through the exact presentation
+    /// rectangle before the child update. Events outside the child surface keep
+    /// their lifecycle/id but carry no position, allowing touch consumers to
+    /// release contacts without interpreting host-space coordinates.
     pub fn update_and_present_fit(
         &mut self,
         host: &mut Frame<'_>,
         bounds: Rect,
     ) -> (GameResult, Option<PixelFitPresentation>) {
-        let result = self.update_child(host);
+        let input_presentation = fit_pixel_surface_presentation(self.size, bounds);
+        let mapped_input = input_presentation
+            .map(|presentation| host.input.map_pointer_positions(|point| presentation.map_point(point)));
+
+        let result = if let Some(input) = mapped_input.as_ref() {
+            self.update_child_with_input(host, input)
+        } else {
+            self.update_child(host)
+        };
         let presentation = present_pixel_surface_fit(host.framebuffer, &self.framebuffer, bounds);
         (result, presentation)
     }
@@ -113,5 +124,61 @@ impl PixelGameHost {
         bounds: Rect,
     ) -> Option<PixelFitPresentation> {
         present_pixel_surface_fit(host, &self.framebuffer, bounds)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{MouseButton, Touch, TouchPhase};
+
+    #[test]
+    fn adaptive_fit_maps_host_pointer_and_touch_into_child_space() {
+        let mut input = Input::default();
+        input.press_mouse_button(MouseButton::Left);
+        input.set_mouse_position(Some((640, 480)));
+        input.push_touch(Touch {
+            id: 11,
+            phase: TouchPhase::Started,
+            position: Some((640, 480)),
+        });
+        input.push_touch(Touch {
+            id: 12,
+            phase: TouchPhase::Ended,
+            position: Some((100, 480)),
+        });
+
+        let presentation = fit_pixel_surface_presentation(
+            Size {
+                width: 540,
+                height: 960,
+            },
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 960,
+            },
+        )
+        .expect("portrait child should fit");
+        let mapped = input.map_pointer_positions(|point| presentation.map_point(point));
+
+        assert_eq!(mapped.mouse_position(), Some((270, 480)));
+        assert_eq!(
+            mapped.touches(),
+            &[
+                Touch {
+                    id: 11,
+                    phase: TouchPhase::Started,
+                    position: Some((270, 480)),
+                },
+                Touch {
+                    id: 12,
+                    phase: TouchPhase::Ended,
+                    position: None,
+                },
+            ]
+        );
     }
 }
