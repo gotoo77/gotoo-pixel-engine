@@ -58,12 +58,7 @@ pub struct DirectionalActions {
 }
 
 impl DirectionalActions {
-    pub const fn new(
-        up: ActionId,
-        down: ActionId,
-        left: ActionId,
-        right: ActionId,
-    ) -> Self {
+    pub const fn new(up: ActionId, down: ActionId, left: ActionId, right: ActionId) -> Self {
         Self {
             up,
             down,
@@ -413,7 +408,10 @@ impl fmt::Display for TouchLayoutError {
                 write!(formatter, "{control} resolves outside the touch safe area")
             }
             Self::InvalidDeadZone(value) => {
-                write!(formatter, "virtual-stick dead-zone ratio {value} is outside [0, 1)")
+                write!(
+                    formatter,
+                    "virtual-stick dead-zone ratio {value} is outside [0, 1)"
+                )
             }
             Self::InvalidOpacity(field, value) => {
                 write!(formatter, "{field} opacity {value} is outside [0, 1]")
@@ -422,7 +420,11 @@ impl fmt::Display for TouchLayoutError {
                 write!(formatter, "touch hitboxes overlap: {first} <-> {second}")
             }
             Self::DuplicateAction(action) => {
-                write!(formatter, "touch ActionId is assigned more than once: {}", action.as_str())
+                write!(
+                    formatter,
+                    "touch ActionId is assigned more than once: {}",
+                    action.as_str()
+                )
             }
         }
     }
@@ -440,8 +442,12 @@ pub fn resolve_touch_controls(
         MovementControl::None => None,
         MovementControl::DPad(dpad) => {
             let placement = dpad.placement.unwrap_or(config.layout.movement);
-            let (visual_rect, hit_rect) =
-                resolve_placement("movement", placement, config.layout.safe_margin, surface_size)?;
+            let (visual_rect, hit_rect) = resolve_placement(
+                "movement",
+                placement,
+                config.layout.safe_margin,
+                surface_size,
+            )?;
             Some(ResolvedMovementControl::DPad {
                 actions: dpad.actions,
                 direction_mode: dpad.direction_mode,
@@ -451,8 +457,12 @@ pub fn resolve_touch_controls(
         }
         MovementControl::VirtualStick(stick) => {
             let placement = stick.placement.unwrap_or(config.layout.movement);
-            let (visual_rect, hit_rect) =
-                resolve_placement("movement", placement, config.layout.safe_margin, surface_size)?;
+            let (visual_rect, hit_rect) = resolve_placement(
+                "movement",
+                placement,
+                config.layout.safe_margin,
+                surface_size,
+            )?;
             Some(ResolvedMovementControl::VirtualStick {
                 actions: stick.actions,
                 direction_mode: stick.direction_mode,
@@ -485,7 +495,12 @@ pub fn resolve_touch_controls(
         };
 
         let (visual_rect, hit_rect) = if let Some(placement) = button.placement {
-            resolve_placement(id.name(), placement, config.layout.safe_margin, surface_size)?
+            resolve_placement(
+                id.name(),
+                placement,
+                config.layout.safe_margin,
+                surface_size,
+            )?
         } else {
             let visual_rect = canonical_face_button_rect(
                 id,
@@ -494,12 +509,7 @@ pub fn resolve_touch_controls(
             );
             let hit_rect = expand_rect(visual_rect, config.layout.face_buttons.hit_padding)
                 .ok_or(TouchLayoutError::OutOfBounds(id.name()))?;
-            ensure_rect_in_safe_area(
-                id.name(),
-                hit_rect,
-                surface_size,
-                config.layout.safe_margin,
-            )?;
+            ensure_rect_in_safe_area(id.name(), hit_rect, surface_size, config.layout.safe_margin)?;
             (visual_rect, hit_rect)
         };
 
@@ -553,9 +563,7 @@ fn validate_config(config: &TouchControlsConfig) -> Result<(), TouchLayoutError>
     }
 
     if let MovementControl::VirtualStick(stick) = config.movement {
-        if !(stick.dead_zone_ratio.is_finite()
-            && (0.0..1.0).contains(&stick.dead_zone_ratio))
-        {
+        if !(stick.dead_zone_ratio.is_finite() && (0.0..1.0).contains(&stick.dead_zone_ratio)) {
             return Err(TouchLayoutError::InvalidDeadZone(stick.dead_zone_ratio));
         }
     }
@@ -640,18 +648,10 @@ fn canonical_face_button_rect(
     let offset_x = i64::from(group.center_offset.width);
     let offset_y = i64::from(group.center_offset.height);
     let (cx, cy) = match (group.arrangement, id) {
-        (FaceButtonArrangement::Diamond, TouchControlId::FaceA) => {
-            (center_x, center_y + offset_y)
-        }
-        (FaceButtonArrangement::Diamond, TouchControlId::FaceB) => {
-            (center_x + offset_x, center_y)
-        }
-        (FaceButtonArrangement::Diamond, TouchControlId::FaceX) => {
-            (center_x - offset_x, center_y)
-        }
-        (FaceButtonArrangement::Diamond, TouchControlId::FaceY) => {
-            (center_x, center_y - offset_y)
-        }
+        (FaceButtonArrangement::Diamond, TouchControlId::FaceA) => (center_x, center_y + offset_y),
+        (FaceButtonArrangement::Diamond, TouchControlId::FaceB) => (center_x + offset_x, center_y),
+        (FaceButtonArrangement::Diamond, TouchControlId::FaceX) => (center_x - offset_x, center_y),
+        (FaceButtonArrangement::Diamond, TouchControlId::FaceY) => (center_x, center_y - offset_y),
         _ => (center_x, center_y),
     };
 
@@ -974,9 +974,9 @@ impl TouchControls {
                     visual_rect,
                     ..
                 } => self.draw_dpad(framebuffer, visual_rect, actions),
-                ResolvedMovementControl::VirtualStick {
-                    visual_rect, ..
-                } => self.draw_virtual_stick(framebuffer, visual_rect),
+                ResolvedMovementControl::VirtualStick { visual_rect, .. } => {
+                    self.draw_virtual_stick(framebuffer, visual_rect)
+                }
             }
         }
 
@@ -1125,21 +1125,11 @@ impl TouchControls {
         } else {
             self.config.style.opacity
         };
-        fill_rounded_rect_blended(
-            framebuffer,
-            rect,
-            self.config.style.control_color,
-            opacity,
-        );
+        fill_rounded_rect_blended(framebuffer, rect, self.config.style.control_color, opacity);
         draw_label(framebuffer, rect, label, self.config.style.label_color);
     }
 
-    fn draw_dpad(
-        &self,
-        framebuffer: &mut Framebuffer,
-        rect: Rect,
-        actions: DirectionalActions,
-    ) {
+    fn draw_dpad(&self, framebuffer: &mut Framebuffer, rect: Rect, actions: DirectionalActions) {
         let third_w = (rect.width / 3).max(1);
         let third_h = (rect.height / 3).max(1);
         let center_x = rect
@@ -1198,12 +1188,7 @@ impl TouchControls {
             } else {
                 self.config.style.opacity
             };
-            fill_rounded_rect_blended(
-                framebuffer,
-                zone,
-                self.config.style.control_color,
-                opacity,
-            );
+            fill_rounded_rect_blended(framebuffer, zone, self.config.style.control_color, opacity);
             draw_label(framebuffer, zone, label, self.config.style.label_color);
         }
     }
@@ -1379,11 +1364,7 @@ fn inset_rect(rect: Rect, inset: u32) -> Option<Rect> {
     })
 }
 
-fn clamp_stick_knob(
-    center: (i32, i32),
-    position: (i32, i32),
-    radius: u32,
-) -> (i32, i32) {
+fn clamp_stick_knob(center: (i32, i32), position: (i32, i32), radius: u32) -> (i32, i32) {
     let dx = (i64::from(position.0) - i64::from(center.0)) as f64;
     let dy = (i64::from(position.1) - i64::from(center.1)) as f64;
     let distance = (dx * dx + dy * dy).sqrt();
@@ -1486,24 +1467,14 @@ fn fill_rounded_rect_blended(
     }
 }
 
-fn blend_pixel(
-    framebuffer: &mut Framebuffer,
-    x: i64,
-    y: i64,
-    color: Pixel,
-    opacity: f32,
-) {
-    if x < 0
-        || y < 0
-        || x >= i64::from(framebuffer.width())
-        || y >= i64::from(framebuffer.height())
+fn blend_pixel(framebuffer: &mut Framebuffer, x: i64, y: i64, color: Pixel, opacity: f32) {
+    if x < 0 || y < 0 || x >= i64::from(framebuffer.width()) || y >= i64::from(framebuffer.height())
     {
         return;
     }
 
     let mut rgba = color.to_rgba8();
-    rgba[3] =
-        ((f32::from(rgba[3]) * opacity.clamp(0.0, 1.0)).round() as u16).min(255) as u8;
+    rgba[3] = ((f32::from(rgba[3]) * opacity.clamp(0.0, 1.0)).round() as u16).min(255) as u8;
     framebuffer.blend_rgba8(x as u32, y as u32, &rgba);
 }
 
