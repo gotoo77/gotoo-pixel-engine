@@ -264,13 +264,15 @@ impl Renderer {
             alpha_mode,
             view_formats: vec![],
         };
+        #[cfg(feature = "diagnostics")]
         if let Err(error) = Self::configure_surface(&surface, &device, &config).await {
-            #[cfg(feature = "diagnostics")]
             if let Some(diagnostics) = diagnostics.as_mut() {
                 diagnostics.initialization_failed(WgpuErrorCategory::SurfaceValidation);
             }
             return Err(error);
         }
+        #[cfg(not(feature = "diagnostics"))]
+        Self::configure_surface(&surface, &device, &config).await?;
 
         #[cfg(feature = "diagnostics")]
         if let Some(diagnostics) = diagnostics.as_ref() {
@@ -447,6 +449,12 @@ impl Renderer {
         config.width = size.width;
         config.height = size.height;
 
+        #[cfg(target_arch = "wasm32")]
+        self.surface.configure(&self.device, &config);
+
+        // WebGPU error scopes resolve asynchronously. resize is synchronous,
+        // so only native targets may block while validating surface configure.
+        #[cfg(not(target_arch = "wasm32"))]
         pollster::block_on(Self::configure_surface(
             &self.surface,
             &self.device,
