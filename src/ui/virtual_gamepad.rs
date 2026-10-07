@@ -41,14 +41,22 @@ impl VirtualGamepadLayout {
         let gap = (button_size / 6).max(6);
         let step = button_size.saturating_add(gap);
 
-        let left_center_x = bounds.x
-            + i32::try_from(button_size.saturating_add(step)).unwrap_or(i32::MAX);
+        let left_center_x =
+            bounds.x + i32::try_from(button_size.saturating_add(step)).unwrap_or(i32::MAX);
         let right_center_x = bounds.x
-            + i32::try_from(bounds.width.saturating_sub(button_size.saturating_add(step)))
-                .unwrap_or(i32::MAX);
+            + i32::try_from(
+                bounds
+                    .width
+                    .saturating_sub(button_size.saturating_add(step)),
+            )
+            .unwrap_or(i32::MAX);
         let center_y = bounds.y
-            + i32::try_from(bounds.height.saturating_sub(button_size.saturating_add(step)))
-                .unwrap_or(i32::MAX);
+            + i32::try_from(
+                bounds
+                    .height
+                    .saturating_sub(button_size.saturating_add(step)),
+            )
+            .unwrap_or(i32::MAX);
 
         let square = |center_x: i32, center_y: i32| Rect {
             x: center_x - i32::try_from(button_size / 2).unwrap_or(0),
@@ -104,11 +112,9 @@ impl VirtualGamepadLayout {
         let utility_width = button_size.saturating_add(button_size / 2);
         let utility_height = (button_size / 2).max(28);
         let utility_gap = gap.saturating_mul(2);
-        let utility_total = utility_width
-            .saturating_mul(2)
-            .saturating_add(utility_gap);
-        let utility_x = bounds.x
-            + i32::try_from(bounds.width.saturating_sub(utility_total) / 2).unwrap_or(0);
+        let utility_total = utility_width.saturating_mul(2).saturating_add(utility_gap);
+        let utility_x =
+            bounds.x + i32::try_from(bounds.width.saturating_sub(utility_total) / 2).unwrap_or(0);
         let utility_y = bounds.y
             + i32::try_from(bounds.height.saturating_sub(utility_height + gap)).unwrap_or(0);
 
@@ -301,7 +307,12 @@ mod tests {
     fn standard_layout_exposes_dpad_face_and_utility_buttons() {
         let layout = VirtualGamepadLayout::standard(bounds());
         for expected in STANDARD_BUTTONS {
-            assert!(layout.buttons().iter().any(|button| button.button == expected));
+            assert!(
+                layout
+                    .buttons()
+                    .iter()
+                    .any(|button| button.button == expected)
+            );
         }
     }
 
@@ -374,7 +385,11 @@ mod tests {
         let mut pad = VirtualGamepad::new();
         let augmented = pad.update_input(&input, &layout);
 
-        assert!(augmented.gamepad_button_any(GamepadButton::DPadLeft).pressed());
+        assert!(
+            augmented
+                .gamepad_button_any(GamepadButton::DPadLeft)
+                .pressed()
+        );
         assert!(augmented.gamepad_button_any(GamepadButton::DPadLeft).held());
         assert!(augmented.gamepad_button_any(GamepadButton::South).pressed());
         assert!(augmented.gamepad_button_any(GamepadButton::South).held());
@@ -449,6 +464,10 @@ mod tests {
             position: None,
         });
         let augmented = pad.update_input(&cancelled, &layout);
-        assert!(augmented.gamepad_button_any(GamepadButton::Start).released());
+        assert!(
+            augmented
+                .gamepad_button_any(GamepadButton::Start)
+                .released()
+        );
     }
 }
