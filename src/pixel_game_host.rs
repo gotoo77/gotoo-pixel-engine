@@ -49,7 +49,16 @@ impl PixelGameHost {
     }
 
     fn update_child(&mut self, host: &mut Frame<'_>) -> GameResult {
-        self.update_child_with_input(host, host.input)
+        let mut child = Frame {
+            framebuffer: &mut self.framebuffer,
+            input: host.input,
+            delta_time: host.delta_time,
+            storage: &mut *host.storage,
+            audio: &mut *host.audio,
+            surface_size: self.size,
+            viewport: Viewport::new(self.size, self.size),
+        };
+        self.game.update(&mut child)
     }
 
     fn update_child_with_input(&mut self, host: &mut Frame<'_>, input: &Input) -> GameResult {
