@@ -264,14 +264,17 @@ impl Renderer {
             alpha_mode,
             view_formats: vec![],
         };
-        #[cfg(feature = "diagnostics")]
+        #[cfg(target_arch = "wasm32")]
+        surface.configure(&device, &config);
+
+        #[cfg(all(not(target_arch = "wasm32"), feature = "diagnostics"))]
         if let Err(error) = Self::configure_surface(&surface, &device, &config).await {
             if let Some(diagnostics) = diagnostics.as_mut() {
                 diagnostics.initialization_failed(WgpuErrorCategory::SurfaceValidation);
             }
             return Err(error);
         }
-        #[cfg(not(feature = "diagnostics"))]
+        #[cfg(all(not(target_arch = "wasm32"), not(feature = "diagnostics")))]
         Self::configure_surface(&surface, &device, &config).await?;
 
         #[cfg(feature = "diagnostics")]
@@ -424,6 +427,7 @@ impl Renderer {
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn configure_surface(
         surface: &wgpu::Surface<'_>,
         device: &wgpu::Device,
