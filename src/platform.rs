@@ -1617,7 +1617,7 @@ mod tests {
     fn runtime_framebuffer_resize_changes_pointer_mapping() {
         let window_size = PhysicalSize::new(1280, 960);
         let configured = current_viewport(window_size, 1280, 960);
-        let framebuffer = Framebuffer::new(540, 960);
+        let framebuffer = crate::Framebuffer::new(540, 960);
         let active = current_framebuffer_viewport(window_size, &framebuffer);
         let center = PhysicalPosition::new(640.0, 480.0);
 
