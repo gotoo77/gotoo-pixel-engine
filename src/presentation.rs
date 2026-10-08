@@ -140,10 +140,7 @@ pub(crate) fn pixel_fit_presentation(
     source_size: Size,
     bounds: Rect,
 ) -> Option<PixelFitPresentation> {
-    if source_size.width == 0
-        || source_size.height == 0
-        || bounds.width == 0
-        || bounds.height == 0
+    if source_size.width == 0 || source_size.height == 0 || bounds.width == 0 || bounds.height == 0
     {
         return None;
     }
