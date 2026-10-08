@@ -136,24 +136,20 @@ pub fn present_pixel_surface(
     })
 }
 
-/// Presents `source` into `host` using aspect-ratio preserving contain semantics
-/// and nearest-neighbour sampling at any scale.
-///
-/// The destination rectangle is the largest rectangle that fits inside `bounds`.
-/// Sampling is performed explicitly in framebuffer space, so no linear filtering is
-/// introduced. This keeps hard pixel edges while avoiding the large unused margins
-/// caused by falling back to the next-lowest integer scale.
-pub fn present_pixel_surface_fit(
-    host: &mut Framebuffer,
-    source: &Framebuffer,
+pub(crate) fn pixel_fit_presentation(
+    source_size: Size,
     bounds: Rect,
 ) -> Option<PixelFitPresentation> {
-    if source.width() == 0 || source.height() == 0 || bounds.width == 0 || bounds.height == 0 {
+    if source_size.width == 0
+        || source_size.height == 0
+        || bounds.width == 0
+        || bounds.height == 0
+    {
         return None;
     }
 
-    let source_width = u64::from(source.width());
-    let source_height = u64::from(source.height());
+    let source_width = u64::from(source_size.width);
+    let source_height = u64::from(source_size.height);
     let bounds_width = u64::from(bounds.width);
     let bounds_height = u64::from(bounds.height);
 
@@ -173,12 +169,44 @@ pub fn present_pixel_surface_fit(
     let y = bounds
         .y
         .checked_add(i32::try_from((bounds.height - height) / 2).ok()?)?;
-    let rect = Rect {
-        x,
-        y,
-        width,
-        height,
-    };
+
+    Some(PixelFitPresentation {
+        rect: Rect {
+            x,
+            y,
+            width,
+            height,
+        },
+        source_size,
+    })
+}
+
+/// Presents `source` into `host` using aspect-ratio preserving contain semantics
+/// and nearest-neighbour sampling at any scale.
+///
+/// The destination rectangle is the largest rectangle that fits inside `bounds`.
+/// Sampling is performed explicitly in framebuffer space, so no linear filtering is
+/// introduced. This keeps hard pixel edges while avoiding the large unused margins
+/// caused by falling back to the next-lowest integer scale.
+pub fn present_pixel_surface_fit(
+    host: &mut Framebuffer,
+    source: &Framebuffer,
+    bounds: Rect,
+) -> Option<PixelFitPresentation> {
+    let presentation = pixel_fit_presentation(
+        Size {
+            width: source.width(),
+            height: source.height(),
+        },
+        bounds,
+    )?;
+    let rect = presentation.rect;
+    let source_width = u64::from(source.width());
+    let source_height = u64::from(source.height());
+    let width = rect.width;
+    let height = rect.height;
+    let x = rect.x;
+    let y = rect.y;
 
     let bytes = source.as_rgba8();
     for destination_y in 0..height {
@@ -198,13 +226,7 @@ pub fn present_pixel_surface_fit(
         }
     }
 
-    Some(PixelFitPresentation {
-        rect,
-        source_size: Size {
-            width: source.width(),
-            height: source.height(),
-        },
-    })
+    Some(presentation)
 }
 
 #[cfg(test)]
