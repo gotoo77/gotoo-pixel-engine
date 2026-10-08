@@ -685,11 +685,7 @@ impl<G: Game> PlatformApp<G> {
             touch.id,
             touch.phase,
             touch.location,
-            current_viewport(
-                window.inner_size(),
-                self.config.framebuffer_width,
-                self.config.framebuffer_height,
-            ),
+            current_framebuffer_viewport(window.inner_size(), &self.framebuffer),
         ));
     }
 
@@ -698,11 +694,7 @@ impl<G: Game> PlatformApp<G> {
 
         surface_to_framebuffer_position(
             position,
-            current_viewport(
-                window.inner_size(),
-                self.config.framebuffer_width,
-                self.config.framebuffer_height,
-            ),
+            current_framebuffer_viewport(window.inner_size(), &self.framebuffer),
         )
     }
 
@@ -1294,6 +1286,13 @@ fn surface_to_framebuffer_position(
     viewport.map_surface_position(position.x, position.y)
 }
 
+// The runtime framebuffer can change after launching a hosted game. Pointer
+// events must use the dimensions actually presented by the renderer, not the
+// initial EngineConfig dimensions.
+fn current_framebuffer_viewport(window_size: PhysicalSize<u32>, framebuffer: &Framebuffer) -> Viewport {
+    current_viewport(window_size, framebuffer.width(), framebuffer.height())
+}
+
 fn current_viewport(
     window_size: PhysicalSize<u32>,
     framebuffer_width: u32,
@@ -1370,12 +1369,13 @@ mod tests {
     use super::should_prefer_x11_on_wsl;
     use super::{
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
-        TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
+        TouchPhase, current_framebuffer_viewport, current_viewport, is_fullscreen_shortcut, key_from_winit,
         mouse_button_from_winit, mouse_wheel_steps_from_winit, remember_non_zero_size,
         simulation_delta_time, surface_to_framebuffer_position, tool_mode_blocks_primary,
         tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
         validate_tool_window_config,
     };
+    use crate::Framebuffer;
     use winit::dpi::{PhysicalPosition, PhysicalSize};
     use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 
@@ -1538,6 +1538,37 @@ mod tests {
             touch_phase_from_winit(winit::event::TouchPhase::Cancelled),
             TouchPhase::Cancelled
         );
+    }
+
+    #[test]
+    fn touch_and_mouse_mapping_follow_runtime_framebuffer_resize() {
+        let surface = PhysicalSize::new(360, 640);
+        let mut framebuffer = Framebuffer::new(1280, 720);
+        let tap = PhysicalPosition::new(180.0, 480.0);
+
+        // The old landscape configuration rejects a tap in the lower
+        // half of the mobile screen, where VC's title buttons are shown.
+        let initial = current_framebuffer_viewport(surface, &framebuffer);
+        assert_eq!(surface_to_framebuffer_position(tap, initial), None);
+
+        // Arcade switches to VC's portrait surface without recreating
+        // the engine. Pointer/touch coordinates must follow that resize.
+        framebuffer = Framebuffer::new(540, 960);
+        let portrait = current_framebuffer_viewport(surface, &framebuffer);
+        assert_eq!(
+            surface_to_framebuffer_position(tap, portrait),
+            Some((270, 720))
+        );
+
+        let started = touch_from_winit(
+            7,
+            winit::event::TouchPhase::Started,
+            tap,
+            portrait,
+        );
+        assert_eq!(started.position, Some((270, 720)));
+        assert_eq!(started.phase, TouchPhase::Started);
+        assert_eq!(started.id, 7);
     }
 
     #[test]
