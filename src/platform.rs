@@ -1289,7 +1289,10 @@ fn surface_to_framebuffer_position(
 // The runtime framebuffer can change after launching a hosted game. Pointer
 // events must use the dimensions actually presented by the renderer, not the
 // initial EngineConfig dimensions.
-fn current_framebuffer_viewport(window_size: PhysicalSize<u32>, framebuffer: &Framebuffer) -> Viewport {
+fn current_framebuffer_viewport(
+    window_size: PhysicalSize<u32>,
+    framebuffer: &Framebuffer,
+) -> Viewport {
     current_viewport(window_size, framebuffer.width(), framebuffer.height())
 }
 
@@ -1369,8 +1372,8 @@ mod tests {
     use super::should_prefer_x11_on_wsl;
     use super::{
         EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
-        TouchPhase, current_framebuffer_viewport, current_viewport, is_fullscreen_shortcut, key_from_winit,
-        mouse_button_from_winit, mouse_wheel_steps_from_winit, remember_non_zero_size,
+        TouchPhase, current_framebuffer_viewport, current_viewport, is_fullscreen_shortcut,
+        key_from_winit, mouse_button_from_winit, mouse_wheel_steps_from_winit, remember_non_zero_size,
         simulation_delta_time, surface_to_framebuffer_position, tool_mode_blocks_primary,
         tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
         validate_tool_window_config,
@@ -1560,12 +1563,7 @@ mod tests {
             Some((270, 720))
         );
 
-        let started = touch_from_winit(
-            7,
-            winit::event::TouchPhase::Started,
-            tap,
-            portrait,
-        );
+        let started = touch_from_winit(7, winit::event::TouchPhase::Started, tap, portrait);
         assert_eq!(started.position, Some((270, 720)));
         assert_eq!(started.phase, TouchPhase::Started);
         assert_eq!(started.id, 7);
