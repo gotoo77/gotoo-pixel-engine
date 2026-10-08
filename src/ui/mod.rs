@@ -14,6 +14,7 @@ mod pause;
 mod style;
 mod text_input_web;
 mod toolkit;
+mod touch_controls;
 mod virtual_pad;
 
 #[cfg(test)]
@@ -34,6 +35,14 @@ pub use style::{UiComponentStyle, UiStyleOverride, UiStyleSheet, UiVisualState};
 pub use toolkit::{
     RepeatConfig, RepeatState, TextInputEnterHint, TextInputOptions, TextInputResponse, Ui,
     UiResponse, UiState, UiTheme,
+};
+pub use touch_controls::{
+    ControlPlacement, DPadConfig, DirectionMode, DirectionalActions, FaceButtonArrangement,
+    FaceButtons, FaceButtonsPlacement, Insets, MovementControl, ResolvedMovementControl,
+    ResolvedTouchButton, ResolvedTouchControls, TouchAnchor, TouchButtonConfig, TouchButtonShape,
+    TouchControlId, TouchControls, TouchControlsConfig, TouchControlsLayout, TouchControlsStyle,
+    TouchControlsUpdate, TouchLayoutError, TouchNavigationConfig, TouchVisibility,
+    VirtualStickConfig, resolve_touch_controls,
 };
 pub use virtual_pad::{VirtualButton, VirtualPad, VirtualPadUpdate};
 
