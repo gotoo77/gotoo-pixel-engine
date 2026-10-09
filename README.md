@@ -65,6 +65,10 @@ Version publique de l'Arcade :
 
 <https://gotoo77.github.io/gotoo-pixel-engine/>
 
+Le déploiement GitHub Pages reconstruit Arcade depuis la branche `main` de
+[`gpe_arcade`](https://github.com/gotoo77/gpe_arcade). Les évolutions fusionnées
+dans ce dépôt sont publiées lors du prochain build Pages de GPE.
+
 Les jeux Web restent également accessibles individuellement via `snake.html`,
 `tetris.html`, `space_invaders.html`, `pong.html`, `breakout.html`,
 `smart_boy_hero.html` et `smart_boy_hero_iso.html`. Le site Pages reste hébergé
