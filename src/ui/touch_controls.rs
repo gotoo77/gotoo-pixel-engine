@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::{ActionId, ControlMap, Framebuffer, Input, Pixel, Rect, Size, TouchPhase};
+use crate::{ActionId, ControlMap, Framebuffer, Input, MouseButton, Pixel, Rect, Size, TouchPhase};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Insets {
@@ -803,6 +803,9 @@ struct TouchRuntimeState {
     owner_by_control: HashMap<TouchControlId, u64>,
     positions: HashMap<u64, (i32, i32)>,
     touch_seen: bool,
+    mouse_contact: Option<TouchControlId>,
+    mouse_position: Option<(i32, i32)>,
+    mouse_suppression_frames: u8,
 }
 
 impl TouchRuntimeState {
@@ -906,6 +909,26 @@ impl TouchControls {
     ///
     /// Call this before ControlMap::update.
     pub fn update(&mut self, input: &Input, controls: &mut ControlMap) -> TouchControlsUpdate {
+        if !input.touches().is_empty() {
+            self.state.mouse_suppression_frames = 3;
+        } else {
+            self.state.mouse_suppression_frames = self.state.mouse_suppression_frames.saturating_sub(1);
+        }
+        let mouse = input.mouse_button(MouseButton::Left);
+        if self.state.mouse_suppression_frames > 0 || !mouse.held() {
+            self.state.mouse_contact = None;
+            self.state.mouse_position = None;
+        } else {
+            self.state.mouse_position = input.mouse_position();
+            // Mouse presses are first-class inputs for desktop virtual controls.
+            // Do not steal mouse gestures which started outside a control.
+            if mouse.pressed() {
+                self.state.mouse_contact = self.state.mouse_position.and_then(|p| self.control_at(p));
+                if self.state.mouse_contact.is_some() {
+                    self.state.touch_seen = true;
+                }
+            }
+        }
         for touch in input.touches() {
             match touch.phase {
                 TouchPhase::Started => {
@@ -946,11 +969,28 @@ impl TouchControls {
             }
         }
 
-        let next_held = if self.interactive() {
+        let mut next_held = if self.interactive() {
             self.compute_held_actions()
         } else {
             HashSet::new()
         };
+        if self.interactive()
+            && let (Some(control), Some(position)) =
+                (self.state.mouse_contact, self.state.mouse_position)
+        {
+            match control {
+                TouchControlId::Movement => {
+                    if let Some(movement) = self.resolved.movement {
+                        next_held.extend(resolve_movement_actions(movement, position));
+                    }
+                }
+                id => {
+                    if let Some(button) = self.resolved.button(id) {
+                        next_held.insert(button.action);
+                    }
+                }
+            }
+        }
 
         for action in self.configured_actions() {
             controls.set_virtual(action, next_held.contains(&action));
