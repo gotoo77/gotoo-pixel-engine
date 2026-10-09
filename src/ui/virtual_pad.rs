@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{ActionId, ControlMap, Input, Rect, Touch, TouchPhase};
+use crate::{ActionId, ControlMap, Input, MouseButton, Rect, Touch, TouchPhase};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VirtualButton {
@@ -33,6 +33,8 @@ impl VirtualPadUpdate {
 pub struct VirtualPad {
     buttons: Vec<VirtualButton>,
     contacts: HashMap<u64, ActionId>,
+    mouse_contact: Option<ActionId>,
+    mouse_suppression_frames: u8,
     visible: bool,
 }
 
@@ -41,6 +43,8 @@ impl VirtualPad {
         Self {
             buttons: buttons.into_iter().collect(),
             contacts: HashMap::new(),
+            mouse_contact: None,
+            mouse_suppression_frames: 0,
             visible: false,
         }
     }
@@ -62,15 +66,45 @@ impl VirtualPad {
     /// the frame. Consumers such as Snake can use those events when several
     /// touch moves must not be collapsed into the final held state.
     pub fn update(&mut self, input: &Input, controls: &mut ControlMap) -> VirtualPadUpdate {
-        self.update_touches(input.touches(), controls)
+        let mut pressed = self.process_touches(input.touches());
+        // Browsers may emit compatibility mouse events after a real touch.
+        // Keep one input owner per interaction rather than counting it twice.
+        if !input.touches().is_empty() {
+            self.mouse_suppression_frames = 3;
+        } else {
+            self.mouse_suppression_frames = self.mouse_suppression_frames.saturating_sub(1);
+        }
+        let mouse = input.mouse_button(MouseButton::Left);
+        if self.mouse_suppression_frames > 0 || !mouse.held() {
+            self.mouse_contact = None;
+        } else {
+            let next = input.mouse_position().and_then(|pos| self.action_at(pos));
+            if let Some(action) = next
+                && self.mouse_contact != Some(action)
+            {
+                pressed.push(action);
+                self.visible = true;
+            }
+            self.mouse_contact = next;
+        }
+        self.apply_virtual_states(controls);
+        VirtualPadUpdate { pressed_actions: pressed }
     }
 
     pub fn reset(&mut self, controls: &mut ControlMap) {
         self.contacts.clear();
+        self.mouse_contact = None;
+        self.mouse_suppression_frames = 0;
         self.apply_virtual_states(controls);
     }
 
     fn update_touches(&mut self, touches: &[Touch], controls: &mut ControlMap) -> VirtualPadUpdate {
+        let pressed_actions = self.process_touches(touches);
+        self.apply_virtual_states(controls);
+        VirtualPadUpdate { pressed_actions }
+    }
+
+    fn process_touches(&mut self, touches: &[Touch]) -> Vec<ActionId> {
         if !touches.is_empty() {
             self.visible = true;
         }
@@ -89,8 +123,7 @@ impl VirtualPad {
             }
         }
 
-        self.apply_virtual_states(controls);
-        VirtualPadUpdate { pressed_actions }
+        pressed_actions
     }
 
     fn update_contact(&mut self, touch: Touch) -> Option<ActionId> {
@@ -117,7 +150,10 @@ impl VirtualPad {
     }
 
     fn apply_virtual_states(&self, controls: &mut ControlMap) {
-        let held = self.contacts.values().copied().collect::<HashSet<_>>();
+        let mut held = self.contacts.values().copied().collect::<HashSet<_>>();
+        if let Some(action) = self.mouse_contact {
+            held.insert(action);
+        }
         for action in self
             .buttons
             .iter()
@@ -163,6 +199,55 @@ mod tests {
     fn state(map: &mut ControlMap, action: ActionId) -> ButtonState {
         map.update(&Input::default());
         map.action(action)
+    }
+
+    #[test]
+    fn mouse_click_hold_drag_and_release_drive_virtual_actions() {
+        let mut pad = pad();
+        let mut controls = ControlMap::new();
+        let mut input = Input::default();
+        input.set_mouse_position(Some((5, 5)));
+        input.press_mouse_button(MouseButton::Left);
+        let update = pad.update(&input, &mut controls);
+        assert_eq!(update.pressed_actions(), &[LEFT]);
+        assert!(state(&mut controls, LEFT).held());
+
+        input.advance_frame();
+        let update = pad.update(&input, &mut controls);
+        assert!(update.pressed_actions().is_empty());
+        assert!(state(&mut controls, LEFT).held());
+
+        input.set_mouse_position(Some((25, 5)));
+        let update = pad.update(&input, &mut controls);
+        assert_eq!(update.pressed_actions(), &[RIGHT]);
+        controls.update(&input);
+        assert!(controls.action(LEFT).released());
+        assert!(controls.action(RIGHT).pressed());
+
+        input.advance_frame();
+        input.release_mouse_button(MouseButton::Left);
+        pad.update(&input, &mut controls);
+        controls.update(&input);
+        assert!(controls.action(RIGHT).released());
+    }
+
+    #[test]
+    fn real_touch_does_not_double_trigger_compatibility_mouse() {
+        let mut pad = pad();
+        let mut controls = ControlMap::new();
+        let mut input = Input::default();
+        input.set_mouse_position(Some((5, 5)));
+        input.press_mouse_button(MouseButton::Left);
+        input.push_touch(Touch { id: 7, phase: TouchPhase::Started, position: Some((5, 5)) });
+        let update = pad.update(&input, &mut controls);
+        assert_eq!(update.pressed_actions(), &[LEFT]);
+
+        input.advance_frame();
+        input.push_touch(Touch { id: 7, phase: TouchPhase::Ended, position: None });
+        pad.update(&input, &mut controls);
+        input.advance_frame();
+        let update = pad.update(&input, &mut controls);
+        assert!(update.pressed_actions().is_empty());
     }
 
     #[test]
