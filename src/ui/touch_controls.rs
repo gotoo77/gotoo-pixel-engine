@@ -909,7 +909,7 @@ impl TouchControls {
     ///
     /// Call this before ControlMap::update.
     pub fn update(&mut self, input: &Input, controls: &mut ControlMap) -> TouchControlsUpdate {
-        if !input.touches().is_empty() {
+        if !input.touches().is_empty() || !self.state.active_touches.is_empty() {
             self.state.mouse_suppression_frames = 3;
         } else {
             self.state.mouse_suppression_frames = self.state.mouse_suppression_frames.saturating_sub(1);
