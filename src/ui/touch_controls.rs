@@ -1708,6 +1708,46 @@ mod tests {
     }
 
     #[test]
+    fn mouse_click_holds_face_button_and_releases_on_mouse_up() {
+        let mut touch_controls = TouchControls::new(test_config(), SURFACE).unwrap();
+        let rect = touch_controls.resolved().button(TouchControlId::FaceA).unwrap().hit_rect;
+        let mut controls = ControlMap::new();
+        let mut input = Input::default();
+        input.set_mouse_position(Some(rect_center(rect)));
+        input.press_mouse_button(MouseButton::Left);
+        touch_controls.update(&input, &mut controls);
+        controls.update(&input);
+        assert!(controls.action(A).pressed());
+        assert!(controls.action(A).held());
+
+        input.advance_frame();
+        touch_controls.update(&input, &mut controls);
+        controls.update(&input);
+        assert!(controls.action(A).held());
+        assert!(!controls.action(A).pressed());
+
+        input.release_mouse_button(MouseButton::Left);
+        touch_controls.update(&input, &mut controls);
+        controls.update(&input);
+        assert!(controls.action(A).released());
+    }
+
+    #[test]
+    fn real_touch_blocks_compatibility_mouse_input() {
+        let mut touch_controls = TouchControls::new(test_config(), SURFACE).unwrap();
+        let rect = touch_controls.resolved().button(TouchControlId::FaceA).unwrap().hit_rect;
+        let mut controls = ControlMap::new();
+        let mut input = Input::default();
+        input.set_mouse_position(Some(rect_center(rect)));
+        input.press_mouse_button(MouseButton::Left);
+        input.push_touch(started(13, rect_center(rect)));
+        touch_controls.update(&input, &mut controls);
+        controls.update(&input);
+        assert!(controls.action(A).held());
+        assert_eq!(touch_controls.state.mouse_contact, None);
+    }
+
+    #[test]
     fn second_touch_cannot_steal_owned_button() {
         let mut touch_controls = TouchControls::new(test_config(), SURFACE).unwrap();
         let a = touch_controls
