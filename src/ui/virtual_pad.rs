@@ -69,7 +69,7 @@ impl VirtualPad {
         let mut pressed = self.process_touches(input.touches());
         // Browsers may emit compatibility mouse events after a real touch.
         // Keep one input owner per interaction rather than counting it twice.
-        if !input.touches().is_empty() {
+        if !input.touches().is_empty() || !self.contacts.is_empty() {
             self.mouse_suppression_frames = 3;
         } else {
             self.mouse_suppression_frames = self.mouse_suppression_frames.saturating_sub(1);
