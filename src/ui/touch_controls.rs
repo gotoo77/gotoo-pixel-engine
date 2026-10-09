@@ -893,6 +893,8 @@ impl TouchControls {
             controls.set_virtual(action, false);
         }
         self.state.clear_ownership_into_quarantine();
+        self.state.mouse_contact = None;
+        self.state.mouse_position = None;
         self.config = config;
         self.resolved = resolved;
         Ok(())
