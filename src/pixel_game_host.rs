@@ -1,16 +1,15 @@
 use crate::{
     Frame, Framebuffer, Game, GameResult, PixelFitPresentation, PixelPresentation, Rect, Size,
     ToolFrame, ToolWindowConfig, Viewport, present_pixel_surface, present_pixel_surface_fit,
+    presentation::pixel_fit_presentation,
 };
 
 /// Provisional P6 helper for hosting one low-resolution `Game` inside a
 /// high-resolution parent frame.
 ///
-/// This intentionally solves only the Native keyboard/gamepad case proven by
-/// Arcade. The child currently receives the parent's `Input` snapshot unchanged,
-/// so pointer/touch coordinates remain host-space and are therefore outside this
-/// helper's validated contract. A mapped pointer/touch contract remains a
-/// separate P6/P7 concern.
+/// Hosts a low-resolution game inside a higher-resolution parent frame.
+/// Keyboard/gamepad state is forwarded unchanged. Pointer and touch coordinates
+/// are mapped into child framebuffer space by the fitted-presentation methods.
 pub struct PixelGameHost {
     game: Box<dyn Game>,
     framebuffer: Framebuffer,
@@ -63,6 +62,26 @@ impl PixelGameHost {
         self.game.update(&mut child)
     }
 
+    fn update_child_fit(&mut self, host: &mut Frame<'_>, bounds: Rect) -> GameResult {
+        let Some(presentation) = pixel_fit_presentation(self.size, bounds) else {
+            return self.update_child(host);
+        };
+
+        let mut mapped_input = host.input.clone();
+        mapped_input.map_pointer_positions(|point| presentation.map_point(point));
+
+        let mut child = Frame {
+            framebuffer: &mut self.framebuffer,
+            input: &mapped_input,
+            delta_time: host.delta_time,
+            storage: &mut *host.storage,
+            audio: &mut *host.audio,
+            surface_size: self.size,
+            viewport: Viewport::new(self.size, self.size),
+        };
+        self.game.update(&mut child)
+    }
+
     /// Updates a keyboard/gamepad-oriented child and presents its low-resolution
     /// framebuffer into `bounds` using integer-nearest composition.
     ///
@@ -78,18 +97,17 @@ impl PixelGameHost {
         (result, presentation)
     }
 
-    /// Updates a keyboard/gamepad-oriented child and fits its framebuffer into
-    /// `bounds` using aspect-ratio preserving nearest-neighbour sampling at any scale.
+    /// Updates a child and fits its framebuffer into `bounds` using aspect-ratio
+    /// preserving nearest-neighbour sampling at any scale.
     ///
-    /// This is opt-in because it trades uniform physical pixel block sizes for better
-    /// viewport utilisation. It remains nearest-neighbour and never introduces linear
-    /// filtering.
+    /// Pointer and touch positions are translated from host space into the child
+    /// framebuffer using exactly the same fitted presentation geometry.
     pub fn update_and_present_fit(
         &mut self,
         host: &mut Frame<'_>,
         bounds: Rect,
     ) -> (GameResult, Option<PixelFitPresentation>) {
-        let result = self.update_child(host);
+        let result = self.update_child_fit(host, bounds);
         let presentation = present_pixel_surface_fit(host.framebuffer, &self.framebuffer, bounds);
         (result, presentation)
     }

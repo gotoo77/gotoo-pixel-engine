@@ -373,6 +373,16 @@ impl Input {
         &self.touches
     }
 
+    pub(crate) fn map_pointer_positions(
+        &mut self,
+        mut map: impl FnMut((i32, i32)) -> Option<(i32, i32)>,
+    ) {
+        self.mouse_position = self.mouse_position.and_then(&mut map);
+        for touch in &mut self.touches {
+            touch.position = touch.position.and_then(&mut map);
+        }
+    }
+
     pub fn gamepad_button(&self, id: GamepadId, button: GamepadButton) -> ButtonState {
         self.gamepads
             .get(&id)
