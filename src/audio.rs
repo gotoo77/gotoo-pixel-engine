@@ -9,6 +9,11 @@ use std::num::NonZero;
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
+mod loop_buffer;
+#[cfg(test)]
+mod loop_rate_tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SoundId(&'static str);
 
@@ -91,6 +96,25 @@ pub trait Audio {
             "looped playback '{}' is not active",
             playback.0
         )))
+    }
+
+    /// Changes one active loop without restarting it or changing its PlaybackId.
+    ///
+    /// The initial rate is 1.0. Rates must be finite and within 0.5..=2.0;
+    /// increasing the rate raises pitch and shortens the loop's cycle duration.
+    /// This is not pitch shifting independent of time. Unknown, stopped and
+    /// file-playback IDs are rejected without mutation. IDs belong to this Audio
+    /// instance. Muting preserves the rate; success does not guarantee an audible
+    /// device (in particular with NoopAudio). Consumers own smoothing.
+    fn set_loop_playback_rate(
+        &mut self,
+        _playback: PlaybackId,
+        rate: f32,
+    ) -> Result<(), AudioError> {
+        validate_loop_playback_rate(rate)?;
+        Err(AudioError::new(
+            "loop playback rate control is not supported",
+        ))
     }
 
     fn start_file(
@@ -250,6 +274,16 @@ fn validate_volume(volume: f32) -> Result<f32, AudioError> {
     }
 }
 
+fn validate_loop_playback_rate(rate: f32) -> Result<f32, AudioError> {
+    if rate.is_finite() && (0.5..=2.0).contains(&rate) {
+        Ok(rate)
+    } else {
+        Err(AudioError::new(
+            "loop playback rate must be finite and within 0.5..=2.0",
+        ))
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct SoundBank {
     assets: HashMap<SoundId, Vec<u8>>,
@@ -347,6 +381,7 @@ pub struct NoopAudio {
     sounds: HashMap<SoundId, DecodedSound>,
     loop_playbacks: HashMap<PlaybackId, SoundId>,
     loop_buses: HashMap<PlaybackId, AudioBus>,
+    loop_rates: HashMap<PlaybackId, f32>,
     file_playbacks: HashMap<PlaybackId, PlaybackState>,
     controls: AudioControlState,
     next_playback_id: u64,
@@ -393,12 +428,14 @@ impl Audio for NoopAudio {
         let playback = self.next_playback();
         self.loop_playbacks.insert(playback, id);
         self.loop_buses.insert(playback, bus);
+        self.loop_rates.insert(playback, 1.0);
         Ok(playback)
     }
 
     fn stop_loop(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
         if self.loop_playbacks.remove(&playback).is_some() {
             self.loop_buses.remove(&playback);
+            self.loop_rates.remove(&playback);
             Ok(())
         } else {
             Err(AudioError::new(format!(
@@ -406,6 +443,19 @@ impl Audio for NoopAudio {
                 playback.0
             )))
         }
+    }
+
+    fn set_loop_playback_rate(
+        &mut self,
+        playback: PlaybackId,
+        rate: f32,
+    ) -> Result<(), AudioError> {
+        let rate = validate_loop_playback_rate(rate)?;
+        let active = self.loop_rates.get_mut(&playback).ok_or_else(|| {
+            AudioError::new(format!("looped playback '{}' is not active", playback.0))
+        })?;
+        *active = rate;
+        Ok(())
     }
 
     fn start_file(
@@ -659,18 +709,19 @@ fn decode_wav(bytes: &[u8]) -> Result<DecodedSound, AudioError> {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::fs::File;
     use std::path::Path;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use super::loop_buffer::LoopBuffer;
     use rodio::buffer::SamplesBuffer;
     use rodio::cpal::StreamError;
     use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
 
     use super::{
         Audio, AudioBus, AudioControlState, AudioError, DecodedSound, PlatformAudio, PlaybackId,
-        PlaybackState, SoundId, register_decoded_wav, validate_volume,
+        PlaybackState, SoundId, register_decoded_wav, validate_loop_playback_rate, validate_volume,
     };
 
     static XRUN_REPORTED: AtomicBool = AtomicBool::new(false);
@@ -714,7 +765,7 @@ mod native {
         sink: Option<MixerDeviceSink>,
         sounds: HashMap<SoundId, DecodedSound>,
         one_shot_players: Vec<(AudioBus, Player)>,
-        active_loops: HashSet<PlaybackId>,
+        active_loops: HashMap<PlaybackId, f32>,
         loop_players: HashMap<PlaybackId, Player>,
         loop_buses: HashMap<PlaybackId, AudioBus>,
         file_playbacks: HashMap<PlaybackId, NativeFilePlayback>,
@@ -851,14 +902,14 @@ mod native {
             };
 
             let playback = self.next_playback();
-            self.active_loops.insert(playback);
+            self.active_loops.insert(playback, 1.0);
             self.loop_buses.insert(playback, bus);
 
             if let Some(sink) = self.sink.as_ref() {
                 let player = Player::connect_new(sink.mixer());
                 player.set_volume(self.controls.effective_gain(bus));
                 player.append(
-                    SamplesBuffer::new(sound.channels, sound.sample_rate, sound.samples.to_vec())
+                    LoopBuffer::new(sound.channels, sound.sample_rate, sound.samples)
                         .repeat_infinite(),
                 );
                 self.loop_players.insert(playback, player);
@@ -868,7 +919,7 @@ mod native {
         }
 
         fn stop_loop(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
-            if !self.active_loops.remove(&playback) {
+            if self.active_loops.remove(&playback).is_none() {
                 return Err(AudioError::new(format!(
                     "looped playback '{}' is not active",
                     playback.0
@@ -877,6 +928,24 @@ mod native {
             self.loop_buses.remove(&playback);
             if let Some(player) = self.loop_players.remove(&playback) {
                 player.stop();
+            }
+            Ok(())
+        }
+
+        fn set_loop_playback_rate(
+            &mut self,
+            playback: PlaybackId,
+            rate: f32,
+        ) -> Result<(), AudioError> {
+            let rate = validate_loop_playback_rate(rate)?;
+            let active = self.active_loops.get_mut(&playback).ok_or_else(|| {
+                AudioError::new(format!("looped playback '{}' is not active", playback.0))
+            })?;
+            if *active != rate {
+                if let Some(player) = self.loop_players.get(&playback) {
+                    player.set_speed(rate);
+                }
+                *active = rate;
             }
             Ok(())
         }
@@ -1059,6 +1128,11 @@ mod native {
     impl PlatformAudio for NativeAudio {}
 
     #[cfg(test)]
+    mod rate_contract_tests;
+    #[cfg(test)]
+    mod rate_probe;
+
+    #[cfg(test)]
     mod tests {
         use super::*;
 
@@ -1092,13 +1166,13 @@ mod native {
 
 #[cfg(target_arch = "wasm32")]
 mod web {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     use web_sys::{AudioBuffer, AudioBufferSourceNode, AudioContext, AudioContextState, GainNode};
 
     use super::{
         Audio, AudioBus, AudioControlState, AudioError, DecodedSound, PlatformAudio, PlaybackId,
-        SoundId, decode_wav, ensure_same_sound,
+        SoundId, decode_wav, ensure_same_sound, validate_loop_playback_rate,
     };
 
     #[derive(Clone)]
@@ -1124,7 +1198,7 @@ mod web {
         unavailable: bool,
         sounds: HashMap<SoundId, AudioBuffer>,
         decoded_sounds: HashMap<SoundId, DecodedSound>,
-        active_loops: HashSet<PlaybackId>,
+        active_loops: HashMap<PlaybackId, f32>,
         loop_sources: HashMap<PlaybackId, AudioBufferSourceNode>,
         controls: AudioControlState,
         mix: Option<WebMix>,
@@ -1144,7 +1218,7 @@ mod web {
                 unavailable: false,
                 sounds: HashMap::new(),
                 decoded_sounds: HashMap::new(),
-                active_loops: HashSet::new(),
+                active_loops: HashMap::new(),
                 loop_sources: HashMap::new(),
                 controls: AudioControlState::default(),
                 mix: None,
@@ -1358,7 +1432,6 @@ mod web {
 
             self.next_playback_id += 1;
             let playback = PlaybackId::new(self.next_playback_id);
-            self.active_loops.insert(playback);
 
             let source = context.create_buffer_source().map_err(|err| {
                 AudioError::new(js_error_message(
@@ -1371,20 +1444,23 @@ mod web {
             source
                 .connect_with_audio_node(mix.bus_node(bus))
                 .map_err(|err| {
+                    let _ = source.disconnect();
                     AudioError::new(js_error_message(
                         "failed to connect looping AudioBufferSourceNode",
                         err,
                     ))
                 })?;
             source.start().map_err(|err| {
+                let _ = source.disconnect();
                 AudioError::new(js_error_message("failed to start looping sound", err))
             })?;
+            self.active_loops.insert(playback, 1.0);
             self.loop_sources.insert(playback, source);
             Ok(playback)
         }
 
         fn stop_loop(&mut self, playback: PlaybackId) -> Result<(), AudioError> {
-            if !self.active_loops.remove(&playback) {
+            if self.active_loops.remove(&playback).is_none() {
                 return Err(AudioError::new(format!(
                     "looped playback '{}' is not active",
                     playback.0
@@ -1392,6 +1468,34 @@ mod web {
             }
             if let Some(source) = self.loop_sources.remove(&playback) {
                 stop_source(&source);
+            }
+            Ok(())
+        }
+
+        fn set_loop_playback_rate(
+            &mut self,
+            playback: PlaybackId,
+            rate: f32,
+        ) -> Result<(), AudioError> {
+            let rate = validate_loop_playback_rate(rate)?;
+            let active = self.active_loops.get_mut(&playback).ok_or_else(|| {
+                AudioError::new(format!("looped playback '{}' is not active", playback.0))
+            })?;
+            let source = self
+                .loop_sources
+                .get(&playback)
+                .ok_or_else(|| AudioError::new("active loop source is unavailable"))?;
+            let context = self
+                .context
+                .as_ref()
+                .ok_or_else(|| AudioError::new("WebAudio is unavailable"))?;
+            if context.state() == AudioContextState::Closed {
+                return Err(AudioError::new("WebAudio context is closed"));
+            }
+            if *active != rate {
+                // The finite bounded value is valid for this existing AudioParam.
+                source.playback_rate().set_value(rate);
+                *active = rate;
             }
             Ok(())
         }
@@ -1457,6 +1561,7 @@ mod web {
     #[allow(deprecated)]
     fn stop_source(source: &AudioBufferSourceNode) {
         let _ = source.stop();
+        let _ = source.disconnect();
     }
 }
 

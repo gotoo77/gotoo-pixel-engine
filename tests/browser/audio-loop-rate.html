@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Audio loop rate contract</title></head><body>
+<script type="module">
+import { isWinitControlFlowHandoff } from '../../web/diagnostics-core.js';
+window.rateProbe={contexts:[],sources:[],writes:[],failure:null,closed:false,gains:0};
+const state=window.rateProbe;
+const RealContext=window.AudioContext;
+window.AudioContext=class extends RealContext {
+  constructor(...args){super(...args);state.contexts.push(this);}
+  createGain(){state.gains++;return super.createGain();}
+  createBufferSource(){
+    const stage=state.failure;state.failure=null;
+    if(stage==='create')throw new DOMException('injected creation failure','NotSupportedError');
+    const source=super.createBufferSource();
+    const record={source,param:source.playbackRate,starts:0,stops:0,disconnects:0,stage};state.sources.push(record);
+    const connect=source.connect.bind(source),start=source.start.bind(source),stop=source.stop.bind(source),disconnect=source.disconnect.bind(source);
+    source.connect=(...a)=>{if(stage==='connect')throw new DOMException('injected connection failure');return connect(...a);};
+    source.start=(...a)=>{if(stage==='start')throw new DOMException('injected start failure');record.starts++;return start(...a);};
+    source.stop=(...a)=>{record.stops++;return stop(...a);};
+    source.disconnect=(...a)=>{record.disconnects++;return disconnect(...a);};
+    return source;
+  }
+};
+const descriptor=Object.getOwnPropertyDescriptor(AudioParam.prototype,'value');
+Object.defineProperty(AudioParam.prototype,'value',{...descriptor,set(value){state.writes.push({param:this,value});descriptor.set.call(this,value);}});
+globalThis.__gpeFailSource=stage=>{state.failure=stage;};
+globalThis.__gpeContextClosed=()=>state.closed;
+window.probeReady=import('./generated/audio_loop_rate_web.js').then(async ({default:init,start_loop_rate_probe,loop_rate_status})=>{await init();window.probeStatus=loop_rate_status;try { start_loop_rate_probe(); } catch(error) {
+  if(!isWinitControlFlowHandoff(error)) throw error;
+}});
+</script></body></html>

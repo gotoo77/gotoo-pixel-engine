@@ -49,6 +49,11 @@ name = "diagnostics_environment_web"
 path = "examples/diagnostics_environment_web.rs"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "audio_loop_rate_web"
+path = "examples/audio_loop_rate_web.rs"
+crate-type = ["cdylib"]
+
 [[bench]]
 name = "primitives"
 harness = false
