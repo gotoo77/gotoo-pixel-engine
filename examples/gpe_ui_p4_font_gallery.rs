@@ -1,6 +1,6 @@
 use gotoo_pixel_engine::{
     EngineConfig, Frame, Framebuffer, Game, GameResult, Key, MouseButton, Pixel, Rect,
-    TextInputEvent, TextRenderer,
+    TextRenderer,
     outline_text::OutlineFont,
     run,
     ui::{
@@ -455,12 +455,12 @@ impl Game for Gallery {
             self.search.select_all();
             self.painted = false;
         }
-        if frame.input.mouse_button(MouseButton::Left).pressed() {
-            if let Some((x, y)) = frame.input.mouse_position() {
-                self.search.active = (24..304).contains(&x) && (92..134).contains(&y);
-                if self.search.active && x >= 268 {
-                    self.search.clear();
-                }
+        if frame.input.mouse_button(MouseButton::Left).pressed()
+            && let Some((x, y)) = frame.input.mouse_position()
+        {
+            self.search.active = (24..304).contains(&x) && (92..134).contains(&y);
+            if self.search.active && x >= 268 {
+                self.search.clear();
             }
         }
         if frame.input.key(Key::Escape).pressed() {
@@ -575,8 +575,12 @@ impl Game for Gallery {
         GameResult::Continue
     }
 }
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut gallery = Gallery::new()?;
+// The Web wrapper delegates here so both launchers use the same gallery setup.
+pub(crate) fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let gallery = Gallery::new()?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut gallery = gallery;
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(directory) = std::env::args().nth(1) {
         std::fs::create_dir_all(&directory)?;
         for index in 0..FACES.len() {
@@ -598,7 +602,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     run(
         EngineConfig {
-            title: "GPE.UI P4 / Font Finder A-Z".into(),
+            title: if cfg!(target_arch = "wasm32") {
+                "GPE.UI P4 / Font Finder A-Z / Web"
+            } else {
+                "GPE.UI P4 / Font Finder A-Z"
+            }
+            .into(),
             framebuffer_width: WIDTH,
             framebuffer_height: HEIGHT,
             window_width: WIDTH,
