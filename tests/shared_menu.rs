@@ -333,6 +333,163 @@ fn pointer_and_touch_use_snapshot_hitboxes_and_do_not_activate_twice() {
 }
 
 #[test]
+fn suspended_page_discards_pointer_and_touch_captures_but_keeps_focus() {
+    for touch in [false, true] {
+        let mut menu = PauseSettingsMenu::new();
+        let mut fb = Framebuffer::new(640, 360);
+        let theme = UiTheme::default();
+        menu.update(&mut fb, UiNavInput::default(), theme);
+        let point = center(menu.presentation_snapshot().controls[1].unwrap());
+
+        for phase in [TouchPhase::Started, TouchPhase::Ended] {
+            if phase == TouchPhase::Ended {
+                menu.update(
+                    &mut fb,
+                    UiNavInput {
+                        confirm: true,
+                        ..Default::default()
+                    },
+                    theme,
+                );
+                assert_eq!(menu.current(), SettingsPage::Settings);
+                menu.update(
+                    &mut fb,
+                    UiNavInput {
+                        cancel: true,
+                        ..Default::default()
+                    },
+                    theme,
+                );
+                assert_eq!(menu.current(), SettingsPage::Pause);
+            }
+            let touches = [Touch {
+                id: 42,
+                phase,
+                position: Some(point),
+            }];
+            menu.update_with_input(
+                &mut fb,
+                UiInput {
+                    pointer: if touch {
+                        UiPointerInput::default()
+                    } else {
+                        UiPointerInput {
+                            position: Some(point),
+                            pressed: phase == TouchPhase::Started,
+                            released: phase == TouchPhase::Ended,
+                        }
+                    },
+                    touches: if touch { &touches } else { &[] },
+                    ..Default::default()
+                },
+                theme,
+            );
+            assert_eq!(menu.current(), SettingsPage::Pause);
+            assert_eq!(menu.presentation_snapshot().selected, 1);
+        }
+        menu.update(
+            &mut fb,
+            UiNavInput {
+                confirm: true,
+                ..Default::default()
+            },
+            theme,
+        );
+        assert_eq!(menu.current(), SettingsPage::Settings);
+    }
+}
+
+#[test]
+fn back_button_discards_simultaneous_audio_edit() {
+    let mut menu = PauseSettingsMenu::new();
+    enter_audio(&mut menu);
+    let mut fb = Framebuffer::new(640, 360);
+    let theme = UiTheme::default();
+    let point = center(menu.presentation_snapshot().controls[4].unwrap());
+    let before = menu.audio;
+    menu.update_with_input(
+        &mut fb,
+        UiInput {
+            pointer: UiPointerInput {
+                position: Some(point),
+                pressed: true,
+                released: false,
+            },
+            ..Default::default()
+        },
+        theme,
+    );
+    assert_eq!(menu.presentation_snapshot().selected, 4);
+    menu.update_with_input(
+        &mut fb,
+        UiInput {
+            nav: UiNavInput {
+                up: true,
+                left: true,
+                ..Default::default()
+            },
+            pointer: UiPointerInput {
+                position: Some(point),
+                pressed: false,
+                released: true,
+            },
+            ..Default::default()
+        },
+        theme,
+    );
+    assert_eq!(menu.current(), SettingsPage::Settings);
+    assert_eq!(menu.audio, before);
+}
+
+#[test]
+fn settings_back_button_wins_over_concurrent_audio_activation() {
+    let mut menu = PauseSettingsMenu::new();
+    enter_audio(&mut menu);
+    nav(
+        &mut menu,
+        UiNavInput {
+            cancel: true,
+            ..Default::default()
+        },
+    );
+    nav(&mut menu, UiNavInput::default());
+    let mut fb = Framebuffer::new(640, 360);
+    let theme = UiTheme::default();
+    let point = center(menu.presentation_snapshot().controls[1].unwrap());
+    menu.update_with_input(
+        &mut fb,
+        UiInput {
+            pointer: UiPointerInput {
+                position: Some(point),
+                pressed: true,
+                released: false,
+            },
+            ..Default::default()
+        },
+        theme,
+    );
+    assert_eq!(menu.presentation_snapshot().selected, 1);
+    menu.update_with_input(
+        &mut fb,
+        UiInput {
+            nav: UiNavInput {
+                up: true,
+                confirm: true,
+                ..Default::default()
+            },
+            pointer: UiPointerInput {
+                position: Some(point),
+                pressed: false,
+                released: true,
+            },
+            ..Default::default()
+        },
+        theme,
+    );
+    assert_eq!(menu.current(), SettingsPage::Pause);
+}
+
+#[test]
 fn translated_labels_keep_semantic_focus_and_styles_drive_geometry_and_pixels() {
     let mut menu = PauseSettingsMenu::new();
     let mut fb = Framebuffer::new(640, 360);
