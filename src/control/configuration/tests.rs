@@ -336,33 +336,18 @@ fn fixed_axes_validate_signed_ranges_and_owners() {
     );
     second.threshold = 0.75;
     assert!(matches!(
-        ControlConfiguration::with_fixed_axes(
-            actions.clone(),
-            vec![],
-            vec![],
-            vec![first, second]
-        ),
+        ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![first, second]),
         Err(ConfigurationError::AxisConflict(..))
     ));
     second.direction = AxisDirection::Positive;
     assert!(
-        ControlConfiguration::with_fixed_axes(
-            actions.clone(),
-            vec![],
-            vec![],
-            vec![first, second]
-        )
-        .is_ok()
+        ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![first, second])
+            .is_ok()
     );
     for threshold in [0.0, -0.1, 1.01, f32::NAN, f32::INFINITY] {
         second.threshold = threshold;
         assert!(matches!(
-            ControlConfiguration::with_fixed_axes(
-                actions.clone(),
-                vec![],
-                vec![],
-                vec![second]
-            ),
+            ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![second]),
             Err(ConfigurationError::InvalidAxis(RIGHT))
         ));
     }
@@ -412,8 +397,7 @@ fn all_derived_buttons_match_their_fixed_axes() {
         let fixed = axis(LEFT, None, source, direction);
         let entry = action(LEFT, PLAY, vec![slot(ControlBinding::Gamepad(button))]);
         assert!(
-            ControlConfiguration::with_fixed_axes(vec![entry], vec![], vec![], vec![fixed])
-                .is_ok()
+            ControlConfiguration::with_fixed_axes(vec![entry], vec![], vec![], vec![fixed]).is_ok()
         );
         assert!(matches!(
             ControlConfiguration::with_fixed_axes(
