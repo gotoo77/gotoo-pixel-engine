@@ -1728,14 +1728,7 @@ impl UiTextBackend<'_> {
                 raster_scale,
             } => {
                 let px = *text_px * scale.max(1) as f32;
-                font.draw_centered_supersampled(
-                    framebuffer,
-                    text,
-                    px,
-                    rect,
-                    color,
-                    *raster_scale,
-                );
+                font.draw_centered_supersampled(framebuffer, text, px, rect, color, *raster_scale);
             }
         }
     }
