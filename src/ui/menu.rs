@@ -69,6 +69,7 @@ impl<Id> MenuStack<Id> {
     }
 
     pub fn push(&mut self, id: Id) {
+        self.ui_state_mut().clear_captures();
         self.pages.push(MenuPage {
             id,
             ui_state: UiStateStore::default(),
@@ -76,10 +77,12 @@ impl<Id> MenuStack<Id> {
     }
 
     pub fn back(&mut self) -> MenuBack {
+        self.ui_state_mut().clear_captures();
         if self.pages.len() == 1 {
             MenuBack::CloseRequested
         } else {
             self.pages.pop();
+            self.ui_state_mut().clear_captures();
             MenuBack::ReturnedToParent
         }
     }
@@ -386,12 +389,10 @@ impl PauseSettingsMenu {
                     _ => 0,
                 };
                 self.controls = [output.rect(audio), output.rect(previous), None, None, None];
-                if output.activated(audio) {
+                back |= output.activated(previous) || output.cancel_requested();
+                if !back && output.activated(audio) {
                     next = Some(SettingsPage::Audio);
-                } else if output.activated(previous) {
-                    back = true;
                 }
-                back |= output.cancel_requested();
             }
             SettingsPage::Audio => {
                 let audio = self.audio;
@@ -428,19 +429,21 @@ impl PauseSettingsMenu {
                     output.rect(ui_volume),
                     output.rect(previous),
                 ];
-                if let Some(value) = output.changed(master) {
-                    self.audio.master = value;
-                }
-                if let Some(value) = output.changed(music) {
-                    self.audio.music = value;
-                }
-                if let Some(value) = output.changed(sfx) {
-                    self.audio.sfx = value;
-                }
-                if let Some(value) = output.changed(ui_volume) {
-                    self.audio.ui = value;
-                }
                 back |= output.activated(previous) || output.cancel_requested();
+                if !back {
+                    if let Some(value) = output.changed(master) {
+                        self.audio.master = value;
+                    }
+                    if let Some(value) = output.changed(music) {
+                        self.audio.music = value;
+                    }
+                    if let Some(value) = output.changed(sfx) {
+                        self.audio.sfx = value;
+                    }
+                    if let Some(value) = output.changed(ui_volume) {
+                        self.audio.ui = value;
+                    }
+                }
             }
         }
         if back {
