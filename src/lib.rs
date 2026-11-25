@@ -41,8 +41,8 @@ pub use capture_mirror::ObsMirrorGame;
 #[cfg(target_arch = "wasm32")]
 pub use capture_mirror_stub::ObsMirrorGame;
 pub use control::{
-    ActionId, BindingSlot, ConfigurationError, ControlAction, ControlBinding, ControlConfiguration,
-    ControlContext, ControlMap,
+    ActionId, AxisDirection, BindingSlot, ConfigurationError, ControlAction, ControlBinding,
+    ControlConfiguration, ControlContext, ControlMap, FixedAxisBinding,
 };
 #[cfg(all(feature = "diagnostics-fault-injection", not(target_arch = "wasm32")))]
 #[doc(hidden)]
