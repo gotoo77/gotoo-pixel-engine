@@ -1,0 +1,681 @@
+//! Hierarchical navigation for transactional GPE.UI menus.
+//!
+//! Each page owns its interaction state. Domain actions and menu presentation
+//! remain owned by the consumer.
+
+use super::{UiStyleSheet, experimental::UiStateStore};
+#[cfg(feature = "outline-fonts")]
+use crate::outline_text::OutlineFont;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuBack {
+    ReturnedToParent,
+    CloseRequested,
+}
+
+struct MenuPage<Id> {
+    id: Id,
+    ui_state: UiStateStore,
+}
+
+/// A root-preserving stack of menu pages.
+///
+/// Consumers render the active page using `ui_state_mut()`, then commit
+/// navigation requests after the UI transaction has completed.
+/// Input uses the existing kernel; the consumer supplies labels, values and actions.
+///
+/// ```
+/// use gotoo_pixel_engine::{Framebuffer, ui::{UiTheme,
+///     experimental::{run, UiNavInput}, menu::{MenuStack, MenuBack}}};
+/// let mut pages = MenuStack::new("main");
+/// let mut framebuffer = Framebuffer::new(640, 360);
+/// let (output, options) = run(&mut framebuffer, pages.ui_state_mut(),
+///     UiNavInput::default(), UiTheme::default(), |ui| {
+///         ui.keyed("options", |ui| ui.button("My game options"))
+///     });
+/// // Commit one transition after this transaction, never while building widgets.
+/// if output.activated(options) { pages.push("game-options"); }
+/// // At the root, back is an intent; it does not exit or unpause anything.
+/// assert_eq!(pages.back(), MenuBack::CloseRequested);
+/// ```
+pub struct MenuStack<Id> {
+    pages: Vec<MenuPage<Id>>,
+}
+
+impl<Id> MenuStack<Id> {
+    pub fn new(root: Id) -> Self {
+        Self {
+            pages: vec![MenuPage {
+                id: root,
+                ui_state: UiStateStore::default(),
+            }],
+        }
+    }
+
+    pub fn current(&self) -> &Id {
+        &self.pages.last().expect("menu root is always present").id
+    }
+
+    pub fn depth(&self) -> usize {
+        self.pages.len()
+    }
+
+    pub fn ui_state_mut(&mut self) -> &mut UiStateStore {
+        &mut self
+            .pages
+            .last_mut()
+            .expect("menu root is always present")
+            .ui_state
+    }
+
+    pub fn push(&mut self, id: Id) {
+        self.ui_state_mut().clear_captures();
+        self.pages.push(MenuPage {
+            id,
+            ui_state: UiStateStore::default(),
+        });
+    }
+
+    pub fn back(&mut self) -> MenuBack {
+        self.ui_state_mut().clear_captures();
+        if self.pages.len() == 1 {
+            MenuBack::CloseRequested
+        } else {
+            self.pages.pop();
+            self.ui_state_mut().clear_captures();
+            MenuBack::ReturnedToParent
+        }
+    }
+}
+
+/// Pages for the minimal pause/settings/audio reference menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsPage {
+    Pause,
+    Settings,
+    Audio,
+}
+
+/// Domain intent returned to the session owner; the UI never resumes or exits a game itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsIntent {
+    None,
+    Resume,
+    Exit,
+}
+
+/// Consumer-owned audio values. Nothing is applied to an audio backend until
+/// the session owner explicitly does so.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AudioSettings {
+    pub master: f32,
+    pub music: f32,
+    pub sfx: f32,
+    pub ui: f32,
+}
+
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            master: 1.0,
+            music: 1.0,
+            sfx: 1.0,
+            ui: 1.0,
+        }
+    }
+}
+
+/// Presentation of the current reference page, in the menu framebuffer's coordinates.
+/// Controls are in display order (Audio: master, music, sfx, ui, back).
+/// After navigation/reset they are None until the next transaction resolves the new page.
+/// A host must map these rectangles with its own presentation geometry.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SettingsPresentationSnapshot {
+    pub page: SettingsPage,
+    pub selected: usize,
+    pub audio: AudioSettings,
+    pub controls: [Option<crate::Rect>; 5],
+}
+
+/// Labels supplied by the consumer; semantic widget keys never depend on translation.
+#[derive(Debug, Clone, Copy)]
+pub struct SettingsLabels<'a> {
+    pub paused: &'a str,
+    pub resume: &'a str,
+    pub settings: &'a str,
+    pub quit: &'a str,
+    pub audio: &'a str,
+    pub back: &'a str,
+    pub master: &'a str,
+    pub music: &'a str,
+    pub sfx: &'a str,
+    pub ui: &'a str,
+}
+
+impl Default for SettingsLabels<'_> {
+    fn default() -> Self {
+        Self {
+            paused: "PAUSED",
+            resume: "RESUME",
+            settings: "SETTINGS",
+            quit: "QUIT",
+            audio: "AUDIO",
+            back: "BACK",
+            master: "MASTER",
+            music: "MUSIC",
+            sfx: "SFX",
+            ui: "UI",
+        }
+    }
+}
+
+/// Reference pause/settings/audio composition; never owns simulation or modal state.
+/// Use MenuStack directly for consumer-defined pages and semantic actions.
+pub struct PauseSettingsMenu {
+    pages: MenuStack<SettingsPage>,
+    pub audio: AudioSettings,
+    selected: usize,
+    controls: [Option<crate::Rect>; 5],
+    #[cfg(feature = "outline-fonts")]
+    outline_font: Option<OutlineFont>,
+    #[cfg(feature = "outline-fonts")]
+    outline_text_px: f32,
+    #[cfg(feature = "outline-fonts")]
+    outline_raster_scale: u32,
+}
+
+impl Default for PauseSettingsMenu {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PauseSettingsMenu {
+    pub fn new() -> Self {
+        Self {
+            pages: MenuStack::new(SettingsPage::Pause),
+            audio: AudioSettings::default(),
+            selected: 0,
+            controls: [None; 5],
+            #[cfg(feature = "outline-fonts")]
+            outline_font: None,
+            #[cfg(feature = "outline-fonts")]
+            outline_text_px: 14.0,
+            #[cfg(feature = "outline-fonts")]
+            outline_raster_scale: 2,
+        }
+    }
+
+    pub fn current(&self) -> SettingsPage {
+        *self.pages.current()
+    }
+
+    pub fn presentation_snapshot(&self) -> SettingsPresentationSnapshot {
+        SettingsPresentationSnapshot {
+            page: self.current(),
+            selected: self.selected,
+            audio: self.audio,
+            controls: self.controls,
+        }
+    }
+
+    pub fn reset_to_pause(&mut self) {
+        self.pages = MenuStack::new(SettingsPage::Pause);
+        self.selected = 0;
+        self.controls = [None; 5];
+    }
+
+    #[cfg(feature = "outline-fonts")]
+    pub fn with_outline_font(mut self, font: OutlineFont, text_px: f32, raster_scale: u32) -> Self {
+        self.outline_font = Some(font);
+        self.outline_text_px = if text_px.is_finite() {
+            text_px.clamp(1.0, 256.0)
+        } else {
+            14.0
+        };
+        self.outline_raster_scale = raster_scale.clamp(1, 4);
+        self
+    }
+
+    fn run_ui<'a, R>(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        input: super::experimental::UiInput<'_>,
+        theme: super::UiTheme,
+        stylesheet: UiStyleSheet,
+        build: impl FnOnce(&mut super::experimental::UiBuilder<'a>) -> R,
+    ) -> (super::experimental::UiOutput, R) {
+        #[cfg(feature = "outline-fonts")]
+        if let Some(font) = self.outline_font.as_mut() {
+            return super::experimental::run_with_input_styled_outline(
+                framebuffer,
+                self.pages.ui_state_mut(),
+                input,
+                theme,
+                stylesheet,
+                super::experimental::UiOutlineText {
+                    font,
+                    text_px: self.outline_text_px,
+                    raster_scale: self.outline_raster_scale,
+                },
+                build,
+            );
+        }
+
+        super::experimental::run_with_input_styled(
+            framebuffer,
+            self.pages.ui_state_mut(),
+            input,
+            theme,
+            stylesheet,
+            build,
+        )
+    }
+
+    pub fn update(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        nav: super::experimental::UiNavInput,
+        theme: super::UiTheme,
+    ) -> SettingsIntent {
+        self.update_styled(framebuffer, nav, theme, UiStyleSheet::default())
+    }
+
+    pub fn update_styled(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        nav: super::experimental::UiNavInput,
+        theme: super::UiTheme,
+        stylesheet: UiStyleSheet,
+    ) -> SettingsIntent {
+        self.update_with_input_styled(
+            framebuffer,
+            super::experimental::UiInput {
+                nav,
+                ..Default::default()
+            },
+            theme,
+            stylesheet,
+        )
+    }
+
+    /// Render with the shared kernel's pointer and touch inputs.
+    pub fn update_with_input(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        input: super::experimental::UiInput<'_>,
+        theme: super::UiTheme,
+    ) -> SettingsIntent {
+        self.update_with_input_styled(framebuffer, input, theme, UiStyleSheet::default())
+    }
+
+    pub fn update_with_input_styled(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        input: super::experimental::UiInput<'_>,
+        theme: super::UiTheme,
+        stylesheet: UiStyleSheet,
+    ) -> SettingsIntent {
+        self.update_with_input_styled_labels(
+            framebuffer,
+            input,
+            theme,
+            stylesheet,
+            SettingsLabels::default(),
+        )
+    }
+
+    /// Supply translated or game-specific labels without changing widget identity.
+    /// Navigation booleans are pulses, not held states. The consumer owns entry/resume gates.
+    pub fn update_with_input_styled_labels(
+        &mut self,
+        framebuffer: &mut crate::Framebuffer,
+        mut input: super::experimental::UiInput<'_>,
+        theme: super::UiTheme,
+        stylesheet: UiStyleSheet,
+        labels: SettingsLabels<'_>,
+    ) -> SettingsIntent {
+        let cancel = input.nav.cancel;
+        // Back wins the entire transaction: no concurrent activation or edit.
+        if cancel {
+            input = super::experimental::UiInput::default();
+        }
+        let mut intent = SettingsIntent::None;
+        let mut next = None;
+        let mut back = cancel;
+        match self.current() {
+            SettingsPage::Pause => {
+                let (output, (resume, settings, quit)) =
+                    self.run_ui(framebuffer, input, theme, stylesheet, |ui| {
+                        ui.text(labels.paused);
+                        (
+                            ui.keyed("resume", |ui| ui.button(labels.resume)),
+                            ui.keyed("settings", |ui| ui.button(labels.settings)),
+                            ui.keyed("quit", |ui| ui.button(labels.quit)),
+                        )
+                    });
+                self.selected = match output.focused_id() {
+                    Some(id) if id == settings.id() => 1,
+                    Some(id) if id == quit.id() => 2,
+                    _ => 0,
+                };
+                self.controls = [
+                    output.rect(resume),
+                    output.rect(settings),
+                    output.rect(quit),
+                    None,
+                    None,
+                ];
+                if output.activated(resume) {
+                    intent = SettingsIntent::Resume;
+                } else if output.activated(settings) {
+                    next = Some(SettingsPage::Settings);
+                } else if output.activated(quit) {
+                    intent = SettingsIntent::Exit;
+                }
+                back |= output.cancel_requested();
+            }
+            SettingsPage::Settings => {
+                let (output, (audio, previous)) =
+                    self.run_ui(framebuffer, input, theme, stylesheet, |ui| {
+                        ui.text(labels.settings);
+                        (
+                            ui.keyed("audio", |ui| ui.button(labels.audio)),
+                            ui.keyed("back", |ui| ui.button(labels.back)),
+                        )
+                    });
+                self.selected = match output.focused_id() {
+                    Some(id) if id == previous.id() => 1,
+                    _ => 0,
+                };
+                self.controls = [output.rect(audio), output.rect(previous), None, None, None];
+                back |= output.activated(previous) || output.cancel_requested();
+                if !back && output.activated(audio) {
+                    next = Some(SettingsPage::Audio);
+                }
+            }
+            SettingsPage::Audio => {
+                let audio = self.audio;
+                let (output, (master, music, sfx, ui_volume, previous)) =
+                    self.run_ui(framebuffer, input, theme, stylesheet, |ui| {
+                        ui.text(labels.audio);
+                        (
+                            ui.keyed("master", |ui| {
+                                ui.slider_f32(labels.master, audio.master, 0.0..=1.0, 0.05)
+                            }),
+                            ui.keyed("music", |ui| {
+                                ui.slider_f32(labels.music, audio.music, 0.0..=1.0, 0.05)
+                            }),
+                            ui.keyed("sfx", |ui| {
+                                ui.slider_f32(labels.sfx, audio.sfx, 0.0..=1.0, 0.05)
+                            }),
+                            ui.keyed("ui", |ui| {
+                                ui.slider_f32(labels.ui, audio.ui, 0.0..=1.0, 0.05)
+                            }),
+                            ui.keyed("back", |ui| ui.button(labels.back)),
+                        )
+                    });
+                self.selected = match output.focused_id() {
+                    Some(id) if id == music.id() => 1,
+                    Some(id) if id == sfx.id() => 2,
+                    Some(id) if id == ui_volume.id() => 3,
+                    Some(id) if id == previous.id() => 4,
+                    _ => 0,
+                };
+                self.controls = [
+                    output.rect(master),
+                    output.rect(music),
+                    output.rect(sfx),
+                    output.rect(ui_volume),
+                    output.rect(previous),
+                ];
+                back |= output.activated(previous) || output.cancel_requested();
+                if !back {
+                    if let Some(value) = output.changed(master) {
+                        self.audio.master = value;
+                    }
+                    if let Some(value) = output.changed(music) {
+                        self.audio.music = value;
+                    }
+                    if let Some(value) = output.changed(sfx) {
+                        self.audio.sfx = value;
+                    }
+                    if let Some(value) = output.changed(ui_volume) {
+                        self.audio.ui = value;
+                    }
+                }
+            }
+        }
+        if back {
+            if self.pages.back() == MenuBack::CloseRequested {
+                return SettingsIntent::Resume;
+            }
+            self.selected = 0;
+            self.controls = [None; 5];
+        } else if let Some(page) = next {
+            self.pages.push(page);
+            self.selected = 0;
+            self.controls = [None; 5];
+        }
+        intent
+    }
+
+    /// Apply values explicitly: errors are reported to the caller rather than
+    /// silently falling back when a backend lacks volume control.
+    /// Application is ordered master, Music, Sfx, Ui; the first error is returned unchanged.
+    /// Earlier successful setters remain applied. Values here are proposals, not backend state;
+    /// consumers can read back effective gains through Audio and report errors to their users.
+    pub fn apply_audio(&self, audio: &mut dyn crate::Audio) -> Result<(), crate::AudioError> {
+        audio.set_master_volume(self.audio.master)?;
+        audio.set_bus_volume(crate::AudioBus::Music, self.audio.music)?;
+        audio.set_bus_volume(crate::AudioBus::Sfx, self.audio.sfx)?;
+        audio.set_bus_volume(crate::AudioBus::Ui, self.audio.ui)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        Size,
+        ui::UiTheme,
+        ui::experimental::{UiNavInput, run_headless},
+    };
+
+    fn surface() -> Size {
+        Size {
+            width: 320,
+            height: 180,
+        }
+    }
+
+    #[test]
+    fn navigating_back_preserves_root_and_parent_identity() {
+        let mut stack = MenuStack::new("pause");
+        assert_eq!(stack.current(), &"pause");
+        assert_eq!(stack.back(), MenuBack::CloseRequested);
+        stack.push("settings");
+        stack.push("audio");
+        assert_eq!(stack.depth(), 3);
+        assert_eq!(stack.back(), MenuBack::ReturnedToParent);
+        assert_eq!(stack.current(), &"settings");
+        assert_eq!(stack.back(), MenuBack::ReturnedToParent);
+        assert_eq!(stack.current(), &"pause");
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn parent_focus_is_restored_after_visiting_child_page() {
+        let mut stack = MenuStack::new("pause");
+        let render = |state: &mut UiStateStore, nav: UiNavInput| {
+            let (output, _) = run_headless(surface(), state, nav, UiTheme::default(), |ui| {
+                ui.keyed("resume", |ui| ui.button("RESUME"));
+                ui.keyed("settings", |ui| ui.button("SETTINGS"));
+                ui.keyed("quit", |ui| ui.button("QUIT"));
+            });
+            output
+        };
+
+        render(stack.ui_state_mut(), UiNavInput::default());
+        let selected = render(
+            stack.ui_state_mut(),
+            UiNavInput {
+                down: true,
+                ..UiNavInput::default()
+            },
+        );
+        let parent_focus = selected.focused_id().expect("settings should have focus");
+
+        stack.push("settings");
+        let (child_output, _) = run_headless(
+            surface(),
+            stack.ui_state_mut(),
+            UiNavInput::default(),
+            UiTheme::default(),
+            |ui| {
+                ui.keyed("audio", |ui| ui.button("AUDIO"));
+            },
+        );
+        assert!(child_output.focused_id().is_some());
+
+        assert_eq!(stack.back(), MenuBack::ReturnedToParent);
+        let restored = render(stack.ui_state_mut(), UiNavInput::default());
+        assert_eq!(restored.focused_id(), Some(parent_focus));
+    }
+
+    fn tick(menu: &mut PauseSettingsMenu, nav: UiNavInput) -> SettingsIntent {
+        let mut framebuffer = crate::Framebuffer::new(320, 180);
+        menu.update(&mut framebuffer, nav, UiTheme::default())
+    }
+
+    fn nav_down() -> UiNavInput {
+        UiNavInput {
+            down: true,
+            ..UiNavInput::default()
+        }
+    }
+
+    fn nav_confirm() -> UiNavInput {
+        UiNavInput {
+            confirm: true,
+            ..UiNavInput::default()
+        }
+    }
+
+    fn nav_cancel() -> UiNavInput {
+        UiNavInput {
+            cancel: true,
+            ..UiNavInput::default()
+        }
+    }
+
+    #[test]
+    fn pause_settings_audio_navigation_and_root_cancel() {
+        let mut menu = PauseSettingsMenu::new();
+        assert_eq!(tick(&mut menu, UiNavInput::default()), SettingsIntent::None);
+        tick(&mut menu, nav_down());
+        assert_eq!(tick(&mut menu, nav_confirm()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Settings);
+        tick(&mut menu, UiNavInput::default());
+        assert_eq!(tick(&mut menu, nav_confirm()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Audio);
+        assert_eq!(tick(&mut menu, nav_cancel()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Settings);
+        assert_eq!(tick(&mut menu, nav_cancel()), SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Pause);
+        assert_eq!(tick(&mut menu, nav_cancel()), SettingsIntent::Resume);
+        assert_eq!(menu.current(), SettingsPage::Pause);
+    }
+
+    #[test]
+    fn audio_slider_changes_values_without_changing_page() {
+        let mut menu = PauseSettingsMenu::new();
+        tick(&mut menu, UiNavInput::default());
+        tick(&mut menu, nav_down());
+        tick(&mut menu, nav_confirm());
+        tick(&mut menu, UiNavInput::default());
+        tick(&mut menu, nav_confirm());
+        assert_eq!(menu.current(), SettingsPage::Audio);
+        tick(&mut menu, UiNavInput::default());
+        let intent = tick(
+            &mut menu,
+            UiNavInput {
+                left: true,
+                ..UiNavInput::default()
+            },
+        );
+        assert_eq!(intent, SettingsIntent::None);
+        assert_eq!(menu.current(), SettingsPage::Audio);
+        assert!((menu.audio.master - 0.95).abs() < f32::EPSILON * 2.0);
+        assert_eq!(menu.audio.music, 1.0);
+        assert_eq!(menu.audio.sfx, 1.0);
+    }
+
+    #[test]
+    fn presentation_snapshot_exposes_resolved_pause_hitboxes() {
+        let mut menu = PauseSettingsMenu::new();
+        let mut framebuffer = crate::Framebuffer::new(320, 180);
+
+        let intent = menu.update(&mut framebuffer, UiNavInput::default(), UiTheme::default());
+
+        assert_eq!(intent, SettingsIntent::None);
+        let snapshot = menu.presentation_snapshot();
+        assert_eq!(snapshot.page, SettingsPage::Pause);
+        assert!(snapshot.controls[0].is_some());
+        assert!(snapshot.controls[1].is_some());
+        assert!(snapshot.controls[2].is_some());
+        assert!(snapshot.controls[3].is_none());
+    }
+
+    #[test]
+    fn reset_to_pause_preserves_audio_values() {
+        let mut menu = PauseSettingsMenu::new();
+        menu.audio.master = 0.42;
+        menu.pages.push(SettingsPage::Settings);
+        menu.pages.push(SettingsPage::Audio);
+        assert_eq!(menu.current(), SettingsPage::Audio);
+
+        menu.reset_to_pause();
+
+        assert_eq!(menu.current(), SettingsPage::Pause);
+        assert!((menu.audio.master - 0.42).abs() < f32::EPSILON * 2.0);
+    }
+
+    #[cfg(feature = "outline-fonts")]
+    #[test]
+    fn pause_settings_outline_backend_renders_without_changing_contract() {
+        use crate::ui::fonts::BuiltinOutlineFont;
+
+        let font = BuiltinOutlineFont::Exo2
+            .load()
+            .expect("bundled outline font");
+        let mut menu = PauseSettingsMenu::new().with_outline_font(font, 14.0, 2);
+        let mut framebuffer = crate::Framebuffer::new(320, 180);
+
+        assert_eq!(
+            menu.update(&mut framebuffer, UiNavInput::default(), UiTheme::default(),),
+            SettingsIntent::None
+        );
+        assert_eq!(menu.current(), SettingsPage::Pause);
+    }
+
+    #[test]
+    fn applying_audio_settings_updates_existing_backend_buses() {
+        let mut menu = PauseSettingsMenu::new();
+        menu.audio = AudioSettings {
+            master: 0.75,
+            music: 0.5,
+            sfx: 0.25,
+            ui: 1.0,
+        };
+        let mut backend = crate::NoopAudio::default();
+        menu.apply_audio(&mut backend)
+            .expect("noop backend supports volumes");
+        use crate::Audio;
+        assert_eq!(backend.master_volume(), 0.75);
+        assert_eq!(backend.bus_volume(crate::AudioBus::Music), 0.5);
+        assert_eq!(backend.bus_volume(crate::AudioBus::Sfx), 0.25);
+        assert_eq!(backend.bus_volume(crate::AudioBus::Ui), 1.0);
+    }
+}

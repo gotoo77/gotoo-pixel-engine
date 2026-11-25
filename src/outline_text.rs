@@ -21,6 +21,12 @@ pub struct OutlineFont {
     cache: HashMap<GlyphRasterConfig, (Metrics, Vec<u8>)>,
 }
 
+struct OutlinePaint {
+    color: Pixel,
+    raster_scale: u32,
+    centered: bool,
+}
+
 impl OutlineFont {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
         Ok(Self {
@@ -86,7 +92,29 @@ impl OutlineFont {
         bounds: Rect,
         color: Pixel,
     ) -> Size {
+        self.draw_aligned(framebuffer, text, px, bounds, color, false)
+    }
+
+    fn draw_aligned(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        text: &str,
+        px: f32,
+        bounds: Rect,
+        color: Pixel,
+        centered: bool,
+    ) -> Size {
         let measured = self.arrange(text, px, bounds);
+        // Translate the laid-out glyphs, not the layout width. Clip against
+        // the original control bounds even when the text is larger.
+        let (offset_x, offset_y) = if centered {
+            (
+                (i64::from(bounds.width) - i64::from(measured.width)) / 2,
+                (i64::from(bounds.height) - i64::from(measured.height)) / 2,
+            )
+        } else {
+            (0, 0)
+        };
         let right =
             (i64::from(bounds.x) + i64::from(bounds.width)).min(i64::from(framebuffer.width()));
         let bottom =
@@ -103,12 +131,12 @@ impl OutlineFont {
                 .entry(glyph.key)
                 .or_insert_with(|| self.font.rasterize_config(glyph.key));
             for row in 0..metrics.height {
-                let y = glyph.y.floor() as i64 + row as i64;
+                let y = glyph.y.floor() as i64 + row as i64 + offset_y;
                 if y < i64::from(bounds.y).max(0) || y >= bottom {
                     continue;
                 }
                 for column in 0..metrics.width {
-                    let x = glyph.x.floor() as i64 + column as i64;
+                    let x = glyph.x.floor() as i64 + column as i64 + offset_x;
                     if x < i64::from(bounds.x).max(0) || x >= right {
                         continue;
                     }
@@ -145,16 +173,64 @@ impl OutlineFont {
         color: Pixel,
         raster_scale: u32,
     ) -> Size {
+        self.draw_supersampled_aligned(
+            framebuffer,
+            text,
+            px,
+            bounds,
+            OutlinePaint {
+                color,
+                raster_scale,
+                centered: false,
+            },
+        )
+    }
+
+    pub(crate) fn draw_centered_supersampled(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        text: &str,
+        px: f32,
+        bounds: Rect,
+        color: Pixel,
+        raster_scale: u32,
+    ) -> Size {
+        self.draw_supersampled_aligned(
+            framebuffer,
+            text,
+            px,
+            bounds,
+            OutlinePaint {
+                color,
+                raster_scale,
+                centered: true,
+            },
+        )
+    }
+
+    fn draw_supersampled_aligned(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        text: &str,
+        px: f32,
+        bounds: Rect,
+        paint: OutlinePaint,
+    ) -> Size {
+        let OutlinePaint {
+            color,
+            raster_scale,
+            centered,
+        } = paint;
         let raster_scale = raster_scale.clamp(1, MAX_TEXT_RASTER_SCALE);
         if raster_scale == 1 || bounds.width == 0 || bounds.height == 0 {
-            return self.draw(framebuffer, text, px, bounds, color);
+            return self.draw_aligned(framebuffer, text, px, bounds, color, centered);
         }
 
         let Some(temp_width) = bounds.width.checked_mul(raster_scale) else {
-            return self.draw(framebuffer, text, px, bounds, color);
+            return self.draw_aligned(framebuffer, text, px, bounds, color, centered);
         };
         let Some(temp_height) = bounds.height.checked_mul(raster_scale) else {
-            return self.draw(framebuffer, text, px, bounds, color);
+            return self.draw_aligned(framebuffer, text, px, bounds, color, centered);
         };
 
         let mut temp = Framebuffer::new(temp_width, temp_height);
@@ -165,12 +241,13 @@ impl OutlineFont {
             width: temp_width,
             height: temp_height,
         };
-        let measured = self.draw(
+        let measured = self.draw_aligned(
             &mut temp,
             text,
             px * raster_scale as f32,
             temp_bounds,
             color,
+            centered,
         );
 
         let pixels = temp.as_rgba8();

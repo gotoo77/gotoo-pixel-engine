@@ -1,3 +1,8 @@
+use gotoo_pixel_engine as gpe;
+#[path = "support/menu_consumer.rs"]
+mod menu_consumer;
+use menu_consumer::{MenuConsumer, MenuFrame};
+
 #[cfg(feature = "outline-fonts")]
 use gotoo_pixel_engine::outline_text::OutlineFont;
 use gotoo_pixel_engine::{
@@ -12,6 +17,7 @@ const GAME_HEIGHT: u32 = 180;
 
 struct HighResPresentationMfe {
     game: Framebuffer,
+    menu: MenuConsumer,
     #[cfg(feature = "outline-fonts")]
     font: Option<OutlineFont>,
 }
@@ -20,6 +26,7 @@ impl HighResPresentationMfe {
     fn new() -> Self {
         Self {
             game: Framebuffer::new(GAME_WIDTH, GAME_HEIGHT),
+            menu: MenuConsumer::default(),
             #[cfg(feature = "outline-fonts")]
             font: OutlineFont::from_bytes(include_bytes!("../assets/fonts/p4/unbounded/font.ttf"))
                 .ok(),
@@ -180,6 +187,11 @@ impl HighResPresentationMfe {
 
 impl Game for HighResPresentationMfe {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        match self.menu.update(frame) {
+            MenuFrame::Exit => return GameResult::Exit,
+            MenuFrame::Suspended => return GameResult::Continue,
+            MenuFrame::Advance => {}
+        }
         frame.framebuffer.clear(Pixel::rgb(2, 6, 10));
         self.render_game_surface();
 
