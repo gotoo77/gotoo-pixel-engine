@@ -1,7 +1,8 @@
 mod configuration;
 
 pub use configuration::{
-    BindingSlot, ConfigurationError, ControlAction, ControlConfiguration, ControlContext,
+    AxisDirection, BindingSlot, ConfigurationError, ControlAction, ControlConfiguration,
+    ControlContext, FixedAxisBinding,
 };
 
 use std::collections::{HashMap, HashSet};
