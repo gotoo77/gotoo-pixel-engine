@@ -89,8 +89,10 @@ impl ControlConfiguration {
             if !axis.threshold.is_finite()
                 || axis.threshold <= 0.0
                 || axis.threshold > 1.0
-                || (matches!(axis.axis, GamepadAxis::LeftTrigger | GamepadAxis::RightTrigger)
-                    && axis.direction == AxisDirection::Negative)
+                || (matches!(
+                    axis.axis,
+                    GamepadAxis::LeftTrigger | GamepadAxis::RightTrigger
+                ) && axis.direction == AxisDirection::Negative)
             {
                 return Err(ConfigurationError::InvalidAxis(axis.action));
             }
@@ -237,7 +239,10 @@ impl ControlConfiguration {
                         && derived_axis(button) == Some((axis.axis, axis.direction))
                     {
                         return Err(ConfigurationError::AxisConflict(
-                            axis.action, other.id, axis.axis, axis.direction,
+                            axis.action,
+                            other.id,
+                            axis.axis,
+                            axis.direction,
                         ));
                     }
                 }
@@ -253,7 +258,10 @@ impl ControlConfiguration {
                     )
                 {
                     return Err(ConfigurationError::AxisConflict(
-                        axis.action, other.action, axis.axis, axis.direction,
+                        axis.action,
+                        other.action,
+                        axis.axis,
+                        axis.direction,
                     ));
                 }
             }
@@ -262,9 +270,9 @@ impl ControlConfiguration {
     }
 
     fn contexts_exclusive(&self, left: ControlContext, right: ControlContext) -> bool {
-        self.exclusive.iter().any(|&(a, b)| {
-            (a == left && b == right) || (b == left && a == right)
-        })
+        self.exclusive
+            .iter()
+            .any(|&(a, b)| (a == left && b == right) || (b == left && a == right))
     }
 }
 
@@ -313,9 +321,7 @@ fn overlaps(left: ControlBinding, right: ControlBinding) -> bool {
         return a == b;
     }
     match (pad_source(left), pad_source(right)) {
-        (Some((a, button_a)), Some((b, button_b))) => {
-            button_a == button_b && devices_overlap(a, b)
-        }
+        (Some((a, button_a)), Some((b, button_b))) => button_a == button_b && devices_overlap(a, b),
         _ => false,
     }
 }
