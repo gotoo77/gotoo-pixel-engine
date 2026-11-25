@@ -1728,14 +1728,14 @@ impl UiTextBackend<'_> {
                 raster_scale,
             } => {
                 let px = *text_px * scale.max(1) as f32;
-                let measured = font.measure(text, px, rect);
-                let bounds = Rect {
-                    x: centered_coordinate(rect.x, rect.width, measured.width),
-                    y: centered_coordinate(rect.y, rect.height, measured.height),
-                    width: measured.width.min(rect.width).max(1),
-                    height: rect.height,
-                };
-                font.draw_supersampled(framebuffer, text, px, bounds, color, *raster_scale);
+                font.draw_centered_supersampled(
+                    framebuffer,
+                    text,
+                    px,
+                    rect,
+                    color,
+                    *raster_scale,
+                );
             }
         }
     }
@@ -1986,6 +1986,51 @@ mod tests {
     use super::*;
 
     const RESUME: ActionId = ActionId::new("mfe.resume");
+
+    #[cfg(feature = "outline-fonts")]
+    #[test]
+    fn outline_centered_labels_keep_full_layout_and_control_clipping() {
+        use crate::ui::fonts::BuiltinOutlineFont;
+
+        let rect = Rect {
+            x: 8,
+            y: 8,
+            width: 600,
+            height: 32,
+        };
+        for (label, px) in [
+            ("QUIT", 14.0),
+            ("AUDIO", 14.0),
+            ("RESUME", 20.0),
+            ("SETTINGS", 20.0),
+        ] {
+            let mut font = BuiltinOutlineFont::Exo2.load().unwrap();
+            let measured = font.measure(label, px, rect);
+            let expected_bounds = Rect {
+                x: centered_coordinate(rect.x, rect.width, measured.width),
+                y: centered_coordinate(rect.y, rect.height, measured.height),
+                ..rect
+            };
+            let mut expected = Framebuffer::new(640, 64);
+            let mut actual = Framebuffer::new(640, 64);
+            expected.clear(Pixel::rgba(0, 0, 0, 0));
+            actual.clear(Pixel::rgba(0, 0, 0, 0));
+            font.draw(&mut expected, label, px, expected_bounds, Pixel::WHITE);
+            let mut backend = UiTextBackend::Outline {
+                font: &mut font,
+                text_px: px,
+                raster_scale: 1,
+            };
+            backend.draw_centered(&mut actual, rect, label, 1, Pixel::WHITE);
+            assert!(
+                expected
+                    .as_rgba8()
+                    .chunks_exact(4)
+                    .any(|pixel| pixel[3] != 0)
+            );
+            assert_eq!(actual.as_rgba8(), expected.as_rgba8(), "{label} at {px}px");
+        }
+    }
 
     fn size() -> Size {
         Size {
