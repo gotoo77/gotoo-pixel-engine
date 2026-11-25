@@ -209,10 +209,7 @@ impl ControlConfiguration {
                 }
             }
             for (other_index, other) in self.actions.iter().enumerate().skip(index + 1) {
-                if self.exclusive.iter().any(|&(a, b)| {
-                    (a == action.context && b == other.context)
-                        || (b == action.context && a == other.context)
-                }) {
+                if self.contexts_exclusive(action.context, other.context) {
                     continue;
                 }
                 for &left in &candidate[index] {
@@ -317,7 +314,7 @@ fn overlaps(left: ControlBinding, right: ControlBinding) -> bool {
     }
     match (pad_source(left), pad_source(right)) {
         (Some((a, button_a)), Some((b, button_b))) => {
-            button_a == button_b && (devices_overlap(a, b))
+            button_a == button_b && devices_overlap(a, b)
         }
         _ => false,
     }
