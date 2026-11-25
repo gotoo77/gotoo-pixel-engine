@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
 
+#[cfg(feature = "outline-fonts")]
+use crate::outline_text::OutlineFont;
 use crate::{ActionId, Framebuffer, Pixel, Rect, Size, TextRenderer};
 
 use super::{
@@ -190,6 +192,7 @@ pub struct UiOutput {
     generation: u64,
     interaction: UiInteractionOutput,
     changed_values: HashMap<UiId, UiValue>,
+    resolved_rects: HashMap<UiId, Rect>,
     diagnostics: Vec<UiDiagnostic>,
     dump: String,
     metrics: UiMetrics,
@@ -219,6 +222,12 @@ impl UiOutput {
     pub fn changed<T: UiValueType>(&self, handle: WidgetRef<T>) -> Option<T> {
         (handle.generation == self.generation)
             .then(|| T::read(self, handle.id))
+            .flatten()
+    }
+
+    pub fn rect<T>(&self, handle: WidgetRef<T>) -> Option<Rect> {
+        (handle.generation == self.generation)
+            .then(|| self.resolved_rects.get(&handle.id).copied())
             .flatten()
     }
 
@@ -718,6 +727,49 @@ pub fn run_with_input_styled<'a, R>(
     )
 }
 
+/// Outline typography for a transaction, using the existing font backend.
+/// Sizes are clamped to 1..=256 pixels (non-finite values use 14); raster scale to 1..=4.
+#[cfg(feature = "outline-fonts")]
+pub struct UiOutlineText<'a> {
+    pub font: &'a mut OutlineFont,
+    pub text_px: f32,
+    pub raster_scale: u32,
+}
+
+#[cfg(feature = "outline-fonts")]
+pub fn run_with_input_styled_outline<'a, R>(
+    framebuffer: &mut Framebuffer,
+    state: &mut UiStateStore,
+    input: UiInput<'_>,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    outline: UiOutlineText<'_>,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
+    let surface = Size {
+        width: framebuffer.width(),
+        height: framebuffer.height(),
+    };
+    let mut text_backend = UiTextBackend::Outline {
+        font: outline.font,
+        text_px: if outline.text_px.is_finite() {
+            outline.text_px.clamp(1.0, 256.0)
+        } else {
+            14.0
+        },
+        raster_scale: outline.raster_scale.clamp(1, 4),
+    };
+    run_impl_with_text_backend(
+        (surface, Some(framebuffer)),
+        state,
+        input,
+        theme,
+        stylesheet,
+        &mut text_backend,
+        build,
+    )
+}
+
 pub fn run_headless<'a, R>(
     surface: Size,
     state: &mut UiStateStore,
@@ -789,6 +841,28 @@ fn run_impl<'a, R>(
     stylesheet: UiStyleSheet,
     build: impl FnOnce(&mut UiBuilder<'a>) -> R,
 ) -> (UiOutput, R) {
+    let mut text_backend = UiTextBackend::Bitmap(TextRenderer::new(theme.font), PhantomData);
+    run_impl_with_text_backend(
+        (surface, framebuffer),
+        state,
+        input,
+        theme,
+        stylesheet,
+        &mut text_backend,
+        build,
+    )
+}
+
+fn run_impl_with_text_backend<'a, R>(
+    target: (Size, Option<&mut Framebuffer>),
+    state: &mut UiStateStore,
+    input: UiInput<'_>,
+    theme: UiTheme,
+    stylesheet: UiStyleSheet,
+    text_backend: &mut UiTextBackend<'_>,
+    build: impl FnOnce(&mut UiBuilder<'a>) -> R,
+) -> (UiOutput, R) {
+    let (surface, framebuffer) = target;
     state.generation = state.generation.saturating_add(1).max(1);
     let generation = state.generation;
 
@@ -797,8 +871,6 @@ fn run_impl<'a, R>(
 
     let mut diagnostics = builder.diagnostics;
     let mut nodes = builder.nodes;
-    let text_renderer = TextRenderer::new(theme.font);
-
     let root_constraints = Constraints::tight(surface);
     measure_node(
         &mut nodes,
@@ -806,7 +878,7 @@ fn run_impl<'a, R>(
         root_constraints,
         theme,
         stylesheet,
-        text_renderer,
+        text_backend,
     );
     arrange_node(
         &mut nodes,
@@ -961,11 +1033,10 @@ fn run_impl<'a, R>(
             framebuffer,
             theme,
             stylesheet,
-            text_renderer,
             interaction: &interaction,
             interaction_state: &state.interaction,
         };
-        paint_node(&nodes, 0, &mut context);
+        paint_node(&nodes, 0, &mut context, text_backend);
     }
 
     let dump = if state.capture_debug_dump {
@@ -983,6 +1054,11 @@ fn run_impl<'a, R>(
         .entries
         .retain(|_, entry| entry.last_seen_generation == generation);
 
+    let resolved_rects = nodes
+        .iter()
+        .map(|node| (node.id, node.rect))
+        .collect::<HashMap<_, _>>();
+
     let metrics = UiMetrics {
         node_count: nodes.len(),
         interactive_count: targets.len(),
@@ -997,6 +1073,7 @@ fn run_impl<'a, R>(
             generation,
             interaction,
             changed_values,
+            resolved_rects,
             diagnostics,
             dump,
             metrics,
@@ -1011,7 +1088,7 @@ fn measure_node(
     constraints: Constraints,
     theme: UiTheme,
     stylesheet: UiStyleSheet,
-    text_renderer: TextRenderer,
+    text_backend: &mut UiTextBackend<'_>,
 ) -> Size {
     let kind = nodes[index].kind;
     let size = match kind {
@@ -1035,7 +1112,7 @@ fn measure_node(
                     }),
                     theme,
                     stylesheet,
-                    text_renderer,
+                    text_backend,
                 );
                 content_width = content_width.max(child_size.width);
                 content_height = content_height.saturating_add(child_size.height);
@@ -1050,10 +1127,10 @@ fn measure_node(
             })
         }
         WidgetKind::Column => {
-            measure_linear_container(nodes, index, constraints, theme, stylesheet, text_renderer)
+            measure_linear_container(nodes, index, constraints, theme, stylesheet, text_backend)
         }
         WidgetKind::Panel => {
-            measure_linear_container(nodes, index, constraints, theme, stylesheet, text_renderer)
+            measure_linear_container(nodes, index, constraints, theme, stylesheet, text_backend)
         }
         WidgetKind::Grid => {
             let spec = match &nodes[index].content {
@@ -1067,15 +1144,22 @@ fn measure_node(
                 spec,
                 theme,
                 stylesheet,
-                text_renderer,
+                text_backend,
             )
         }
         WidgetKind::Text => {
             let NodeContent::Text { text } = &nodes[index].content else {
                 unreachable!();
             };
-            let (width, height) = text_renderer.text_size(text.as_ref(), theme.text_scale.max(1));
-            constraints.constrain(Size { width, height })
+            let measured = text_backend.measure(
+                text.as_ref(),
+                theme.text_scale.max(1),
+                Size {
+                    width: constraints.max_width,
+                    height: constraints.max_height,
+                },
+            );
+            constraints.constrain(measured)
         }
         WidgetKind::Button | WidgetKind::ToggleBool | WidgetKind::SliderF32 => constraints
             .constrain(Size {
@@ -1093,7 +1177,7 @@ fn measure_linear_container(
     constraints: Constraints,
     theme: UiTheme,
     stylesheet: UiStyleSheet,
-    text_renderer: TextRenderer,
+    text_backend: &mut UiTextBackend<'_>,
 ) -> Size {
     let style = resolved_static_style(&nodes[index], theme, stylesheet);
     let (padding, gap) = match nodes[index].kind {
@@ -1120,7 +1204,7 @@ fn measure_linear_container(
             }),
             theme,
             stylesheet,
-            text_renderer,
+            text_backend,
         );
         width = width.max(child_size.width);
         height = height.saturating_add(child_size.height);
@@ -1143,7 +1227,7 @@ fn measure_grid_container(
     spec: UiGridSpec,
     theme: UiTheme,
     stylesheet: UiStyleSheet,
-    text_renderer: TextRenderer,
+    text_backend: &mut UiTextBackend<'_>,
 ) -> Size {
     let constraints = constraints.normalized();
     let children = std::mem::take(&mut nodes[index].children);
@@ -1174,7 +1258,7 @@ fn measure_grid_container(
             }),
             theme,
             stylesheet,
-            text_renderer,
+            text_backend,
         );
     }
 
@@ -1290,12 +1374,16 @@ struct PaintContext<'a> {
     framebuffer: &'a mut Framebuffer,
     theme: UiTheme,
     stylesheet: UiStyleSheet,
-    text_renderer: TextRenderer,
     interaction: &'a UiInteractionOutput,
     interaction_state: &'a UiInteractionState,
 }
 
-fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) {
+fn paint_node(
+    nodes: &[Node<'_>],
+    index: usize,
+    context: &mut PaintContext<'_>,
+    text_backend: &mut UiTextBackend<'_>,
+) {
     let node = &nodes[index];
     let style = resolved_visual_style(
         node,
@@ -1325,7 +1413,7 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
         NodeContent::Text { text } => {
             draw_text_left(
                 context.framebuffer,
-                context.text_renderer,
+                text_backend,
                 node.rect,
                 text.as_ref(),
                 context.theme.text_scale,
@@ -1336,7 +1424,7 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
             draw_control_frame(context.framebuffer, node.rect, style);
             draw_text_centered(
                 context.framebuffer,
-                context.text_renderer,
+                text_backend,
                 node.rect,
                 label.as_ref(),
                 context.theme.text_scale,
@@ -1351,9 +1439,16 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
             let text = format!("{}: {}", label, suffix);
             let mut label_rect = node.rect;
             let inset = style.border_width.max(1).saturating_add(4);
-            let (label_width, _) = context
-                .text_renderer
-                .text_size(&format!("{}: OFF", label), context.theme.text_scale.max(1));
+            let label_width = text_backend
+                .measure(
+                    &format!("{}: OFF", label),
+                    context.theme.text_scale.max(1),
+                    Size {
+                        width: node.rect.width,
+                        height: node.rect.height,
+                    },
+                )
+                .width;
             // Reserve the same space in both states; compact rows keep the text-only form.
             if node.rect.width
                 >= label_width
@@ -1388,7 +1483,7 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
             }
             draw_text_centered(
                 context.framebuffer,
-                context.text_renderer,
+                text_backend,
                 label_rect,
                 &text,
                 context.theme.text_scale,
@@ -1412,7 +1507,7 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
             };
             draw_text_left(
                 context.framebuffer,
-                context.text_renderer,
+                text_backend,
                 label_rect,
                 &format!(
                     "{}: {}",
@@ -1458,7 +1553,7 @@ fn paint_node(nodes: &[Node<'_>], index: usize, context: &mut PaintContext<'_>) 
     }
 
     for child in &node.children {
-        paint_node(nodes, *child, context);
+        paint_node(nodes, *child, context, text_backend);
     }
 }
 
@@ -1525,44 +1620,138 @@ fn component_style(stylesheet: UiStyleSheet, kind: WidgetKind) -> UiComponentSty
     }
 }
 
+enum UiTextBackend<'a> {
+    Bitmap(TextRenderer, PhantomData<&'a ()>),
+    #[cfg(feature = "outline-fonts")]
+    Outline {
+        font: &'a mut OutlineFont,
+        text_px: f32,
+        raster_scale: u32,
+    },
+}
+
+impl UiTextBackend<'_> {
+    fn measure(&mut self, text: &str, scale: u32, _bounds: Size) -> Size {
+        match self {
+            Self::Bitmap(renderer, _) => {
+                let (width, height) = renderer.text_size(text, scale.max(1));
+                Size { width, height }
+            }
+            #[cfg(feature = "outline-fonts")]
+            Self::Outline { font, text_px, .. } => font.measure(
+                text,
+                *text_px * scale.max(1) as f32,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: _bounds.width.max(1),
+                    height: _bounds.height.max(1),
+                },
+            ),
+        }
+    }
+
+    fn draw_left(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        rect: Rect,
+        text: &str,
+        scale: u32,
+        color: Pixel,
+    ) {
+        match self {
+            Self::Bitmap(renderer, _) => {
+                let scale = scale.max(1);
+                let (_, height) = renderer.text_size(text, scale);
+                renderer.draw_scaled(
+                    framebuffer,
+                    rect.x,
+                    centered_coordinate(rect.y, rect.height, height),
+                    text,
+                    scale,
+                    color,
+                );
+            }
+            #[cfg(feature = "outline-fonts")]
+            Self::Outline {
+                font,
+                text_px,
+                raster_scale,
+            } => {
+                let px = *text_px * scale.max(1) as f32;
+                let measured = font.measure(text, px, rect);
+                let bounds = Rect {
+                    x: rect.x,
+                    y: centered_coordinate(rect.y, rect.height, measured.height),
+                    width: rect.width,
+                    height: rect.height,
+                };
+                font.draw_supersampled(framebuffer, text, px, bounds, color, *raster_scale);
+            }
+        }
+    }
+
+    fn draw_centered(
+        &mut self,
+        framebuffer: &mut Framebuffer,
+        rect: Rect,
+        text: &str,
+        scale: u32,
+        color: Pixel,
+    ) {
+        match self {
+            Self::Bitmap(renderer, _) => {
+                let scale = scale.max(1);
+                let (width, height) = renderer.text_size(text, scale);
+                renderer.draw_scaled(
+                    framebuffer,
+                    centered_coordinate(rect.x, rect.width, width),
+                    centered_coordinate(rect.y, rect.height, height),
+                    text,
+                    scale,
+                    color,
+                );
+            }
+            #[cfg(feature = "outline-fonts")]
+            Self::Outline {
+                font,
+                text_px,
+                raster_scale,
+            } => {
+                let px = *text_px * scale.max(1) as f32;
+                let measured = font.measure(text, px, rect);
+                let bounds = Rect {
+                    x: centered_coordinate(rect.x, rect.width, measured.width),
+                    y: centered_coordinate(rect.y, rect.height, measured.height),
+                    width: measured.width.min(rect.width).max(1),
+                    height: rect.height,
+                };
+                font.draw_supersampled(framebuffer, text, px, bounds, color, *raster_scale);
+            }
+        }
+    }
+}
+
 fn draw_text_left(
     framebuffer: &mut Framebuffer,
-    text_renderer: TextRenderer,
+    text_backend: &mut UiTextBackend<'_>,
     rect: Rect,
     text: &str,
     scale: u32,
     color: Pixel,
 ) {
-    let scale = scale.max(1);
-    let (_, height) = text_renderer.text_size(text, scale);
-    text_renderer.draw_scaled(
-        framebuffer,
-        rect.x,
-        centered_coordinate(rect.y, rect.height, height),
-        text,
-        scale,
-        color,
-    );
+    text_backend.draw_left(framebuffer, rect, text, scale, color);
 }
 
 fn draw_text_centered(
     framebuffer: &mut Framebuffer,
-    text_renderer: TextRenderer,
+    text_backend: &mut UiTextBackend<'_>,
     rect: Rect,
     text: &str,
     scale: u32,
     color: Pixel,
 ) {
-    let scale = scale.max(1);
-    let (width, height) = text_renderer.text_size(text, scale);
-    text_renderer.draw_scaled(
-        framebuffer,
-        centered_coordinate(rect.x, rect.width, width),
-        centered_coordinate(rect.y, rect.height, height),
-        text,
-        scale,
-        color,
-    );
+    text_backend.draw_centered(framebuffer, rect, text, scale, color);
 }
 
 fn dump_nodes(
