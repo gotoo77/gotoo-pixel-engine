@@ -6,6 +6,7 @@ pub mod fonts;
 pub mod icon;
 pub mod icon_text;
 pub mod language;
+pub mod menu;
 pub mod paged_spatial;
 
 mod kernel;
@@ -299,3 +300,6 @@ mod tests {
         assert_eq!(framebuffer.pixel(2, 2), Some(background));
     }
 }
+
+#[cfg(test)]
+mod menu_consumer_tests;
