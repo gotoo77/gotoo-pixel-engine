@@ -211,3 +211,116 @@ fn apply_preserves_unmanaged_actions_and_virtual_sources() {
     assert!(map.action(LEFT).pressed());
     assert!(map.action(MENU).held());
 }
+
+fn axis(action: ActionId, device: Option<GamepadId>, axis: GamepadAxis, direction: AxisDirection) -> FixedAxisBinding {
+    FixedAxisBinding {
+        action,
+        device,
+        axis,
+        direction,
+        threshold: 0.35,
+    }
+}
+
+#[test]
+fn fixed_axes_reject_derived_buttons_atomically() {
+    let mut config = ControlConfiguration::with_fixed_axes(
+        vec![
+            action(LEFT, PLAY, vec![slot(ControlBinding::Key(Key::Left))]),
+            action(RIGHT, PLAY, vec![slot(ControlBinding::Gamepad(GamepadButton::South))]),
+        ],
+        vec![],
+        vec![],
+        vec![axis(LEFT, None, GamepadAxis::LeftStickX, AxisDirection::Negative)],
+    )
+    .unwrap();
+    let before = config.active.clone();
+    assert!(matches!(
+        config.replace(&[
+            (LEFT, 0, ControlBinding::Key(Key::A)),
+            (RIGHT, 0, ControlBinding::Gamepad(GamepadButton::LeftStickLeft)),
+        ]),
+        Err(ConfigurationError::AxisConflict(LEFT, RIGHT, GamepadAxis::LeftStickX, AxisDirection::Negative))
+    ));
+    assert_eq!(config.active, before);
+    config.replace(&[(RIGHT, 0, ControlBinding::Gamepad(GamepadButton::LeftStickRight))]).unwrap();
+    config.restore_defaults();
+    assert_eq!(config.active, before);
+    assert_eq!(config.fixed_axes()[0].threshold, 0.35);
+}
+
+#[test]
+fn fixed_axis_device_and_context_overlap() {
+    let pad = GamepadId::new(1);
+    let fixed = axis(LEFT, Some(pad), GamepadAxis::LeftStickY, AxisDirection::Positive);
+    for (binding, conflict) in [
+        (ControlBinding::Gamepad(GamepadButton::LeftStickUp), true),
+        (ControlBinding::GamepadDevice(pad, GamepadButton::LeftStickUp), true),
+        (ControlBinding::GamepadDevice(GamepadId::new(2), GamepadButton::LeftStickUp), false),
+        (ControlBinding::Gamepad(GamepadButton::LeftStickDown), false),
+    ] {
+        let actions = vec![
+            action(LEFT, PLAY, vec![slot(ControlBinding::Key(Key::Left))]),
+            action(RIGHT, PAUSE, vec![slot(binding)]),
+        ];
+        assert_eq!(
+            ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![fixed]).is_err(),
+            conflict
+        );
+        assert!(ControlConfiguration::with_fixed_axes(actions, vec![(PLAY, PAUSE)], vec![], vec![fixed]).is_ok());
+    }
+}
+
+#[test]
+fn fixed_axes_validate_signed_ranges_and_owners() {
+    let actions = vec![
+        action(LEFT, PLAY, vec![slot(ControlBinding::Key(Key::Left))]),
+        action(RIGHT, PLAY, vec![slot(ControlBinding::Key(Key::Right))]),
+    ];
+    let first = axis(LEFT, None, GamepadAxis::RightStickX, AxisDirection::Negative);
+    let mut second = axis(RIGHT, Some(GamepadId::new(1)), GamepadAxis::RightStickX, AxisDirection::Negative);
+    second.threshold = 0.75;
+    assert!(matches!(ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![first, second]), Err(ConfigurationError::AxisConflict(..))));
+    second.direction = AxisDirection::Positive;
+    assert!(ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![first, second]).is_ok());
+    for threshold in [0.0, -0.1, 1.01, f32::NAN, f32::INFINITY] {
+        second.threshold = threshold;
+        assert!(matches!(ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![second]), Err(ConfigurationError::InvalidAxis(RIGHT))));
+    }
+    let trigger = axis(RIGHT, None, GamepadAxis::LeftTrigger, AxisDirection::Negative);
+    assert!(matches!(ControlConfiguration::with_fixed_axes(actions.clone(), vec![], vec![], vec![trigger]), Err(ConfigurationError::InvalidAxis(RIGHT))));
+    assert!(matches!(ControlConfiguration::with_fixed_axes(actions, vec![], vec![], vec![axis(MENU, None, GamepadAxis::LeftStickX, AxisDirection::Positive)]), Err(ConfigurationError::UnknownAction(MENU))));
+}
+
+#[test]
+fn all_derived_buttons_match_their_fixed_axes() {
+    use AxisDirection::{Negative, Positive};
+    use GamepadAxis as A;
+    use GamepadButton as B;
+    for (button, source, direction) in [
+        (B::LeftStickLeft, A::LeftStickX, Negative),
+        (B::LeftStickRight, A::LeftStickX, Positive),
+        (B::LeftStickDown, A::LeftStickY, Negative),
+        (B::LeftStickUp, A::LeftStickY, Positive),
+        (B::RightStickLeft, A::RightStickX, Negative),
+        (B::RightStickRight, A::RightStickX, Positive),
+        (B::RightStickDown, A::RightStickY, Negative),
+        (B::RightStickUp, A::RightStickY, Positive),
+        (B::LeftTrigger, A::LeftTrigger, Positive),
+        (B::RightTrigger, A::RightTrigger, Positive),
+    ] {
+        let fixed = axis(LEFT, None, source, direction);
+        let entry = action(LEFT, PLAY, vec![slot(ControlBinding::Gamepad(button))]);
+        assert!(ControlConfiguration::with_fixed_axes(vec![entry], vec![], vec![], vec![fixed]).is_ok());
+        assert!(matches!(
+            ControlConfiguration::with_fixed_axes(
+                vec![
+                    action(LEFT, PLAY, vec![slot(ControlBinding::Key(Key::Left))]),
+                    action(RIGHT, PLAY, vec![slot(ControlBinding::Gamepad(button))]),
+                ],
+                vec![], vec![], vec![fixed],
+            ),
+            Err(ConfigurationError::AxisConflict(..))
+        ));
+    }
+}
