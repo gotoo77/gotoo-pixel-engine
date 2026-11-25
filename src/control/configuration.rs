@@ -3,7 +3,7 @@
 //! The consumer declares context exclusivity and resolves device assignments.
 //! Analog axes remain consumer-owned and are not edited by this configuration.
 use super::{ActionId, ControlBinding, ControlMap};
-use crate::{GamepadButton, GamepadId};
+use crate::{GamepadAxis, GamepadButton, GamepadId};
 
 /// Contexts overlap unless explicitly declared mutually exclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -35,6 +35,26 @@ pub enum ConfigurationError {
     Reserved(ControlBinding),
     Conflict(ActionId, ActionId, ControlBinding, ControlBinding),
     InvalidExclusivity(ControlContext, ControlContext),
+    InvalidAxis(ActionId),
+    AxisConflict(ActionId, ActionId, GamepadAxis, AxisDirection),
+}
+
+/// A signed half-axis owned and evaluated by the consumer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AxisDirection {
+    Negative,
+    Positive,
+}
+
+/// Fixed analog source used only for conflict validation.
+/// None means any device; thresholds use normalized axis coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FixedAxisBinding {
+    pub action: ActionId,
+    pub device: Option<GamepadId>,
+    pub axis: GamepadAxis,
+    pub direction: AxisDirection,
+    pub threshold: f32,
 }
 
 /// Runtime device IDs in these bindings are session-local, never persistence IDs.
@@ -44,6 +64,7 @@ pub struct ControlConfiguration {
     active: Vec<Vec<ControlBinding>>,
     exclusive: Vec<(ControlContext, ControlContext)>,
     reserved: Vec<ControlBinding>,
+    fixed_axes: Vec<FixedAxisBinding>,
 }
 
 impl ControlConfiguration {
@@ -52,6 +73,28 @@ impl ControlConfiguration {
         exclusive: Vec<(ControlContext, ControlContext)>,
         reserved: Vec<ControlBinding>,
     ) -> Result<Self, ConfigurationError> {
+        Self::with_fixed_axes(actions, exclusive, reserved, Vec::new())
+    }
+
+    pub fn with_fixed_axes(
+        actions: Vec<ControlAction>,
+        exclusive: Vec<(ControlContext, ControlContext)>,
+        reserved: Vec<ControlBinding>,
+        fixed_axes: Vec<FixedAxisBinding>,
+    ) -> Result<Self, ConfigurationError> {
+        for axis in &fixed_axes {
+            if !actions.iter().any(|action| action.id == axis.action) {
+                return Err(ConfigurationError::UnknownAction(axis.action));
+            }
+            if !axis.threshold.is_finite()
+                || axis.threshold <= 0.0
+                || axis.threshold > 1.0
+                || (matches!(axis.axis, GamepadAxis::LeftTrigger | GamepadAxis::RightTrigger)
+                    && axis.direction == AxisDirection::Negative)
+            {
+                return Err(ConfigurationError::InvalidAxis(axis.action));
+            }
+        }
         for (index, action) in actions.iter().enumerate() {
             if actions[..index].iter().any(|other| other.id == action.id) {
                 return Err(ConfigurationError::DuplicateAction(action.id));
@@ -74,9 +117,14 @@ impl ControlConfiguration {
             active,
             exclusive,
             reserved,
+            fixed_axes,
         };
         config.validate(&config.active)?;
         Ok(config)
+    }
+
+    pub fn fixed_axes(&self) -> &[FixedAxisBinding] {
+        &self.fixed_axes
     }
 
     pub fn actions(&self) -> &[ControlAction] {
@@ -178,8 +226,72 @@ impl ControlConfiguration {
                 }
             }
         }
+        for (index, axis) in self.fixed_axes.iter().enumerate() {
+            let owner = self.index(axis.action)?;
+            for (other_index, other) in self.actions.iter().enumerate() {
+                if owner == other_index
+                    || self.contexts_exclusive(self.actions[owner].context, other.context)
+                {
+                    continue;
+                }
+                for &binding in &candidate[other_index] {
+                    if let Some((device, button)) = pad_source(binding)
+                        && devices_overlap(axis.device, device)
+                        && derived_axis(button) == Some((axis.axis, axis.direction))
+                    {
+                        return Err(ConfigurationError::AxisConflict(
+                            axis.action, other.id, axis.axis, axis.direction,
+                        ));
+                    }
+                }
+            }
+            for other in &self.fixed_axes[index + 1..] {
+                if axis.action != other.action
+                    && axis.axis == other.axis
+                    && axis.direction == other.direction
+                    && devices_overlap(axis.device, other.device)
+                    && !self.contexts_exclusive(
+                        self.actions[owner].context,
+                        self.actions[self.index(other.action)?].context,
+                    )
+                {
+                    return Err(ConfigurationError::AxisConflict(
+                        axis.action, other.action, axis.axis, axis.direction,
+                    ));
+                }
+            }
+        }
         Ok(())
     }
+
+    fn contexts_exclusive(&self, left: ControlContext, right: ControlContext) -> bool {
+        self.exclusive.iter().any(|&(a, b)| {
+            (a == left && b == right) || (b == left && a == right)
+        })
+    }
+}
+
+fn devices_overlap(a: Option<GamepadId>, b: Option<GamepadId>) -> bool {
+    a.is_none() || b.is_none() || a == b
+}
+
+fn derived_axis(button: GamepadButton) -> Option<(GamepadAxis, AxisDirection)> {
+    use AxisDirection::{Negative, Positive};
+    use GamepadAxis as Axis;
+    use GamepadButton as Button;
+    Some(match button {
+        Button::LeftStickLeft => (Axis::LeftStickX, Negative),
+        Button::LeftStickRight => (Axis::LeftStickX, Positive),
+        Button::LeftStickDown => (Axis::LeftStickY, Negative),
+        Button::LeftStickUp => (Axis::LeftStickY, Positive),
+        Button::RightStickLeft => (Axis::RightStickX, Negative),
+        Button::RightStickRight => (Axis::RightStickX, Positive),
+        Button::RightStickDown => (Axis::RightStickY, Negative),
+        Button::RightStickUp => (Axis::RightStickY, Positive),
+        Button::LeftTrigger => (Axis::LeftTrigger, Positive),
+        Button::RightTrigger => (Axis::RightTrigger, Positive),
+        _ => return None,
+    })
 }
 
 fn same_source(default: ControlBinding, candidate: ControlBinding) -> bool {
@@ -205,7 +317,7 @@ fn overlaps(left: ControlBinding, right: ControlBinding) -> bool {
     }
     match (pad_source(left), pad_source(right)) {
         (Some((a, button_a)), Some((b, button_b))) => {
-            button_a == button_b && (a.is_none() || b.is_none() || a == b)
+            button_a == button_b && (devices_overlap(a, b))
         }
         _ => false,
     }
