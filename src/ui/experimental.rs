@@ -2086,9 +2086,8 @@ mod tests {
                             }
                         }
                         let expected = ((sum + samples / 2) / samples) as u8;
-                        let index =
-                            (((y + rect.y as u32) * actual.width() + x + rect.x as u32) * 4 + 3)
-                                as usize;
+                        let index = (((y + rect.y as u32) * actual.width() + x + rect.x as u32) * 4
+                            + 3) as usize;
                         assert_eq!(
                             actual.as_rgba8()[index],
                             expected,
