@@ -1,3 +1,9 @@
+mod configuration;
+
+pub use configuration::{
+    BindingSlot, ConfigurationError, ControlAction, ControlConfiguration, ControlContext,
+};
+
 use std::collections::{HashMap, HashSet};
 
 use crate::{ButtonState, GamepadButton, GamepadId, Input, Key};
