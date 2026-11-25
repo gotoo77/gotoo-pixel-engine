@@ -764,8 +764,6 @@ impl<G: Game> PlatformApp<G> {
                 let result = Renderer::new(window, framebuffer_width, framebuffer_height).await;
                 let _ = proxy.send_event(PlatformEvent::RendererReady(result));
             });
-
-            return;
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -1369,15 +1367,20 @@ mod tests {
     #[cfg(target_os = "linux")]
     use super::should_prefer_x11_on_wsl;
     use super::{
-        EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, ToolWindowConfig, ToolWindowMode,
-        TouchPhase, current_viewport, is_fullscreen_shortcut, key_from_winit,
-        mouse_button_from_winit, mouse_wheel_steps_from_winit, remember_non_zero_size,
-        simulation_delta_time, surface_to_framebuffer_position, tool_mode_blocks_primary,
-        tool_window_surface_matches, touch_from_winit, touch_phase_from_winit, validate_config,
-        validate_tool_window_config,
+        EngineConfig, Key, MAX_FRAME_DELTA, MouseButton, TouchPhase, current_viewport,
+        key_from_winit, mouse_button_from_winit, mouse_wheel_steps_from_winit,
+        remember_non_zero_size, simulation_delta_time, surface_to_framebuffer_position,
+        touch_from_winit, touch_phase_from_winit, validate_config,
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    use super::{
+        ToolWindowConfig, ToolWindowMode, is_fullscreen_shortcut, tool_mode_blocks_primary,
+        tool_window_surface_matches, validate_tool_window_config,
     };
     use winit::dpi::{PhysicalPosition, PhysicalSize};
-    use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+    #[cfg(not(target_arch = "wasm32"))]
+    use winit::keyboard::ModifiersState;
+    use winit::keyboard::{KeyCode, PhysicalKey};
 
     #[cfg(target_os = "linux")]
     #[test]
@@ -1403,6 +1406,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn recognizes_native_fullscreen_shortcuts() {
         assert!(is_fullscreen_shortcut(
@@ -1708,6 +1712,7 @@ mod tests {
         assert_eq!(err.to_string(), "window_height must be greater than 0");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn valid_tool_config() -> ToolWindowConfig {
         ToolWindowConfig {
             title: "tool".into(),
@@ -1719,11 +1724,13 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn tool_config_validation_accepts_positive_dimensions() {
         assert!(validate_tool_window_config(&valid_tool_config()).is_ok());
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn tool_config_validation_rejects_zero_framebuffer_width() {
         let mut config = valid_tool_config();
@@ -1736,6 +1743,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn tool_config_validation_rejects_zero_window_height() {
         let mut config = valid_tool_config();
@@ -1748,6 +1756,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn tool_modes_define_primary_scheduling_policy() {
         assert!(!tool_mode_blocks_primary(ToolWindowMode::Modeless, false));
@@ -1764,6 +1773,7 @@ mod tests {
         ));
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn tool_surface_identity_ignores_scheduling_mode() {
         let modeless = valid_tool_config();

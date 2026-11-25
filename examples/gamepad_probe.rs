@@ -42,5 +42,5 @@ fn main() {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    compile_error!("gamepad_probe is a native-only diagnostic example");
+    panic!("gamepad_probe is a native-only diagnostic example");
 }

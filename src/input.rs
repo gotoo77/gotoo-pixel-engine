@@ -130,7 +130,7 @@ impl GamepadCapabilities {
         self.axes[gamepad_axis_index(axis)]
     }
 
-    #[cfg(any(not(target_arch = "wasm32"), test))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn set_button(&mut self, button: GamepadButton, capability: GamepadCapability) {
         self.buttons[gamepad_button_index(button)] = capability;
     }

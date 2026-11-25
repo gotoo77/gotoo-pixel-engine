@@ -24,10 +24,12 @@ struct EnvironmentProbe {
     tick: u64,
     max_ticks: u64,
     state: u64,
+    #[cfg(not(target_arch = "wasm32"))]
     tool_enabled: bool,
     final_state: Arc<Mutex<Option<FinalState>>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl EnvironmentProbe {
     fn tool_requested(&self) -> bool {
         self.tool_enabled && ((40..90).contains(&self.tick) || (120..170).contains(&self.tick))
@@ -184,13 +186,14 @@ fn arguments() -> (u64, bool) {
 }
 
 fn main() -> Result<(), gotoo_pixel_engine::EngineError> {
-    let (max_ticks, tool_enabled) = arguments();
+    let (max_ticks, _tool_enabled) = arguments();
     let final_state = Arc::new(Mutex::new(None));
     let game = EnvironmentProbe {
         tick: 0,
         max_ticks,
         state: 0x4750_452d_454e_5631,
-        tool_enabled,
+        #[cfg(not(target_arch = "wasm32"))]
+        tool_enabled: _tool_enabled,
         final_state: Arc::clone(&final_state),
     };
     let config = EngineConfig {
