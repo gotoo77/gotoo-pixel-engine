@@ -2025,6 +2025,127 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "outline-fonts")]
+    #[test]
+    fn outline_centered_supersampling_preserves_full_layout() {
+        use crate::ui::fonts::BuiltinOutlineFont;
+
+        let rect = Rect {
+            x: 8,
+            y: 8,
+            width: 120,
+            height: 40,
+        };
+        for raster_scale in [2_u32, 4] {
+            for (label, px) in [
+                ("QUIT", 14.0),
+                ("AUDIO", 14.0),
+                ("RESUME", 20.0),
+                ("SETTINGS", 20.0),
+            ] {
+                let mut font = BuiltinOutlineFont::Exo2.load().unwrap();
+                let high = Rect {
+                    x: 0,
+                    y: 0,
+                    width: rect.width * raster_scale,
+                    height: rect.height * raster_scale,
+                };
+                let high_px = px * raster_scale as f32;
+                let measured = font.measure(label, high_px, high);
+                assert!(measured.width < high.width && measured.height < high.height);
+                let shifted = Rect {
+                    x: centered_coordinate(0, high.width, measured.width),
+                    y: centered_coordinate(0, high.height, measured.height),
+                    ..high
+                };
+                let mut reference = Framebuffer::new(high.width, high.height);
+                reference.clear(Pixel::rgba(0, 0, 0, 0));
+                font.draw(&mut reference, label, high_px, shifted, Pixel::WHITE);
+
+                let mut actual = Framebuffer::new(136, 56);
+                actual.clear(Pixel::rgba(0, 0, 0, 0));
+                let mut backend = UiTextBackend::Outline {
+                    font: &mut font,
+                    text_px: px,
+                    raster_scale,
+                };
+                backend.draw_centered(&mut actual, rect, label, 1, Pixel::WHITE);
+
+                let samples = raster_scale * raster_scale;
+                let mut painted = false;
+                for y in 0..rect.height {
+                    for x in 0..rect.width {
+                        let mut sum = 0_u32;
+                        for sy in 0..raster_scale {
+                            for sx in 0..raster_scale {
+                                let index =
+                                    (((y * raster_scale + sy) * high.width + x * raster_scale + sx)
+                                        * 4
+                                        + 3) as usize;
+                                sum += u32::from(reference.as_rgba8()[index]);
+                            }
+                        }
+                        let expected = ((sum + samples / 2) / samples) as u8;
+                        let index =
+                            (((y + rect.y as u32) * actual.width() + x + rect.x as u32) * 4 + 3)
+                                as usize;
+                        assert_eq!(
+                            actual.as_rgba8()[index],
+                            expected,
+                            "{label} at {px}px, scale {raster_scale}, pixel ({x}, {y})"
+                        );
+                        painted |= expected != 0;
+                    }
+                }
+                assert!(painted, "{label} at scale {raster_scale}");
+            }
+        }
+    }
+
+    #[cfg(feature = "outline-fonts")]
+    #[test]
+    fn outline_centered_overflow_is_clipped_to_original_control() {
+        use crate::ui::fonts::BuiltinOutlineFont;
+
+        let rect = Rect {
+            x: 12,
+            y: 10,
+            width: 64,
+            height: 10,
+        };
+        let label = "SETTINGS SETTINGS SETTINGS";
+        let px = 20.0;
+        let sentinel = Pixel::rgb(17, 29, 43);
+        for raster_scale in [1, 2, 4] {
+            let mut font = BuiltinOutlineFont::Exo2.load().unwrap();
+            assert!(font.measure(label, px, rect).height > rect.height);
+            let mut actual = Framebuffer::new(96, 40);
+            actual.clear(sentinel);
+            let mut backend = UiTextBackend::Outline {
+                font: &mut font,
+                text_px: px,
+                raster_scale,
+            };
+            backend.draw_centered(&mut actual, rect, label, 1, Pixel::WHITE);
+            let mut painted = false;
+            for y in 0..40 {
+                for x in 0..96 {
+                    let pixel = actual.pixel(x, y).unwrap();
+                    if x >= rect.x
+                        && x < rect.x + rect.width as i32
+                        && y >= rect.y
+                        && y < rect.y + rect.height as i32
+                    {
+                        painted |= pixel != sentinel;
+                    } else {
+                        assert_eq!(pixel, sentinel, "scale {raster_scale}, pixel ({x}, {y})");
+                    }
+                }
+            }
+            assert!(painted, "overflow test must paint at scale {raster_scale}");
+        }
+    }
+
     fn size() -> Size {
         Size {
             width: 240,
