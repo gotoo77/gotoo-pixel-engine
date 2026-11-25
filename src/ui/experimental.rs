@@ -273,6 +273,15 @@ pub struct UiStateStore {
 }
 
 impl UiStateStore {
+    /// Discard gestures when a menu page is suspended or resumed, keeping focus.
+    pub(crate) fn clear_captures(&mut self) {
+        self.interaction.set_pointer_capture(None);
+        let touches: Vec<_> = self.interaction.touch_captures().keys().copied().collect();
+        for id in touches {
+            self.interaction.clear_touch_capture(id);
+        }
+    }
+
     pub const fn focused_id(&self) -> Option<UiId> {
         self.interaction.focused_id()
     }
