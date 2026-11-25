@@ -1439,10 +1439,10 @@ mod web {
 
     impl PlatformAudio for WebAudio {
         fn activate(&mut self) {
-            if let Ok(context) = self.context() {
-                if context.state() == AudioContextState::Suspended {
-                    let _ = context.resume();
-                }
+            if let Ok(context) = self.context()
+                && context.state() == AudioContextState::Suspended
+            {
+                let _ = context.resume();
             }
         }
     }

@@ -76,6 +76,7 @@ pub enum RendererInitError {
     CreateSurface(wgpu::CreateSurfaceError),
     RequestAdapter(wgpu::RequestAdapterError),
     RequestDevice(wgpu::RequestDeviceError),
+    #[cfg(not(target_arch = "wasm32"))]
     ConfigureSurface(String),
 }
 
@@ -85,6 +86,7 @@ impl fmt::Display for RendererInitError {
             Self::CreateSurface(err) => write!(f, "failed to create surface: {err}"),
             Self::RequestAdapter(err) => write!(f, "failed to request adapter: {err}"),
             Self::RequestDevice(err) => write!(f, "failed to request device: {err}"),
+            #[cfg(not(target_arch = "wasm32"))]
             Self::ConfigureSurface(err) => write!(f, "failed to configure surface: {err}"),
         }
     }
