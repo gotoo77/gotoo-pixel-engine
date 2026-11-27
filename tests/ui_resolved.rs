@@ -181,9 +181,9 @@ fn probe_geometry_prefers_direction_cone_without_activation() {
             assert_eq!(out.activation, None);
             if expected != 1 {
                 let out = step(&mut state, nav(opposite), &targets);
-                // Right->Left selects Up: it is in-cone and 2px nearer on
-                // the primary axis than Center. The policy is not reciprocal.
-                assert_eq!(out.focused, Some(id(if expected == 3 { 2 } else { 1 })));
+                // All enabled cardinal round-trips on the exact probe return
+                // to Center, including Right->Left (projection alignment).
+                assert_eq!(out.focused, Some(id(1)));
                 assert_eq!(out.activation, None);
             }
         }
@@ -483,9 +483,68 @@ fn spatial_ties_use_resolved_order_and_primary_distance_wins() {
             height: 10,
         },
     );
+    let farther_diagonal = target(
+        5,
+        Rect {
+            x: 60,
+            y: 50,
+            width: 10,
+            height: 10,
+        },
+    );
     for (targets, expected) in [
-        ([center, upper, lower, aligned], 2),
-        ([center, lower, upper, aligned], 3),
+        ([center, upper, lower, aligned], 4),
+        ([center, lower, upper, aligned], 4),
+        // Among unaligned in-cone targets, retain primary/secondary/order.
+        (
+            [
+                center,
+                upper,
+                lower,
+                ResolvedTarget {
+                    enabled: false,
+                    ..aligned
+                },
+            ],
+            2,
+        ),
+        (
+            [
+                center,
+                lower,
+                upper,
+                ResolvedTarget {
+                    enabled: false,
+                    ..aligned
+                },
+            ],
+            3,
+        ),
+        // A farther unaligned in-cone candidate must not beat a nearer one.
+        (
+            [
+                center,
+                farther_diagonal,
+                upper,
+                ResolvedTarget {
+                    enabled: false,
+                    ..aligned
+                },
+            ],
+            2,
+        ),
+        (
+            [
+                center,
+                farther_diagonal,
+                lower,
+                ResolvedTarget {
+                    enabled: false,
+                    ..aligned
+                },
+            ],
+            3,
+        ),
     ] {
         let mut state = ResolvedState::default();
         let out = step(
@@ -497,6 +556,229 @@ fn spatial_ties_use_resolved_order_and_primary_distance_wins() {
             &targets,
         );
         assert_eq!(out.focused, Some(id(expected)));
+    }
+}
+
+#[test]
+fn perpendicular_overlap_is_strict_and_only_preferred_inside_cone() {
+    // Transposition exercises Y projections for Right and X projections for Down.
+    // All expected results are hand-derived; rectangles remain disjoint.
+    for vertical in [false, true] {
+        let center = Rect {
+            x: 0,
+            y: 30,
+            width: 10,
+            height: 10,
+        };
+        let diagonal = Rect {
+            x: 30,
+            y: 10,
+            width: 10,
+            height: 10,
+        };
+        for (candidate, enabled, expected) in [
+            (
+                Rect {
+                    x: 60,
+                    y: 39,
+                    width: 10,
+                    height: 10,
+                },
+                true,
+                3,
+            ), // 1px overlap
+            (
+                Rect {
+                    x: 60,
+                    y: 21,
+                    width: 10,
+                    height: 10,
+                },
+                true,
+                3,
+            ), // 1px overlap
+            (
+                Rect {
+                    x: 60,
+                    y: 40,
+                    width: 10,
+                    height: 10,
+                },
+                true,
+                2,
+            ), // touching bottom
+            (
+                Rect {
+                    x: 60,
+                    y: 20,
+                    width: 10,
+                    height: 10,
+                },
+                true,
+                2,
+            ), // touching top
+            (
+                Rect {
+                    x: 60,
+                    y: 30,
+                    width: 10,
+                    height: 10,
+                },
+                false,
+                2,
+            ),
+            // Overlap alone cannot promote an outside-cone target over in-cone.
+            (
+                Rect {
+                    x: 15,
+                    y: 39,
+                    width: 10,
+                    height: 100,
+                },
+                true,
+                2,
+            ),
+        ] {
+            let transpose = |r: Rect| {
+                if vertical {
+                    Rect {
+                        x: r.y,
+                        y: r.x,
+                        width: r.height,
+                        height: r.width,
+                    }
+                } else {
+                    r
+                }
+            };
+            let targets = [
+                target(1, transpose(center)),
+                target(2, transpose(diagonal)),
+                ResolvedTarget {
+                    enabled,
+                    ..target(3, transpose(candidate))
+                },
+            ];
+            let mut state = ResolvedState::default();
+            let out = step(
+                &mut state,
+                nav(UiNavInput {
+                    right: !vertical,
+                    down: vertical,
+                    ..Default::default()
+                }),
+                &targets,
+            );
+            assert_eq!(
+                out.focused,
+                Some(id(expected)),
+                "vertical={vertical}, candidate={candidate:?}"
+            );
+            assert_eq!(out.activation, None);
+        }
+        // With only outside-cone candidates, v2 primary distance still wins,
+        // even when a farther candidate overlaps the perpendicular projection.
+        let transpose = |r: Rect| {
+            if vertical {
+                Rect {
+                    x: r.y,
+                    y: r.x,
+                    width: r.height,
+                    height: r.width,
+                }
+            } else {
+                r
+            }
+        };
+        let targets = [
+            target(1, transpose(center)),
+            target(
+                2,
+                transpose(Rect {
+                    x: 15,
+                    y: 0,
+                    width: 10,
+                    height: 10,
+                }),
+            ),
+            target(
+                3,
+                transpose(Rect {
+                    x: 30,
+                    y: 39,
+                    width: 10,
+                    height: 100,
+                }),
+            ),
+        ];
+        let out = step(
+            &mut ResolvedState::default(),
+            nav(UiNavInput {
+                right: !vertical,
+                down: vertical,
+                ..Default::default()
+            }),
+            &targets,
+        );
+        assert_eq!(out.focused, Some(id(2)));
+        assert_eq!(out.activation, None);
+    }
+}
+
+#[test]
+fn projection_alignment_uses_i64_edges_beyond_i32() {
+    let targets = [
+        target(
+            1,
+            Rect {
+                x: 0,
+                y: i32::MAX - 5,
+                width: 10,
+                height: 20,
+            },
+        ),
+        target(
+            2,
+            Rect {
+                x: 30,
+                y: i32::MAX - 30,
+                width: 10,
+                height: 10,
+            },
+        ),
+        target(
+            3,
+            Rect {
+                x: 60,
+                y: i32::MAX,
+                width: 10,
+                height: 20,
+            },
+        ),
+    ];
+    for vertical in [false, true] {
+        let targets = targets.map(|mut t| {
+            if vertical {
+                t.rect = Rect {
+                    x: t.rect.y,
+                    y: t.rect.x,
+                    width: t.rect.height,
+                    height: t.rect.width,
+                };
+            }
+            t
+        });
+        let out = step(
+            &mut ResolvedState::default(),
+            nav(UiNavInput {
+                right: !vertical,
+                down: vertical,
+                ..Default::default()
+            }),
+            &targets,
+        );
+        assert_eq!(out.focused, Some(id(3)));
+        assert_eq!(out.activation, None);
     }
 }
 

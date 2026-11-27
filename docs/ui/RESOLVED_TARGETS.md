@@ -1,7 +1,7 @@
 # Resolved discrete controls (#117)
 
-Correction contract: [v2](https://github.com/gotoo77/gotoo-pixel-engine/issues/117#issuecomment-7229097296).
-Correction base: `cd515837939126f5bf430436338e30beab7f0a6f`.
+Navigation correction contract: [v3](https://github.com/gotoo77/gotoo-pixel-engine/issues/117#issuecomment-7229395736).
+Correction base: `7e123f23424e7fe102d80861b107b4d467dd5616`.
 
 `ui::resolved` is a thin adapter over the existing interaction pass with spatial
 navigation. The caller owns layout and painting. There is one interaction state,
@@ -42,15 +42,21 @@ captures and requires a neutral snapshot before interaction resumes. Disabled
 targets remain available to the painter but are filtered before the kernel.
 Removal/disabling uses the kernel's existing focus and capture repair, including
 its previous-index fallback. Reinserted/re-enabled IDs cannot resume old captures.
-Spatial candidates must lie in the requested open half-plane. Candidates inside
-the 45-degree cone (primary >= secondary, boundary included) rank before those
-outside it; primary distance, secondary distance and slice order break ties.
-Without an in-cone candidate, the old deterministic ranking applies. Disabled
-targets cannot participate. A reorder preserves focus identity but may change
-an exact tie. This minimal playtest correction is not universal ergonomic proof,
-and does not guarantee reciprocal navigation: in the probe, Right then Left
-selects Up, which is in-cone and 2px nearer on the primary axis than Center.
-Historical Spatial/Linear adapters retain their original behavior.
+Spatial candidates must lie in the requested open half-plane. Ranking groups:
+
+1. In-cone (`primary >= secondary`) with strictly positive perpendicular
+   projection overlap: Y intervals for horizontal moves, X for vertical moves.
+2. Other in-cone candidates.
+3. Outside-cone candidates, retaining the v2 deterministic fallback.
+
+Within each group, primary distance, secondary distance and slice order break
+ties. Projections use half-open intervals and i64 edges: touching edges do not
+count as overlap. Disabled targets cannot participate. Reordering preserves
+focus identity but may change an exact tie. All four enabled cardinal round-trips
+on the exact probe geometry now return to Center, including Right then Left.
+This minimal rule does not promise universal reciprocity; diagonal fallback
+remains available when no aligned candidate exists. Historical Spatial/Linear
+adapters retain their original behavior.
 
 Cancel suppresses navigation, captures and activation. Any directional input,
 pointer edge, touch event, ongoing capture, or loss of the previous focused
@@ -102,8 +108,11 @@ cannot activate because the capture is gone; a fresh press/start is required.
 Semantic-only callers retain the explicit `suspend()` contract. Switching input
 sources for the same state requires explicit suspension as well.
 
-Runtime remains HOLD until real native OS focus and Web retests. This work does
-not authorize Pirates integration or S2.
+The owner validated v2 native outward navigation, Alt+Tab capture cancellation,
+fresh clicks after return and Enter. The v2 return navigation was rejected; v3
+requires a new navigation retest and brief focus regression. Browser and physical
+pad/touch remain unqualified. This work does not authorize Pirates integration
+or S2.
 
 ## Example and public tests
 
@@ -134,5 +143,5 @@ simultaneous sources, ambiguous multi-touch and explicit reset/reentry.
 
 ## Qualification
 
-See `RESOLVED_TARGETS_117_V2_VALIDATION.md` for correction evidence and retests.
-`RESOLVED_TARGETS_117_VALIDATION.md` records the historical v1 qualification.
+See `RESOLVED_TARGETS_117_V3_VALIDATION.md` for navigation correction evidence
+and retests. The v1 and v2 validation records remain historical snapshots.
