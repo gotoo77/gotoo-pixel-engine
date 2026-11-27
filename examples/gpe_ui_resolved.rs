@@ -1,4 +1,4 @@
-//! Free-rectangle controls: arrows/pad navigate, Enter/South confirm,
+//! Free-rectangle controls: arrows/pad navigate, Enter/Space/South confirm,
 //! Escape/East cancel, R/Start explicitly suspend, D/West toggle availability.
 //! Focus is a border, hover a fill, capture a stronger fill. Confirmation uses
 //! a short flash; keyboard/pad have no invented held/active visual state.
@@ -38,6 +38,7 @@ struct Probe {
 impl Probe {
     fn new() -> Self {
         let mut controls = standard_menu_controls(UP, DOWN, CONFIRM);
+        controls.bind_key(CONFIRM, Key::Enter);
         for (action, key, button) in [
             (LEFT, Key::Left, GamepadButton::DPadLeft),
             (RIGHT, Key::Right, GamepadButton::DPadRight),
@@ -100,12 +101,16 @@ impl Probe {
 
 impl Game for Probe {
     fn update(&mut self, frame: &mut Frame<'_>) -> GameResult {
+        let ready = self.state.synchronize_input(frame.input);
+        if !ready {
+            self.flash = None;
+        }
         self.controls.update(frame.input);
-        if self.controls.action(SUSPEND).pressed() {
+        if ready && self.controls.action(SUSPEND).pressed() {
             self.state.suspend();
             self.flash = None;
         }
-        if self.controls.action(TOGGLE).pressed() {
+        if ready && self.controls.action(TOGGLE).pressed() {
             self.targets[3].enabled = !self.targets[3].enabled;
         }
         let output = resolved::update(

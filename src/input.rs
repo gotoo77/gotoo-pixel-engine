@@ -316,6 +316,8 @@ pub enum TextInputEvent {
 
 #[derive(Debug, Clone)]
 pub struct Input {
+    window_focused: bool,
+    window_reset_generation: u64,
     text_events: Vec<TextInputEvent>,
     keys: [ButtonState; KEY_COUNT],
     mouse_buttons: [ButtonState; MOUSE_BUTTON_COUNT],
@@ -329,7 +331,9 @@ pub struct Input {
 
 impl PartialEq for Input {
     fn eq(&self, other: &Self) -> bool {
-        self.keys == other.keys
+        self.window_focused == other.window_focused
+            && self.window_reset_generation == other.window_reset_generation
+            && self.keys == other.keys
             && self.text_events == other.text_events
             && self.mouse_buttons == other.mouse_buttons
             && self.mouse_position == other.mouse_position
@@ -343,6 +347,42 @@ impl PartialEq for Input {
 impl Eq for Input {}
 
 impl Input {
+    /// Last window focus reported by the snapshot producer. Defaults to true
+    /// for standalone semantic producers; the platform supplies actual focus.
+    pub const fn window_focused(&self) -> bool {
+        self.window_focused
+    }
+
+    /// Durable reset generation, preserved across frames and clones. Compare
+    /// for inequality, not ordering (wraps after u64::MAX resets). Detects a
+    /// loss and gain even when both happen before the next game update.
+    pub const fn window_reset_generation(&self) -> u64 {
+        self.window_reset_generation
+    }
+
+    /// Snapshot producers must forward real window focus notifications here.
+    /// A loss clears window devices without synthesizing release/end events;
+    /// gamepads and their connection metadata remain intact. Gain does not
+    /// invent physical held state. Hosted consumers should forward or clone
+    /// the source snapshot, preserving this lifecycle information.
+    pub fn set_window_focused(&mut self, focused: bool) {
+        self.window_focused = focused;
+        if !focused {
+            self.reset_window_devices();
+        }
+    }
+
+    pub(crate) fn resolved_devices_neutral(&self) -> bool {
+        self.keys
+            .iter()
+            .chain(&self.mouse_buttons)
+            .all(|b| b.bits == 0)
+            && self.touches.is_empty()
+            && self.gamepads.values().all(|pad| {
+                pad.buttons.iter().all(|b| b.bits == 0) && pad.axes.iter().all(|axis| *axis == 0.0)
+            })
+    }
+
     /// Ordered text edits received this frame, using the active keyboard layout.
     pub fn text_events(&self) -> &[TextInputEvent] {
         &self.text_events
@@ -522,6 +562,7 @@ impl Input {
     }
 
     pub(crate) fn reset_window_devices(&mut self) {
+        self.window_reset_generation = self.window_reset_generation.wrapping_add(1);
         self.text_events.clear();
         self.keys = [ButtonState::default(); KEY_COUNT];
         self.mouse_buttons = [ButtonState::default(); MOUSE_BUTTON_COUNT];
@@ -552,6 +593,8 @@ impl Input {
 impl Default for Input {
     fn default() -> Self {
         Self {
+            window_focused: true,
+            window_reset_generation: 0,
             text_events: Vec::new(),
             keys: [ButtonState::default(); KEY_COUNT],
             mouse_buttons: [ButtonState::default(); MOUSE_BUTTON_COUNT],
@@ -993,5 +1036,138 @@ mod tests {
 
         assert!(!input.key(Key::Left).held());
         assert!(input.gamepad_button(id, GamepadButton::DPadLeft).held());
+    }
+
+    #[test]
+    fn window_lifecycle_is_durable_without_synthetic_releases() {
+        use super::{ButtonState, TextInputEvent};
+        let mut input = Input::default();
+        let pad = GamepadId::new(44);
+        input.press_key(Key::Space);
+        input.press_mouse_button(MouseButton::Left);
+        input.set_mouse_position(Some((4, 5)));
+        input.add_mouse_wheel_steps(3);
+        input.push_text_event(TextInputEvent::Insert("hello".into()));
+        input.push_touch(Touch {
+            id: 1,
+            phase: TouchPhase::Started,
+            position: Some((4, 5)),
+        });
+        input.set_gamepad_button(pad, GamepadButton::South, true);
+        input.set_gamepad_axis(pad, GamepadAxis::RightStickX, 0.5);
+        let pad_before = input.gamepads.clone();
+        let connections = input.gamepad_connection_events.clone();
+        let initial = input.clone();
+        assert!(input.window_focused());
+        assert_eq!(input.window_reset_generation(), 0);
+        input.set_window_focused(false);
+        assert!(!input.window_focused());
+        assert_eq!(input.window_reset_generation(), 1);
+        assert_eq!(input.key(Key::Space), ButtonState::default());
+        assert_eq!(
+            input.mouse_button(MouseButton::Left),
+            ButtonState::default()
+        );
+        assert_eq!(input.mouse_position(), None);
+        assert_eq!(input.mouse_wheel_steps(), 0);
+        assert!(input.text_events().is_empty());
+        assert!(input.touches().is_empty());
+        assert_eq!(input.gamepads, pad_before);
+        assert_eq!(input.gamepad_connection_events, connections);
+        input.advance_frame();
+        assert!(!input.window_focused());
+        assert_eq!(input.window_reset_generation(), 1);
+        input.set_window_focused(true);
+        assert_eq!(input.window_reset_generation(), 1);
+        assert_eq!(input, input.clone());
+        assert_ne!(input, initial);
+        let mut different_focus = input.clone();
+        different_focus.window_focused = false;
+        assert_ne!(input, different_focus);
+        let mut different_generation = input.clone();
+        different_generation.window_reset_generation = 2;
+        assert_ne!(input, different_generation);
+        input.set_window_focused(false);
+        input.set_window_focused(true);
+        input.advance_frame();
+        assert_eq!(input.window_reset_generation(), 2);
+    }
+
+    #[test]
+    fn resolved_reentry_waits_for_observable_held_devices_and_neutral_frame() {
+        use crate::ui::resolved::{self, ResolvedState, UiInput};
+        for device in 0..4 {
+            let mut input = Input::default();
+            let mut state = ResolvedState::default();
+            let pad = GamepadId::new(4);
+            input.set_window_focused(false);
+            input.set_window_focused(true);
+            match device {
+                0 => input.press_key(Key::Enter),
+                1 => input.press_mouse_button(MouseButton::Left),
+                2 => input.set_gamepad_button(pad, GamepadButton::South, true),
+                _ => input.set_gamepad_axis(pad, GamepadAxis::LeftStickX, 0.5),
+            }
+            for _ in 0..2 {
+                assert!(!state.synchronize_input(&input));
+                resolved::update(&mut state, UiInput::default(), &[]).unwrap();
+                input.advance_frame();
+            }
+            match device {
+                0 => input.release_key(Key::Enter),
+                1 => input.release_mouse_button(MouseButton::Left),
+                2 => input.set_gamepad_button(pad, GamepadButton::South, false),
+                _ => input.set_gamepad_axis(pad, GamepadAxis::LeftStickX, 0.0),
+            }
+            assert!(!state.synchronize_input(&input));
+            resolved::update(&mut state, UiInput::default(), &[]).unwrap();
+            input.advance_frame();
+            // The observable neutral frame is consumed, and cannot act.
+            state.synchronize_input(&input);
+            resolved::update(&mut state, UiInput::default(), &[]).unwrap();
+            assert!(state.synchronize_input(&input));
+        }
+    }
+
+    #[test]
+    fn window_reset_interrupts_resolved_mouse_capture() {
+        use crate::{
+            ActionId, Rect,
+            ui::resolved::{self, ResolvedState, ResolvedTarget, UiId, UiInput, UiPointerInput},
+        };
+        let target = ResolvedTarget {
+            id: UiId::from_stable(1).unwrap(),
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 30,
+                height: 30,
+            },
+            action: ActionId::new("click"),
+            enabled: true,
+        };
+        let mut input = Input::default();
+        let mut state = ResolvedState::default();
+        input.set_mouse_position(Some((10, 10)));
+        input.press_mouse_button(MouseButton::Left);
+        let out = resolved::update(
+            &mut state,
+            UiInput {
+                pointer: UiPointerInput {
+                    position: input.mouse_position(),
+                    pressed: input.mouse_button(MouseButton::Left).pressed(),
+                    released: false,
+                },
+                ..Default::default()
+            },
+            &[target],
+        )
+        .unwrap();
+        assert!(out.active(target.id));
+        input.reset_window_devices();
+        assert!(!state.synchronize_input(&input));
+        let out = resolved::update(&mut state, UiInput::default(), &[target]).unwrap();
+        assert!(!out.active(target.id));
+        assert_eq!(out.activation, None);
     }
 }

@@ -67,6 +67,282 @@ fn scene() -> [ResolvedTarget; 5] {
         ),
     ]
 }
+
+// Exact rectangles painted by examples/gpe_ui_resolved.rs, deliberately skewed.
+fn probe_scene(down_enabled: bool) -> [ResolvedTarget; 5] {
+    let mut targets = [
+        target(
+            1,
+            Rect {
+                x: 165,
+                y: 110,
+                width: 100,
+                height: 45,
+            },
+        ),
+        target(
+            2,
+            Rect {
+                x: 180,
+                y: 45,
+                width: 75,
+                height: 30,
+            },
+        ),
+        target(
+            3,
+            Rect {
+                x: 330,
+                y: 100,
+                width: 125,
+                height: 55,
+            },
+        ),
+        target(
+            4,
+            Rect {
+                x: 150,
+                y: 195,
+                width: 130,
+                height: 60,
+            },
+        ),
+        target(
+            5,
+            Rect {
+                x: 25,
+                y: 115,
+                width: 80,
+                height: 35,
+            },
+        ),
+    ];
+    targets[3].enabled = down_enabled;
+    targets
+}
+
+#[test]
+fn probe_geometry_prefers_direction_cone_without_activation() {
+    for down_enabled in [false, true] {
+        for (direction, opposite, expected) in [
+            (
+                UiNavInput {
+                    up: true,
+                    ..Default::default()
+                },
+                UiNavInput {
+                    down: true,
+                    ..Default::default()
+                },
+                2,
+            ),
+            (
+                UiNavInput {
+                    right: true,
+                    ..Default::default()
+                },
+                UiNavInput {
+                    left: true,
+                    ..Default::default()
+                },
+                3,
+            ),
+            (
+                UiNavInput {
+                    down: true,
+                    ..Default::default()
+                },
+                UiNavInput {
+                    up: true,
+                    ..Default::default()
+                },
+                if down_enabled { 4 } else { 1 },
+            ),
+            (
+                UiNavInput {
+                    left: true,
+                    ..Default::default()
+                },
+                UiNavInput {
+                    right: true,
+                    ..Default::default()
+                },
+                5,
+            ),
+        ] {
+            let targets = probe_scene(down_enabled);
+            let mut state = ResolvedState::default();
+            let out = step(&mut state, nav(direction), &targets);
+            assert_eq!(
+                out.focused,
+                Some(id(expected)),
+                "down={down_enabled}, direction={direction:?}"
+            );
+            assert_eq!(out.activation, None);
+            if expected != 1 {
+                let out = step(&mut state, nav(opposite), &targets);
+                // Right->Left selects Up: it is in-cone and 2px nearer on
+                // the primary axis than Center. The policy is not reciprocal.
+                assert_eq!(out.focused, Some(id(if expected == 3 { 2 } else { 1 })));
+                assert_eq!(out.activation, None);
+            }
+        }
+    }
+}
+
+#[test]
+fn cone_boundary_fallback_disabled_and_reorder() {
+    let center = target(
+        1,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+        },
+    );
+    let boundary = target(
+        2,
+        Rect {
+            x: 40,
+            y: 40,
+            width: 10,
+            height: 10,
+        },
+    );
+    let outside = target(
+        3,
+        Rect {
+            x: 20,
+            y: 60,
+            width: 10,
+            height: 10,
+        },
+    );
+    let right = nav(UiNavInput {
+        right: true,
+        ..Default::default()
+    });
+    for (targets, expected) in [
+        (vec![center, outside, boundary], 2),
+        (vec![center, boundary, outside], 2),
+        (vec![center, outside], 3),
+        (
+            vec![
+                center,
+                outside,
+                ResolvedTarget {
+                    enabled: false,
+                    ..boundary
+                },
+            ],
+            3,
+        ),
+    ] {
+        let out = step(&mut ResolvedState::default(), right, &targets);
+        assert_eq!(out.focused, Some(id(expected)));
+        assert_eq!(out.activation, None);
+    }
+}
+
+#[test]
+fn public_input_lifecycle_interrupts_mouse_and_touch_even_between_updates() {
+    use gotoo_pixel_engine::Input;
+    for touch_capture in [false, true] {
+        for gain_before_update in [false, true] {
+            let targets = scene();
+            let mut input = Input::default();
+            let mut state = ResolvedState::default();
+            assert!(state.synchronize_input(&input));
+            if touch_capture {
+                step(
+                    &mut state,
+                    touches(&[touch(7, TouchPhase::Started, Some((100, 90)))]),
+                    &targets,
+                );
+            } else {
+                step(&mut state, pointer(Some((100, 90)), true, false), &targets);
+            }
+            input.set_window_focused(false);
+            if gain_before_update {
+                input.set_window_focused(true);
+            }
+            // A hosted clone must carry both actual focus and the durable reset.
+            assert!(!state.synchronize_input(&input.clone()));
+            let out = step(&mut state, confirm(), &targets);
+            assert!(!out.active(id(1)));
+            assert_eq!(out.activation, None);
+            assert_eq!(out.focused, Some(id(1)));
+            if !gain_before_update {
+                for _ in 0..2 {
+                    assert!(!state.synchronize_input(&input));
+                    assert_eq!(
+                        step(&mut state, UiInput::default(), &targets).activation,
+                        None
+                    );
+                }
+                input.set_window_focused(true);
+            }
+            assert!(!state.synchronize_input(&input));
+            let inherited = [touch(7, TouchPhase::Ended, Some((100, 90)))];
+            let mut end = pointer(Some((100, 90)), false, true);
+            end.touches = &inherited;
+            end.nav.confirm = true;
+            assert_eq!(step(&mut state, end, &targets).activation, None);
+            assert!(!state.synchronize_input(&input));
+            assert_eq!(
+                step(&mut state, UiInput::default(), &targets).activation,
+                None
+            );
+            assert!(state.synchronize_input(&input));
+            // Late inherited ends, even after neutral, cannot resurrect captures.
+            assert_eq!(step(&mut state, end, &targets).activation, None);
+            step(&mut state, pointer(Some((100, 90)), true, false), &targets);
+            assert_eq!(
+                step(&mut state, pointer(Some((100, 90)), false, true), &targets)
+                    .activation
+                    .unwrap()
+                    .id,
+                id(1)
+            );
+            step(
+                &mut state,
+                touches(&[touch(8, TouchPhase::Started, Some((100, 90)))]),
+                &targets,
+            );
+            assert_eq!(
+                step(
+                    &mut state,
+                    touches(&[touch(8, TouchPhase::Ended, Some((100, 90)))]),
+                    &targets
+                )
+                .activation
+                .unwrap()
+                .id,
+                id(1)
+            );
+            assert!(step(&mut state, confirm(), &targets).activation.is_some());
+        }
+    }
+}
+
+#[test]
+fn pointer_exit_and_sparse_touch_frames_are_not_focus_loss() {
+    use gotoo_pixel_engine::Input;
+    let input = Input::default();
+    let mut state = ResolvedState::default();
+    step(&mut state, pointer(Some((100, 90)), true, false), &scene());
+    assert!(state.synchronize_input(&input));
+    assert!(step(&mut state, pointer(None, false, false), &scene()).active(id(1)));
+    let mut state = ResolvedState::default();
+    step(
+        &mut state,
+        touches(&[touch(1, TouchPhase::Started, Some((100, 90)))]),
+        &scene(),
+    );
+    assert!(state.synchronize_input(&input));
+    assert!(step(&mut state, UiInput::default(), &scene()).active(id(1)));
+}
 fn nav(n: UiNavInput) -> UiInput<'static> {
     UiInput {
         nav: n,

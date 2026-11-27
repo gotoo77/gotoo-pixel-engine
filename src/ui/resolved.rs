@@ -15,7 +15,7 @@
 
 use std::{error::Error, fmt};
 
-use crate::{ActionId, Rect};
+use crate::{ActionId, Input, Rect};
 
 pub use super::experimental::{UiId, UiInput, UiNavInput, UiPointerInput};
 use super::kernel::{
@@ -46,15 +46,42 @@ impl UiResolvedTarget for ResolvedTarget {
 pub struct ResolvedState {
     interaction: UiInteractionState,
     awaiting_neutral: bool,
+    observed_reset: u64,
+    devices_blocked: bool,
 }
 
 impl ResolvedState {
+    /// Synchronize before processing this frame's semantic events, even while
+    /// unfocused. A reset (including loss+gain between updates) calls suspend.
+    /// Returns whether caller-owned transitions/flash may run this frame.
+    /// On false, clear transient visuals and withhold caller-owned actions;
+    /// still call update so it can consume the neutral semantic snapshot.
+    ///
+    /// Reentry waits for focused, neutral observable keys/mouse/gamepad buttons,
+    /// zero gamepad axes, no touch events, then a neutral semantic snapshot.
+    /// Reset erases window held state; this cannot prove physical release of
+    /// keys/mouse/touches held outside the window. Old release/end events cannot
+    /// activate without a fresh press/start. Sparse touch frames are not proof
+    /// of physical release. Axis drift can conservatively delay reentry.
+    /// Pure semantic callers may continue using suspend() alone.
+    pub fn synchronize_input(&mut self, input: &Input) -> bool {
+        if self.observed_reset != input.window_reset_generation() || !input.window_focused() {
+            self.suspend();
+            self.devices_blocked = true;
+        }
+        self.observed_reset = input.window_reset_generation();
+        if self.devices_blocked && input.window_focused() && input.resolved_devices_neutral() {
+            self.devices_blocked = false;
+        }
+        !self.devices_blocked && !self.awaiting_neutral
+    }
+
     /// Immediately discards all captures and withholds input until an entirely
     /// neutral semantic snapshot has been consumed. That snapshot also cannot
     /// activate. The next update repairs focus against its enabled targets.
     ///
-    /// Call before updating a surface being suspended or resumed. This is an
-    /// explicit lifecycle operation, not an automatic OS focus-loss hook.
+    /// Call before updating a surface being suspended or resumed. For device
+    /// snapshots, synchronize_input bridges the platform lifecycle here.
     /// `UiInput` contains events, not held-device state: callers needing a
     /// physical release barrier must additionally gate their semantic snapshots.
     pub fn suspend(&mut self) {
@@ -130,7 +157,8 @@ pub fn update(
     }
     if state.awaiting_neutral {
         // Position alone is neutral: keep hover available for rendering.
-        state.awaiting_neutral = input.nav != UiNavInput::default()
+        state.awaiting_neutral = state.devices_blocked
+            || input.nav != UiNavInput::default()
             || input.pointer.pressed
             || input.pointer.released
             || !input.touches.is_empty();
@@ -158,7 +186,7 @@ pub fn update(
         &mut state.interaction,
         input,
         &enabled,
-        UiNavigationPolicy::Spatial,
+        UiNavigationPolicy::SpatialCone,
         |id| enabled.iter().find(|t| t.id == id).map(|t| t.action),
     );
     let activation = if output.activation_count() == 1 {

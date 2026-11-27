@@ -1,12 +1,13 @@
 # Resolved discrete controls (#117)
 
-Implementation contract: [v1](https://github.com/gotoo77/gotoo-pixel-engine/issues/117#issuecomment-7228671898).
-Reference: `0b98ebb58f92d8134f9308b106a221a47b7655cf`.
+Correction contract: [v2](https://github.com/gotoo77/gotoo-pixel-engine/issues/117#issuecomment-7229097296).
+Correction base: `cd515837939126f5bf430436338e30beab7f0a6f`.
 
 `ui::resolved` is a thin adapter over the existing interaction pass with spatial
 navigation. The caller owns layout and painting. There is one interaction state,
 owned by the kernel; the adapter adds validation, input arbitration and a neutral
-snapshot barrier. Existing adapters and the kernel are unchanged.
+snapshot barrier. Existing adapters retain their policies; only this adapter
+selects the shared kernel cone preference.
 
 ```rust
 use gotoo_pixel_engine::{ActionId, Rect, ui::resolved::{self, ResolvedState,
@@ -41,8 +42,15 @@ captures and requires a neutral snapshot before interaction resumes. Disabled
 targets remain available to the painter but are filtered before the kernel.
 Removal/disabling uses the kernel's existing focus and capture repair, including
 its previous-index fallback. Reinserted/re-enabled IDs cannot resume old captures.
-Spatial candidates retain primary-distance, secondary-distance and slice-order
-tie-breaking. A reorder preserves focus identity but may change an exact tie.
+Spatial candidates must lie in the requested open half-plane. Candidates inside
+the 45-degree cone (primary >= secondary, boundary included) rank before those
+outside it; primary distance, secondary distance and slice order break ties.
+Without an in-cone candidate, the old deterministic ranking applies. Disabled
+targets cannot participate. A reorder preserves focus identity but may change
+an exact tie. This minimal playtest correction is not universal ergonomic proof,
+and does not guarantee reciprocal navigation: in the probe, Right then Left
+selects Up, which is in-cone and 2px nearer on the primary axis than Center.
+Historical Spatial/Linear adapters retain their original behavior.
 
 Cancel suppresses navigation, captures and activation. Any directional input,
 pointer edge, touch event, ongoing capture, or loss of the previous focused
@@ -65,11 +73,37 @@ Repeated suspension remains blocked. Pending release/end events cannot activate.
 Snapshots contain events rather than physical held state; a caller needing a
 physical release barrier must gate its input snapshots as well.
 
-There is no automatic OS-focus notification in this adapter. The platform's
-`Focused(false)` resets window devices, but that does not notify `ResolvedState`.
-Explicit reset tests do not qualify real OS focus loss/resume. Input/platform
-changes require a separate ticket. Real OS focus and browser resize qualification
-remain necessary before returning to Pirates; this work does not authorize S2.
+For device snapshots, call `state.synchronize_input(frame.input)` before handling
+semantic events **on every update**, including unfocused updates. It bridges the
+platform lifecycle into `suspend()` and returns whether caller-owned transitions
+may run. On false, clear confirmation flashes and suppress toggles/other actions;
+still call `resolved::update` with the semantic snapshot so the neutral barrier
+can advance. The probe demonstrates this order with `ControlMap`.
+
+`Input::window_focused()` is the last real focus state; the platform initializes
+it from the main/tool window and forwards both gain and loss. A durable
+`window_reset_generation()` detects even loss+gain between game updates. Loss
+clears window devices exactly as before, with no invented release/end. Gain does
+not synthesize held state. The generation survives `advance_frame` and cloning;
+`PartialEq` includes both lifecycle values. Standalone `Input::default()` starts
+focused with generation zero. Snapshot producers use `set_window_focused` for
+actual notifications; hosted consumers forward or clone the original snapshot.
+The current `PixelGameHost` forwards it by reference, retaining actual lifecycle.
+Pointer position None and empty touch frames are never focus-loss signals.
+
+Reentry requires real focus, no observable key/mouse/gamepad button held or edge,
+no touch events and zero gamepad axes, followed by a neutral semantic snapshot.
+Gamepads survive the window reset, so held buttons/axes continue blocking even
+on frames without pressed events. All axes conservatively require zero; drift
+can delay reentry. Physical release of window keys/mouse/touches held outside
+the window cannot be proven after their state was erased by the OS reset.
+Sparse touch frames are not proof of physical release. Inherited release/end
+cannot activate because the capture is gone; a fresh press/start is required.
+Semantic-only callers retain the explicit `suspend()` contract. Switching input
+sources for the same state requires explicit suspension as well.
+
+Runtime remains HOLD until real native OS focus and Web retests. This work does
+not authorize Pirates integration or S2.
 
 ## Example and public tests
 
@@ -100,4 +134,5 @@ simultaneous sources, ambiguous multi-touch and explicit reset/reentry.
 
 ## Qualification
 
-See `RESOLVED_TARGETS_117_VALIDATION.md` for commands, results and limitations.
+See `RESOLVED_TARGETS_117_V2_VALIDATION.md` for correction evidence and retests.
+`RESOLVED_TARGETS_117_VALIDATION.md` records the historical v1 qualification.
