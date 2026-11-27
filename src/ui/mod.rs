@@ -8,6 +8,7 @@ pub mod icon_text;
 pub mod language;
 pub mod menu;
 pub mod paged_spatial;
+pub mod resolved;
 
 mod kernel;
 mod layout;

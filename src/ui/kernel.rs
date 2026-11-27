@@ -70,6 +70,9 @@ impl UiNavDirection {
 pub(crate) enum UiNavigationPolicy {
     Linear,
     Spatial,
+    /// Resolved controls prefer the requested 90-degree cone, then strict
+    /// perpendicular projection overlap within that cone, before distances.
+    SpatialCone,
 }
 
 /// Returns the top-most resolved target at `position` using stable resolved
@@ -98,15 +101,26 @@ pub(crate) fn spatial_candidate<T: UiResolvedTarget>(
     direction: UiNavDirection,
     targets: &[T],
 ) -> Option<UiId> {
+    ranked_spatial_candidate(focused, direction, targets, false)
+}
+
+fn ranked_spatial_candidate<T: UiResolvedTarget>(
+    focused: UiId,
+    direction: UiNavDirection,
+    targets: &[T],
+    prefer_cone: bool,
+) -> Option<UiId> {
     let focused_target = targets.iter().find(|target| target.ui_id() == focused)?;
-    let (fx, fy) = rect_center(focused_target.ui_rect());
+    let focused_rect = focused_target.ui_rect();
+    let (fx, fy) = rect_center(focused_rect);
 
     targets
         .iter()
         .enumerate()
         .filter(|(_, candidate)| candidate.ui_id() != focused)
         .filter_map(|(index, candidate)| {
-            let (cx, cy) = rect_center(candidate.ui_rect());
+            let candidate_rect = candidate.ui_rect();
+            let (cx, cy) = rect_center(candidate_rect);
             let (primary, secondary) = match direction {
                 UiNavDirection::Up if cy < fy => (fy - cy, (cx - fx).abs()),
                 UiNavDirection::Down if cy > fy => (cy - fy, (cx - fx).abs()),
@@ -114,10 +128,29 @@ pub(crate) fn spatial_candidate<T: UiResolvedTarget>(
                 UiNavDirection::Right if cx > fx => (cx - fx, (cy - fy).abs()),
                 _ => return None,
             };
-            Some(((primary, secondary, index), candidate.ui_id()))
+            let outside_cone = prefer_cone && primary < secondary;
+            let unaligned = prefer_cone
+                && !outside_cone
+                && !perpendicular_projection_overlaps(focused_rect, candidate_rect, direction);
+            Some((
+                (outside_cone, unaligned, primary, secondary, index),
+                candidate.ui_id(),
+            ))
         })
         .min_by_key(|(score, _)| *score)
         .map(|(_, id)| id)
+}
+
+fn perpendicular_projection_overlaps(a: Rect, b: Rect, direction: UiNavDirection) -> bool {
+    let (a_start, a_size, b_start, b_size) = match direction {
+        UiNavDirection::Left | UiNavDirection::Right => (a.y, a.height, b.y, b.height),
+        UiNavDirection::Up | UiNavDirection::Down => (a.x, a.width, b.x, b.width),
+    };
+    let a_start = i64::from(a_start);
+    let b_start = i64::from(b_start);
+    // Half-open intervals: touching edges have zero overlap. i64 also covers
+    // rectangles whose i32 origins plus u32 extents exceed i32::MAX.
+    a_start.max(b_start) < (a_start + i64::from(a_size)).min(b_start + i64::from(b_size))
 }
 
 /// Runs one generic interaction transaction over already-resolved targets.
@@ -144,10 +177,15 @@ where
 
     match navigation {
         UiNavigationPolicy::Linear => state.navigate_linear(input.nav, &current_order),
-        UiNavigationPolicy::Spatial => {
+        UiNavigationPolicy::Spatial | UiNavigationPolicy::SpatialCone => {
             if let Some(direction) = UiNavDirection::from_nav(input.nav)
                 && let Some(focused) = state.focused_id()
-                && let Some(next) = spatial_candidate(focused, direction, targets)
+                && let Some(next) = match navigation {
+                    UiNavigationPolicy::SpatialCone => {
+                        ranked_spatial_candidate(focused, direction, targets, true)
+                    }
+                    _ => spatial_candidate(focused, direction, targets),
+                }
             {
                 state.set_focused_id(Some(next));
             }
@@ -641,6 +679,98 @@ mod tests {
             spatial_candidate(ids[0], UiNavDirection::Down, &targets),
             Some(ids[2])
         );
+    }
+
+    #[test]
+    fn cone_policy_does_not_change_historical_spatial_or_linear_passes() {
+        let targets = [
+            TestTarget {
+                id: UiId::from_stable(1).unwrap(),
+                rect: Rect {
+                    x: 165,
+                    y: 110,
+                    width: 100,
+                    height: 45,
+                },
+            },
+            TestTarget {
+                id: UiId::from_stable(2).unwrap(),
+                rect: Rect {
+                    x: 180,
+                    y: 45,
+                    width: 75,
+                    height: 30,
+                },
+            },
+            TestTarget {
+                id: UiId::from_stable(3).unwrap(),
+                rect: Rect {
+                    x: 330,
+                    y: 100,
+                    width: 125,
+                    height: 55,
+                },
+            },
+        ];
+        for (policy, up_expected, right_expected) in [
+            (UiNavigationPolicy::Spatial, 3, 2),
+            (UiNavigationPolicy::SpatialCone, 2, 3),
+            (UiNavigationPolicy::Linear, 3, 1),
+        ] {
+            for (nav, expected) in [
+                (
+                    UiNavInput {
+                        up: true,
+                        ..Default::default()
+                    },
+                    up_expected,
+                ),
+                (
+                    UiNavInput {
+                        right: true,
+                        ..Default::default()
+                    },
+                    right_expected,
+                ),
+            ] {
+                let mut state = UiInteractionState::default();
+                let output = run_interaction_pass(
+                    &mut state,
+                    UiInput {
+                        nav,
+                        ..Default::default()
+                    },
+                    &targets,
+                    policy,
+                    |_| None,
+                );
+                assert_eq!(output.focused_id(), UiId::from_stable(expected));
+                assert_eq!(output.activation_count(), 0);
+            }
+            // The v3 alignment preference changes only resolved Right->Left.
+            let mut state = UiInteractionState::default();
+            state.set_focused_id(UiId::from_stable(3));
+            let output = run_interaction_pass(
+                &mut state,
+                UiInput {
+                    nav: UiNavInput {
+                        left: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &targets,
+                policy,
+                |_| None,
+            );
+            let expected = match policy {
+                UiNavigationPolicy::Spatial => 2,
+                UiNavigationPolicy::SpatialCone => 1,
+                UiNavigationPolicy::Linear => 3,
+            };
+            assert_eq!(output.focused_id(), UiId::from_stable(expected));
+            assert_eq!(output.activation_count(), 0);
+        }
     }
 
     #[test]

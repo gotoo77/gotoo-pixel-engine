@@ -30,6 +30,19 @@ pub struct UiId(u64);
 impl UiId {
     pub const ROOT: Self = Self(ROOT_ID);
 
+    /// Creates an explicit stable identity, rejecting the reserved root value.
+    ///
+    /// Values must be unique within each interaction surface. Keep an ID stable
+    /// across reordering/layout changes; never reuse it for a different action
+    /// during a gesture. No dynamic registry or global uniqueness is implied.
+    pub const fn from_stable(value: u64) -> Option<Self> {
+        if value == ROOT_ID {
+            None
+        } else {
+            Some(Self(value))
+        }
+    }
+
     pub const fn raw(self) -> u64 {
         self.0
     }

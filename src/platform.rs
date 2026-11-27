@@ -609,12 +609,14 @@ impl<G: Game> PlatformApp<G> {
             }
         };
 
+        let mut input = Input::default();
+        input.set_window_focused(window.has_focus());
         self.tool_window = Some(ToolWindowState {
             framebuffer: Framebuffer::new(config.framebuffer_width, config.framebuffer_height),
             config,
             window,
             renderer,
-            input: Input::default(),
+            input,
             last_frame_at: Instant::now(),
             last_non_zero_window_size: None,
         });
@@ -733,6 +735,8 @@ impl<G: Game> PlatformApp<G> {
                 return;
             }
         };
+
+        self.input.set_window_focused(window.has_focus());
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -929,9 +933,7 @@ impl<G: Game> PlatformApp<G> {
             }
             WindowEvent::Focused(focused) => {
                 state.last_frame_at = Instant::now();
-                if !focused {
-                    state.input.reset_window_devices();
-                }
+                state.input.set_window_focused(focused);
             }
             _ => {}
         }
@@ -1086,9 +1088,9 @@ impl<G: Game> ApplicationHandler<PlatformEvent> for PlatformApp<G> {
             }
             WindowEvent::Focused(focused) => {
                 self.reset_frame_timing();
+                self.input.set_window_focused(focused);
                 if !focused {
                     self.modifiers = ModifiersState::empty();
-                    self.input.reset_window_devices();
                 }
             }
             WindowEvent::RedrawRequested => {
